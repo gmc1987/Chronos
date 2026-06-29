@@ -1,3 +1,80 @@
+server:
+  port: 8080
+security:
+  jwt:
+    secret: my-secret-key
+    expiration-ms: 2592000000 #30 days in milliseconds
+    refresh-token-expiration-ms: 2592000000 #30 days in milliseconds
+minio:
+  endpoint: http://127.0.0.1:9000
+  accessKey: minioadmin
+  secretKey: minioadmin
+
 spring:
   application:
     name: Chronos
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    url: jdbc:postgresql://localhost:5432/Chronos
+    username: Chronos
+    password: Chronos123
+    driver-class-name: org.postgresql.Driver
+    druid:
+      max-wait: 10000
+      max-active: 50
+      test-on-borrow: false
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: select 1
+      test-while-idle: true
+      test-on-return: false
+      pool-prepared-statements: true
+      max-open-prepared-statements: 20
+      filters: stat, wall
+      web-stat-filter:
+        url-pattern: /*
+        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*"
+      stat-view-servlet:
+        url-pattern: /druid/*
+        reset-enable: false
+        login-username: admin
+        login-password: admin
+  servlet:
+    multipart:
+      max-request-size: 50MB
+      max-file-size: 20MB
+  jpa:
+    database: postgresql
+    hibernate:
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+      ddl-auto: update
+    open-in-view: true
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        enable_lazy_load_no_trans: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  sql:
+    init:
+      platform: postgresql
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+  ai:
+    deepseek:
+      api-key: sk-2232f537152b4a6eb93eb57bbcc8ebf5
+      base-url: https://api.deepseek.com
+      chat:
+        model: deepseek-v4-pro
+logging:
+  level:
+    org:
+      hibernate:
+        SQL: error
+        type:
+          descriptor:
+            sql:
+              BasicBinder: trace
