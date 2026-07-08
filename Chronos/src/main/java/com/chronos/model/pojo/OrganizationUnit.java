@@ -35,28 +35,28 @@ import lombok.Setter;
 @NoArgsConstructor
 @Getter
 @Setter
-@Table(name = "t_department", comment = "部门表")
-public class Department extends BaseEntity {
+@Table(name = "t_organization_unit", comment = "组织单元表")
+public class OrganizationUnit extends BaseEntity {
 
-	@Column(name = "department_name", nullable = false, length = 100)
-	private String departmentName;
+	@Column(name = "organization_unit_name", nullable = false, length = 100)
+	private String organizationUnitName;
 	
-	@Column(name = "department_code", nullable = false, length = 100)
-	private String departmentCode;
+	@Column(name = "organization_unit_code", nullable = false, length = 100)
+	private String organizationUnitCode;
 	
 	@Column(name = "org_id", nullable = false, length = 64)
 	private String orgId;
 	
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "parent_department_id", nullable = true, referencedColumnName = "id")
-	private Department parentDepartment;
+	@JoinColumn(name = "parent_organization_unit_id", nullable = true, referencedColumnName = "id")
+	private OrganizationUnit parentOrganizationUnit;
 	
 	@Column(name = "level", nullable = false)
 	private Integer level;
 	
 	@JsonIgnore
-	@OneToMany(mappedBy = "parentDepartment", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
-	private Set<Department> childDepartments;
+	@OneToMany(mappedBy = "parentOrganizationUnit", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+	private Set<OrganizationUnit> childOrganizationUnit;
 	
 	@Column(name = "description", length = 500)
 	private String description;
