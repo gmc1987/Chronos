@@ -1,0 +1,86 @@
+server:
+  port: 8080
+security:
+  cors:
+    allowed-origin-patterns: ${CHRONOS_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+  jwt:
+    secret: ${CHRONOS_JWT_SECRET:1qaz2wxcde34rfvbgt56yhnmju78iklo90p}
+    expiration-ms: ${CHRONOS_JWT_EXPIRATION_MS:2592000000}
+    refresh-token-expiration-ms: ${CHRONOS_REFRESH_TOKEN_EXPIRATION_MS:2592000000}
+minio:
+  endpoint: ${CHRONOS_MINIO_ENDPOINT:http://127.0.0.1:9000}
+  accessKey: ${CHRONOS_MINIO_ACCESS_KEY:minioadmin}
+  secretKey: ${CHRONOS_MINIO_SECRET_KEY:minioadmin}
+
+spring:
+  application:
+    name: Chronos
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    url: ${CHRONOS_DB_URL:jdbc:postgresql://localhost:5432/Chronos}
+    username: ${CHRONOS_DB_USERNAME:Chronos}
+    password: ${CHRONOS_DB_PASSWORD:Chronos123}
+    driver-class-name: org.postgresql.Driver
+    druid:
+      max-wait: 10000
+      max-active: 50
+      test-on-borrow: false
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: select 1
+      test-while-idle: true
+      test-on-return: false
+      pool-prepared-statements: true
+      max-open-prepared-statements: 20
+      filters: stat, wall
+      web-stat-filter:
+        url-pattern: /*
+        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*"
+      stat-view-servlet:
+        url-pattern: /druid/*
+        reset-enable: false
+        login-username: admin
+        login-password: admin
+  servlet:
+    multipart:
+      max-request-size: 50MB
+      max-file-size: 20MB
+  jpa:
+    database: postgresql
+    hibernate:
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+      ddl-auto: update
+    open-in-view: true
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        enable_lazy_load_no_trans: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  sql:
+    init:
+      platform: postgresql
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+  ai:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat:
+        model: deepseek-v4-pro
+flowable:
+  database-schema-update: true
+  async-executor-activate: true
+  history-level: audit
+logging:
+  level:
+    org:
+      hibernate:
+        SQL: error
+        type:
+          descriptor:
+            sql:
+              BasicBinder: trace
