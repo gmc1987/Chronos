@@ -1,0 +1,10 @@
+<template><div class="portal-page"><div class="runtime-layout"><el-card shadow="never"><template #header>可发起流程</template><el-menu :default-active="selectedId" @select="selectFlow"><el-menu-item v-for="flow in flows" :key="flow.id" :index="flow.id">{{ flow.flowName }} · {{ flow.version }}</el-menu-item></el-menu><el-empty v-if="!flows.length" description="暂无可发起流程" /></el-card><el-card v-if="schema" shadow="never"><template #header><strong>{{ schema.flowName }}</strong><p>{{ schema.description }}</p></template><h3 v-if="schema.formName">{{ schema.formName }}</h3><DynamicForm v-model="formData" :fields="schema.fields" /><div class="actions"><el-button @click="reset">重置</el-button><el-button type="primary" @click="submit">提交申请</el-button></div></el-card><el-empty v-else description="请选择一个流程" /></div></div></template>
+<script setup>
+import { onMounted, ref } from 'vue';import { ElMessage } from 'element-plus';import { useRouter } from 'vue-router';import DynamicForm from '../components/DynamicForm.vue';import { listAvailableWorkflows,getWorkflowStartForm,startWorkflow } from '../../../api/admin'
+const router=useRouter(),flows=ref([]),selectedId=ref(''),schema=ref(null),formData=ref({})
+const load=async()=>{const res=await listAvailableWorkflows();flows.value=res?.data||[]}
+const selectFlow=async(id)=>{selectedId.value=id;const res=await getWorkflowStartForm(id);schema.value=res?.data;reset()}
+const reset=()=>{formData.value={};(schema.value?.fields||[]).forEach(f=>{if(f.fieldType==='CHECKBOX')formData.value[f.fieldKey]=[];if(f.fieldType==='BOOLEAN')formData.value[f.fieldKey]=false})}
+const submit=async()=>{const res=await startWorkflow(selectedId.value,{formData:formData.value,variablesJson:JSON.stringify(formData.value)});ElMessage.success('流程发起成功');if(res?.data?.id)router.push(`/portal/workflow-instances/${res.data.id}/forms`)}
+onMounted(load)
+</script><style scoped>.runtime-layout{display:grid;grid-template-columns:280px minmax(500px,1fr);gap:16px}.actions{text-align:right;margin-top:20px}@media(max-width:900px){.runtime-layout{grid-template-columns:1fr}}</style>

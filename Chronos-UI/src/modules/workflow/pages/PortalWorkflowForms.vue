@@ -1,0 +1,8 @@
+<template><div class="portal-page"><el-page-header @back="$router.back()"><template #content><span>{{ bundle?.nodeName || '流程表单' }}</span></template></el-page-header><div v-loading="loading" class="forms"><el-card v-for="form in bundle?.forms || []" :key="form.formId" shadow="never"><template #header><strong>{{ form.formName }}</strong><el-tag class="role">{{ form.role==='MAIN'?'主表单':'附加表单' }}</el-tag></template><DynamicForm v-model="values[form.formId]" :fields="form.fields" /><div class="actions"><el-button @click="save(form,true)">保存草稿</el-button><el-button type="primary" @click="save(form,false)">提交表单</el-button></div></el-card><el-empty v-if="!loading && !(bundle?.forms||[]).length" description="当前节点没有可填写表单" /></div></div></template>
+<script setup>
+import { onMounted,ref } from 'vue';import { useRoute } from 'vue-router';import { ElMessage } from 'element-plus';import DynamicForm from '../components/DynamicForm.vue';import { getWorkflowRuntimeForms,saveWorkflowRuntimeForm } from '../../../api/admin'
+const route=useRoute(),bundle=ref(null),values=ref({}),loading=ref(false)
+const load=async()=>{loading.value=true;try{const res=await getWorkflowRuntimeForms(route.params.id);bundle.value=res?.data;(bundle.value?.forms||[]).forEach(f=>{values.value[f.formId]={...(f.data||{})}})}finally{loading.value=false}}
+const save=async(form,draft)=>{await saveWorkflowRuntimeForm(route.params.id,form.formId,{data:values.value[form.formId],draft});ElMessage.success(draft?'草稿已保存':'表单已提交');await load()}
+onMounted(load)
+</script><style scoped>.forms{margin-top:18px}.forms .el-card{margin-bottom:16px}.role{margin-left:10px}.actions{text-align:right;margin-top:16px}</style>
