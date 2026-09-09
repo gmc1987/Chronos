@@ -43,7 +43,10 @@ public class JwtUtil {
 	public String generateRefreshToken(String subject, Map<String, Object> claims) {
 		long nowMillis = System.currentTimeMillis();
 		Date now = new Date(nowMillis);
-		return Jwts.builder().setClaims(claims).setSubject(subject).setIssuedAt(now)
+		// Refresh tokens deliberately exclude roles, permissions and menus. They are
+		// reloaded from IAM when exchanging the token, keeping the token short and
+		// ensuring permission changes take effect after refresh.
+		return Jwts.builder().claim("tokenType", "refresh").setSubject(subject).setIssuedAt(now)
 				.signWith(this.key, SignatureAlgorithm.HS256)
 				.setExpiration(new Date(nowMillis + this.refreshExpirationMs)).compact();
 	}

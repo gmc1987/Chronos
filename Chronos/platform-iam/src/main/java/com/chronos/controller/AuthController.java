@@ -104,11 +104,10 @@ public class AuthController {
 		}
 		SecurityContextHolder.getContext().setAuthentication(auth);
 		UserDetails user = (UserDetails) auth.getPrincipal();
-		List<String> roles = (List<String>) auth.getAuthorities().stream().map(GrantedAuthority::getAuthority)
-				.collect(Collectors.toList());
 		AdminUser authenticatedUser = this.adminUserRepository.findByUsername(user.getUsername());
 		Map<String, Object> claims = new HashMap<>();
-		claims.put("roles", roles);
+		// JWT 只保存身份校验需要的最小声明。权限由服务端按角色实时加载，
+		// 避免原子权限增多后 Token 膨胀并超过 Tomcat 请求头限制。
 		claims.put("tokenVersion", authenticatedUser.getTokenVersion() == null ? 0 : authenticatedUser.getTokenVersion());
 		String access = this.jwtUtil.generateAccessToken(user.getUsername(), claims);
 		String refresh = this.jwtUtil.generateRefreshToken(user.getUsername(), claims);
@@ -125,7 +124,8 @@ public class AuthController {
 		Set<Role> roleEntities = (admin != null) ? admin.getRoles().stream().filter(r -> Integer.valueOf(1).equals(r.getStatus())).collect(Collectors.toSet()) : new HashSet<>();
 
 		List<RoleVO> roleVos = (List<RoleVO>) roleEntities.stream().map(
-				r -> RoleVO.builder().id(r.getId()).roleName(r.getRoleName()).description(r.getDescription()).build())
+				r -> RoleVO.builder().id(r.getId()).roleName(r.getRoleName()).roleCode(r.getRoleCode())
+						.status(r.getStatus()).builtIn(r.getBuiltIn()).description(r.getDescription()).build())
 				.collect(Collectors.toList());
 
 		Set<Permission> permissionEntities = new HashSet<>();
@@ -138,11 +138,11 @@ public class AuthController {
 			roleEntities.stream().filter(r -> r.getMenus() != null).forEach(r -> menuEntities.addAll(r.getMenus()));
 			Set<String> permissionIds = this.rolePermissionRepository.findByRoleIdIn(roleIds).stream()
 					.map(r -> r.getPermissionId()).collect(Collectors.toSet());
-			if (permissionIds.isEmpty()) permissionIds = (Set<String>) relations.stream().map(RoleMenuPermission::getPermissionId).collect(Collectors.toSet());
+			permissionIds.addAll(relations.stream().map(RoleMenuPermission::getPermissionId).collect(Collectors.toSet()));
 			Set<String> menuIds = (Set<String>) relations.stream().map(RoleMenuPermission::getMenuId)
 					.collect(Collectors.toSet());
 			if (!permissionIds.isEmpty()) {
-				permissionEntities.addAll(this.permissionRepository.findAllById(permissionIds));
+				permissionEntities.addAll(this.permissionRepository.findAllById(permissionIds).stream().filter(p -> Integer.valueOf(1).equals(p.getStatus())).toList());
 			}
 			if (!menuIds.isEmpty()) {
 				Set<Menu> directMenus = new HashSet<>(this.menuRepository.findAllById(menuIds));
@@ -207,9 +207,8 @@ public class AuthController {
 			if (user.getStatus() == null || user.getStatus().intValue() != 1) {
 				return ResultData.<Map<String, String>>builder().code("403").msg("user disabled").data(null).build();
 			}
-			Object rolesObj = claims.get("roles");
 			Map<String, Object> newClaims = new HashMap<>();
-			newClaims.put("roles", rolesObj);
+			// 不从旧 Token 复制角色和权限，授权结果始终以数据库为准。
 			newClaims.put("tokenVersion", user.getTokenVersion() == null ? 0 : user.getTokenVersion());
 			String access = this.jwtUtil.generateAccessToken(username, newClaims);
 			this.auditLogService.log(username, "REFRESH", "refreshed access token");

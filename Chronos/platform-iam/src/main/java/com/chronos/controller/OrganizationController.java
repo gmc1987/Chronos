@@ -32,7 +32,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping({ "/admin/organizations" })
-@PreAuthorize("@iamAuthorization.has(authentication, 'iam:organization:manage')")
 public class OrganizationController {
 	@Autowired
 	private IOrganizationService organizationService;
@@ -40,6 +39,7 @@ public class OrganizationController {
 	private IConsumerUserRepository consumerUserRepository;
 
 	@GetMapping({ "/list" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:organization:view','iam:organization:manage','iam:role:authorize')")
 	public ResultData<Page<OrganizationVO>> list(OrganizationDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
 		PageRequest pageRequest = PageRequest.of(page, size);
@@ -69,6 +69,7 @@ public class OrganizationController {
 	}
 
 	@GetMapping({ "/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:organization:view','iam:organization:manage')")
 	public ResultData<OrganizationVO> getById(@PathVariable("id") String id) {
 		OrganizationVO vo = this.organizationService.getById(id);
 		if (vo == null)
@@ -77,11 +78,13 @@ public class OrganizationController {
 	}
 
 	@GetMapping("/{id}/impact")
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:organization:view','iam:organization:manage')")
 	public ResultData<Map<String, Long>> impact(@PathVariable String id) {
 		return ResultData.<Map<String,Long>>builder().code("200").msg("success").data(organizationService.impact(id)).build();
 	}
 
 	@PostMapping
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:organization:create','iam:organization:manage')")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ResultData<Void> create(@Valid @RequestBody OrganizationDTO dto) {
 		this.organizationService.save(dto);
@@ -89,12 +92,14 @@ public class OrganizationController {
 	}
 
 	@PutMapping
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:organization:update','iam:organization:manage')")
 	public ResultData<Void> update(@Valid @RequestBody OrganizationDTO dto) {
 		this.organizationService.update(dto);
 		return ResultData.<Void>builder().code("200").msg("updated").data(null).build();
 	}
 
 	@DeleteMapping({ "/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:organization:delete','iam:organization:manage')")
 	public ResultData<Void> delete(@PathVariable("id") String id) {
 		this.organizationService.delete(id);
 		return ResultData.<Void>builder().code("200").msg("deleted").data(null).build();

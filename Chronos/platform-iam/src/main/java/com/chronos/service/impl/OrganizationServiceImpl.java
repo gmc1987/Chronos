@@ -7,7 +7,8 @@
  import com.chronos.commons.utils.BeanCopyUtil;
  import com.chronos.model.dto.OrganizationDTO;
  import com.chronos.model.pojo.Organization;
- import com.chronos.model.vo.OrganizationVO;
+import com.chronos.model.vo.OrganizationVO;
+import com.chronos.industry.service.IndustryTemplateRegistry;
  import com.chronos.service.iService.IOrganizationService;
  import com.chronos.service.iService.IAuditLogService;
  import java.time.LocalDateTime;
@@ -31,6 +32,7 @@
    @Autowired private IEmployeeAssignmentRepository assignmentRepository;
    @Autowired private IAdminUserRepository userRepository;
    @Autowired private IAuditLogService audit;
+   @Autowired private IndustryTemplateRegistry industryTemplates;
    
    public Page<Organization> pageOrganizations(OrganizationDTO dto, Pageable pageable) {
      return this.organizationRepository.findAll(pageable);
@@ -61,6 +63,7 @@
    
    @Transactional
    public void save(OrganizationDTO dto) {
+     validateOrganizationType(dto.getOrganizationType());
      Organization o = new Organization();
      BeanCopyUtil.copyNonNullProperties(dto, o);
      if (dto.getParentOrganizationId() != null) o.setParentOrgId(organizationRepository.findById(dto.getParentOrganizationId()).orElseThrow(() -> new IllegalArgumentException("parent organization not found")));
@@ -76,6 +79,9 @@
      Optional<Organization> opt = this.organizationRepository.findById(dto.getId());
      if (!opt.isPresent()) throw new IllegalArgumentException("organization not found"); 
      Organization o = opt.get();
+     if (dto.getOrganizationType() != null) {
+       validateOrganizationType(dto.getOrganizationType());
+     }
      if (dto.getOrgCode() != null && !dto.getOrgCode().equals(o.getOrgCode())) throw new IllegalArgumentException("机构编码创建后不允许修改");
      BeanCopyUtil.copyNonNullProperties(dto, o);
      if (dto.getParentOrganizationId() != null) {
@@ -97,4 +103,13 @@
 
    public Map<String,Long> impact(String id){organizationRepository.findById(id).orElseThrow(()->new IllegalArgumentException("organization not found"));return Map.of("departments",unitRepository.countByOrgId(id),"assignments",assignmentRepository.countByOrganizationId(id),"accounts",userRepository.countByOrganizationId(id));}
    private String actor(){var auth=org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();return auth==null?"system":auth.getName();}
+
+   private void validateOrganizationType(String organizationType) {
+     boolean supported = industryTemplates.active().organizationTypes().stream()
+       .anyMatch(item -> item.code().equals(organizationType));
+     if (!supported) {
+       throw new IllegalArgumentException(
+         "organization type is not supported by active industry: " + organizationType);
+     }
+   }
  }

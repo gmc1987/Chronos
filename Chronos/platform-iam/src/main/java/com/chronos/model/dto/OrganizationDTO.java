@@ -26,6 +26,7 @@ public class OrganizationDTO extends BaseDTO implements Serializable {
 	@NotBlank
 	@Size(max = 100)
 	private String orgCode;
+	@NotBlank
 	private String organizationType;
 	private String shortName;
 	private String timezone;

@@ -5,7 +5,7 @@
         <div class="title">角色管理</div>
         <div class="subtitle">配置角色与菜单/按钮权限</div>
       </div>
-      <el-button type="primary" @click="openCreate">新增角色</el-button>
+      <el-button v-permission="['iam:role:create','iam:role:manage']" type="primary" @click="openCreate">新增角色</el-button>
     </div>
 
     <el-table :data="roles" border style="width: 100%">
@@ -14,9 +14,9 @@
       <el-table-column prop="description" label="描述" />
       <el-table-column label="操作" width="220">
         <template #default="scope">
-          <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
+          <el-button v-permission="['iam:role:update','iam:role:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
           <!-- <el-button size="small" @click="openAuth(scope.row)">授权</el-button> -->
-          <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
+          <el-button v-permission="['iam:role:delete','iam:role:manage']" size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

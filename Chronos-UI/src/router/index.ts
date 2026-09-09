@@ -6,6 +6,7 @@ import AdminUsers from '../modules/iam/pages/AdminUsers.vue'
 import AdminMenus from '../modules/iam/pages/AdminMenus.vue'
 import AdminRoles from '../modules/iam/pages/AdminRoles.vue'
 import AdminPermissions from '../modules/iam/pages/AdminPermissions.vue'
+import AdminPermissionDefinitions from '../modules/iam/pages/AdminPermissionDefinitions.vue'
 import AdminOrganizations from '../modules/iam/pages/AdminOrganizations.vue'
 import AdminDirectory from '../modules/iam/pages/AdminDirectory.vue'
 import AdminCustomers from '../modules/iam/pages/AdminCustomers.vue'
@@ -21,6 +22,10 @@ import AdminForms from '../modules/workflow/pages/AdminForms.vue'
 import PortalWorkflowStart from '../modules/workflow/pages/PortalWorkflowStart.vue'
 import PortalWorkflowForms from '../modules/workflow/pages/PortalWorkflowForms.vue'
 import PortalWorkflowTasks from '../modules/workflow/pages/PortalWorkflowTasks.vue'
+import PortalWorkflowDelegations from '../modules/workflow/pages/PortalWorkflowDelegations.vue'
+import PortalWorkflowNotifications from '../modules/workflow/pages/PortalWorkflowNotifications.vue'
+import AdminWorkflowOutbox from '../modules/workflow/pages/AdminWorkflowOutbox.vue'
+import AdminWorkflowIncidents from '../modules/workflow/pages/AdminWorkflowIncidents.vue'
 import AdminAgentLogs from '../modules/ai/pages/AdminAgentLogs.vue'
 import AdminStoryboardPromptProfiles from '../modules/ai/pages/AdminStoryboardPromptProfiles.vue'
 import { isAdminAuthed, mustChangeAdminPassword } from '../store/auth'
@@ -30,6 +35,11 @@ import PortalLayout from '../app/layout/PortalLayout.vue'
 import PortalHome from '../modules/portal/pages/PortalHome.vue'
 import PortalApplications from '../modules/portal/pages/PortalApplications.vue'
 import AdminPortal from '../modules/portal/pages/AdminPortal.vue'
+import AdminPublications from '../modules/message/pages/AdminPublications.vue'
+import AdminNotificationSettings from '../modules/message/pages/AdminNotificationSettings.vue'
+import PortalPublications from '../modules/message/pages/PortalPublications.vue'
+import PortalPublicationDetail from '../modules/message/pages/PortalPublicationDetail.vue'
+import { packagedIndustryRoutes } from '../industries/core'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -43,8 +53,12 @@ const router = createRouter({
         { path: '', name: 'portal-home', component: PortalHome },
         { path: 'apps', name: 'portal-apps', component: PortalApplications },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
+        { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
+        { path: 'workflow-notifications', name: 'portal-workflow-notifications', component: PortalWorkflowNotifications },
         { path: 'workflows', name: 'portal-workflows', component: PortalWorkflowStart },
         { path: 'workflow-instances/:id/forms', name: 'portal-workflow-forms', component: PortalWorkflowForms },
+        { path: 'publications', name: 'portal-publications', component: PortalPublications },
+        { path: 'publications/:id', name: 'portal-publication-detail', component: PortalPublicationDetail },
       ],
     },
     { path: '/admin/login', name: 'admin-login', component: AdminLogin },
@@ -59,6 +73,7 @@ const router = createRouter({
         { path: 'menus', name: 'admin-menus', component: AdminMenus },
         { path: 'roles', name: 'admin-roles', component: AdminRoles },
         { path: 'permissions', name: 'admin-permissions', component: AdminPermissions },
+        { path: 'permission-definitions', name: 'admin-permission-definitions', component: AdminPermissionDefinitions },
         { path: 'organizations', name: 'admin-organizations', component: AdminOrganizations },
         { path: 'directory', name: 'admin-directory', component: AdminDirectory },
         { path: 'customers', name: 'admin-customers', component: AdminCustomers },
@@ -74,6 +89,11 @@ const router = createRouter({
         { path: 'agent/agent-logs', name: 'admin-agent-logs', component: AdminAgentLogs },
         { path: 'storyboard/prompt', name: 'admin-storyboard-prompt', component: AdminStoryboardPromptProfiles },
         { path: 'workflows', name: 'admin-workflows', component: AdminWorkflows },
+        { path: 'workflow/outbox', name: 'admin-workflow-outbox', component: AdminWorkflowOutbox },
+        { path: 'workflow/incidents', name: 'admin-workflow-incidents', component: AdminWorkflowIncidents },
+        { path: 'publications', name: 'admin-publications', component: AdminPublications },
+        { path: 'message-settings', name: 'admin-message-settings', component: AdminNotificationSettings },
+        ...packagedIndustryRoutes(),
       ],
     },
   ],

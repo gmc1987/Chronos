@@ -23,6 +23,11 @@ public class PermissionVO extends BaseVO implements Serializable {
 	private String permissionName;
 	private String permissionCode;
 	private String permissionType;
+	private String menuId;
+	private String actionType;
+	private String resourceType;
+	private String scopeType;
+	private String configJson;
 	private String resourcePattern;
 	private String httpMethod;
 	private Integer status;

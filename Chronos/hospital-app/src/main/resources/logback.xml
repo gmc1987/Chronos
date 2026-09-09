@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration debug="false">
-    <property name="LOG_HOME" value="/Users/gaomingchao/个人/logs/" />
+    <!-- 生产环境通过 CHRONOS_LOG_HOME 指定目录；本地和测试默认写入应用当前目录。 -->
+    <property name="LOG_HOME" value="${CHRONOS_LOG_HOME:-./logs}" />
     <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5level] [%thread] [%-30.30logger{30}] %msg%n"/>
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">

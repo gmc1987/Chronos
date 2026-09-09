@@ -25,12 +25,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping({ "/admin/users" })
-@PreAuthorize("@iamAuthorization.has(authentication, 'iam:user:manage')")
 public class AdminUserController {
 	@Autowired
 	private IAdminUserService adminUserService;
 
 	@GetMapping({ "/list" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:user:view','iam:user:manage')")
 	public ResultData<Page<AdminUser>> list(AdminUserDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
 		PageRequest pageRequest = PageRequest.of(page, size);
@@ -39,6 +39,7 @@ public class AdminUserController {
 	}
 
 	@GetMapping({ "/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:user:view','iam:user:manage')")
 	public ResultData<AdminUserVO> getById(@PathVariable("id") String id) {
 		AdminUserVO vo = this.adminUserService.getUserById(id);
 		if (vo == null)
@@ -47,12 +48,14 @@ public class AdminUserController {
 	}
 
 	@GetMapping("/by-employee/{employeeId}")
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:user:view','iam:user:manage')")
 	public ResultData<AdminUserVO> getByEmployeeId(@PathVariable String employeeId) {
 		AdminUserVO vo = this.adminUserService.getUserByEmployeeId(employeeId);
 		return ResultData.<AdminUserVO>builder().code("200").msg("success").data(vo).build();
 	}
 
 	@PostMapping
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:user:create','iam:user:manage')")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ResultData<Void> create(@Valid @RequestBody AdminUserDTO dto) {
 		this.adminUserService.save(dto);
@@ -60,12 +63,14 @@ public class AdminUserController {
 	}
 
 	@PutMapping
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:user:update','iam:user:manage')")
 	public ResultData<Void> update(@RequestBody AdminUserDTO dto) {
 		this.adminUserService.update(dto);
 		return ResultData.<Void>builder().code("200").msg("updated").data(null).build();
 	}
 
 	@DeleteMapping({ "/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:user:disable','iam:user:manage')")
 	public ResultData<Void> delete(@PathVariable("id") String id) {
 		this.adminUserService.delete(id);
 		return ResultData.<Void>builder().code("200").msg("deleted").data(null).build();

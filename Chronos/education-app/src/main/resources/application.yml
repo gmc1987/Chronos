@@ -1,0 +1,76 @@
+server:
+  port: ${CHRONOS_SERVER_PORT:8080}
+  # 兼容升级前包含大量权限码的历史 JWT；新 Token 已改为最小声明。
+  max-http-request-header-size: ${CHRONOS_MAX_HTTP_REQUEST_HEADER_SIZE:32KB}
+
+security:
+  cors:
+    allowed-origin-patterns: ${CHRONOS_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+  jwt:
+    secret: ${CHRONOS_JWT_SECRET:change-this-education-secret-before-production}
+    expiration-ms: ${CHRONOS_JWT_EXPIRATION_MS:2592000000}
+    refresh-token-expiration-ms: ${CHRONOS_REFRESH_TOKEN_EXPIRATION_MS:2592000000}
+
+spring:
+  application:
+    name: Chronos-Education
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    url: ${CHRONOS_DB_URL:jdbc:postgresql://localhost:5432/ChronosEducation}
+    username: ${CHRONOS_DB_USERNAME:Chronos}
+    password: ${CHRONOS_DB_PASSWORD:Chronos123}
+    driver-class-name: org.postgresql.Driver
+  servlet:
+    multipart:
+      max-request-size: 50MB
+      max-file-size: 20MB
+  jpa:
+    database: postgresql
+    hibernate:
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+      ddl-auto: ${CHRONOS_JPA_DDL_AUTO:update}
+    open-in-view: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: ${CHRONOS_REDIS_HOST:127.0.0.1}
+      port: ${CHRONOS_REDIS_PORT:6379}
+  ai:
+    deepseek:
+      chat:
+        # 生产密钥只允许通过环境变量注入，仓库不保留真实凭据。
+        api-key: ${CHRONOS_DEEPSEEK_CHAT_API_KEY:disabled}
+        base-url: ${CHRONOS_DEEPSEEK_CHAT_BASE_URL:https://api.deepseek.com}
+        model: ${CHRONOS_DEEPSEEK_CHAT_MODEL:deepseek-chat}
+          
+
+flowable:
+  database-schema-update: ${CHRONOS_FLOWABLE_SCHEMA_UPDATE:true}
+  async-executor-activate: true
+  history-level: audit
+
+minio:
+  endpoint: ${CHRONOS_MINIO_ENDPOINT:http://127.0.0.1:9000}
+  accessKey: ${CHRONOS_MINIO_ACCESS_KEY:minioadmin}
+  secretKey: ${CHRONOS_MINIO_SECRET_KEY:minioadmin}
+
+chronos:
+  industry:
+    active: EDUCATION
+  message:
+    storage-type: ${CHRONOS_MESSAGE_STORAGE_TYPE:LOCAL}
+    storage-path: ${CHRONOS_MESSAGE_STORAGE_PATH:./data/publications}
+    minio-bucket: ${CHRONOS_MESSAGE_MINIO_BUCKET:chronos-education-publications}
+    lifecycle-delay-ms: ${CHRONOS_MESSAGE_LIFECYCLE_DELAY_MS:30000}
+    delivery-delay-ms: ${CHRONOS_MESSAGE_DELIVERY_DELAY_MS:10000}
+  workflow:
+    executors:
+      http:
+        enabled: ${WORKFLOW_HTTP_EXECUTOR_ENABLED:false}
+        allowed-hosts: ${WORKFLOW_HTTP_ALLOWED_HOSTS:}
+      agent:
+        enabled: ${WORKFLOW_AGENT_EXECUTOR_ENABLED:false}
+        base-url: ${WORKFLOW_AGENT_BASE_URL:}

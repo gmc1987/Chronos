@@ -3,13 +3,13 @@
     <div class="header">
       <div>
         <div class="title">机构管理</div>
-        <div class="subtitle">维护医院、院区及上级隶属关系，作为全平台组织主数据</div>
+        <div class="subtitle">维护{{ branding.organizationLabel }}及上级隶属关系，作为全平台组织主数据</div>
       </div>
-      <el-button type="primary" @click="openCreate">新增机构</el-button>
+      <el-button v-permission="['iam:organization:create','iam:organization:manage']" type="primary" @click="openCreate">新增机构</el-button>
     </div>
 
     <el-table :data="orgs" border style="width: 100%">
-      <el-table-column prop="organizationName" label="医院/院区名称" min-width="180" />
+      <el-table-column prop="organizationName" :label="`${branding.organizationLabel}名称`" min-width="180" />
       <el-table-column prop="shortName" label="简称" />
       <el-table-column prop="orgCode" label="机构编码" />
       <el-table-column label="机构类型">
@@ -19,8 +19,8 @@
       <el-table-column label="状态" width="90"><template #default="scope"><el-tag :type="scope.row.status === 1 ? 'success' : 'info'">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag></template></el-table-column>
       <el-table-column label="操作" width="180">
         <template #default="scope">
-          <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
+          <el-button v-permission="['iam:organization:update','iam:organization:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
+          <el-button v-permission="['iam:organization:delete','iam:organization:manage']" size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -37,7 +37,7 @@
       />
     </div>
 
-    <el-dialog v-model="showDialog" width="640px" :title="dialogMode === 'create' ? '新增医院机构' : '编辑医院机构'">
+    <el-dialog v-model="showDialog" width="640px" :title="dialogMode === 'create' ? '新增机构' : '编辑机构'">
       <el-form label-width="100px">
         <el-form-item label="机构名称">
           <el-input v-model="form.organizationName" />
@@ -50,7 +50,12 @@
         </el-form-item>
         <el-form-item label="机构类型">
           <el-select v-model="form.organizationType" style="width:100%">
-            <el-option label="医院" value="HOSPITAL" /><el-option label="院区" value="CAMPUS" /><el-option label="医疗集团" value="MEDICAL_GROUP" />
+            <el-option
+              v-for="item in organizationTypes"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="状态"><el-switch v-model="enabled" active-text="启用" inactive-text="停用" /></el-form-item>
@@ -75,7 +80,12 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { orgList, orgDetail, createOrg, updateOrg, deleteOrg, orgImpact } from '../api'
+import { orgList, orgDetail, createOrg, updateOrg, deleteOrg, orgImpact, dictionaryOptions } from '../api'
+import { industryBranding } from '../../../industries/core'
+
+const branding = industryBranding
+const organizationTypes = ref([])
+const defaultOrganizationType = () => organizationTypes.value[0]?.value || ''
 
 const orgs = ref([])
 const total = ref(0)
@@ -92,17 +102,20 @@ const form = ref({
   mailingAddress: '',
   tel: '',
   organizationManager: '',
-  organizationType: 'HOSPITAL', shortName: '', timezone: 'Asia/Shanghai', status: 1, sortOrder: 0,
+  organizationType: defaultOrganizationType(), shortName: '', timezone: 'Asia/Shanghai', status: 1, sortOrder: 0,
 })
 const enabled = ref(true)
 
-const organizationTypeLabels = {
-  HOSPITAL: '医院',
-  CAMPUS: '院区',
-  MEDICAL_GROUP: '医疗集团',
-}
+const organizationTypeLabel = (type) => organizationTypes.value
+  .find((item) => item.value === type)?.label || type || '-'
 
-const organizationTypeLabel = (type) => organizationTypeLabels[type] || type || '-'
+const loadOrganizationTypes = async () => {
+  const response = await dictionaryOptions('IAM_ORGANIZATION_TYPE')
+  organizationTypes.value = (response?.data || []).map((item) => ({
+    label: item.dictName,
+    value: item.dictValue,
+  }))
+}
 
 const load = async () => {
   const res = await orgList({ page: page.value - 1, size: size.value })
@@ -122,7 +135,18 @@ const onSizeChange = (val) => {
 
 const openCreate = async () => {
   dialogMode.value = 'create'
-  form.value = { organizationName: '', orgCode: '', shortName: '', organizationType: 'HOSPITAL', timezone: 'Asia/Shanghai', status: 1, sortOrder: 0, description: '', mailingAddress: '', tel: '' }
+  form.value = {
+    organizationName: '',
+    orgCode: '',
+    shortName: '',
+    organizationType: defaultOrganizationType(),
+    timezone: 'Asia/Shanghai',
+    status: 1,
+    sortOrder: 0,
+    description: '',
+    mailingAddress: '',
+    tel: '',
+  }
   enabled.value = true
   showDialog.value = true
 }
@@ -154,7 +178,12 @@ const remove = async (row) => {
   load()
 }
 
-load()
+const init = async () => {
+  await loadOrganizationTypes()
+  await load()
+}
+
+init()
 </script>
 
 <style scoped>

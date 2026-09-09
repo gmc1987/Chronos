@@ -31,13 +31,13 @@ import org.springframework.security.access.prepost.PreAuthorize;
  
  @RestController
  @RequestMapping({"/admin/menus"})
- @PreAuthorize("@iamAuthorization.has(authentication, 'iam:menu:manage')")
  public class MenuController
  {
    @Autowired
    private IMenuService menuService;
    
    @GetMapping({"/list"})
+   @PreAuthorize("@iamAuthorization.any(authentication, 'iam:menu:view','iam:menu:manage','iam:role:authorize','iam:permission:view')")
    public ResultData<Page<Menu>> list(MenuDTO dto, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
      PageRequest pageRequest = PageRequest.of(page, size);
      Page<Menu> items = this.menuService.pageMenus(dto, (Pageable)pageRequest);
@@ -45,6 +45,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
    }
    
    @GetMapping({"/{id}"})
+   @PreAuthorize("@iamAuthorization.any(authentication, 'iam:menu:view','iam:menu:manage')")
    public ResultData<MenuVO> getById(@PathVariable("id") String id) {
      MenuVO vo = this.menuService.getMenuById(id);
      if (vo == null) return ResultData.<MenuVO>builder().code("404").msg("not found").data(null).build(); 
@@ -52,12 +53,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
    }
    
    @GetMapping({"/tree"})
+   @PreAuthorize("@iamAuthorization.any(authentication, 'iam:menu:view','iam:menu:manage','iam:role:authorize','iam:permission:view')")
    public ResultData<List<MenuVO>> tree() {
      List<MenuVO> tree = this.menuService.getMenuTree();
      return ResultData.<List<MenuVO>>builder().code("200").msg("success").data(tree).build();
    }
    
    @PostMapping
+   @PreAuthorize("@iamAuthorization.any(authentication, 'iam:menu:create','iam:menu:manage')")
    @ResponseStatus(HttpStatus.CREATED)
    public ResultData<Void> create(@Valid @RequestBody MenuDTO dto) {
      this.menuService.save(dto);
@@ -65,12 +68,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
    }
    
    @PutMapping
+   @PreAuthorize("@iamAuthorization.any(authentication, 'iam:menu:update','iam:menu:manage')")
    public ResultData<Void> update(@Valid @RequestBody MenuDTO dto) {
      this.menuService.update(dto);
      return ResultData.<Void>builder().code("200").msg("updated").data(null).build();
    }
    
    @DeleteMapping({"/{id}"})
+   @PreAuthorize("@iamAuthorization.any(authentication, 'iam:menu:delete','iam:menu:manage')")
    public ResultData<Void> delete(@PathVariable("id") String id) {
      this.menuService.delete(id);
      return ResultData.<Void>builder().code("200").msg("deleted").data(null).build();

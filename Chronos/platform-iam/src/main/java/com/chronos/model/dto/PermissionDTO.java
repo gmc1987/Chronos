@@ -20,6 +20,8 @@ import lombok.Setter;
 @Setter
 public class PermissionDTO extends BaseDTO implements Serializable {
 	private String id;
+	@Size(max = 200)
+	private String keyword;
 	@NotBlank
 	@Size(max = 200)
 	private String permissionName;
@@ -29,6 +31,15 @@ public class PermissionDTO extends BaseDTO implements Serializable {
 	private String permissionCode;
 	@Size(max = 32)
 	private String permissionType;
+	@Size(max = 64)
+	private String menuId;
+	@Size(max = 32)
+	private String actionType;
+	@Size(max = 64)
+	private String resourceType;
+	@Size(max = 32)
+	private String scopeType;
+	private String configJson;
 	@Size(max = 500)
 	private String resourcePattern;
 	@Size(max = 16)

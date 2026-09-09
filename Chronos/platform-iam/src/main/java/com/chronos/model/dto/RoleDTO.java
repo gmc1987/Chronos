@@ -33,6 +33,8 @@ public class RoleDTO extends BaseDTO implements Serializable {
 
 	@Generated
 	private Set<String> permissionIds;
+	private Set<String> workflowPermissionIds;
+	private Set<String> menuActionPermissionIds;
 	private Set<String> menuIds;
 	private List<RoleMenuPermissionDTO> menuPermissions;
 	private List<RoleDataScopeDTO> dataScopes;

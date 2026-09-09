@@ -6,6 +6,7 @@ import com.chronos.Idao.IRoleRepository;
 import com.chronos.Idao.IRolePermissionRepository;
 import com.chronos.Idao.IRoleDataScopeRepository;
 import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.Idao.IPermissionRepository;
 import com.chronos.commons.utils.BeanCopyUtil;
 import com.chronos.model.dto.RoleDTO;
 import com.chronos.model.dto.RoleMenuPermissionDTO;
@@ -45,6 +46,7 @@ public class RoleServiceImpl implements IRoleService {
 	@Autowired private IRolePermissionRepository rolePermissionRepository;
 	@Autowired private IRoleDataScopeRepository roleDataScopeRepository;
 	@Autowired private IAdminUserRepository adminUserRepository;
+	@Autowired private IPermissionRepository permissionRepository;
 	@Autowired private IRefreshTokenService refreshTokenService;
 	@Autowired private IAuditLogService auditLogService;
 
@@ -85,11 +87,19 @@ public class RoleServiceImpl implements IRoleService {
 		Set<String> permissionIds = rolePermissionRepository.findByRoleId(r.getId()).stream()
 				.map(RolePermission::getPermissionId).collect(Collectors.toSet());
 		if (permissionIds.isEmpty()) permissionIds = relations.stream().map(RoleMenuPermission::getPermissionId).collect(Collectors.toSet());
+		Set<String> workflowPermissionIds = permissionRepository.findAllById(permissionIds).stream()
+				.filter(p -> "WORKFLOW".equalsIgnoreCase(p.getPermissionType()))
+				.map(com.chronos.model.pojo.BaseEntity::getId).collect(Collectors.toSet());
+		var assignedPermissions = permissionRepository.findAllById(permissionIds);
+		Set<String> menuActionPermissionIds = assignedPermissions.stream().filter(p -> "MENU_ACTION".equalsIgnoreCase(p.getPermissionType()))
+				.map(com.chronos.model.pojo.BaseEntity::getId).collect(Collectors.toSet());
 
 		// 4. menu -> permissionIds 映射
 		Map<String, Set<String>> menuPermissionMap = relations.stream()
 				.collect(Collectors.groupingBy(RoleMenuPermission::getMenuId,
 						Collectors.mapping(RoleMenuPermission::getPermissionId, Collectors.toSet())));
+		assignedPermissions.stream().filter(p -> "MENU_ACTION".equalsIgnoreCase(p.getPermissionType()) && p.getMenuId() != null)
+				.forEach(p -> menuPermissionMap.computeIfAbsent(p.getMenuId(), key -> new HashSet<>()).add(p.getId()));
 
 		// 5. 转 DTO
 		List<RoleMenuPermissionDTO> menuPermissions = menuPermissionMap.entrySet().stream()
@@ -101,7 +111,8 @@ public class RoleServiceImpl implements IRoleService {
 						.organizationUnitId(s.getOrganizationUnitId()).employeeId(s.getEmployeeId()).build()).toList();
 		return RoleDetailVO.builder().id(r.getId()).roleName(r.getRoleName()).roleCode(r.getRoleCode())
 				.status(r.getStatus()).builtIn(r.getBuiltIn()).description(r.getDescription())
-				.menuIds(menuIds).permissionIds(permissionIds).menuPermissions(menuPermissions).dataScopes(scopes).build();
+				.menuIds(menuIds).permissionIds(permissionIds).workflowPermissionIds(workflowPermissionIds).menuActionPermissionIds(menuActionPermissionIds)
+				.menuPermissions(menuPermissions).dataScopes(scopes).build();
 	}
 
 	@Transactional
@@ -121,6 +132,8 @@ public class RoleServiceImpl implements IRoleService {
 		this.roleRepository.save(r);
 		persistMenuPermissions(r.getId(), dto);
 		persistRolePermissions(r.getId(), dto);
+		persistWorkflowPermissions(r.getId(), dto);
+		persistMenuActionPermissions(r.getId(), dto);
 		persistDataScopes(r.getId(), dto);
 	}
 
@@ -147,6 +160,8 @@ public class RoleServiceImpl implements IRoleService {
 		this.roleRepository.save(r);
 		persistMenuPermissions(r.getId(), dto);
 		persistRolePermissions(r.getId(), dto);
+		persistWorkflowPermissions(r.getId(), dto);
+		persistMenuActionPermissions(r.getId(), dto);
 		persistDataScopes(r.getId(), dto);
 		invalidateRoleUsers(r.getId());
 		var auth=org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();auditLogService.log(auth==null?"system":auth.getName(),"ROLE_AUTHORIZATION_UPDATE","roleId="+r.getId());
@@ -187,7 +202,9 @@ public class RoleServiceImpl implements IRoleService {
 			}
 		}
 		if (dto.getDataScopes() != null) {
-			Set<String> allowed = Set.of("ALL", "ORGANIZATION", "DEPARTMENT", "DEPARTMENT_AND_CHILDREN", "SELF", "CUSTOM_ORGANIZATION", "CUSTOM_DEPARTMENT", "CUSTOM_EMPLOYEE");
+			Set<String> allowed = permissionRepository.findAll().stream()
+					.filter(p -> "DATA".equalsIgnoreCase(p.getPermissionType()) && Integer.valueOf(1).equals(p.getStatus()))
+					.map(p -> p.getScopeType()).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
 			for (RoleDataScopeDTO scope : dto.getDataScopes()) {
 				if (scope.getScopeType() == null || !allowed.contains(scope.getScopeType())) throw new IllegalArgumentException("invalid data scope type");
 			}
@@ -220,6 +237,10 @@ public class RoleServiceImpl implements IRoleService {
 				for (String permId : item.getPermissionIds()) {
 					if (permId == null || permId.isEmpty())
 						continue;
+					var permission = permissionRepository.findById(permId).orElse(null);
+					if (permission == null || !"MENU_ACTION".equalsIgnoreCase(permission.getPermissionType())
+							|| !Integer.valueOf(1).equals(permission.getStatus()) || !item.getMenuId().equals(permission.getMenuId()))
+						throw new IllegalArgumentException("permission does not belong to menu");
 					relations.add(new RoleMenuPermission(roleId, item.getMenuId(), permId));
 				}
 			}
@@ -236,16 +257,40 @@ public class RoleServiceImpl implements IRoleService {
 	}
 
 	private void persistRolePermissions(String roleId, RoleDTO dto) {
-		if (roleId == null || dto == null
-				|| (dto.getPermissionIds() == null && dto.getMenuPermissions() == null)) return;
+		if (roleId == null || dto == null || dto.getPermissionIds() == null) return;
 		rolePermissionRepository.deleteByRoleId(roleId);
 		Set<String> permissionIds = dto.getPermissionIds();
-		if ((permissionIds == null || permissionIds.isEmpty()) && dto.getMenuPermissions() != null) {
-			permissionIds = dto.getMenuPermissions().stream().filter(i -> i.getPermissionIds() != null)
-					.flatMap(i -> i.getPermissionIds().stream()).collect(Collectors.toSet());
-		}
 		if (permissionIds != null) rolePermissionRepository.saveAll(permissionIds.stream()
 				.filter(id -> id != null && !id.isBlank()).map(id -> new RolePermission(roleId, id)).toList());
+	}
+
+	private void persistWorkflowPermissions(String roleId, RoleDTO dto) {
+		if (roleId == null || dto == null || dto.getWorkflowPermissionIds() == null) return;
+		List<RolePermission> existing = rolePermissionRepository.findByRoleId(roleId);
+		Set<String> existingIds = existing.stream().map(RolePermission::getPermissionId).collect(Collectors.toSet());
+		Set<String> workflowIds = permissionRepository.findAllById(existingIds).stream()
+				.filter(p -> "WORKFLOW".equalsIgnoreCase(p.getPermissionType()))
+				.map(com.chronos.model.pojo.BaseEntity::getId).collect(Collectors.toSet());
+		if (!workflowIds.isEmpty()) rolePermissionRepository.deleteAll(existing.stream()
+				.filter(item -> workflowIds.contains(item.getPermissionId())).toList());
+		Set<String> selected = permissionRepository.findAllById(dto.getWorkflowPermissionIds()).stream()
+				.filter(p -> "WORKFLOW".equalsIgnoreCase(p.getPermissionType()) && Integer.valueOf(1).equals(p.getStatus()))
+				.map(com.chronos.model.pojo.BaseEntity::getId).collect(Collectors.toSet());
+		rolePermissionRepository.saveAll(selected.stream().map(id -> new RolePermission(roleId, id)).toList());
+	}
+
+	private void persistMenuActionPermissions(String roleId, RoleDTO dto) {
+		if (roleId == null || dto == null || dto.getMenuActionPermissionIds() == null) return;
+		roleMenuPermissionRepository.deleteByRoleId(roleId);
+		List<RolePermission> existing = rolePermissionRepository.findByRoleId(roleId);
+		Set<String> existingIds = existing.stream().map(RolePermission::getPermissionId).collect(Collectors.toSet());
+		Set<String> actionIds = permissionRepository.findAllById(existingIds).stream().filter(p -> "MENU_ACTION".equalsIgnoreCase(p.getPermissionType()))
+				.map(com.chronos.model.pojo.BaseEntity::getId).collect(Collectors.toSet());
+		rolePermissionRepository.deleteAll(existing.stream().filter(item -> actionIds.contains(item.getPermissionId())).toList());
+		Set<String> selected = permissionRepository.findAllById(dto.getMenuActionPermissionIds()).stream()
+				.filter(p -> "MENU_ACTION".equalsIgnoreCase(p.getPermissionType()) && Integer.valueOf(1).equals(p.getStatus()) && p.getMenuId() != null)
+				.map(com.chronos.model.pojo.BaseEntity::getId).collect(Collectors.toSet());
+		rolePermissionRepository.saveAll(selected.stream().map(id -> new RolePermission(roleId,id)).toList());
 	}
 
 	private void persistDataScopes(String roleId, RoleDTO dto) {

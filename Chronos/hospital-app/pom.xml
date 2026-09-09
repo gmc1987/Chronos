@@ -12,6 +12,9 @@
     <dependency><groupId>com.chronos</groupId><artifactId>platform-workflow</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.chronos</groupId><artifactId>platform-file</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.chronos</groupId><artifactId>platform-message</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.chronos</groupId><artifactId>platform-industry</artifactId><version>${project.version}</version></dependency>
+    <!-- 医院部署只引用医院模板和医院业务模块。 -->
+    <dependency><groupId>com.chronos</groupId><artifactId>industry-hospital-template</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.chronos</groupId><artifactId>hospital-oa</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.chronos</groupId><artifactId>ai-gateway</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.chronos</groupId><artifactId>agent-runtime</artifactId><version>${project.version}</version></dependency>
@@ -25,5 +28,17 @@
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
   </dependencies>
-  <build><plugins><plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <!-- 医院行业模块是可启动应用，覆盖父工程的默认跳过配置。 -->
+          <skip>false</skip>
+          <mainClass>com.chronos.ChronosApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

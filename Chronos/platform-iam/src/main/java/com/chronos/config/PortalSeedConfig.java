@@ -21,7 +21,7 @@ public class PortalSeedConfig {
                     app("oa", "协同办公", "请假、出差、用车与用印", "OfficeBuilding", "/portal/apps", 20),
                     app("document", "公文中心", "收文、发文与公文查询", "Document", "/portal/apps", 30),
                     app("file", "文件中心", "文件上传、预览和权限管理", "Folder", "/portal/apps", 40),
-                    app("knowledge", "知识中心", "医院制度、规范与知识检索", "Collection", "/portal/apps", 50),
+                    app("knowledge", "知识中心", "制度、规范与知识检索", "Collection", "/portal/apps", 50),
                     app("ai", "AI 智能中心", "AI 助手与智能业务能力", "MagicStick", "/portal/apps", 60)
                 ));
             }
@@ -37,6 +37,24 @@ public class PortalSeedConfig {
                     widget("data-card", "数据概览", "DataCardWidget", "DATA", "LARGE", 80)
                 ));
             }
+
+			// 流程卡片只向具备流程实例查看权限的用户展示，兼容既有数据库中的种子记录。
+			widgets.findByWidgetCode("todo").ifPresent(widget -> {
+				widget.setRequiredPermission("workflow:instance:view");
+				widgets.save(widget);
+			});
+			widgets.findByWidgetCode("supervision").ifPresent(widget -> {
+				widget.setRequiredPermission("workflow:instance:view");
+				widgets.save(widget);
+			});
+			widgets.findByWidgetCode("announcement").ifPresent(widget -> {
+				widget.setRequiredPermission("message:publication:read");
+				widgets.save(widget);
+			});
+			widgets.findByWidgetCode("notice").ifPresent(widget -> {
+				widget.setRequiredPermission("message:publication:read");
+				widgets.save(widget);
+			});
         };
     }
 

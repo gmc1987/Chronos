@@ -119,6 +119,31 @@ export const getAdminMenus = () => {
   }
 }
 
+export const getAdminPermissions = () => {
+  const raw = localStorage.getItem(ADMIN_PERMS) || sessionStorage.getItem(ADMIN_PERMS)
+  if (!raw) return []
+  try {
+    const permissions = JSON.parse(raw) || []
+    return permissions
+      .map((permission) => typeof permission === 'string' ? permission : permission?.permissionCode)
+      .filter(Boolean)
+  } catch { return [] }
+}
+
+export const getAdminRoles = () => {
+  const raw = localStorage.getItem(ADMIN_ROLES) || sessionStorage.getItem(ADMIN_ROLES)
+  if (!raw) return []
+  try { return JSON.parse(raw) || [] } catch { return [] }
+}
+
+export const hasAdminPermission = (...codes) => {
+  const permissions = getAdminPermissions()
+  const superAdmin = getAdminRoles().some((role) =>
+    (typeof role === 'string' ? role : role?.roleCode)?.toUpperCase() === 'SUPER_ADMIN'
+  )
+  return superAdmin || permissions.includes('*:*') || permissions.includes('iam:*') || codes.some(code => permissions.includes(code))
+}
+
 export const isAdminAuthed = () => !!getAdminToken()
 export const mustChangeAdminPassword = () =>
   (localStorage.getItem(ADMIN_MUST_CHANGE_PASSWORD) || sessionStorage.getItem(ADMIN_MUST_CHANGE_PASSWORD)) === 'true'

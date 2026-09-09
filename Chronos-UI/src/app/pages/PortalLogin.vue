@@ -2,7 +2,7 @@
   <div class="portal-login">
     <section class="portal-login-intro">
       <div class="portal-login-brand">CHRONOS</div>
-      <h1>医院智慧协同办公平台</h1>
+      <h1>{{ branding.loginTitle }}</h1>
       <p>统一入口连接流程、办公、公文、知识与 AI，让每一项工作清晰抵达。</p>
       <div class="portal-login-points">
         <span>统一待办</span><span>智能办公</span><span>安全协同</span>
@@ -10,7 +10,7 @@
     </section>
     <form class="portal-login-card" @submit.prevent="submit">
       <div class="portal-login-card__title">欢迎回来</div>
-      <div class="portal-login-card__sub">使用医院统一账号登录</div>
+      <div class="portal-login-card__sub">{{ branding.loginSubtitle }}</div>
       <label><span>账号</span><input v-model.trim="username" autocomplete="username" placeholder="请输入账号" /></label>
       <label><span>密码</span><input v-model="password" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
       <label class="portal-remember"><input v-model="remember" type="checkbox" />保持登录</label>
@@ -26,6 +26,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { adminLogin } from '../../api/admin'
 import { saveAdminMeta, saveAdminTokens } from '../../store/auth'
+import { industryBranding } from '../../industries/core'
 
 const router = useRouter()
 const username = ref('')
@@ -33,6 +34,7 @@ const password = ref('')
 const remember = ref(true)
 const loading = ref(false)
 const error = ref('')
+const branding = industryBranding
 
 const submit = async () => {
   if (!username.value || !password.value) { error.value = '请输入账号和密码'; return }

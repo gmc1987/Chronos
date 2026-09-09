@@ -24,7 +24,8 @@ import lombok.Setter;
 public class RefreshToken extends BaseEntity {
 	private static final long serialVersionUID = 1L;
 	
-	@Column(name = "token", length = 1000, nullable = false, unique = true)
+	// New records store a SHA-256 hex digest, never the bearer token itself.
+	@Column(name = "token", columnDefinition = "text", nullable = false, unique = true)
 	private String token;
 
 	@Column(name = "username", length = 200, nullable = false)

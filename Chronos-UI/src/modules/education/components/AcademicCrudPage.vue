@@ -1,0 +1,85 @@
+<template>
+  <div class="page">
+    <header>
+      <div><h2>{{ title }}</h2><p>{{ description }}</p></div>
+      <el-button type="primary" @click="openCreate">新增{{ entityLabel }}</el-button>
+    </header>
+    <el-table :data="rows" border>
+      <el-table-column
+        v-for="column in columns"
+        :key="column.prop"
+        :label="column.label"
+        :prop="column.prop"
+      >
+        <template #default="scope">
+          {{ displayValue(column, scope.row[column.prop]) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150">
+        <template #default="scope">
+          <el-button link type="primary" @click="openEdit(scope.row)">编辑</el-button>
+          <el-button v-if="deleter" link type="danger" @click="remove(scope.row)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <el-dialog v-model="dialog" :title="`${form.id ? '编辑' : '新增'}${entityLabel}`" width="640px">
+      <el-form label-width="110px">
+        <el-form-item v-for="field in fields" :key="field.prop" :label="field.label">
+          <el-select v-if="field.dictCode" v-model="form[field.prop]"><el-option v-for="option in dictionaryData[field.dictCode] || []" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+          <el-select v-else-if="field.options" v-model="form[field.prop]"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+          <el-date-picker v-else-if="field.type === 'date'" v-model="form[field.prop]" value-format="YYYY-MM-DD" />
+          <el-input-number v-else-if="field.type === 'number'" v-model="form[field.prop]" :min="field.min ?? 0" />
+          <el-switch v-else-if="field.type === 'boolean'" v-model="form[field.prop]" />
+          <el-select v-else-if="field.lookup" v-model="form[field.prop]" filterable><el-option v-for="option in lookupData[field.lookup] || []" :key="option.id" :label="option[field.labelProp]" :value="option.id" /></el-select>
+          <el-input v-else v-model="form[field.prop]" />
+        </el-form-item>
+      </el-form>
+      <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { dictionaryOptions } from '../../../api/admin'
+
+const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, lookups: { type: Array, default: () => [] } })
+const rows = ref([]); const dialog = ref(false); const form = reactive({}); const lookupData = reactive({}); const dictionaryData = reactive({})
+const reset = value => { Object.keys(form).forEach(key => delete form[key]); Object.assign(form, value) }
+const load = async () => { const response = await props.loader(); rows.value = response.data || [] }
+const loadLookups = async () => { for (const item of props.lookups) { const response = await item.loader(); lookupData[item.key] = response.data || [] } }
+const loadDictionaries = async () => {
+  const codes = [...new Set((props.fields || []).map(field => field.dictCode).filter(Boolean))]
+  await Promise.all(codes.map(async code => {
+    const response = await dictionaryOptions(code)
+    dictionaryData[code] = (response?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
+  }))
+}
+const openCreate = () => { reset({ ...(props.defaults || {}) }); dialog.value = true }
+const openEdit = row => { reset({ ...row }); dialog.value = true }
+const save = async () => { await (form.id ? props.updater(form.id, form) : props.creator(form)); dialog.value = false; ElMessage.success('保存成功'); await load(); await loadLookups() }
+const displayValue = (column, value) => {
+  if (column.dictCode) {
+    return dictionaryData[column.dictCode]?.find(option => option.value === value)?.label || value || '-'
+  }
+  if (column.lookup) {
+    const lookup = props.lookups.find(item => item.key === column.lookup)
+    return lookupData[column.lookup]?.find(option => option.id === value)?.[lookup?.labelProp] || value || '-'
+  }
+  if (column.type === 'boolean') return value ? '是' : '否'
+  return value ?? '-'
+}
+const remove = async row => {
+  await ElMessageBox.confirm(`确认删除${props.entityLabel}“${row[props.columns[0]?.prop] || ''}”？`, '删除确认', { type: 'warning' })
+  await props.deleter(row.id)
+  ElMessage.success('删除成功')
+  await load()
+}
+onMounted(async () => { await Promise.all([loadLookups(), loadDictionaries()]); await load() })
+</script>
+
+<style scoped>
+.page { padding: 24px; } header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+h2 { margin: 0 0 6px; } p { margin: 0; color: #84909a; }
+</style>

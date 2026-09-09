@@ -5,7 +5,7 @@
         <div class="title">字典维护</div>
         <div class="subtitle">维护字典项（树形结构）</div>
       </div>
-      <el-button type="primary" @click="openCreate">新增字典</el-button>
+      <el-button v-permission="['iam:dictionary:create','iam:dictionary:manage']" type="primary" @click="openCreate">新增字典</el-button>
     </div>
 
     <el-tree
@@ -19,9 +19,9 @@
         <div class="tree-row">
           <span>{{ data.dictName }} ({{ data.dictCode || data.dictValue }})</span>
           <div class="tree-actions">
-            <el-button size="small" @click="openCreate(data)">新增</el-button>
-            <el-button size="small" @click="openEdit(data)">编辑</el-button>
-            <el-button size="small" type="danger" @click="remove(data)">删除</el-button>
+            <el-button v-permission="['iam:dictionary:create','iam:dictionary:manage']" size="small" @click="openCreate(data)">新增</el-button>
+            <el-button v-permission="['iam:dictionary:update','iam:dictionary:manage']" size="small" @click="openEdit(data)">编辑</el-button>
+            <el-button v-permission="['iam:dictionary:delete','iam:dictionary:manage']" size="small" type="danger" @click="remove(data)">删除</el-button>
           </div>
         </div>
       </template>

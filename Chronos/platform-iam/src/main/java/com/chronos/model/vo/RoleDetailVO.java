@@ -30,6 +30,8 @@ public class RoleDetailVO extends BaseVO implements Serializable {
 	private String description;
 	private Set<String> menuIds;
 	private Set<String> permissionIds;
+	private Set<String> workflowPermissionIds;
+	private Set<String> menuActionPermissionIds;
 	private List<RoleMenuPermissionDTO> menuPermissions;
 	private List<com.chronos.model.dto.RoleDataScopeDTO> dataScopes;
 

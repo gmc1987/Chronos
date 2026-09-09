@@ -12,6 +12,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IPermissionRepository;
@@ -33,6 +34,12 @@ public class AdminUserDetailsService implements UserDetailsService {
 
 	public AdminUser loadAccount(String username) { return adminUserRepository.findByUsername(username); }
 
+	/**
+	 * 安全过滤器在 MVC 的 OpenEntityManagerInView 之前执行。
+	 * 因此认证所需的角色和权限必须在这里的事务内完成加载，不能依赖请求级 Session。
+	 */
+	@Override
+	@Transactional
 	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
 		AdminUser u = this.adminUserRepository.findByUsername(username);
 		if (u == null)
@@ -49,11 +56,12 @@ public class AdminUserDetailsService implements UserDetailsService {
 					.forEach(authorities::add);
 			var roleIds = u.getRoles().stream().filter(r -> Integer.valueOf(1).equals(r.getStatus())).map(BaseEntity::getId).toList();
 			if (!roleIds.isEmpty()) {
-				var permissionIds = rolePermissionRepository.findByRoleIdIn(roleIds).stream()
-						.map(r -> r.getPermissionId()).distinct().toList();
-				if (permissionIds.isEmpty()) permissionIds = roleMenuPermissionRepository.findByRoleIdIn(roleIds).stream()
-						.map(r -> r.getPermissionId()).distinct().toList();
+				var permissionIds = java.util.stream.Stream.concat(
+						rolePermissionRepository.findByRoleIdIn(roleIds).stream().map(r -> r.getPermissionId()),
+						roleMenuPermissionRepository.findByRoleIdIn(roleIds).stream().map(r -> r.getPermissionId()))
+						.distinct().toList();
 				permissionRepository.findAllById(permissionIds).stream()
+						.filter(p -> Integer.valueOf(1).equals(p.getStatus()))
 						.map(p -> new SimpleGrantedAuthority(p.getPermissionCode()))
 						.forEach(authorities::add);
 			}

@@ -1,21 +1,30 @@
 <template>
   <aside class="admin-sidebar" :class="{ collapsed }">
     <div class="brand">
-      <RouterLink class="admin-brand" to="/admin/overview"><span>C</span><div><strong>Chronos</strong><small>医院智慧办公</small></div></RouterLink>
+      <RouterLink class="admin-brand" to="/admin/overview"><span>C</span><div><strong>Chronos</strong><small>{{ branding.portalSubtitle }}</small></div></RouterLink>
       <button class="collapse-btn" aria-label="收起导航" @click="collapsed = !collapsed">{{ collapsed ? '›' : '‹' }}</button>
     </div>
     <nav class="admin-nav">
-      <RouterLink
-        v-for="item in topLinks"
-        :key="item.path"
-        :to="item.path"
-        class="admin-nav-item"
-        :class="{ bubbling: bubbleKey === item.path }"
-        @click="triggerBubble(item.path)"
-      >
-        <span class="label">{{ item.name }}</span>
-        <span class="initial">{{ item.name.charAt(0) }}</span>
-      </RouterLink>
+      <template v-for="item in topLinks" :key="item.id || item.path">
+        <RouterLink
+          v-if="item.path"
+          :to="item.path"
+          class="admin-nav-item"
+          :class="{ bubbling: bubbleKey === item.path }"
+          @click="triggerBubble(item.path)"
+        >
+          <span class="label">{{ item.name }}</span>
+          <span class="initial">{{ item.name.charAt(0) }}</span>
+        </RouterLink>
+        <div
+          v-else
+          class="admin-nav-item disabled-link"
+          title="该菜单尚未配置页面路由"
+        >
+          <span class="label">{{ item.name }}</span>
+          <span class="initial">{{ item.name.charAt(0) }}</span>
+        </div>
+      </template>
 
       <div v-for="group in groups" :key="group.name">
         <div
@@ -28,17 +37,29 @@
           <span class="caret" :class="{ open: group.open }">▾</span>
         </div>
         <div v-if="group.open" class="admin-nav-children">
-          <RouterLink
+          <template
             v-for="child in group.children"
-            :key="child.path"
-            :to="child.path"
-            class="admin-nav-item child"
-            :class="{ active: isActive(child.path), bubbling: bubbleKey === child.path }"
-            @click="triggerBubble(child.path)"
+            :key="child.id || child.path"
           >
-            <span class="label">{{ child.name }}</span>
-            <span class="initial">{{ child.name.charAt(0) }}</span>
-          </RouterLink>
+            <RouterLink
+              v-if="child.path"
+              :to="child.path"
+              class="admin-nav-item child"
+              :class="{ active: isActive(child.path), bubbling: bubbleKey === child.path }"
+              @click="triggerBubble(child.path)"
+            >
+              <span class="label">{{ child.name }}</span>
+              <span class="initial">{{ child.name.charAt(0) }}</span>
+            </RouterLink>
+            <div
+              v-else
+              class="admin-nav-item child disabled-link"
+              title="该菜单尚未配置页面路由"
+            >
+              <span class="label">{{ child.name }}</span>
+              <span class="initial">{{ child.name.charAt(0) }}</span>
+            </div>
+          </template>
         </div>
       </div>
     </nav>
@@ -49,8 +70,10 @@
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentAdminNavigation } from '../../api/admin'
+import { industryBranding } from '../../industries/core'
 
 const route = useRoute()
+const branding = industryBranding
 const collapsed = ref(false)
 const bubbleKey = ref('')
 
@@ -72,7 +95,7 @@ const leafLinks = (nodes = []) => nodes.flatMap((item) => {
   const children = item.children || []
   if (children.length) return leafLinks(children)
   const path = mapAdminPath(item.path)
-  return item.menuName && path ? [{ name: item.menuName, path }] : []
+  return item.menuName ? [{ id: item.id, name: item.menuName, path }] : []
 })
 
 const normalizeMenus = (menus = []) => {
@@ -80,10 +103,12 @@ const normalizeMenus = (menus = []) => {
   const rootLinks = []
   menus.forEach((item) => {
     const children = leafLinks(item.children || [])
-    if (children.length) menuGroups.push({ name: item.menuName, path: mapAdminPath(item.path), children })
+    if ((item.children || []).length) {
+      menuGroups.push({ id: item.id, name: item.menuName, path: mapAdminPath(item.path), children })
+    }
     else {
       const path = mapAdminPath(item.path)
-      if (item.menuName && path) rootLinks.push({ name: item.menuName, path })
+      if (item.menuName) rootLinks.push({ id: item.id, name: item.menuName, path })
     }
   })
   return { menuGroups, rootLinks }
@@ -126,3 +151,10 @@ const toggleGroup = (group) => {
   }, 450)
 }
 </script>
+
+<style scoped>
+.disabled-link {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+</style>

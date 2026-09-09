@@ -3,17 +3,34 @@
   <modelVersion>4.0.0</modelVersion>
   <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>4.0.7</version><relativePath/></parent>
   <groupId>com.chronos</groupId><artifactId>chronos-platform</artifactId><version>0.1.0-SNAPSHOT</version><packaging>pom</packaging>
-  <name>Chronos Hospital Platform</name>
+  <name>Chronos Industry Platform</name>
   <properties><java.version>25</java.version><spring-ai.version>2.0.0</spring-ai.version><jjwt.version>0.11.5</jjwt.version><flowable.version>8.0.0</flowable.version></properties>
   <modules>
     <module>platform-common</module><module>platform-audit</module><module>platform-iam</module><module>chronos-scheduling</module>
     <module>platform-form</module><module>platform-workflow</module><module>platform-file</module><module>platform-message</module>
+    <module>platform-industry</module><module>industry-hospital-template</module><module>industry-education-template</module>
+    <module>education-class-scheduling</module>
     <module>hospital-oa</module><module>ai-gateway</module><module>agent-runtime</module><module>policy-engine</module>
-    <module>knowledge-center</module><module>integration-center</module><module>hospital-app</module>
+    <module>knowledge-center</module><module>integration-center</module><module>hospital-app</module><module>education-app</module>
   </modules>
   <dependencyManagement><dependencies><dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-bom</artifactId><version>${spring-ai.version}</version><type>pom</type><scope>import</scope></dependency><dependency><groupId>org.flowable</groupId><artifactId>flowable-bom</artifactId><version>${flowable.version}</version><type>pom</type><scope>import</scope></dependency></dependencies></dependencyManagement>
   <build>
-    <pluginManagement><plugins><plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></pluginManagement>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <!--
+            根工程和平台模块都不是可启动应用。
+            当命令携带 -am 时，先跳过这些模块的 spring-boot:run，
+            由具体的行业应用模块显式开启启动目标。
+          -->
+          <configuration>
+            <skip>true</skip>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>

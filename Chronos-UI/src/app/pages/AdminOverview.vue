@@ -3,14 +3,14 @@
     <div class="header">
       <div>
         <div class="title">管理概览</div>
-        <div class="subtitle">统一维护医院组织、人员、访问权限与门户资源</div>
+        <div class="subtitle">统一维护{{ branding.organizationLabel }}、人员、访问权限与门户资源</div>
       </div>
       <RouterLink class="primary" to="/portal">进入统一门户</RouterLink>
     </div>
 
     <div class="cards">
       <div class="card">
-        <div class="label">组织与科室</div>
+        <div class="label">组织与{{ branding.departmentLabel }}</div>
         <div class="value">基础数据</div>
         <div class="trend up">统一组织主数据</div>
       </div>
@@ -36,7 +36,7 @@
       <div class="panel">
         <div class="panel-title">快捷入口</div>
         <div class="panel-body">
-          <RouterLink to="/admin/organizations">维护医院机构</RouterLink>
+          <RouterLink to="/admin/organizations">维护{{ branding.organizationLabel }}</RouterLink>
           <RouterLink to="/admin/directory">维护员工与任职</RouterLink>
           <RouterLink to="/admin/roles">配置角色权限</RouterLink>
         </div>
@@ -44,3 +44,9 @@
     </div>
   </div>
 </template>
+
+<script setup>
+import { industryBranding } from '../../industries/core'
+
+const branding = industryBranding
+</script>

@@ -3,7 +3,10 @@
  import com.chronos.Idao.IRefreshTokenRepository;
  import com.chronos.model.pojo.RefreshToken;
  import com.chronos.service.iService.IRefreshTokenService;
- import java.time.LocalDateTime;
+import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
  import java.util.Optional;
  import org.springframework.beans.factory.annotation.Autowired;
  import org.springframework.stereotype.Service;
@@ -22,7 +25,7 @@
    @Transactional
    public RefreshToken create(String token, String username, LocalDateTime expiryTime) {
      RefreshToken rt = new RefreshToken();
-     rt.setToken(token);
+     rt.setToken(digest(token));
      rt.setUsername(username);
      rt.setExpiryTime(expiryTime);
      rt.setRevoked(Boolean.valueOf(false));
@@ -32,14 +35,16 @@
  
    
    public RefreshToken findByToken(String token) {
-     Optional<RefreshToken> opt = this.refreshTokenRepository.findByToken(token);
+     Optional<RefreshToken> opt = this.refreshTokenRepository.findByToken(digest(token));
+     if (opt.isEmpty()) opt = this.refreshTokenRepository.findByToken(token); // legacy raw-token rows
      return opt.orElse(null);
    }
  
    
    @Transactional
   public void revoke(String token) {
-     Optional<RefreshToken> opt = this.refreshTokenRepository.findByToken(token);
+     Optional<RefreshToken> opt = this.refreshTokenRepository.findByToken(digest(token));
+     if (opt.isEmpty()) opt = this.refreshTokenRepository.findByToken(token); // legacy raw-token rows
      if (opt.isPresent()) {
        RefreshToken rt = opt.get();
        rt.setRevoked(Boolean.valueOf(true));
@@ -52,5 +57,11 @@
     var tokens = refreshTokenRepository.findByUsernameAndRevokedFalse(username);
     tokens.forEach(token -> token.setRevoked(true));
     refreshTokenRepository.saveAll(tokens);
+  }
+
+  private String digest(String token) {
+    if (token == null || token.isBlank()) throw new IllegalArgumentException("refresh token is required");
+    try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8))); }
+    catch (Exception e) { throw new IllegalStateException("unable to hash refresh token", e); }
   }
  }

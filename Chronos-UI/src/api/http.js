@@ -21,9 +21,24 @@ const adminPathPrefixes = [
 ]
 
 const consumerPathPrefixes = ['/consumer/']
+const publicPathPrefixes = ['/public/', '/dicts/']
+const anonymousAuthPaths = ['/auth/login', '/auth/refresh']
+
+// Tomcat 默认请求头空间还要容纳 Cookie 等内容，超过该值的历史 JWT
+// 应先通过 refresh token 换成服务端生成的精简 Token。
+const MAX_SAFE_TOKEN_LENGTH = 6000
 
 const pickTokenByPath = (url, adminToken, consumerToken) => {
   const path = String(url || '')
+
+  // 公共接口必须保持无认证请求，避免浏览器中的过期 Token 抢先触发 JWT 401。
+  if (publicPathPrefixes.some((prefix) => path.startsWith(prefix))) {
+    return null
+  }
+
+  if (anonymousAuthPaths.includes(path)) {
+    return null
+  }
 
   if (adminPathPrefixes.some((prefix) => path.startsWith(prefix))) {
     return isValidToken(adminToken) ? adminToken : null
@@ -63,9 +78,18 @@ export const createHttp = (config = {}) => {
   }
 
   const request = async (url, options = {}) => {
-    const adminToken = getAdminToken()
+    let adminToken = getAdminToken()
     const consumerToken = getConsumerToken()
     const headers = new Headers(cfg.headers)
+
+    // 兼容升级前已签发、包含大量权限码的 JWT。刷新请求不携带
+    // Authorization，因此能够绕过旧 Token 导致的请求头超限。
+    if (adminToken?.length > MAX_SAFE_TOKEN_LENGTH && !anonymousAuthPaths.includes(url)) {
+      adminToken = await refreshToken()
+      if (!adminToken) {
+        clearAdminTokens()
+      }
+    }
 
     if (options?.headers) new Headers(options.headers).forEach((v, k) => v ? headers.set(k, v) : headers.delete(k))
     if (!headers.has('Authorization')) {
@@ -74,7 +98,8 @@ export const createHttp = (config = {}) => {
     }
 
     const res = await fetch(`${cfg.baseURL}${url}`, { ...options, headers })
-    if (res.status === 401 && !options?._retry && !url.startsWith('/auth/login') && !url.startsWith('/auth/refresh')) {
+    const publicRequest = publicPathPrefixes.some((prefix) => url.startsWith(prefix))
+    if (res.status === 401 && !publicRequest && !options?._retry && !url.startsWith('/auth/login') && !url.startsWith('/auth/refresh')) {
       const next = await refreshToken()
       if (next) {
         const retryHeaders = new Headers(headers)

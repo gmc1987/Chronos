@@ -5,15 +5,21 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.chronos.Idao.IDictRepository;
 import com.chronos.commons.utils.BeanCopyUtil;
@@ -32,39 +38,80 @@ import lombok.extern.slf4j.Slf4j;
 @Service("dictService")
 public class DictServiceImpl implements IDictService {
 	private static final String CACHE_KEY_TREE = "dict:tree";
+	private static final String CACHE_KEY_CODE_PREFIX = "dict:code:";
 	@Autowired
 	private IDictRepository dictRepository;
 	@Autowired
 	private StringRedisTemplate stringRedisTemplate;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
-	public List<DictVO> getTree() {
-		String cached = stringRedisTemplate.opsForValue().get("dict:tree");
+	public DictServiceImpl() {
 		objectMapper.registerModule(new JavaTimeModule());
 		objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+	}
+
+	/**
+	 * 应用外部 SQL 可能绕过字典服务直接写库。启动完成后以数据库为准重建全部
+	 * 字典缓存，避免 Redis 中残留的旧字典树导致管理页面数据不完整。
+	 */
+	@EventListener(ApplicationReadyEvent.class)
+	public void warmDictionaryCachesOnStartup() {
+		List<DictItem> allItems = dictRepository.findAll();
+		writeCache(CACHE_KEY_TREE, buildTree(allItems));
+
+		allItems.stream()
+				.map(DictItem::getDictCode)
+				.filter(code -> code != null && !code.isBlank())
+				.distinct()
+				.forEach(code -> writeCache(
+						cacheKeyForCode(code),
+						loadByCodeFromDatabase(code)));
+		log.info("字典缓存预热完成，dictCodeCount={}", allItems.stream()
+				.map(DictItem::getDictCode)
+				.filter(code -> code != null && !code.isBlank())
+				.distinct()
+				.count());
+	}
+
+	public List<DictVO> getTree() {
+		String cached = readCache(CACHE_KEY_TREE);
 		if (cached != null && !cached.isEmpty()) {
 			try {
 				return objectMapper.readValue(cached, new TypeReference<List<DictVO>>() {
 				});
 			} catch (Exception e) {
-				// 建议打日志，而不是吞掉
-				 log.error("读取缓存异常", e);
+				log.warn("字典树缓存内容无效，将回源数据库", e);
 			}
 		}
 
 		List<DictItem> all = dictRepository.findAll();
 		List<DictVO> tree = buildTree(all);
-
-		try {
-			stringRedisTemplate.opsForValue().set("dict:tree", objectMapper.writeValueAsString(tree));
-		} catch (Exception e) {
-			 log.error("缓存写入失败", e);
-		}
-
+		writeCache(CACHE_KEY_TREE, tree);
 		return tree;
 	}
 
 	public List<DictVO> listByCode(String dictCode) {
+		if (dictCode == null || dictCode.isBlank()) {
+			return new ArrayList<>();
+		}
+
+		String cacheKey = cacheKeyForCode(dictCode);
+		String cached = readCache(cacheKey);
+		if (cached != null && !cached.isEmpty()) {
+			try {
+				return objectMapper.readValue(cached, new TypeReference<List<DictVO>>() {
+				});
+			} catch (Exception e) {
+				log.warn("字典编码缓存内容无效，将回源数据库，dictCode={}", dictCode, e);
+			}
+		}
+
+		List<DictVO> result = loadByCodeFromDatabase(dictCode);
+		writeCache(cacheKey, result);
+		return result;
+	}
+
+	private List<DictVO> loadByCodeFromDatabase(String dictCode) {
 		List<DictItem> items = this.dictRepository.findByDictCode(dictCode);
 		if (items == null || items.isEmpty())
 			return new ArrayList<>();
@@ -100,7 +147,11 @@ public class DictServiceImpl implements IDictService {
 		if (item.getCreateTime() == null)
 			item.setCreateTime(LocalDateTime.now());
 		this.dictRepository.save(item);
-		this.stringRedisTemplate.delete("dict:tree");
+		Set<String> affectedCodes = new LinkedHashSet<>();
+		if (item.getDictCode() != null) {
+			affectedCodes.add(item.getDictCode());
+		}
+		refreshCacheAfterCommit(affectedCodes);
 	}
 
 	@Transactional
@@ -111,16 +162,78 @@ public class DictServiceImpl implements IDictService {
 		if (!opt.isPresent())
 			throw new IllegalArgumentException("dict not found");
 		DictItem item = opt.get();
+		String originalDictCode = item.getDictCode();
 		BeanCopyUtil.copyNonNullProperties(dto, item);
 		item.setLastUpdateTime(LocalDateTime.now());
 		this.dictRepository.save(item);
-		this.stringRedisTemplate.delete("dict:tree");
+		Set<String> affectedCodes = new LinkedHashSet<>();
+		affectedCodes.add(originalDictCode);
+		affectedCodes.add(item.getDictCode());
+		refreshCacheAfterCommit(affectedCodes);
 	}
 
 	@Transactional
 	public void delete(String id) {
+		String dictCode = this.dictRepository.findById(id)
+				.map(DictItem::getDictCode)
+				.orElse(null);
 		this.dictRepository.deleteById(id);
-		this.stringRedisTemplate.delete("dict:tree");
+		Set<String> affectedCodes = new LinkedHashSet<>();
+		if (dictCode != null) {
+			affectedCodes.add(dictCode);
+		}
+		refreshCacheAfterCommit(affectedCodes);
+	}
+
+	/**
+	 * 数据事务提交后再刷新缓存，避免并发请求在事务提交前把旧数据重新写回 Redis。
+	 */
+	private void refreshCacheAfterCommit(Set<String> dictCodes) {
+		Runnable refreshAction = () -> {
+			List<DictVO> tree = buildTree(dictRepository.findAll());
+			writeCache(CACHE_KEY_TREE, tree);
+			dictCodes.stream()
+					.filter(code -> code != null && !code.isBlank())
+					.forEach(code -> writeCache(
+							cacheKeyForCode(code),
+							loadByCodeFromDatabase(code)));
+		};
+
+		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+			refreshAction.run();
+			return;
+		}
+
+		TransactionSynchronizationManager.registerSynchronization(
+				new TransactionSynchronization() {
+					@Override
+					public void afterCommit() {
+						refreshAction.run();
+					}
+				});
+	}
+
+	private String cacheKeyForCode(String dictCode) {
+		return CACHE_KEY_CODE_PREFIX + dictCode;
+	}
+
+	private String readCache(String cacheKey) {
+		try {
+			return stringRedisTemplate.opsForValue().get(cacheKey);
+		} catch (Exception e) {
+			log.warn("Redis 不可用，字典查询降级到数据库，cacheKey={}", cacheKey, e);
+			return null;
+		}
+	}
+
+	private void writeCache(String cacheKey, Object value) {
+		try {
+			stringRedisTemplate.opsForValue().set(
+					cacheKey,
+					objectMapper.writeValueAsString(value));
+		} catch (Exception e) {
+			log.warn("字典缓存写入失败，不影响本次数据库结果，cacheKey={}", cacheKey, e);
+		}
 	}
 
 	private List<DictVO> buildTree(List<DictItem> all) {

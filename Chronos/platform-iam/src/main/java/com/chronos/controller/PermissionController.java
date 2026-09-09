@@ -25,12 +25,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping({ "/admin/permissions" })
-@PreAuthorize("@iamAuthorization.has(authentication, 'iam:permission:manage')")
 public class PermissionController {
 	@Autowired
 	private IPermissionService permissionService;
 
 	@GetMapping({ "/list" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:permission:view','iam:permission:manage','iam:role:authorize')")
 	public ResultData<Page<Permission>> list(PermissionDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
 		PageRequest pageRequest = PageRequest.of(page, size);
@@ -39,6 +39,7 @@ public class PermissionController {
 	}
 
 	@GetMapping({ "/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:permission:view','iam:permission:manage')")
 	public ResultData<PermissionVO> getById(@PathVariable("id") String id) {
 		PermissionVO vo = this.permissionService.getPermissionById(id);
 		if (vo == null)
@@ -47,6 +48,7 @@ public class PermissionController {
 	}
 
 	@PostMapping({ "create" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:permission:create','iam:permission:manage')")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ResultData<Void> create(@Valid @RequestBody PermissionDTO dto) {
 		this.permissionService.save(dto);
@@ -54,12 +56,14 @@ public class PermissionController {
 	}
 
 	@PutMapping({ "update" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:permission:update','iam:permission:disable','iam:permission:manage')")
 	public ResultData<Void> update(@Valid @RequestBody PermissionDTO dto) {
 		this.permissionService.update(dto);
 		return ResultData.<Void>builder().code("200").msg("updated").data(null).build();
 	}
 
 	@DeleteMapping({ "/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:permission:delete','iam:permission:manage')")
 	public ResultData<Void> delete(@PathVariable("id") String id) {
 		this.permissionService.delete(id);
 		return ResultData.<Void>builder().code("200").msg("deleted").data(null).build();

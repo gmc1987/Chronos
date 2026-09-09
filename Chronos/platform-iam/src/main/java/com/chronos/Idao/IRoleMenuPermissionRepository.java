@@ -12,6 +12,8 @@ public interface IRoleMenuPermissionRepository extends JpaRepository<RoleMenuPer
   List<RoleMenuPermission> findByRoleId(String paramString);
   
   List<RoleMenuPermission> findByRoleIdIn(Collection<String> paramCollection);
+
+  boolean existsByPermissionId(String permissionId);
   
   void deleteByRoleId(String paramString);
 

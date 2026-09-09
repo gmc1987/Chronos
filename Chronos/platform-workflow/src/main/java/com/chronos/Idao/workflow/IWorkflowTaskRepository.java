@@ -9,5 +9,7 @@ public interface IWorkflowTaskRepository extends JpaRepository<WorkflowTask, Str
 	List<WorkflowTask> findByAssigneeOrderByCreateTimeDesc(String assignee);
 
 	List<WorkflowTask> findByInstanceIdOrderByCreateTimeAsc(String instanceId);
+	Optional<WorkflowTask> findByEngineTaskId(String engineTaskId);
 	List<WorkflowTask> findByStatusAndDueAtBefore(String status,java.time.LocalDateTime dueAt);
+	List<WorkflowTask> findByStatusInAndDueAtIsNotNull(Collection<String> statuses);
 }

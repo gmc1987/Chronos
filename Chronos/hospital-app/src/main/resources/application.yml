@@ -1,5 +1,7 @@
 server:
   port: 8080
+  # 兼容升级前包含大量权限码的历史 JWT；新 Token 已改为最小声明。
+  max-http-request-header-size: ${CHRONOS_MAX_HTTP_REQUEST_HEADER_SIZE:32KB}
 security:
   cors:
     allowed-origin-patterns: ${CHRONOS_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
@@ -50,7 +52,7 @@ spring:
     hibernate:
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
-      ddl-auto: update
+      ddl-auto: ${CHRONOS_JPA_DDL_AUTO:update}
     open-in-view: true
     show-sql: false
     properties:
@@ -75,6 +77,26 @@ flowable:
   database-schema-update: true
   async-executor-activate: true
   history-level: audit
+chronos:
+  industry:
+    # 医院部署包仅包含医院模板，错误的行业值会在启动时直接失败。
+    active: ${CHRONOS_INDUSTRY:HOSPITAL}
+  message:
+    storage-type: ${CHRONOS_MESSAGE_STORAGE_TYPE:LOCAL}
+    # 生产环境应挂载到持久化磁盘，或后续替换为 MinIO 存储实现。
+    storage-path: ${CHRONOS_MESSAGE_STORAGE_PATH:./data/publications}
+    minio-bucket: ${CHRONOS_MESSAGE_MINIO_BUCKET:chronos-publications}
+    lifecycle-delay-ms: ${CHRONOS_MESSAGE_LIFECYCLE_DELAY_MS:30000}
+    delivery-delay-ms: ${CHRONOS_MESSAGE_DELIVERY_DELAY_MS:10000}
+  workflow:
+    executors:
+      # 外部执行器默认关闭；生产环境通过环境变量显式启用并限制可信主机。
+      http:
+        enabled: ${WORKFLOW_HTTP_EXECUTOR_ENABLED:false}
+        allowed-hosts: ${WORKFLOW_HTTP_ALLOWED_HOSTS:}
+      agent:
+        enabled: ${WORKFLOW_AGENT_EXECUTOR_ENABLED:false}
+        base-url: ${WORKFLOW_AGENT_BASE_URL:}
 logging:
   level:
     org:

@@ -24,10 +24,12 @@ public class FormService {
 		this.instances = instances;
 	}
 
+	@Transactional(readOnly = true)
 	public Page<FormDefinition> list(Pageable pageable) {
 		return definitions.findAll(pageable);
 	}
 
+	@Transactional(readOnly = true)
 	public List<FormField> fields(String formId) {
 		require(formId);
 		return fields.findByFormIdOrderBySortOrderAscCreateTimeAsc(formId);
@@ -129,6 +131,7 @@ public class FormService {
 		return target;
 	}
 
+	@Transactional(readOnly = true)
 	public FormDefinition definition(String id) {
 		return require(id);
 	}

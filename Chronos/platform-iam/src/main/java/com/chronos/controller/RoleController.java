@@ -26,12 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping({ "/admin/roles" })
-@PreAuthorize("@iamAuthorization.has(authentication, 'iam:role:manage')")
 public class RoleController {
 	@Autowired
 	private IRoleService roleService;
 
 	@GetMapping({ "/list" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:role:view','iam:role:manage','iam:role:authorize')")
 	public ResultData<Page<Role>> list(RoleDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
 		PageRequest pageRequest = PageRequest.of(page, size);
@@ -40,6 +40,7 @@ public class RoleController {
 	}
 
 	@GetMapping({ "/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:role:view','iam:role:manage')")
 	public ResultData<RoleVO> getById(@PathVariable("id") String id) {
 		RoleVO vo = this.roleService.getRoleById(id);
 		if (vo == null)
@@ -48,6 +49,7 @@ public class RoleController {
 	}
 
 	@GetMapping({ "/{id}/detail" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:role:view','iam:role:authorize','iam:role:manage')")
 	public ResultData<RoleDetailVO> getDetail(@PathVariable("id") String id) {
 		RoleDetailVO vo = this.roleService.getRoleDetail(id);
 		if (vo == null)
@@ -56,6 +58,7 @@ public class RoleController {
 	}
 
 	@PostMapping({ "create" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:role:create','iam:role:manage')")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ResultData<Void> create(@Valid @RequestBody RoleDTO dto) {
 		this.roleService.save(dto);
@@ -63,12 +66,14 @@ public class RoleController {
 	}
 
 	@PutMapping({ "update" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:role:update','iam:role:authorize','iam:role:manage')")
 	public ResultData<Void> update(@Valid @RequestBody RoleDTO dto) {
 		this.roleService.update(dto);
 		return ResultData.<Void>builder().code("200").msg("updated").data(null).build();
 	}
 
 	@DeleteMapping({ "/delete/{id}" })
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:role:delete','iam:role:manage')")
 	public ResultData<Void> delete(@PathVariable("id") String id) {
 		this.roleService.delete(id);
 		return ResultData.<Void>builder().code("200").msg("deleted").data(null).build();

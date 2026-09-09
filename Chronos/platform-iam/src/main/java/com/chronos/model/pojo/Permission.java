@@ -32,6 +32,21 @@ public class Permission extends BaseEntity {
 	@Column(name = "permission_type", length = 32)
 	private String permissionType = "API";
 
+	@Column(name = "menu_id", length = 64)
+	private String menuId;
+
+	@Column(name = "action_type", length = 32)
+	private String actionType;
+
+	@Column(name = "resource_type", length = 64)
+	private String resourceType;
+
+	@Column(name = "scope_type", length = 32)
+	private String scopeType;
+
+	@Column(name = "config_json", columnDefinition = "text")
+	private String configJson;
+
 	@Column(name = "resource_pattern", length = 500)
 	private String resourcePattern;
 
@@ -40,6 +55,9 @@ public class Permission extends BaseEntity {
 
 	@Column(name = "status")
 	private Integer status = 1;
+
+	@Column(name = "built_in", nullable = false, columnDefinition = "boolean default false")
+	private Boolean builtIn = false;
 	
 	@Column(name = "description", length = 500, nullable = true)
 	private String description;

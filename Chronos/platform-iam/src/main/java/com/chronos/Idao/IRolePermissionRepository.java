@@ -6,5 +6,6 @@ import com.chronos.model.pojo.RolePermissionId;
 public interface IRolePermissionRepository extends JpaRepository<RolePermission,RolePermissionId> {
     List<RolePermission> findByRoleId(String roleId);
     List<RolePermission> findByRoleIdIn(List<String> roleIds);
+    boolean existsByPermissionId(String permissionId);
     void deleteByRoleId(String roleId);
 }

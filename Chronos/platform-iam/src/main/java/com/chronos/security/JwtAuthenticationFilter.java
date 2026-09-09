@@ -36,6 +36,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	private JwtUtil jwtUtil;
 	private ObjectMapper objectMapper = new ObjectMapper();
 
+	/**
+	 * 公共行业上下文用于登录页初始化品牌，不能被浏览器残留的失效 Token 影响。
+	 */
+	@Override
+	protected boolean shouldNotFilter(HttpServletRequest request) {
+		String uri = request.getRequestURI();
+		return "/public/industry/context".equals(uri)
+				|| "/api/public/industry/context".equals(uri);
+	}
+
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 			throws ServletException, IOException {
 		String bearer = request.getHeader("Authorization");

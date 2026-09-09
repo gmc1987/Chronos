@@ -11,7 +11,6 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,8 +19,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import jakarta.servlet.Filter;
 
 @Configuration
 @EnableMethodSecurity
@@ -42,15 +39,35 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	  public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-	    http
-	      .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-	      .csrf(csrf -> csrf.disable())
-	      .authorizeHttpRequests(auth -> ((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)((AuthorizeHttpRequestsConfigurer.AuthorizedUrl)auth.requestMatchers(HttpMethod.OPTIONS, new String[] { "/**" })).permitAll().requestMatchers(HttpMethod.POST, new String[] { "/auth/login" })).permitAll().requestMatchers(HttpMethod.POST, new String[] { "/consumer/users/register" })).permitAll().requestMatchers(HttpMethod.POST, new String[] { "/consumer/users/register/sms" })).permitAll().requestMatchers(HttpMethod.POST, new String[] { "/consumer/users/register/oauth" })).permitAll().requestMatchers(HttpMethod.POST, new String[] { "/consumer/users/login" })).permitAll().requestMatchers(HttpMethod.GET, new String[] { "/dicts/**" })).permitAll().requestMatchers(HttpMethod.GET, new String[] { "/ai/task/videoProxy" })).permitAll().requestMatchers(HttpMethod.GET, new String[] { "/video/**" })).permitAll().requestMatchers(new String[] { "/actuator/**" })).permitAll().anyRequest()).authenticated()).sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-	      .addFilterBefore((Filter)jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
-	      .httpBasic(b -> b.disable());
-	    return (SecurityFilterChain)http.build();
-	  }
+	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		http
+				.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+				.csrf(csrf -> csrf.disable())
+				.authorizeHttpRequests(auth -> auth
+						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+						.requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+						.requestMatchers(HttpMethod.POST, "/consumer/users/register").permitAll()
+						.requestMatchers(HttpMethod.POST, "/consumer/users/register/sms").permitAll()
+						.requestMatchers(HttpMethod.POST, "/consumer/users/register/oauth").permitAll()
+						.requestMatchers(HttpMethod.POST, "/consumer/users/login").permitAll()
+						.requestMatchers(HttpMethod.GET, "/dicts/**").permitAll()
+						.requestMatchers(
+								HttpMethod.GET,
+								"/public/industry/context",
+								"/api/public/industry/context")
+						.permitAll()
+						.requestMatchers(HttpMethod.GET, "/ai/task/videoProxy").permitAll()
+						.requestMatchers(HttpMethod.GET, "/video/**").permitAll()
+						.requestMatchers("/actuator/**").permitAll()
+						.anyRequest().authenticated())
+				.sessionManagement(session -> session
+						.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.addFilterBefore(
+						jwtAuthenticationFilter(),
+						UsernamePasswordAuthenticationFilter.class)
+				.httpBasic(httpBasic -> httpBasic.disable());
+		return http.build();
+	}
 	  
 	  @Bean
 	  public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {

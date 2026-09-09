@@ -54,6 +54,7 @@ public class MenuServiceImpl implements IMenuService {
 
 	@Transactional
 	public void save(MenuDTO dto) {
+		validateParent(null, dto.getParentId());
 		Menu m = new Menu();
 		BeanCopyUtil.copyNonNullProperties(dto, m);
 		if (m.getCreateTime() == null)
@@ -68,9 +69,29 @@ public class MenuServiceImpl implements IMenuService {
 		Optional<Menu> opt = this.menuRepository.findById(dto.getId());
 		if (!opt.isPresent())
 			throw new IllegalArgumentException("menu not found");
+		validateParent(dto.getId(), dto.getParentId());
 		Menu m = opt.get();
 		BeanCopyUtil.copyNonNullProperties(dto, m);
 		this.menuRepository.save(m);
+	}
+
+	/** 防止通过接口把菜单挂到自身或后代节点，避免菜单树形成循环。 */
+	private void validateParent(String menuId, String parentId) {
+		if (parentId == null || parentId.isBlank()) {
+			return;
+		}
+		if (parentId.equals(menuId)) {
+			throw new IllegalArgumentException("菜单不能选择自身作为上级菜单");
+		}
+		Menu parent = menuRepository.findById(parentId)
+				.orElseThrow(() -> new IllegalArgumentException("上级菜单不存在"));
+		java.util.Set<String> visited = new java.util.HashSet<>();
+		while (parent != null && parent.getParentId() != null && !parent.getParentId().isBlank()) {
+			if (!visited.add(parent.getId()) || parent.getParentId().equals(menuId)) {
+				throw new IllegalArgumentException("上级菜单不能选择当前菜单的后代节点");
+			}
+			parent = menuRepository.findById(parent.getParentId()).orElse(null);
+		}
 	}
 
 	@Transactional

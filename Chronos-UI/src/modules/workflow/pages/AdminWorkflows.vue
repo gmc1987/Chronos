@@ -7,14 +7,16 @@
           <div class="subtitle">维护工作流定义列表</div>
         </div>
         <div class="header-actions">
-          <el-button @click="$router.push('/admin/workflow/forms')">表单设计器</el-button>
+          <el-button v-if="canMonitor" @click="$router.push('/admin/workflow/outbox')">消息死信</el-button>
+          <el-button v-if="canIncidentView" @click="$router.push('/admin/workflow/incidents')">流程事故</el-button>
+          <el-button v-if="canFormManage" @click="$router.push('/admin/workflow/forms')">表单设计器</el-button>
           <span class="ai-switch-label">AI辅助</span>
-          <el-switch v-model="aiSetting.enabled" @change="saveAiSetting" />
-          <el-button type="primary" @click="openCreateFlow">新增工作流</el-button>
+          <el-switch v-model="aiSetting.enabled" :disabled="!canUpdate" @change="saveAiSetting" />
+          <el-button v-if="canCreate" type="primary" @click="openCreateFlow">新增工作流</el-button>
         </div>
       </div>
 
-      <div class="monitor-cards">
+      <div v-if="canMonitor" class="monitor-cards">
         <el-card v-for="item in monitorCards" :key="item.label" shadow="never"><div class="monitor-value">{{ item.value }}</div><div class="monitor-label">{{ item.label }}</div></el-card>
       </div>
 
@@ -25,12 +27,13 @@
         <el-table-column prop="version" label="版本" width="120" />
         <el-table-column prop="entryNodeKey" label="入口节点" width="160" />
         <el-table-column prop="status" label="状态" width="120" />
-        <el-table-column label="操作" width="310">
+        <el-table-column label="操作" width="380">
           <template #default="scope">
-            <el-button size="small" @click.stop="openEditFlow(scope.row)">编辑</el-button>
-            <el-button v-if="scope.row.status === 'PUBLISHED'" size="small" @click.stop="newVersion(scope.row)">新版本</el-button>
-            <el-button v-if="scope.row.status === 'PUBLISHED'" size="small" type="warning" @click.stop="disableCurrent(scope.row)">停用</el-button>
-            <el-button v-if="scope.row.status !== 'PUBLISHED'" size="small" type="danger" @click.stop="removeFlow(scope.row)">删除</el-button>
+            <el-button v-if="canUpdate" size="small" @click.stop="openEditFlow(scope.row)">编辑</el-button>
+            <el-button v-if="canUpdate" size="small" @click.stop="openAclDialog(scope.row)">权限</el-button>
+            <el-button v-if="canCreate && scope.row.status === 'PUBLISHED'" size="small" @click.stop="newVersion(scope.row)">新版本</el-button>
+            <el-button v-if="canPublish && scope.row.status === 'PUBLISHED'" size="small" type="warning" @click.stop="disableCurrent(scope.row)">停用</el-button>
+            <el-button v-if="canDelete && scope.row.status !== 'PUBLISHED'" size="small" type="danger" @click.stop="removeFlow(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -56,8 +59,8 @@
         <div class="right-actions">
           <el-button @click="runCheck(false)">规则检查</el-button>
           <el-button v-if="aiSetting.enabled && flowForm.aiAssistEnabled" type="warning" @click="runCheck(true)">AI全面检查</el-button>
-          <el-button type="success" :disabled="!currentFlow?.id" @click="publishCurrent">发布</el-button>
-          <el-button type="success" @click="openFlowDialog">保存工作流</el-button>
+          <el-button v-if="canPublish" type="success" :disabled="!currentFlow?.id" @click="publishCurrent">发布</el-button>
+          <el-button v-if="canUpdate" type="success" @click="openFlowDialog">保存工作流</el-button>
         </div>
       </div>
 
@@ -164,6 +167,11 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="showAclDialog" :title="`流程权限 - ${aclFlow?.flowName || ''}`" width="760px">
+      <el-form inline><el-form-item label="主体类型"><el-select v-model="aclForm.subjectType" style="width:150px"><el-option v-for="item in aclSubjectTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="主体"><el-select v-if="aclForm.subjectType==='USER'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="u in assigneeUsers" :key="u.username" :label="u.displayName || u.username" :value="u.username" /></el-select><el-select v-else-if="aclForm.subjectType==='ROLE'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="r in assigneeRoles" :key="r.roleCode" :label="r.roleName || r.roleCode" :value="r.roleCode" /></el-select><el-input v-else v-model="aclForm.subjectId" placeholder="输入组织/部门/岗位ID" style="width:220px" /></el-form-item><el-form-item label="权限"><el-select v-model="aclForm.action" style="width:130px"><el-option v-for="item in aclActions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-button type="primary" @click="addAcl">添加</el-button></el-form>
+      <el-table :data="aclRows" border><el-table-column prop="subjectType" label="主体类型" width="120" /><el-table-column prop="subjectId" label="主体" /><el-table-column prop="action" label="权限" width="120" /><el-table-column prop="enabled" label="启用" width="80"><template #default="{row}">{{ row.enabled ? '是' : '否' }}</template></el-table-column><el-table-column label="操作" width="90"><template #default="{row}"><el-button link type="danger" @click="removeAcl(row)">删除</el-button></template></el-table-column></el-table>
+    </el-dialog>
+
     <el-dialog v-model="showEdgeDialog" title="分支条件" width="560px">
       <el-form label-width="100px">
         <el-form-item label="默认分支"><el-switch v-model="edgeForm.isDefault" /><span class="form-tip">默认分支不应再配置条件</span></el-form-item>
@@ -219,13 +227,79 @@
           <el-select v-model="nodeForm.properties.assigneeValue" filterable allow-create style="width: 100%" placeholder="选择或输入保存用户名的字段 Key"><el-option v-for="field in assigneeFieldOptions" :key="field.fieldKey" :label="`${field.fieldLabel}（${field.fieldKey}）`" :value="field.fieldKey" /></el-select>
         </el-form-item>
         <el-alert v-else title="运行时将根据发起人的主岗位，查找所在部门负责人" type="info" :closable="false" show-icon />
-        <el-form-item v-if="nodeForm.nodeType === 'APPROVAL'" label="审批方式"><el-select v-model="nodeForm.properties.approvalMode" style="width: 100%"><el-option label="单人审批" value="SINGLE" /><el-option label="任意一人通过" value="ANY" /><el-option label="全部通过" value="ALL" /></el-select></el-form-item>
+        <el-form-item v-if="nodeForm.nodeType === 'APPROVAL'" label="审批方式"><el-select v-model="nodeForm.properties.approvalMode" style="width: 100%"><el-option label="单人审批" value="SINGLE" /><el-option label="任意一人通过" value="ANY" /><el-option label="全部通过" value="ALL" /><el-option label="按人数通过" value="COUNT" /><el-option label="按比例通过" value="PERCENTAGE" /><el-option label="顺序会签" value="SEQUENTIAL" /></el-select></el-form-item>
+        <el-alert
+          v-if="nodeForm.properties.assigneeMode === 'ROLE' && nodeForm.properties.approvalMode === 'SINGLE'"
+          title="角色单人审批将生成候选任务，由任意一名角色成员认领后办理"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <el-form-item v-if="nodeForm.nodeType === 'APPROVAL' && nodeForm.properties.approvalMode === 'COUNT'" label="通过人数"><el-input-number v-model="nodeForm.properties.approvalCount" :min="1" /></el-form-item>
+        <el-form-item v-if="nodeForm.nodeType === 'APPROVAL' && nodeForm.properties.approvalMode === 'PERCENTAGE'" label="通过比例"><el-input-number v-model="nodeForm.properties.approvalPercentage" :min="1" :max="100" /><span style="margin-left:8px">%</span></el-form-item>
+        <el-form-item label="候选人认领"><el-switch v-model="nodeForm.properties.claimRequired" /><span class="tip">开启后候选人需先认领，才能审批</span></el-form-item>
+        <el-form-item label="到期前提醒"><el-input-number v-model="nodeForm.properties.reminderBeforeMinutes" :min="1" /><span class="tip">分钟</span></el-form-item>
+        <el-form-item label="逾期提醒间隔"><el-input-number v-model="nodeForm.properties.reminderIntervalMinutes" :min="1" /><span class="tip">分钟</span></el-form-item>
+        <el-form-item label="升级间隔"><el-input-number v-model="nodeForm.properties.escalationIntervalMinutes" :min="1" /><span class="tip">分钟</span></el-form-item>
+        <el-form-item label="升级通知人"><el-input v-model="nodeForm.properties.escalationUser" placeholder="留空通知流程管理员" /></el-form-item>
+        <el-form-item label="允许操作"><el-checkbox-group v-model="nodeForm.properties.enabledOperations"><el-checkbox label="approve">通过</el-checkbox><el-checkbox label="reject">拒绝</el-checkbox><el-checkbox label="return">退回</el-checkbox><el-checkbox label="transfer">转办</el-checkbox><el-checkbox label="addSign">加签</el-checkbox><el-checkbox label="cc">抄送</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item label="办理时限(小时)"><el-input-number v-model="nodeForm.properties.dueHours" :min="0" /></el-form-item>
         <el-form-item label="退回策略"><el-select v-model="nodeForm.properties.returnPolicy" style="width: 100%"><el-option label="退回上一节点" value="PREVIOUS" /><el-option label="退回发起人" value="STARTER" /><el-option label="允许选择节点" value="SELECTABLE" /></el-select></el-form-item>
+        <el-form-item label="拒绝策略"><el-select v-model="nodeForm.properties.rejectPolicy" style="width: 100%"><el-option label="直接结束流程" value="TERMINATE" /><el-option label="退回上一节点" value="PREVIOUS" /><el-option label="退回发起人" value="STARTER" /><el-option label="允许选择节点" value="SELECTABLE" /></el-select></el-form-item>
         </template>
         <template v-if="automaticNode">
         <el-form-item label="执行器">
-          <el-select v-model="nodeForm.executor" placeholder="请选择已注册执行器" style="width: 100%"><el-option v-for="item in matchingExecutors" :key="item.code" :label="`${item.name}${item.available ? '' : '（待接入）'}`" :value="item.code" :disabled="!item.available" /></el-select>
+          <el-select v-model="nodeForm.executor" placeholder="请选择已注册执行器" style="width: 100%">
+            <el-option v-for="item in matchingExecutors" :key="item.code" :label="`${item.name}${item.available ? '' : '（未启用）'}`" :value="item.code" :disabled="!item.available" />
+          </el-select>
+        </el-form-item>
+        <template v-if="nodeForm.executor === 'spring-service'">
+          <el-form-item label="输出变量 Key">
+            <el-input v-model="nodeForm.properties.outputKey" />
+          </el-form-item>
+          <el-form-item label="写入值(JSON)">
+            <el-input type="textarea" :rows="3" v-model="nodeForm.properties.valueText" />
+          </el-form-item>
+        </template>
+        <template v-if="nodeForm.executor === 'http-api'">
+          <el-form-item label="HTTPS 地址">
+            <el-input v-model="nodeForm.properties.url" placeholder="必须属于后端运维白名单" />
+          </el-form-item>
+          <el-form-item label="请求方法">
+            <el-select v-model="nodeForm.properties.method">
+              <el-option label="POST" value="POST" />
+              <el-option label="PUT" value="PUT" />
+              <el-option label="PATCH" value="PATCH" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="请求头(JSON)">
+            <el-input type="textarea" :rows="3" v-model="nodeForm.properties.headersText" />
+          </el-form-item>
+        </template>
+        <template v-if="nodeForm.executor === 'ai-agent'">
+          <el-form-item label="Agent 编码">
+            <el-input v-model="nodeForm.properties.agentCode" />
+          </el-form-item>
+          <el-form-item label="请求头(JSON)">
+            <el-input type="textarea" :rows="3" v-model="nodeForm.properties.headersText" />
+          </el-form-item>
+        </template>
+        <template v-if="nodeForm.executor === 'message'">
+          <el-form-item label="接收人">
+            <el-input v-model="nodeForm.properties.recipient" placeholder="留空时发送给流程发起人；支持 ${field}" />
+          </el-form-item>
+          <el-form-item label="消息标题">
+            <el-input v-model="nodeForm.properties.subject" placeholder="支持 ${field}" />
+          </el-form-item>
+          <el-form-item label="消息内容">
+            <el-input type="textarea" :rows="3" v-model="nodeForm.properties.content" placeholder="支持 ${field}" />
+          </el-form-item>
+        </template>
+        <el-form-item label="输入映射(JSON)">
+          <el-input type="textarea" :rows="3" v-model="nodeForm.properties.inputMappingText" placeholder='{"amount":"$formData.amount"}' />
+        </el-form-item>
+        <el-form-item label="输出映射(JSON)">
+          <el-input type="textarea" :rows="3" v-model="nodeForm.properties.outputMappingText" placeholder='{"result.code":"serviceCode"}' />
         </el-form-item>
         <el-form-item label="执行超时(秒)">
           <el-input-number v-model="nodeForm.timeoutSec" :min="0" />
@@ -294,6 +368,9 @@ import {
   deleteWorkflow,
   disableWorkflow,
   createWorkflowVersion,
+  listWorkflowAcls,
+  createWorkflowAcl,
+  deleteWorkflowAcl,
   listWorkflowNodes,
   createWorkflowNode,
   updateWorkflowNode,
@@ -315,17 +392,38 @@ import {
   workflowMonitor,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { hasAdminPermission } from '../../../store/auth'
 
 const { fitView } = useVueFlow()
+const canCreate = hasAdminPermission('workflow:definition:create','workflow:manage')
+const canUpdate = hasAdminPermission('workflow:definition:update','workflow:manage')
+const canDelete = hasAdminPermission('workflow:definition:delete','workflow:manage')
+const canPublish = hasAdminPermission('workflow:definition:publish','workflow:manage')
+const canFormManage = hasAdminPermission('workflow:form:manage','workflow:manage')
+const canMonitor = hasAdminPermission('workflow:monitor:view','workflow:manage')
+const canIncidentView = hasAdminPermission('workflow:incident:view','workflow:monitor:view','workflow:manage')
 
 const viewMode = ref('list')
 const aiSetting = ref({ enabled: false, providerMode: 'LOCAL_PRIVATE', allowExternal: false, maskSensitiveData: true })
 const reviewFindings = ref([])
 const showReviewDialog = ref(false)
+const showAclDialog = ref(false)
+const aclFlow = ref(null)
+const aclRows = ref([])
+const aclForm = ref({ subjectType: 'USER', subjectId: '', action: 'START' })
+const aclSubjectTypes = [{label:'全部用户',value:'ALL'},{label:'用户',value:'USER'},{label:'角色',value:'ROLE'},{label:'组织',value:'ORGANIZATION'},{label:'部门',value:'DEPARTMENT'},{label:'岗位',value:'POSITION'}]
+const aclActions = [{label:'发起',value:'START'},{label:'查看',value:'VIEW'},{label:'设计',value:'DESIGN'},{label:'发布',value:'PUBLISH'},{label:'删除',value:'DELETE'},{label:'管理',value:'MANAGE'}]
 
 const flows = ref([])
 const monitor = ref({})
-const monitorCards = computed(() => [{ label: '流程实例', value: monitor.value.instances || 0 }, { label: '运行中', value: monitor.value.running || 0 }, { label: '已完成', value: monitor.value.completed || 0 }, { label: '待办任务', value: monitor.value.pendingTasks || 0 }, { label: '已超时', value: monitor.value.overdueTasks || 0 }])
+const monitorCards = computed(() => [
+  { label: '流程实例', value: monitor.value.instances || 0 },
+  { label: '运行中', value: monitor.value.running || 0 },
+  { label: '已完成', value: monitor.value.completed || 0 },
+  { label: '待办任务', value: monitor.value.pendingTasks || 0 },
+  { label: '已超时', value: monitor.value.overdueTasks || 0 },
+  { label: '待处理事故', value: monitor.value.openIncidents || 0 }
+])
 const total = ref(0)
 const page = ref(1)
 const size = ref(10)
@@ -417,6 +515,34 @@ const parseJson = (value, fallback) => {
   try { return value ? JSON.parse(value) : fallback } catch { return fallback }
 }
 
+const nonNegativeInteger = value => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0
+}
+
+// 画布节点和后端节点必须携带同一份持久化配置。
+// 新建流程时会先创建流程定义再保存画布，不能只把这些字段放在 nodes 临时数组中。
+const persistedNodeConfig = value => ({
+  id: value?.id || '',
+  flowId: value?.flowId || '',
+  nodeKey: value?.nodeKey || '',
+  nodeName: value?.nodeName || '',
+  nodeType: value?.nodeType || '',
+  executor: value?.executor || '',
+  timeoutSec: nonNegativeInteger(value?.timeoutSec),
+  retryMax: nonNegativeInteger(value?.retryMax),
+  retryIntervalSec: nonNegativeInteger(value?.retryIntervalSec),
+  inputSchema: value?.inputSchema || '',
+  outputSchema: value?.outputSchema || '',
+  propertiesJson: value?.propertiesJson || '{}',
+  additionalFormIds: value?.additionalFormIds || '[]',
+  fieldPermissionsJson: value?.fieldPermissionsJson || '{"permissions":{},"required":{}}',
+})
+const loadAcls = async () => { const res = await listWorkflowAcls(aclFlow.value.id); aclRows.value = res?.data || [] }
+const openAclDialog = async (flow) => { aclFlow.value = flow; aclForm.value = { subjectType:'USER',subjectId:'',action:'START' }; await loadAssigneeOptions(); await loadAcls(); showAclDialog.value = true }
+const addAcl = async () => { if(aclForm.value.subjectType==='ALL') aclForm.value.subjectId='*'; if(!aclForm.value.subjectId)return ElMessage.warning('请选择或输入授权主体'); await createWorkflowAcl(aclFlow.value.id,{...aclForm.value,enabled:true});aclForm.value.subjectId='';await loadAcls();ElMessage.success('权限已添加') }
+const removeAcl = async (row) => { await ElMessageBox.confirm('确认删除该流程权限规则？','删除权限',{type:'warning'});await deleteWorkflowAcl(row.id);await loadAcls() }
+
 const loadForms = async () => {
   const res = await listForms({ page: 0, size: 200 })
   formOptions.value = (res?.data?.content || []).filter((form) => form.status === 'PUBLISHED')
@@ -501,6 +627,7 @@ const toCanvasNodes = (list) => {
       _nodeKey: n.nodeKey,
       _id: n.id,
       _nodeType: n.nodeType,
+      _nodeConfig: persistedNodeConfig(n),
     }
   })
 }
@@ -527,7 +654,12 @@ const loadEdges = async (flowId) => {
   const res = await listWorkflowEdges({ flowId })
   edges.value = res?.data || []
   loadedEdgeIds.value = edges.value.map((e) => e.id)
-  flowEdges.value = toCanvasEdges(edges.value)
+  const nodeKeys = new Set(flowNodes.value.map((node) => node.id))
+  const validEdges = edges.value.filter((edge) => nodeKeys.has(edge.fromNodeKey) && nodeKeys.has(edge.toNodeKey))
+  flowEdges.value = toCanvasEdges(validEdges)
+  if (validEdges.length !== edges.value.length) {
+    ElMessage.warning(`有 ${edges.value.length - validEdges.length} 条连线引用了不存在的节点，已暂时隐藏`)
+  }
 }
 
 const selectFlow = async (row) => {
@@ -537,7 +669,11 @@ const selectFlow = async (row) => {
   flowForm.value = { ...row }
   selectedNodeId.value = ''
   try {
-    await Promise.all([loadNodes(row.id), loadEdges(row.id)])
+    // Vue Flow 会丢弃 source/target 尚不存在的边。节点 LOB 查询通常比边查询慢，
+    // 因此必须先提交节点并等待一轮渲染，再向画布注入连线。
+    await loadNodes(row.id)
+    await nextTick()
+    await loadEdges(row.id)
     await nextTick()
     requestAnimationFrame(() => fitView({ padding: 0.2, duration: 250 }))
   } catch (error) {
@@ -809,15 +945,27 @@ const onNodeDblClick = async (payload) => {
     nodeName: existing?.nodeName || n.data?.label || '',
     nodeType: existing?.nodeType || n._nodeType || '',
     executor: existing?.executor || '',
-    timeoutSec: existing?.timeoutSec || 0,
-    retryMax: existing?.retryMax || 0,
-    retryIntervalSec: existing?.retryIntervalSec || 0,
+    // 新建自动节点采用生产安全默认值；已保存节点（包括明确配置的 0）保持原值。
+    timeoutSec: existing?.timeoutSec ?? (['SERVICE_TASK', 'HTTP_TASK', 'AGENT_TASK', 'MESSAGE_TASK'].includes(n._nodeType) ? 30 : 0),
+    retryMax: existing?.retryMax ?? (['SERVICE_TASK', 'HTTP_TASK', 'AGENT_TASK', 'MESSAGE_TASK'].includes(n._nodeType) ? 3 : 0),
+    retryIntervalSec: existing?.retryIntervalSec ?? (['SERVICE_TASK', 'HTTP_TASK', 'AGENT_TASK', 'MESSAGE_TASK'].includes(n._nodeType) ? 60 : 0),
     inputSchema: existing?.inputSchema || '',
     outputSchema: existing?.outputSchema || '',
     propertiesJson: existing?.propertiesJson || '',
     advancedPropertiesJson: JSON.stringify(properties, null, 2),
     properties: {
-      assigneeMode: properties.assigneeMode || 'USER', assigneeValue: properties.assigneeValue || properties.assignee || '', approvalMode: properties.approvalMode || 'SINGLE', dueHours: properties.dueHours || 0, returnPolicy: properties.returnPolicy || 'PREVIOUS',
+      assigneeMode: properties.assigneeMode || 'USER', assigneeValue: properties.assigneeValue || properties.assignee || '', approvalMode: properties.approvalMode || 'SINGLE', approvalCount: properties.approvalCount || 1, approvalPercentage: properties.approvalPercentage || 100, dueHours: properties.dueHours || 0, claimRequired: properties.claimRequired === true, reminderBeforeMinutes: properties.reminderBeforeMinutes || 60, reminderIntervalMinutes: properties.reminderIntervalMinutes || 60, escalationIntervalMinutes: properties.escalationIntervalMinutes || 120, escalationUser: properties.escalationUser || '', returnPolicy: properties.returnPolicy || 'PREVIOUS', rejectPolicy: properties.rejectPolicy || 'TERMINATE', enabledOperations: ['approve','reject','return','transfer','addSign','cc'].filter((op) => properties.operations?.[op] !== false),
+      outputKey: properties.outputKey || '',
+      valueText: JSON.stringify(properties.value ?? '', null, 2),
+      url: properties.url || '',
+      method: properties.method || 'POST',
+      agentCode: properties.agentCode || '',
+      recipient: properties.recipient || '',
+      subject: properties.subject || '',
+      content: properties.content || '',
+      headersText: JSON.stringify(properties.headers || {}, null, 2),
+      inputMappingText: JSON.stringify(properties.inputMapping || {}, null, 2),
+      outputMappingText: JSON.stringify(properties.outputMapping || {}, null, 2),
     },
     additionalFormIds: parseJson(existing?.additionalFormIds, []),
     fieldPermissions: parseJson(existing?.fieldPermissionsJson, {}).permissions || {},
@@ -832,8 +980,38 @@ const saveNodeEdit = () => {
   if (humanNode.value && nodeForm.value.properties.assigneeMode !== 'INITIATOR_MANAGER' && !nodeForm.value.properties.assigneeValue) return ElMessage.warning('请选择或填写处理人参数')
   const advanced = parseJson(nodeForm.value.advancedPropertiesJson, null)
   if (!advanced || Array.isArray(advanced)) return ElMessage.warning('高级配置必须是合法的 JSON 对象')
-  const propertiesJson = JSON.stringify({ ...advanced, ...nodeForm.value.properties })
+  const headers = parseJson(nodeForm.value.properties.headersText, null)
+  const inputMapping = parseJson(nodeForm.value.properties.inputMappingText, null)
+  const outputMapping = parseJson(nodeForm.value.properties.outputMappingText, null)
+  const value = parseJson(nodeForm.value.properties.valueText, undefined)
+  if (automaticNode.value && (!headers || Array.isArray(headers))) return ElMessage.warning('请求头必须是合法的 JSON 对象')
+  if (automaticNode.value && (!inputMapping || Array.isArray(inputMapping))) return ElMessage.warning('输入映射必须是合法的 JSON 对象')
+  if (automaticNode.value && (!outputMapping || Array.isArray(outputMapping))) return ElMessage.warning('输出映射必须是合法的 JSON 对象')
+  if (nodeForm.value.executor === 'spring-service' && value === undefined) return ElMessage.warning('写入值必须是合法 JSON')
+  const enabledOperations = new Set(nodeForm.value.properties.enabledOperations || [])
+  const operations = Object.fromEntries(['approve','reject','return','transfer','addSign','cc'].map((op) => [op, enabledOperations.has(op)]))
+  const {
+    enabledOperations: _enabledOperations,
+    headersText: _headersText,
+    inputMappingText: _inputMappingText,
+    outputMappingText: _outputMappingText,
+    valueText: _valueText,
+    ...basicProperties
+  } = nodeForm.value.properties
+  const automaticProperties = automaticNode.value
+    ? { headers, inputMapping, outputMapping, value }
+    : {}
+  const propertiesJson = JSON.stringify({ ...advanced, ...basicProperties, ...automaticProperties, operations })
   const key = nodeForm.value.nodeKey
+  const nodeConfig = persistedNodeConfig({
+    ...nodeForm.value,
+    propertiesJson,
+    additionalFormIds: JSON.stringify(nodeForm.value.additionalFormIds),
+    fieldPermissionsJson: JSON.stringify({
+      permissions: nodeForm.value.fieldPermissions,
+      required: nodeForm.value.requiredFields,
+    }),
+  })
   flowNodes.value = flowNodes.value.map((n) => {
     if (n.id === key || n._nodeKey === key) {
       return {
@@ -842,6 +1020,7 @@ const saveNodeEdit = () => {
         data: { label: nodeForm.value.nodeName || key },
         _nodeKey: key,
         _nodeType: nodeForm.value.nodeType || n._nodeType,
+        _nodeConfig: nodeConfig,
       }
     }
     return n
@@ -850,18 +1029,10 @@ const saveNodeEdit = () => {
   if (index >= 0) {
     nodes.value[index] = {
       ...nodes.value[index],
-      ...nodeForm.value,
-      propertiesJson,
-      additionalFormIds: JSON.stringify(nodeForm.value.additionalFormIds),
-      fieldPermissionsJson: JSON.stringify({ permissions: nodeForm.value.fieldPermissions, required: nodeForm.value.requiredFields }),
+      ...nodeConfig,
     }
   } else {
-    nodes.value.push({
-      ...nodeForm.value,
-      propertiesJson,
-      additionalFormIds: JSON.stringify(nodeForm.value.additionalFormIds),
-      fieldPermissionsJson: JSON.stringify({ permissions: nodeForm.value.fieldPermissions, required: nodeForm.value.requiredFields }),
-    })
+    nodes.value.push(nodeConfig)
   }
   showNodeDialog.value = false
 }
@@ -872,25 +1043,27 @@ const saveCanvas = async () => {
 
   const toSaveNodes = flowNodes.value.map((n) => {
     const existing = nodes.value.find((x) => x.nodeKey === n.id || x.nodeKey === n._nodeKey)
-    const nodeKey = existing?.nodeKey || n._nodeKey || n.id
+    // 新建流程会暂时清空 nodes；此时必须从画布节点携带的配置恢复，而不是回落到 0。
+    const config = n._nodeConfig || existing || {}
+    const nodeKey = config.nodeKey || n._nodeKey || n.id
     let properties = {}
-    try { properties = JSON.parse(existing?.propertiesJson || '{}') } catch { properties = {} }
+    try { properties = JSON.parse(config.propertiesJson || '{}') } catch { properties = {} }
     properties.position = n.position
     return {
-      id: existing?.id,
+      id: existing?.id || config.id || undefined,
       flowId,
       nodeKey,
       nodeName: n.data?.label || nodeKey,
-      nodeType: existing?.nodeType || n._nodeType || 'TASK',
-      executor: existing?.executor || '',
-      timeoutSec: existing?.timeoutSec || 0,
-      retryMax: existing?.retryMax || 0,
-      retryIntervalSec: existing?.retryIntervalSec || 0,
-      inputSchema: existing?.inputSchema || '',
-      outputSchema: existing?.outputSchema || '',
+      nodeType: config.nodeType || n._nodeType || 'TASK',
+      executor: config.executor || '',
+      timeoutSec: nonNegativeInteger(config.timeoutSec),
+      retryMax: nonNegativeInteger(config.retryMax),
+      retryIntervalSec: nonNegativeInteger(config.retryIntervalSec),
+      inputSchema: config.inputSchema || '',
+      outputSchema: config.outputSchema || '',
       propertiesJson: JSON.stringify(properties),
-      additionalFormIds: existing?.additionalFormIds || '[]',
-      fieldPermissionsJson: existing?.fieldPermissionsJson || '{"permissions":{},"required":{}}',
+      additionalFormIds: config.additionalFormIds || '[]',
+      fieldPermissionsJson: config.fieldPermissionsJson || '{"permissions":{},"required":{}}',
     }
   })
 

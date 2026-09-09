@@ -7,7 +7,7 @@
       </div>
       <div class="actions">
         <el-input v-model="keyword" placeholder="用户名/邮箱" class="search-input" @keyup.enter="load" />
-        <el-button type="primary" @click="openCreate">新增用户</el-button>
+        <el-button v-permission="['iam:user:create','iam:user:manage']" type="primary" @click="openCreate">新增用户</el-button>
       </div>
     </div>
 
@@ -17,8 +17,8 @@
       <el-table-column prop="status" label="状态" width="100" />
       <el-table-column label="操作" width="180">
         <template #default="scope">
-          <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
+          <el-button v-permission="['iam:user:update','iam:user:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
+          <el-button v-permission="['iam:user:disable','iam:user:manage']" size="small" type="danger" @click="remove(scope.row)">停用</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -68,7 +68,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { listUsers, createUser, updateUser, deleteUser, listRoles } from '../api'
+import { listUsers, userDetail, createUser, updateUser, deleteUser, listRoles } from '../api'
 
 const users = ref([])
 const total = ref(0)
@@ -113,9 +113,15 @@ const openCreate = () => {
   showDialog.value = true
 }
 
-const openEdit = (row) => {
+const openEdit = async (row) => {
   dialogMode.value = 'edit'
-  form.value = { ...row, password: '' }
+  const res = await userDetail(row.id)
+  const user = res?.data || row
+  form.value = {
+    ...user,
+    password: '',
+    roleIds: (user.roles || []).map((role) => role.id),
+  }
   showDialog.value = true
 }
 

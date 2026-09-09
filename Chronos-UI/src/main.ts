@@ -8,5 +8,16 @@ import './assets/admin.css'
 import './assets/admin-portal.css'
 import App from './App.vue'
 import router from './router'
+import { permissionDirective } from './directives/permission'
+import { loadIndustryContext } from './industries/core'
 
-createApp(App).use(router).use(ElementPlus).mount('#app')
+const bootstrap = async () => {
+  await loadIndustryContext()
+  createApp(App)
+    .directive('permission', permissionDirective)
+    .use(router)
+    .use(ElementPlus)
+    .mount('#app')
+}
+
+bootstrap()

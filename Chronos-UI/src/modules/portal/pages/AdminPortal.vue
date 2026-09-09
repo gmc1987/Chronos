@@ -3,20 +3,20 @@
     <div class="header"><div><div class="title">统一门户配置</div><div class="subtitle">管理门户应用、Widget 与模块接入标识</div></div></div>
     <el-tabs v-model="tab">
       <el-tab-pane label="应用中心" name="apps">
-        <div class="toolbar"><el-button type="primary" @click="openApp()">新增应用</el-button></div>
+        <div class="toolbar"><el-button v-permission="['portal:admin:create','portal:manage']" type="primary" @click="openApp()">新增应用</el-button></div>
         <el-table :data="apps" border>
           <el-table-column prop="appName" label="应用名称" /><el-table-column prop="appCode" label="编码" />
           <el-table-column prop="routePath" label="访问地址" /><el-table-column prop="requiredPermission" label="权限码" />
           <el-table-column prop="enabled" label="启用" width="80"><template #default="s">{{ s.row.enabled ? '是' : '否' }}</template></el-table-column>
-          <el-table-column label="操作" width="160"><template #default="s"><el-button size="small" @click="openApp(s.row)">编辑</el-button><el-button size="small" type="danger" @click="removeApp(s.row)">删除</el-button></template></el-table-column>
+          <el-table-column label="操作" width="160"><template #default="s"><el-button v-permission="['portal:admin:update','portal:manage']" size="small" @click="openApp(s.row)">编辑</el-button><el-button v-permission="['portal:admin:delete','portal:manage']" size="small" type="danger" @click="removeApp(s.row)">删除</el-button></template></el-table-column>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="Widget" name="widgets">
-        <div class="toolbar"><el-button type="primary" @click="openWidget()">新增 Widget</el-button></div>
+        <div class="toolbar"><el-button v-permission="['portal:admin:create','portal:manage']" type="primary" @click="openWidget()">新增 Widget</el-button></div>
         <el-table :data="widgets" border>
           <el-table-column prop="widgetName" label="名称" /><el-table-column prop="widgetCode" label="编码" />
           <el-table-column prop="providerCode" label="Provider" /><el-table-column prop="componentName" label="前端组件" />
-          <el-table-column prop="defaultSize" label="默认尺寸" width="100" /><el-table-column label="操作" width="160"><template #default="s"><el-button size="small" @click="openWidget(s.row)">编辑</el-button><el-button size="small" type="danger" @click="removeWidget(s.row)">删除</el-button></template></el-table-column>
+          <el-table-column prop="defaultSize" label="默认尺寸" width="100" /><el-table-column label="操作" width="160"><template #default="s"><el-button v-permission="['portal:admin:update','portal:manage']" size="small" @click="openWidget(s.row)">编辑</el-button><el-button v-permission="['portal:admin:delete','portal:manage']" size="small" type="danger" @click="removeWidget(s.row)">删除</el-button></template></el-table-column>
         </el-table>
       </el-tab-pane>
     </el-tabs>

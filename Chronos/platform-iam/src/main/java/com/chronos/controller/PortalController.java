@@ -74,41 +74,41 @@ public class PortalController {
     public ResultData<Object> recentVisits(Principal principal) { return ok(portalService.recentVisits(principal.getName())); }
 
     @GetMapping("/admin/applications")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:view','portal:manage')")
     public ResultData<Object> allApplications() { return ok(portalService.allApplications()); }
 
     @PostMapping("/admin/applications")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:create','portal:manage')")
     public ResultData<Object> createApplication(@RequestBody PortalApplication application) {
         application.setId(null); return ok(portalService.saveApplication(application));
     }
 
     @PutMapping("/admin/applications/{id}")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:update','portal:manage')")
     public ResultData<Object> updateApplication(@PathVariable String id, @RequestBody PortalApplication application) {
         application.setId(id); return ok(portalService.saveApplication(application));
     }
 
     @DeleteMapping("/admin/applications/{id}")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:delete','portal:manage')")
     public ResultData<Object> deleteApplication(@PathVariable String id) { portalService.deleteApplication(id); return ok(null); }
 
     @GetMapping("/admin/widgets")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:view','portal:manage')")
     public ResultData<Object> allWidgets() { return ok(portalService.allWidgets()); }
 
     @PostMapping("/admin/widgets")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:create','portal:manage')")
     public ResultData<Object> createWidget(@RequestBody PortalWidget widget) { widget.setId(null); return ok(portalService.saveWidget(widget)); }
 
     @PutMapping("/admin/widgets/{id}")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:update','portal:manage')")
     public ResultData<Object> updateWidget(@PathVariable String id, @RequestBody PortalWidget widget) {
         widget.setId(id); return ok(portalService.saveWidget(widget));
     }
 
     @DeleteMapping("/admin/widgets/{id}")
-    @PreAuthorize("@iamAuthorization.has(authentication, 'portal:manage')")
+    @PreAuthorize("@iamAuthorization.any(authentication, 'portal:admin:delete','portal:manage')")
     public ResultData<Object> deleteWidget(@PathVariable String id) { portalService.deleteWidget(id); return ok(null); }
 
     private ResultData<Object> ok(Object data) {
