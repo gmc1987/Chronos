@@ -6,6 +6,7 @@ import com.chronos.education.scheduling.model.StudentProfile;
 
 public interface StudentProfileRepository extends JpaRepository<StudentProfile, String> {
 	List<StudentProfile> findAllByOrderByStudentNo();
+	List<StudentProfile> findByAdministrativeClassId(String administrativeClassId);
 	long countByMajorId(String majorId);
 
 	long countByGradeId(String gradeId);

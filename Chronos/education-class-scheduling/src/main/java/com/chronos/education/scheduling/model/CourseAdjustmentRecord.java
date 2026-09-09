@@ -38,4 +38,14 @@ public class CourseAdjustmentRecord extends BaseEntity {
 
 	@Column(name = "message", length = 1000)
 	private String message;
+
+	/** 保存审批完成时的表单快照，供管理员排除数据问题后人工重放。 */
+	@Column(name = "request_payload", columnDefinition = "text")
+	private String requestPayload;
+
+	@Column(name = "retry_count", nullable = false, columnDefinition = "integer default 0")
+	private Integer retryCount = 0;
+
+	@Column(name = "last_retry_by", length = 100)
+	private String lastRetryBy;
 }

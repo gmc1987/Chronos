@@ -3,6 +3,7 @@ package com.chronos.education.scheduling.dao;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -12,6 +13,10 @@ public interface ScheduleEntryRepository extends JpaRepository<ScheduleEntry, St
 	List<ScheduleEntry> findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(String semesterCode);
 
 	List<ScheduleEntry> findByOfferingId(String offeringId);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("delete from ScheduleEntry entry where entry.semesterCode = :semesterCode")
+	int deleteAllForRollback(@Param("semesterCode") String semesterCode);
 
 	@Query("""
 			select entry from ScheduleEntry entry, CourseOffering offering

@@ -12,9 +12,39 @@
 
     <el-tabs v-model="activeTab">
       <el-tab-pane label="周课表" name="schedule">
-        <div class="toolbar">
-          <el-button type="primary" @click="openEntry()">新增排课</el-button>
+        <div class="schedule-toolbar">
+          <div class="dimension-filter">
+            <el-select v-model="scheduleDimension" class="dimension-select" @change="changeDimension">
+              <el-option label="全校课表" value="ALL" />
+              <el-option label="教师课表" value="TEACHER" />
+              <el-option label="教学班课表" value="TEACHING_CLASS" />
+              <el-option label="行政班课表" value="ADMIN_CLASS" />
+              <el-option label="学生课表" value="STUDENT" />
+              <el-option label="教室课表" value="CLASSROOM" />
+            </el-select>
+            <el-select
+              v-if="scheduleDimension !== 'ALL'"
+              v-model="scheduleTargetId"
+              class="target-select"
+              filterable
+              clearable
+              placeholder="请选择查询对象"
+              @change="loadSchedule">
+              <el-option
+                v-for="item in dimensionOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value" />
+            </el-select>
+          </div>
+          <div>
+            <el-button type="success" @click="publishVersion">发布当前课表</el-button>
+            <el-button type="primary" @click="openEntry()">新增排课</el-button>
+          </div>
         </div>
+        <el-empty
+          v-if="scheduleDimension !== 'ALL' && !scheduleTargetId"
+          description="选择教师、班级、学生或教室后查看课表" />
         <el-table :data="schedule">
           <el-table-column label="时间" width="160">
             <template #default="scope">周{{ dayName(scope.row.dayOfWeek) }} 第 {{ scope.row.periodNo }} 节</template>
@@ -31,6 +61,26 @@
               <el-button link @click="openEntry(scope.row)">编辑</el-button>
               <el-button link type="danger" @click="removeEntry(scope.row)">删除</el-button>
             </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="发布版本" name="versions">
+        <div class="toolbar"><el-button @click="loadVersions">刷新</el-button></div>
+        <el-table :data="versions">
+          <el-table-column prop="versionNo" label="版本" width="90">
+            <template #default="scope">V{{ scope.row.versionNo }}</template>
+          </el-table-column>
+          <el-table-column prop="entryCount" label="课表项" width="100" />
+          <el-table-column prop="publishedBy" label="发布人" width="130" />
+          <el-table-column label="发布时间" min-width="180">
+            <template #default="scope">{{ formatTime(scope.row.publishedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="来源" width="120">
+            <template #default="scope">{{ scope.row.sourceVersionNo ? `回滚自 V${scope.row.sourceVersionNo}` : '当前草稿' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="100">
+            <template #default="scope"><el-button link type="warning" @click="rollbackVersion(scope.row)">回滚</el-button></template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
@@ -69,6 +119,20 @@
           </el-table-column>
         </el-table>
       </el-tab-pane>
+
+	  <el-tab-pane label="调课回写异常" name="incidents">
+		<div class="toolbar"><el-button @click="loadIncidents">刷新</el-button></div>
+		<el-empty v-if="!incidents.length" description="暂无待处理异常" />
+		<el-table v-else :data="incidents">
+		  <el-table-column prop="workflowInstanceId" label="流程实例" min-width="210" />
+		  <el-table-column prop="adjustmentType" label="调整类型" width="110" />
+		  <el-table-column prop="message" label="失败原因" min-width="220" show-overflow-tooltip />
+		  <el-table-column prop="retryCount" label="重试次数" width="100" />
+		  <el-table-column label="操作" width="100">
+			<template #default="scope"><el-button link type="primary" @click="retryIncident(scope.row)">重试</el-button></template>
+		  </el-table-column>
+		</el-table>
+	  </el-tab-pane>
     </el-tabs>
 
     <el-dialog v-model="entryDialog" title="课表安排" width="600px">
@@ -116,7 +180,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createClassroom,
@@ -128,9 +192,16 @@ import {
   listClassrooms,
   listClassSchedule,
   listAcademicTerms,
+  listAdministrativeClasses,
   listCourseCatalog,
   listCourseOfferings,
+  listCourseAdjustmentIncidents,
   listEducationTeachers,
+  listEducationStudents,
+  listScheduleVersions,
+  publishScheduleVersion,
+  retryCourseAdjustmentIncident,
+  rollbackScheduleVersion,
   updateClassroom,
   updateCourseOffering,
   updateScheduleEntry,
@@ -144,8 +215,14 @@ const classrooms = ref([])
 const terms = ref([])
 const courses = ref([])
 const teachers = ref([])
+const students = ref([])
+const administrativeClasses = ref([])
 const roomTypes = ref([])
 const schedule = ref([])
+const scheduleDimension = ref('ALL')
+const scheduleTargetId = ref('')
+const incidents = ref([])
+const versions = ref([])
 const entryDialog = ref(false)
 const offeringDialog = ref(false)
 const classroomDialog = ref(false)
@@ -153,24 +230,64 @@ const entryForm = reactive({})
 const offeringForm = reactive({})
 const classroomForm = reactive({})
 const dayName = (day) => ['一', '二', '三', '四', '五', '六', '日'][day - 1]
+const formatTime = value => value ? new Date(value).toLocaleString() : '-'
+const dimensionOptions = computed(() => {
+  if (scheduleDimension.value === 'TEACHER') {
+    return teachers.value.map(item => ({ label: `${item.teacherName}（${item.teacherNo}）`, value: item.id }))
+  }
+  if (scheduleDimension.value === 'TEACHING_CLASS') {
+    return offerings.value.map(item => ({ label: `${item.teachingClassName} / ${item.courseName}`, value: item.id }))
+  }
+  if (scheduleDimension.value === 'ADMIN_CLASS') {
+    return administrativeClasses.value.map(item => ({ label: item.className, value: item.id }))
+  }
+  if (scheduleDimension.value === 'STUDENT') {
+    return students.value.map(item => ({ label: `${item.studentName}（${item.studentNo}）`, value: item.id }))
+  }
+  if (scheduleDimension.value === 'CLASSROOM') {
+    return classrooms.value.map(item => ({ label: item.roomName, value: item.id }))
+  }
+  return []
+})
 const reset = (target, value) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, value) }
 const loadAll = async () => {
-  const [termResponse, courseResponse, teacherResponse, offeringResponse, classroomResponse, scheduleResponse, roomTypeResponse] = await Promise.all([
+  const [termResponse, courseResponse, teacherResponse, studentResponse, classResponse, offeringResponse, classroomResponse, roomTypeResponse, versionResponse] = await Promise.all([
     listAcademicTerms(),
     listCourseCatalog(),
     listEducationTeachers(),
+    listEducationStudents(),
+    listAdministrativeClasses(),
     listCourseOfferings(semesterCode.value),
     listClassrooms(),
-    listClassSchedule(semesterCode.value),
     dictionaryOptions('EDU_ROOM_TYPE'),
+    listScheduleVersions(semesterCode.value),
   ])
   terms.value = termResponse.data || []
   courses.value = courseResponse.data || []
   teachers.value = teacherResponse.data || []
+  students.value = studentResponse.data || []
+  administrativeClasses.value = classResponse.data || []
   offerings.value = offeringResponse.data || []
   classrooms.value = classroomResponse.data || []
-  schedule.value = scheduleResponse.data || []
   roomTypes.value = (roomTypeResponse?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
+  versions.value = versionResponse.data || []
+  await loadSchedule()
+}
+const loadSchedule = async () => {
+  if (scheduleDimension.value !== 'ALL' && !scheduleTargetId.value) {
+    schedule.value = []
+    return
+  }
+  const response = await listClassSchedule(
+    semesterCode.value,
+    scheduleDimension.value,
+    scheduleTargetId.value || undefined,
+  )
+  schedule.value = response.data || []
+}
+const changeDimension = async () => {
+  scheduleTargetId.value = ''
+  await loadSchedule()
 }
 const openEntry = (row) => { reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, startWeek: 1, endWeek: 20 }); entryDialog.value = true }
 const saveEntry = async () => { const payload = { ...entryForm, semesterCode: semesterCode.value }; await (entryForm.id ? updateScheduleEntry(entryForm.id, payload) : createScheduleEntry(payload)); entryDialog.value = false; ElMessage.success('课表已保存'); await loadAll() }
@@ -187,7 +304,35 @@ const removeOffering = async (row) => { await ElMessageBox.confirm('确认删除
 const openClassroom = (row) => { reset(classroomForm, row ? { ...row } : { capacity: 40, roomType: roomTypes.value[0]?.value || '', enabled: true }); classroomDialog.value = true }
 const saveClassroom = async () => { await (classroomForm.id ? updateClassroom(classroomForm.id, classroomForm) : createClassroom(classroomForm)); classroomDialog.value = false; ElMessage.success('教室已保存'); await loadAll() }
 const removeClassroom = async (row) => { await ElMessageBox.confirm('确认删除该教室？', '删除'); await deleteClassroom(row.id); await loadAll() }
-onMounted(loadAll)
+const loadIncidents = async () => {
+  incidents.value = (await listCourseAdjustmentIncidents()).data || []
+}
+const retryIncident = async (row) => {
+  const response = await retryCourseAdjustmentIncident(row.id)
+  const result = response.data
+  if (result?.status === 'APPLIED') ElMessage.success('重放成功，课表已更新')
+  else ElMessage.error(result?.message || '重放失败')
+  await loadIncidents()
+  await loadAll()
+}
+const loadVersions = async () => {
+  versions.value = (await listScheduleVersions(semesterCode.value)).data || []
+}
+const publishVersion = async () => {
+  await ElMessageBox.confirm('发布后会生成不可变版本快照，确认发布当前课表？', '发布课表')
+  await publishScheduleVersion(semesterCode.value)
+  ElMessage.success('课表版本已发布')
+  await loadVersions()
+}
+const rollbackVersion = async row => {
+  await ElMessageBox.confirm(`回滚到 V${row.versionNo}？系统会保留历史并生成一个新版本。`, '回滚课表', { type: 'warning' })
+  await rollbackScheduleVersion(row.id)
+  ElMessage.success('课表已回滚并生成新版本')
+  await Promise.all([loadAll(), loadVersions()])
+}
+onMounted(async () => {
+  await Promise.all([loadAll(), loadIncidents()])
+})
 </script>
 
 <style scoped>
@@ -197,5 +342,9 @@ header h2 { margin: 0 0 6px; }
 header p { margin: 0; color: #84909a; }
 header .el-input { width: 260px; }
 .toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.schedule-toolbar { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.dimension-filter { display: flex; gap: 10px; }
+.dimension-select { width: 140px; }
+.target-select { width: 280px; }
 .separator { margin: 0 12px; color: #84909a; }
 </style>

@@ -34,6 +34,7 @@ import PortalLogin from '../app/pages/PortalLogin.vue'
 import PortalLayout from '../app/layout/PortalLayout.vue'
 import PortalHome from '../modules/portal/pages/PortalHome.vue'
 import PortalApplications from '../modules/portal/pages/PortalApplications.vue'
+import PortalEducationSchedule from '../modules/education/pages/PortalEducationSchedule.vue'
 import AdminPortal from '../modules/portal/pages/AdminPortal.vue'
 import AdminPublications from '../modules/message/pages/AdminPublications.vue'
 import AdminNotificationSettings from '../modules/message/pages/AdminNotificationSettings.vue'
@@ -52,6 +53,7 @@ const router = createRouter({
       children: [
         { path: '', name: 'portal-home', component: PortalHome },
         { path: 'apps', name: 'portal-apps', component: PortalApplications },
+        { path: 'education/schedule', name: 'portal-education-schedule', component: PortalEducationSchedule },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
         { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
         { path: 'workflow-notifications', name: 'portal-workflow-notifications', component: PortalWorkflowNotifications },

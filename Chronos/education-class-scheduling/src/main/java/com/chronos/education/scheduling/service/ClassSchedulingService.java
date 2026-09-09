@@ -1,6 +1,10 @@
 package com.chronos.education.scheduling.service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -8,7 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
+import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository;
+import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleEntry;
@@ -22,16 +28,22 @@ public class ClassSchedulingService {
 	private final ClassroomRepository classrooms;
 	private final ScheduleEntryRepository entries;
 	private final TeacherTimeConstraintRepository teacherConstraints;
+	private final TeachingClassMemberRepository teachingClassMembers;
+	private final StudentProfileRepository students;
 
 	public ClassSchedulingService(
 			CourseOfferingRepository offerings,
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository entries,
-			TeacherTimeConstraintRepository teacherConstraints) {
+			TeacherTimeConstraintRepository teacherConstraints,
+			TeachingClassMemberRepository teachingClassMembers,
+			StudentProfileRepository students) {
 		this.offerings = offerings;
 		this.classrooms = classrooms;
 		this.entries = entries;
 		this.teacherConstraints = teacherConstraints;
+		this.teachingClassMembers = teachingClassMembers;
+		this.students = students;
 	}
 
 	@Transactional(readOnly = true)
@@ -97,8 +109,60 @@ public class ClassSchedulingService {
 
 	@Transactional(readOnly = true)
 	public List<ScheduleEntryView> schedule(String semesterCode) {
-		return entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(
-				required(semesterCode, "学期编码")).stream().map(this::view).toList();
+		return schedule(semesterCode, "ALL", null);
+	}
+
+	/**
+	 * 从服务端执行多维课表过滤。管理端不能依赖前端过滤，否则浏览器仍会收到
+	 * 不属于所选教师、学生或班级的完整课表数据。
+	 */
+	@Transactional(readOnly = true)
+	public List<ScheduleEntryView> schedule(
+			String semesterCode,
+			String dimension,
+			String targetId) {
+		String normalizedSemester = required(semesterCode, "学期编码");
+		String normalizedDimension = dimension == null || dimension.isBlank()
+				? "ALL"
+				: dimension.trim().toUpperCase();
+		if (!Set.of(
+				"ALL",
+				"TEACHER",
+				"TEACHING_CLASS",
+				"ADMIN_CLASS",
+				"STUDENT",
+				"CLASSROOM").contains(normalizedDimension)) {
+			throw new IllegalArgumentException("不支持的课表查询维度：" + normalizedDimension);
+		}
+		if (!"ALL".equals(normalizedDimension)) {
+			required(targetId, "查询对象");
+		}
+
+		List<ScheduleEntry> semesterEntries = entries
+				.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(normalizedSemester);
+		Map<String, CourseOffering> offeringById = offerings
+				.findBySemesterCodeOrderByOfferingCode(normalizedSemester)
+				.stream()
+				.collect(Collectors.toMap(CourseOffering::getId, item -> item));
+		Set<String> permittedOfferingIds = resolveOfferingIds(
+				normalizedDimension,
+				targetId,
+				offeringById);
+		Predicate<ScheduleEntry> filter = switch (normalizedDimension) {
+			case "ALL" -> item -> true;
+			case "CLASSROOM" -> item -> targetId.equals(item.getClassroomId());
+			default -> item -> permittedOfferingIds.contains(item.getOfferingId());
+		};
+		Map<String, Classroom> classroomById = classrooms.findAllById(
+				semesterEntries.stream().map(ScheduleEntry::getClassroomId).collect(Collectors.toSet()))
+				.stream()
+				.collect(Collectors.toMap(Classroom::getId, item -> item));
+
+		return semesterEntries.stream()
+				.filter(filter)
+				.filter(item -> !"CANCELLED".equals(item.getStatus()))
+				.map(item -> view(item, offeringById, classroomById))
+				.toList();
 	}
 
 	@Transactional
@@ -207,6 +271,18 @@ public class ClassSchedulingService {
 	private ScheduleEntryView view(ScheduleEntry entry) {
 		CourseOffering offering = offerings.findById(entry.getOfferingId()).orElseThrow();
 		Classroom classroom = classrooms.findById(entry.getClassroomId()).orElseThrow();
+		return view(entry, Map.of(offering.getId(), offering), Map.of(classroom.getId(), classroom));
+	}
+
+	private ScheduleEntryView view(
+			ScheduleEntry entry,
+			Map<String, CourseOffering> offeringById,
+			Map<String, Classroom> classroomById) {
+		CourseOffering offering = offeringById.get(entry.getOfferingId());
+		Classroom classroom = classroomById.get(entry.getClassroomId());
+		if (offering == null || classroom == null) {
+			throw new IllegalStateException("课表关联的教学任务或教室不存在");
+		}
 		return new ScheduleEntryView(
 				entry.getId(),
 				entry.getSemesterCode(),
@@ -225,6 +301,41 @@ public class ClassSchedulingService {
 				entry.getEndWeek(),
 				entry.getStatus(),
 				entry.getLocked());
+	}
+
+	private Set<String> resolveOfferingIds(
+			String dimension,
+			String targetId,
+			Map<String, CourseOffering> offeringById) {
+		return switch (dimension) {
+			case "ALL", "CLASSROOM" -> Set.of();
+			case "TEACHER" -> offeringById.values().stream()
+					.filter(item -> targetId.equals(item.getTeacherId()))
+					.map(CourseOffering::getId)
+					.collect(Collectors.toSet());
+			case "TEACHING_CLASS" -> offeringById.containsKey(targetId)
+					? Set.of(targetId)
+					: Set.of();
+			case "STUDENT" -> teachingClassMembers
+					.findByStudentIdAndEnrollmentStatus(targetId, "ENROLLED")
+					.stream()
+					.map(item -> item.getOfferingId())
+					.collect(Collectors.toSet());
+			case "ADMIN_CLASS" -> {
+				List<String> studentIds = students.findByAdministrativeClassId(targetId)
+						.stream()
+						.map(item -> item.getId())
+						.toList();
+				yield studentIds.isEmpty()
+						? Set.of()
+						: teachingClassMembers
+								.findByStudentIdInAndEnrollmentStatus(studentIds, "ENROLLED")
+								.stream()
+								.map(item -> item.getOfferingId())
+								.collect(Collectors.toSet());
+			}
+			default -> throw new IllegalArgumentException("不支持的课表维度：" + dimension);
+		};
 	}
 
 	private void validateOffering(CourseOffering value) {
