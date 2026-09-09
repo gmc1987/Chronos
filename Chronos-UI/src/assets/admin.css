@@ -7,6 +7,8 @@
 .admin-content { min-width:0; }
 .admin-main { padding:30px 34px 56px; background:#f3f6f9; }
 .admin-sidebar { width:242px; padding:18px 14px; gap:18px; background:#fff; border-right:1px solid #e2e8ec; color:#63717d; box-shadow:8px 0 30px rgba(31,55,68,.035); }
+.admin-sidebar { min-height:100vh; height:100vh; flex:0 0 auto; position:sticky; top:0; overflow:hidden; }
+.admin-sidebar .admin-nav { min-height:0; flex:1 1 auto; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
 .admin-sidebar.collapsed { width:74px; padding:18px 10px; }
 .admin-sidebar .brand { height:46px; padding:0 4px; }
 .admin-brand { min-width:0; display:flex; align-items:center; gap:10px; color:#17202a; text-decoration:none; }
