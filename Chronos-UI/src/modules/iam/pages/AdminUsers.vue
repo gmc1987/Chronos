@@ -6,7 +6,7 @@
         <div class="subtitle">维护后台用户账号</div>
       </div>
       <div class="actions">
-        <el-input v-model="keyword" placeholder="用户名/邮箱" class="search-input" @keyup.enter="load" />
+        <el-input v-model="keyword" placeholder="用户名/邮箱" class="search-input" @keyup.enter="search" />
         <el-button v-permission="['iam:user:create','iam:user:manage']" type="primary" @click="openCreate">新增用户</el-button>
       </div>
     </div>
@@ -95,6 +95,10 @@ const load = async () => {
   })
   users.value = res?.data?.content || []
   total.value = res?.data?.totalElements || 0
+}
+const search = () => {
+  page.value = 1
+  load()
 }
 
 const onPageChange = (val) => {

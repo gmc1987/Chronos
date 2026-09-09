@@ -22,6 +22,15 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      :total="total"
+      @size-change="changePageSize"
+      @current-change="load"
+    />
     <el-dialog v-model="dialog" :title="`${form.id ? '编辑' : '新增'}${entityLabel}`" width="640px">
       <el-form label-width="110px">
         <el-form-item v-for="field in fields" :key="field.prop" :label="field.label">
@@ -46,8 +55,14 @@ import { dictionaryOptions } from '../../../api/admin'
 
 const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, lookups: { type: Array, default: () => [] } })
 const rows = ref([]); const dialog = ref(false); const form = reactive({}); const lookupData = reactive({}); const dictionaryData = reactive({})
+const page = ref(1); const pageSize = ref(10); const total = ref(0)
 const reset = value => { Object.keys(form).forEach(key => delete form[key]); Object.assign(form, value) }
-const load = async () => { const response = await props.loader(); rows.value = response.data || [] }
+const load = async () => {
+  const response = await props.loader({ page: page.value - 1, size: pageSize.value })
+  rows.value = response.data?.content || response.data || []
+  total.value = response.data?.totalElements ?? rows.value.length
+}
+const changePageSize = () => { page.value = 1; load() }
 const loadLookups = async () => { for (const item of props.lookups) { const response = await item.loader(); lookupData[item.key] = response.data || [] } }
 const loadDictionaries = async () => {
   const codes = [...new Set((props.fields || []).map(field => field.dictCode).filter(Boolean))]
@@ -74,12 +89,13 @@ const remove = async row => {
   await ElMessageBox.confirm(`确认删除${props.entityLabel}“${row[props.columns[0]?.prop] || ''}”？`, '删除确认', { type: 'warning' })
   await props.deleter(row.id)
   ElMessage.success('删除成功')
+  if (!rows.value.length && page.value > 1) page.value -= 1
   await load()
 }
 onMounted(async () => { await Promise.all([loadLookups(), loadDictionaries()]); await load() })
 </script>
 
 <style scoped>
-.page { padding: 24px; } header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.page { padding: 24px; } header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; } .el-pagination { justify-content: flex-end; margin-top: 16px; }
 h2 { margin: 0 0 6px; } p { margin: 0; color: #84909a; }
 </style>

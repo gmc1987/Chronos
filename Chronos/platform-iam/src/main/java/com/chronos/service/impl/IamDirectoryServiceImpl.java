@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import com.chronos.Idao.IEmployeeAssignmentRepository;
 import com.chronos.Idao.IEmployeeRepository;
 import com.chronos.Idao.IJobTitleRepository;
@@ -68,15 +72,22 @@ public class IamDirectoryServiceImpl implements IIamDirectoryService {
     }
     @Transactional public void deleteOrganizationUnit(String id){if(units.existsByParentOrganizationUnit_Id(id))throw new IllegalStateException("部门存在下级部门，不能删除");if(!assignments.findByOrganizationUnitId(id).isEmpty())throw new IllegalStateException("部门存在员工任职，不能删除");units.deleteById(id);}
     public List<Position> positions(){return positions.findAll();}
+    public Page<Position> pagePositions(Pageable pageable){return positions.findAll(PageRequest.of(pageable.getPageNumber(),pageable.getPageSize(),Sort.by(Sort.Direction.ASC,"sortOrder")));}
     @Transactional public Position savePosition(Position v){require(v.getPositionCode(),"position code");require(v.getPositionName(),"position name");Position same=positions.findByPositionCode(v.getPositionCode());if(same!=null&&!same.getId().equals(v.getId()))throw new IllegalArgumentException("position code already exists");Position t=v.getId()==null?new Position():positions.findById(v.getId()).orElseThrow();copyPosition(v,t);return positions.save(t);}
     @Transactional public void deletePosition(String id){if(assignments.existsByPositionIdAndStatus(id,1))throw new IllegalStateException("岗位存在有效任职，不能删除");positions.deleteById(id);}
     public List<JobTitle> jobTitles(){return jobTitles.findAll();}
     @Transactional public JobTitle saveJobTitle(JobTitle v){JobTitle t=v.getId()==null?new JobTitle():jobTitles.findById(v.getId()).orElseThrow();copyJobTitle(v,t);return jobTitles.save(t);}
     @Transactional public void deleteJobTitle(String id){jobTitles.deleteById(id);}
     public List<JobLevel> jobLevels(){return jobLevels.findAll().stream().sorted(Comparator.comparing(v->v.getSortOrder()==null?0:v.getSortOrder())).toList();}
+    public Page<JobLevel> pageJobLevels(Pageable pageable){return jobLevels.findAll(PageRequest.of(pageable.getPageNumber(),pageable.getPageSize(),Sort.by(Sort.Direction.ASC,"sortOrder")));}
     @Transactional public JobLevel saveJobLevel(JobLevel v){require(v.getLevelCode(),"job level code");require(v.getLevelName(),"job level name");jobLevels.findByLevelCode(v.getLevelCode()).filter(x->!x.getId().equals(v.getId())).ifPresent(x->{throw new IllegalArgumentException("job level code already exists");});JobLevel t=v.getId()==null?new JobLevel():jobLevels.findById(v.getId()).orElseThrow();if(t.getId()!=null&&!java.util.Objects.equals(t.getLevelCode(),v.getLevelCode()))throw new IllegalArgumentException("职级编码创建后不允许修改");t.setLevelCode(v.getLevelCode());t.setLevelName(v.getLevelName());t.setLevelSequence(v.getLevelSequence()==null?0:v.getLevelSequence());t.setLevelCategory(v.getLevelCategory());t.setStatus(v.getStatus()==null?1:v.getStatus());t.setSortOrder(v.getSortOrder()==null?0:v.getSortOrder());t.setDescription(v.getDescription());return jobLevels.save(t);}
     @Transactional public void deleteJobLevel(String id){if(assignments.existsByJobLevelIdAndStatus(id,1))throw new IllegalStateException("职级存在有效任职，不能删除");jobLevels.deleteById(id);}
     public List<Employee> employees(){return employees.findAll();}
+    public Page<Employee> pageEmployees(String keyword,Pageable pageable){
+        if(keyword==null||keyword.isBlank())return employees.findAll(pageable);
+        String value=keyword.trim();
+        return employees.findByEmployeeCodeContainingIgnoreCaseOrEmployeeNameContainingIgnoreCaseOrPhoneContainingIgnoreCase(value,value,value,pageable);
+    }
     @Transactional public Employee saveEmployee(Employee v){require(v.getEmployeeCode(),"employee code");require(v.getEmployeeName(),"employee name");employees.findByEmployeeCode(v.getEmployeeCode()).filter(x->!x.getId().equals(v.getId())).ifPresent(x->{throw new IllegalArgumentException("employee code already exists");});Employee t=v.getId()==null?new Employee():employees.findById(v.getId()).orElseThrow();copyEmployee(v,t);t=employees.save(t);if(!"ACTIVE".equals(t.getEmploymentStatus()))disableEmployeeAccount(t.getId());return t;}
     @Transactional public void deleteEmployee(String id){if(!assignments.findByEmployeeIdAndStatus(id,1).isEmpty())throw new IllegalStateException("员工存在有效任职，不能删除");if(users.existsByEmployeeId(id))throw new IllegalStateException("员工已开通登录账号，请先停用账号，员工档案不允许直接删除");employees.deleteById(id);}
     public List<EmployeeAssignmentVO> assignments(String employeeId){return assignments.findCurrentAssignments(employeeId,java.time.LocalDate.now()).stream().map(this::assignmentVO).toList();}

@@ -282,20 +282,35 @@ public class WorkflowController {
 
 	@GetMapping("/workflow-tasks/pending")
 	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:instance:view')")
-	public ResultData<List<Map<String, Object>>> pending(Principal p) {
-		return ok(service.pending(p.getName()));
+	public ResultData<?> pending(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size,
+			Principal p) {
+		return page == null && size == null
+				? ok(service.pending(p.getName()))
+				: ok(service.pending(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@GetMapping("/workflow-tasks/handled")
 	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:instance:view')")
-	public ResultData<List<Map<String, Object>>> handled(Principal p) {
-		return ok(service.handled(p.getName()));
+	public ResultData<?> handled(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size,
+			Principal p) {
+		return page == null && size == null
+				? ok(service.handled(p.getName()))
+				: ok(service.handled(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@GetMapping("/workflow-instances/initiated")
 	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:instance:view')")
-	public ResultData<List<Map<String, Object>>> initiated(Principal p) {
-		return ok(service.initiated(p.getName()));
+	public ResultData<?> initiated(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size,
+			Principal p) {
+		return page == null && size == null
+				? ok(service.initiated(p.getName()))
+				: ok(service.initiated(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@GetMapping("/workflow-directory/users")
@@ -318,8 +333,13 @@ public class WorkflowController {
 
 	@GetMapping("/workflow-notifications")
 	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:instance:view')")
-	public ResultData<List<WorkflowNotification>> notifications(Principal p) {
-		return ok(notifications.list(p.getName()));
+	public ResultData<?> notifications(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size,
+			Principal p) {
+		return page == null && size == null
+				? ok(notifications.list(p.getName()))
+				: ok(notifications.list(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@GetMapping("/workflow-notifications/unread-count")
@@ -342,8 +362,12 @@ public class WorkflowController {
 
 	@GetMapping("/admin/workflow-outbox/dead")
 	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:monitor:view','workflow:manage')")
-	public ResultData<List<WorkflowOutbox>> deadOutboxEvents() {
-		return ok(notifications.deadEvents());
+	public ResultData<?> deadOutboxEvents(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null
+				? ok(notifications.deadEvents())
+				: ok(notifications.deadEvents(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/workflow-outbox/{id}/retry")
@@ -360,11 +384,15 @@ public class WorkflowController {
 
 	@GetMapping("/admin/workflow-incidents")
 	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:incident:view','workflow:monitor:view','workflow:manage')")
-	public ResultData<List<Map<String, Object>>> workflowIncidents(
-			@RequestParam(defaultValue = "OPEN") String status) {
+	public ResultData<?> workflowIncidents(
+			@RequestParam(defaultValue = "OPEN") String status,
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
 		// 查询前主动同步一次，管理员无需等待定时扫描周期即可看到刚产生的死信。
 		incidents.synchronizeDeadLetters();
-		return ok(incidents.list(status));
+		return page == null && size == null
+				? ok(incidents.list(status))
+				: ok(incidents.list(status, page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@GetMapping("/admin/workflow-executions")
@@ -420,8 +448,13 @@ public class WorkflowController {
 
 	@GetMapping("/workflow-delegations")
 	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:delegation:manage')")
-	public ResultData<Map<String, List<WorkflowDelegation>>> delegations(Principal p) {
-		return ok(service.delegations(p.getName()));
+	public ResultData<?> delegations(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size,
+			Principal p) {
+		return page == null && size == null
+				? ok(service.delegations(p.getName()))
+				: ok(service.delegations(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/workflow-delegations")

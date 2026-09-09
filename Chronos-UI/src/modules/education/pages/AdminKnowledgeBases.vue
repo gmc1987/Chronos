@@ -29,6 +29,12 @@ const importTitle = ref('')
 const assistantQuestion = ref('')
 const assistantLoading = ref(false)
 const assistantAnswer = ref(null)
+const basePage = ref(1)
+const basePageSize = ref(10)
+const baseTotal = ref(0)
+const documentPage = ref(1)
+const documentPageSize = ref(10)
+const documentTotal = ref(0)
 const activeBase = computed(() => bases.value.find(item => item.id === activeBaseId.value))
 
 const resetObject = (target, value) => {
@@ -37,8 +43,9 @@ const resetObject = (target, value) => {
 }
 
 const loadBases = async () => {
-  const response = await listKnowledgeBases()
-  bases.value = response.data || []
+  const response = await listKnowledgeBases({ page: basePage.value - 1, size: basePageSize.value })
+  bases.value = response.data?.content || response.data || []
+  baseTotal.value = response.data?.totalElements ?? bases.value.length
   if (!bases.value.some(item => item.id === activeBaseId.value)) {
     activeBaseId.value = bases.value[0]?.id || ''
   }
@@ -51,9 +58,14 @@ const loadDocuments = async () => {
     documents.value = []
     return
   }
-  const response = await listKnowledgeDocuments(activeBaseId.value)
-  documents.value = response.data || []
+  const response = await listKnowledgeDocuments(activeBaseId.value, {
+    page: documentPage.value - 1,
+    size: documentPageSize.value,
+  })
+  documents.value = response.data?.content || response.data || []
+  documentTotal.value = response.data?.totalElements ?? documents.value.length
 }
+const changeDocumentPageSize = () => { documentPage.value = 1; loadDocuments() }
 
 const openCreateBase = () => {
   resetObject(baseForm, { enabled: true })
@@ -175,11 +187,19 @@ onMounted(loadBases)
             :key="item.id"
             class="base-item"
             :class="{ active: activeBaseId === item.id }"
-            @click="activeBaseId = item.id; loadDocuments()"
+            @click="activeBaseId = item.id; documentPage = 1; loadDocuments()"
           >
             <strong>{{ item.baseName }}</strong>
             <small>{{ item.baseCode }}</small>
           </div>
+          <el-pagination
+            v-model:current-page="basePage"
+            v-model:page-size="basePageSize"
+            :page-sizes="[10, 20, 50]"
+            layout="total, prev, pager, next"
+            :total="baseTotal"
+            @current-change="loadBases"
+          />
         </el-card>
       </el-col>
 
@@ -214,6 +234,15 @@ onMounted(loadBases)
                   </template>
                 </el-table-column>
               </el-table>
+              <el-pagination
+                v-model:current-page="documentPage"
+                v-model:page-size="documentPageSize"
+                :page-sizes="[10, 20, 50]"
+                layout="total, sizes, prev, pager, next"
+                :total="documentTotal"
+                @size-change="changeDocumentPageSize"
+                @current-change="loadDocuments"
+              />
             </el-tab-pane>
 
             <el-tab-pane label="检索验证">

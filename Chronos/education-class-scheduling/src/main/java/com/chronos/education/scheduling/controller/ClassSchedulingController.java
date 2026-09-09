@@ -58,8 +58,13 @@ public class ClassSchedulingController {
 
 	@GetMapping("/admin/education/course-offerings")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
-	public ResultData<List<CourseOffering>> offerings(@RequestParam String semesterCode) {
-		return ok(service.offerings(semesterCode));
+	public ResultData<?> offerings(
+			@RequestParam String semesterCode,
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null
+				? ok(service.offerings(semesterCode))
+				: ok(service.offerings(semesterCode, page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/course-offerings")
@@ -85,8 +90,12 @@ public class ClassSchedulingController {
 
 	@GetMapping("/admin/education/classrooms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:resource:venue:view','education:resource:venue:manage')")
-	public ResultData<List<Classroom>> classrooms() {
-		return ok(service.classrooms());
+	public ResultData<?> classrooms(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null
+				? ok(service.classrooms())
+				: ok(service.classrooms(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/classrooms")

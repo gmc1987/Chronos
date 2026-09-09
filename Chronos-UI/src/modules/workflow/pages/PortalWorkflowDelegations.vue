@@ -8,7 +8,7 @@
       <el-button type="primary" @click="openCreate">新增委托</el-button>
     </div>
 
-    <el-tabs>
+    <el-tabs v-model="activeTab" @tab-change="changeTab">
       <el-tab-pane label="我发出的委托">
         <el-table :data="data.outgoing" v-loading="loading">
           <el-table-column prop="delegatee" label="受托人" />
@@ -37,6 +37,15 @@
         </el-table>
       </el-tab-pane>
     </el-tabs>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      :total="total"
+      @size-change="changePageSize"
+      @current-change="load"
+    />
 
     <el-dialog v-model="dialog" title="新增流程委托" width="520px">
       <el-form label-width="90px">
@@ -90,14 +99,27 @@ const data = ref({ outgoing: [], incoming: [] })
 const users = ref([])
 const range = ref([])
 const form = ref({ delegatee: '', definitionId: '', reason: '' })
+const activeTab = ref('outgoing')
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const load = async () => {
   loading.value = true
   try {
-    data.value = (await listWorkflowDelegations())?.data || { outgoing: [], incoming: [] }
+    const response = await listWorkflowDelegations({ page: page.value - 1, size: pageSize.value })
+    const result = response?.data || { outgoing: [], incoming: [] }
+    data.value = {
+      outgoing: result.outgoing?.content || result.outgoing || [],
+      incoming: result.incoming?.content || result.incoming || [],
+    }
+    const current = activeTab.value === 'outgoing' ? result.outgoing : result.incoming
+    total.value = current?.totalElements ?? (activeTab.value === 'outgoing' ? data.value.outgoing : data.value.incoming).length
   } finally {
     loading.value = false
   }
+  const changeTab = () => { page.value = 1; load() }
+  const changePageSize = () => { page.value = 1; load() }
 }
 
 const openCreate = () => {

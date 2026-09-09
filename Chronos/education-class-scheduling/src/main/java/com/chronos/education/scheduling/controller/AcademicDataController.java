@@ -38,8 +38,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/terms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
-	public ResultData<List<AcademicTerm>> terms() {
-		return ok(service.terms());
+	public ResultData<?> terms(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.terms()) : ok(service.terms(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/terms")
@@ -56,8 +58,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/grades")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:grade:view','education:grade:manage')")
-	public ResultData<List<EducationGrade>> grades() {
-		return ok(service.grades());
+	public ResultData<?> grades(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.grades()) : ok(service.grades(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/grades")
@@ -83,8 +87,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/subjects")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:subject:view','education:subject:manage')")
-	public ResultData<List<Subject>> subjects() {
-		return ok(service.subjects());
+	public ResultData<?> subjects(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.subjects()) : ok(service.subjects(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/subjects")
@@ -110,8 +116,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/courses")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:view','education:course:manage')")
-	public ResultData<List<CourseCatalog>> courses() {
-		return ok(service.courses());
+	public ResultData<?> courses(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.courses()) : ok(service.courses(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/courses")
@@ -128,8 +136,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/majors")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:view','education:class:manage')")
-	public ResultData<List<Major>> majors() {
-		return ok(service.majors());
+	public ResultData<?> majors(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.majors()) : ok(service.majors(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/majors")
@@ -153,8 +163,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/administrative-classes")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:view','education:class:manage')")
-	public ResultData<List<AdministrativeClass>> administrativeClasses() {
-		return ok(service.administrativeClasses());
+	public ResultData<?> administrativeClasses(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.administrativeClasses()) : ok(service.administrativeClasses(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/administrative-classes")
@@ -180,8 +192,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/students")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:view','education:student:manage')")
-	public ResultData<List<StudentProfile>> students() {
-		return ok(service.students());
+	public ResultData<?> students(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.students()) : ok(service.students(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/students")
@@ -198,8 +212,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/teachers")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:view','education:teacher:business:manage')")
-	public ResultData<List<TeacherAcademicProfile>> teachers() {
-		return ok(service.teachers());
+	public ResultData<?> teachers(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.teachers()) : ok(service.teachers(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/teachers")
@@ -218,8 +234,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/parents")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:home-school:parent:view','education:home-school:parent:manage')")
-	public ResultData<List<ParentProfile>> parents() {
-		return ok(service.parents());
+	public ResultData<?> parents(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.parents()) : ok(service.parents(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/parents")
@@ -278,8 +296,10 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/teaching-assignments")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching-assignment:view','education:teaching-assignment:manage')")
-	public ResultData<List<TeacherTeachingAssignment>> teachingAssignments() {
-		return ok(service.teachingAssignments());
+	public ResultData<?> teachingAssignments(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null ? ok(service.teachingAssignments()) : ok(service.teachingAssignments(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/teaching-assignments")

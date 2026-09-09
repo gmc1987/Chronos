@@ -6,7 +6,7 @@
         <div class="subtitle">维护 ToC / ToB 客户</div>
       </div>
       <div class="actions">
-        <el-select v-model="customerType" placeholder="客户类型" @change="load" style="width: 140px">
+        <el-select v-model="customerType" placeholder="客户类型" @change="search" style="width: 140px">
           <el-option label="全部" value="" />
           <el-option label="ToC" value="0" />
           <el-option label="ToB" value="1" />
@@ -97,6 +97,10 @@ const load = async () => {
   const res = await customerList({ page: page.value - 1, size: size.value, customerType: customerType.value || undefined })
   customers.value = res?.data?.content || []
   total.value = res?.data?.totalElements || 0
+}
+const search = () => {
+  page.value = 1
+  load()
 }
 
 const onPageChange = (val) => {

@@ -4,6 +4,8 @@ import com.chronos.model.workflow.WorkflowOutbox;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -24,5 +26,6 @@ public interface IWorkflowOutboxRepository extends JpaRepository<WorkflowOutbox,
 	List<WorkflowOutbox> lockDispatchBatch(@Param("now") LocalDateTime now);
 
 	List<WorkflowOutbox> findTop100ByStatusOrderByCreateTimeDesc(String status);
+	Page<WorkflowOutbox> findByStatusOrderByCreateTimeDesc(String status, Pageable pageable);
 	boolean existsByDeduplicationKey(String deduplicationKey);
 }

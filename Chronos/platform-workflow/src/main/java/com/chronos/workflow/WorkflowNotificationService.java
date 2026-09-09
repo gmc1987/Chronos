@@ -20,6 +20,9 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 
 /** SLA 事件入箱、可靠投递和门户通知查询。 */
@@ -158,6 +161,11 @@ public class WorkflowNotificationService {
 	}
 
 	@Transactional(readOnly = true)
+	public Page<WorkflowNotification> list(String actor, int page, int size) {
+		return notifications.findByRecipientOrderByCreateTimeDesc(actor, pageable(page, size));
+	}
+
+	@Transactional(readOnly = true)
 	public long unreadCount(String actor) {
 		return notifications.countByRecipientAndReadAtIsNull(actor);
 	}
@@ -174,6 +182,11 @@ public class WorkflowNotificationService {
 	@Transactional(readOnly = true)
 	public List<WorkflowOutbox> deadEvents() {
 		return outbox.findTop100ByStatusOrderByCreateTimeDesc("DEAD");
+	}
+
+	@Transactional(readOnly = true)
+	public Page<WorkflowOutbox> deadEvents(int page, int size) {
+		return outbox.findByStatusOrderByCreateTimeDesc("DEAD", pageable(page, size));
 	}
 
 	@Transactional
@@ -248,5 +261,9 @@ public class WorkflowNotificationService {
 			return "unknown error";
 		}
 		return value.length() <= maximum ? value : value.substring(0, maximum);
+	}
+
+	private Pageable pageable(int page, int size) {
+		return PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
 	}
 }

@@ -28,6 +28,15 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      :total="total"
+      @size-change="changePageSize"
+      @current-change="load"
+    />
   </div>
 </template>
 
@@ -44,19 +53,24 @@ import {
 const loading = ref(false)
 const notifications = ref([])
 const unreadCount = ref(0)
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const load = async () => {
   loading.value = true
   try {
     const [listResponse, countResponse] = await Promise.all([
-      listWorkflowNotifications(),
+      listWorkflowNotifications({ page: page.value - 1, size: pageSize.value }),
       workflowNotificationUnreadCount()
     ])
-    notifications.value = listResponse?.data || []
+    notifications.value = listResponse?.data?.content || listResponse?.data || []
+    total.value = listResponse?.data?.totalElements ?? notifications.value.length
     unreadCount.value = countResponse?.data || 0
   } finally {
     loading.value = false
   }
+  const changePageSize = () => { page.value = 1; load() }
 }
 
 const readAll = async () => {

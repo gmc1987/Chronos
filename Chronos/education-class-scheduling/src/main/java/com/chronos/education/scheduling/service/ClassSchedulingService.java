@@ -6,6 +6,9 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +54,12 @@ public class ClassSchedulingService {
 		return offerings.findBySemesterCodeOrderByOfferingCode(required(semesterCode, "学期编码"));
 	}
 
+	@Transactional(readOnly = true)
+	public Page<CourseOffering> offerings(String semesterCode, int page, int size) {
+		return offerings.findBySemesterCodeOrderByOfferingCode(
+				required(semesterCode, "学期编码"), pageable(page, size));
+	}
+
 	@Transactional
 	public CourseOffering saveOffering(String id, CourseOffering command) {
 		validateOffering(command);
@@ -82,6 +91,11 @@ public class ClassSchedulingService {
 	@Transactional(readOnly = true)
 	public List<Classroom> classrooms() {
 		return classrooms.findByEnabledTrueOrderByRoomCode();
+	}
+
+	@Transactional(readOnly = true)
+	public Page<Classroom> classrooms(int page, int size) {
+		return classrooms.findByEnabledTrueOrderByRoomCode(pageable(page, size));
 	}
 
 	@Transactional
@@ -388,5 +402,9 @@ public class ClassSchedulingService {
 			throw new IllegalArgumentException(name + "不能为空");
 		}
 		return value.trim();
+	}
+
+	private Pageable pageable(int page, int size) {
+		return PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
 	}
 }

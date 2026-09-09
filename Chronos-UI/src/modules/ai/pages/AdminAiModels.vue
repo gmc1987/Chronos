@@ -6,8 +6,8 @@
         <div class="subtitle">模型基础信息与账号配置</div>
       </div>
       <div class="actions">
-        <el-input v-model="keyword" placeholder="模型名称" class="search-input" @keyup.enter="load" />
-        <el-select v-model="provider" placeholder="提供方" @change="load" style="width: 140px">
+        <el-input v-model="keyword" placeholder="模型名称" class="search-input" @keyup.enter="search" />
+        <el-select v-model="provider" placeholder="提供方" @change="search" style="width: 140px">
           <el-option label="全部" value="" />
           <el-option v-for="item in providers" :key="item.dictCode" :label="item.dictName" :value="item.dictName" />
         </el-select>
@@ -224,6 +224,10 @@ const load = async () => {
   })
   models.value = res?.data?.content || []
   total.value = res?.data?.totalElements || 0
+}
+const search = () => {
+  page.value = 1
+  load()
 }
 
 const onPageChange = (val) => {

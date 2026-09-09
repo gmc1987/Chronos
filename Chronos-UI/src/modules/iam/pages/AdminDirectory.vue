@@ -1,7 +1,7 @@
 <template>
   <div class="admin-page directory-page">
     <div class="header"><div><div class="title">组织架构</div><div class="subtitle">统一维护{{ branding.departmentLabel }}、岗位、职级、{{ branding.employeeLabel }}及任职关系</div></div></div>
-    <el-tabs v-model="tab" class="directory-tabs">
+    <el-tabs v-model="tab" class="directory-tabs" @tab-change="onTabChange">
       <el-tab-pane label="部门架构" name="departments">
         <div class="toolbar"><el-select v-model="organizationId" :placeholder="`选择${branding.organizationLabel}`" @change="loadDepartments"><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id" /></el-select><el-button v-permission="['iam:directory:template','iam:directory:manage']" @click="downloadTemplate('departments')">下载模板</el-button><el-upload v-permission="['iam:directory:import','iam:directory:manage']" :show-file-list="false" accept=".xlsx" :http-request="o=>uploadImport('departments',o.file)"><el-button>批量导入</el-button></el-upload><el-button v-permission="['iam:directory:create','iam:directory:manage']" type="primary" :disabled="!organizationId" @click="editDepartment()">新增{{ branding.departmentLabel }}</el-button></div>
         <el-table :data="departmentRows" row-key="id" default-expand-all border :tree-props="{children:'children'}">
@@ -43,6 +43,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="pager"><el-pagination background layout="total, sizes, prev, pager, next" :total="positionTotal" :current-page="positionPage" :page-size="positionSize" :page-sizes="[10, 20, 50]" @current-change="onPositionPageChange" @size-change="onPositionSizeChange"/></div>
       </el-tab-pane>
       <el-tab-pane label="职级管理" name="levels">
         <div class="toolbar"><el-button v-permission="['iam:directory:template','iam:directory:manage']" @click="downloadTemplate('job-levels')">下载模板</el-button><el-upload v-permission="['iam:directory:import','iam:directory:manage']" :show-file-list="false" accept=".xlsx" :http-request="o=>uploadImport('job-levels',o.file)"><el-button>批量导入</el-button></el-upload><el-button v-permission="['iam:directory:create','iam:directory:manage']" type="primary" @click="editLevel()">新增职级</el-button></div>
@@ -63,9 +64,10 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="pager"><el-pagination background layout="total, sizes, prev, pager, next" :total="levelTotal" :current-page="levelPage" :page-size="levelSize" :page-sizes="[10, 20, 50]" @current-change="onLevelPageChange" @size-change="onLevelSizeChange"/></div>
       </el-tab-pane>
       <el-tab-pane :label="`${branding.employeeLabel}与任职`" name="employees">
-        <div class="toolbar"><el-input v-model="employeeKeyword" clearable placeholder="搜索工号、姓名或手机号"/><el-button v-permission="['iam:directory:template','iam:directory:manage']" @click="downloadTemplate('employees')">下载模板</el-button><el-upload v-permission="['iam:directory:import','iam:directory:manage']" :show-file-list="false" accept=".xlsx" :http-request="o=>uploadImport('employees',o.file)"><el-button>批量导入</el-button></el-upload><el-button v-permission="['iam:directory:create','iam:directory:manage']" type="primary" @click="editEmployee()">新增员工</el-button></div>
+        <div class="toolbar"><el-input v-model="employeeKeyword" clearable placeholder="搜索工号、姓名或手机号" @keyup.enter="searchEmployees" @clear="searchEmployees"/><el-button v-permission="['iam:directory:template','iam:directory:manage']" @click="downloadTemplate('employees')">下载模板</el-button><el-upload v-permission="['iam:directory:import','iam:directory:manage']" :show-file-list="false" accept=".xlsx" :http-request="o=>uploadImport('employees',o.file)"><el-button>批量导入</el-button></el-upload><el-button v-permission="['iam:directory:create','iam:directory:manage']" type="primary" @click="editEmployee()">新增员工</el-button></div>
         <el-table :data="filteredEmployees" border>
           <el-table-column prop="employeeCode" label="工号"/>
           <el-table-column prop="employeeName" label="姓名"/>
@@ -86,6 +88,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="pager"><el-pagination background layout="total, sizes, prev, pager, next" :total="employeeTotal" :current-page="employeePage" :page-size="employeeSize" :page-sizes="[10, 20, 50]" @current-change="onEmployeePageChange" @size-change="onEmployeeSizeChange"/></div>
       </el-tab-pane>
     </el-tabs>
 
@@ -96,7 +99,7 @@
         <el-form-item label="部门编码"><el-input v-model="departmentForm.departmentCode"/></el-form-item>
         <el-form-item label="部门名称"><el-input v-model="departmentForm.departmentName"/></el-form-item>
         <el-form-item label="部门类型"><el-select v-model="departmentForm.departmentType"><el-option v-for="item in departmentTypes" :key="item.value" :label="item.label" :value="item.value"/></el-select></el-form-item>
-        <el-form-item label="部门负责人"><el-select v-model="departmentForm.leaderEmployeeId" clearable filterable><el-option v-for="e in employeeRows" :key="e.id" :label="`${e.employeeName}（${e.employeeCode}）`" :value="e.id"/></el-select></el-form-item>
+        <el-form-item label="部门负责人"><el-select v-model="departmentForm.leaderEmployeeId" clearable filterable><el-option v-for="e in employeeOptions" :key="e.id" :label="`${e.employeeName}（${e.employeeCode}）`" :value="e.id"/></el-select></el-form-item>
         <el-form-item label="排序"><el-input-number v-model="departmentForm.sortOrder" :min="0"/></el-form-item>
         <el-form-item label="状态"><el-switch v-model="departmentEnabled" active-text="启用" inactive-text="停用"/></el-form-item>
         <el-form-item label="说明"><el-input v-model="departmentForm.description" type="textarea"/></el-form-item>
@@ -134,7 +137,7 @@
       </template>
     </el-dialog>
     <el-dialog v-model="assignmentDialog" :title="`${activeEmployee.employeeName||''} · 任职管理`" width="900px"><div class="assignment-head"><span>一个员工可以在多个院区或部门任职，但只能有一个主任职。</span><el-button type="primary" @click="editAssignment()">新增任职</el-button></div><el-table :data="assignmentRows" border><el-table-column prop="organizationName" label="机构"/><el-table-column prop="departmentName" label="部门"/><el-table-column prop="positionName" label="岗位"/><el-table-column prop="jobLevelName" label="职级"/><el-table-column label="主任职" width="80"><template #default="s">{{s.row.primaryAssignment?'是':'否'}}</template></el-table-column><el-table-column label="操作" width="140"><template #default="s"><el-button @click="editAssignment(s.row)">编辑</el-button><el-button type="danger" @click="removeAssignment(s.row.id)">删除</el-button></template></el-table-column></el-table></el-dialog>
-    <el-dialog v-model="assignmentEditDialog" :title="assignmentForm.id?'编辑任职':'新增任职'" width="620px" append-to-body><el-form label-width="90px"><el-form-item label="所属机构"><el-select v-model="assignmentForm.organizationId" @change="loadAssignmentDepartments"><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id"/></el-select></el-form-item><el-form-item label="任职部门"><el-tree-select v-model="assignmentForm.departmentId" :data="assignmentDepartmentOptions" check-strictly/></el-form-item><el-form-item label="岗位"><el-select v-model="assignmentForm.positionId"><el-option v-for="p in positionRows" :key="p.id" :label="p.positionName" :value="p.id"/></el-select></el-form-item><el-form-item label="职级"><el-select v-model="assignmentForm.jobLevelId" clearable><el-option v-for="l in levelRows" :key="l.id" :label="l.levelName" :value="l.id"/></el-select></el-form-item><el-form-item label="主任职"><el-switch v-model="assignmentForm.primaryAssignment"/></el-form-item><el-form-item label="部门负责人"><el-switch v-model="assignmentForm.departmentLeader"/></el-form-item><el-form-item label="生效日期"><el-date-picker v-model="assignmentForm.effectiveFrom" value-format="YYYY-MM-DD"/></el-form-item><el-form-item label="失效日期"><el-date-picker v-model="assignmentForm.effectiveTo" value-format="YYYY-MM-DD"/></el-form-item></el-form><template #footer><el-button @click="assignmentEditDialog=false">取消</el-button><el-button type="primary" @click="submitAssignment">保存</el-button></template></el-dialog>
+    <el-dialog v-model="assignmentEditDialog" :title="assignmentForm.id?'编辑任职':'新增任职'" width="620px" append-to-body><el-form label-width="90px"><el-form-item label="所属机构"><el-select v-model="assignmentForm.organizationId" @change="loadAssignmentDepartments"><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id"/></el-select></el-form-item><el-form-item label="任职部门"><el-tree-select v-model="assignmentForm.departmentId" :data="assignmentDepartmentOptions" check-strictly/></el-form-item><el-form-item label="岗位"><el-select v-model="assignmentForm.positionId"><el-option v-for="p in positionOptions" :key="p.id" :label="p.positionName" :value="p.id"/></el-select></el-form-item><el-form-item label="职级"><el-select v-model="assignmentForm.jobLevelId" clearable><el-option v-for="l in levelOptions" :key="l.id" :label="l.levelName" :value="l.id"/></el-select></el-form-item><el-form-item label="主任职"><el-switch v-model="assignmentForm.primaryAssignment"/></el-form-item><el-form-item label="部门负责人"><el-switch v-model="assignmentForm.departmentLeader"/></el-form-item><el-form-item label="生效日期"><el-date-picker v-model="assignmentForm.effectiveFrom" value-format="YYYY-MM-DD"/></el-form-item><el-form-item label="失效日期"><el-date-picker v-model="assignmentForm.effectiveTo" value-format="YYYY-MM-DD"/></el-form-item></el-form><template #footer><el-button @click="assignmentEditDialog=false">取消</el-button><el-button type="primary" @click="submitAssignment">保存</el-button></template></el-dialog>
   </div>
 </template>
 
@@ -146,16 +149,30 @@ import { industryBranding } from '../../../industries/core'
 const branding=industryBranding
 const toOptions=response=>(response?.data||[]).map(item=>({label:item.dictName,value:item.dictValue}))
 const departmentTypes=ref([]),positionCategories=ref([]),levelCategories=ref([]),employeeTypes=ref([]),employmentStatuses=ref([]),genderOptions=ref([])
-const tab=ref('departments'),organizations=ref([]),organizationId=ref(''),departmentRows=ref([]),positionRows=ref([]),levelRows=ref([]),employeeRows=ref([]),assignmentRows=ref([]),employeeKeyword=ref('')
+const tab=ref('departments'),organizations=ref([]),organizationId=ref(''),departmentRows=ref([]),positionRows=ref([]),levelRows=ref([]),employeeRows=ref([]),positionOptions=ref([]),levelOptions=ref([]),employeeOptions=ref([]),assignmentRows=ref([]),employeeKeyword=ref('')
+const positionPage=ref(1),positionSize=ref(10),positionTotal=ref(0),levelPage=ref(1),levelSize=ref(10),levelTotal=ref(0),employeePage=ref(1),employeeSize=ref(10),employeeTotal=ref(0)
 const departmentDialog=ref(false),positionDialog=ref(false),levelDialog=ref(false),employeeDialog=ref(false),assignmentDialog=ref(false),assignmentEditDialog=ref(false)
 const accountDialog=ref(false),activeAccountEmployee=ref({}),accountForm=ref({}),accountEnabled=ref(true),roleRows=ref([]),resetPasswordValue=ref('')
 const departmentForm=ref({}),positionForm=ref({}),levelForm=ref({}),employeeForm=ref({}),assignmentForm=ref({}),activeEmployee=ref({})
 const departmentEnabled=ref(true),positionEnabled=ref(true),levelEnabled=ref(true),assignmentDepartmentRows=ref([])
 const treeOptions=(rows,exclude)=>rows.filter(x=>x.id!==exclude).map(x=>({value:x.id,label:x.departmentName,children:treeOptions(x.children||[],exclude)}))
 const departmentOptions=computed(()=>treeOptions(departmentRows.value,departmentForm.value.id)),assignmentDepartmentOptions=computed(()=>treeOptions(assignmentDepartmentRows.value))
-const filteredEmployees=computed(()=>{const k=employeeKeyword.value.trim().toLowerCase();return !k?employeeRows.value:employeeRows.value.filter(e=>[e.employeeCode,e.employeeName,e.phone].some(v=>String(v||'').toLowerCase().includes(k)))})
-const loadAll=async()=>{const [o,p,l,e,departmentDict,positionDict,levelDict,employeeTypeDict,employmentDict,genderDict]=await Promise.all([orgList({page:0,size:500}),positions(),jobLevels(),employees(),dictionaryOptions('IAM_DEPARTMENT_TYPE'),dictionaryOptions('IAM_POSITION_CATEGORY'),dictionaryOptions('IAM_JOB_LEVEL_CATEGORY'),dictionaryOptions('IAM_EMPLOYEE_TYPE'),dictionaryOptions('IAM_EMPLOYMENT_STATUS'),dictionaryOptions('COMMON_GENDER')]);organizations.value=o?.data?.content||[];positionRows.value=p?.data||[];levelRows.value=l?.data||[];employeeRows.value=e?.data||[];departmentTypes.value=toOptions(departmentDict);positionCategories.value=toOptions(positionDict);levelCategories.value=toOptions(levelDict);employeeTypes.value=toOptions(employeeTypeDict);employmentStatuses.value=toOptions(employmentDict);genderOptions.value=toOptions(genderDict);if(!organizationId.value&&organizations.value.length)organizationId.value=organizations.value[0].id;if(organizationId.value)await loadDepartments()}
+const filteredEmployees=computed(()=>employeeRows.value)
+const pageData=(response)=>response?.data?.content||[]
+const pageTotal=(response)=>response?.data?.totalElements||0
+const loadPositions=async()=>{const response=await positions({page:positionPage.value-1,size:positionSize.value});positionRows.value=pageData(response);positionTotal.value=pageTotal(response)}
+const loadLevels=async()=>{const response=await jobLevels({page:levelPage.value-1,size:levelSize.value});levelRows.value=pageData(response);levelTotal.value=pageTotal(response)}
+const loadEmployees=async()=>{const response=await employees({page:employeePage.value-1,size:employeeSize.value,keyword:employeeKeyword.value||undefined});employeeRows.value=pageData(response);employeeTotal.value=pageTotal(response)}
+const loadAll=async()=>{const [o,p,l,e,departmentDict,positionDict,levelDict,employeeTypeDict,employmentDict,genderDict]=await Promise.all([orgList({page:0,size:500}),positions(),jobLevels(),employees(),dictionaryOptions('IAM_DEPARTMENT_TYPE'),dictionaryOptions('IAM_POSITION_CATEGORY'),dictionaryOptions('IAM_JOB_LEVEL_CATEGORY'),dictionaryOptions('IAM_EMPLOYEE_TYPE'),dictionaryOptions('IAM_EMPLOYMENT_STATUS'),dictionaryOptions('COMMON_GENDER')]);organizations.value=o?.data?.content||[];positionOptions.value=p?.data||[];levelOptions.value=l?.data||[];employeeOptions.value=e?.data||[];departmentTypes.value=toOptions(departmentDict);positionCategories.value=toOptions(positionDict);levelCategories.value=toOptions(levelDict);employeeTypes.value=toOptions(employeeTypeDict);employmentStatuses.value=toOptions(employmentDict);genderOptions.value=toOptions(genderDict);await Promise.all([loadPositions(),loadLevels(),loadEmployees()]);if(!organizationId.value&&organizations.value.length)organizationId.value=organizations.value[0].id;if(organizationId.value)await loadDepartments()}
 const loadDepartments=async()=>{departmentRows.value=organizationId.value?(await organizationUnits(organizationId.value))?.data||[]:[]}
+const onTabChange=(name)=>{if(name==='positions'){positionPage.value=1;loadPositions()}else if(name==='levels'){levelPage.value=1;loadLevels()}else if(name==='employees'){employeePage.value=1;loadEmployees()}}
+const onPositionPageChange=value=>{positionPage.value=value;loadPositions()}
+const onPositionSizeChange=value=>{positionSize.value=value;positionPage.value=1;loadPositions()}
+const onLevelPageChange=value=>{levelPage.value=value;loadLevels()}
+const onLevelSizeChange=value=>{levelSize.value=value;levelPage.value=1;loadLevels()}
+const searchEmployees=()=>{employeePage.value=1;loadEmployees()}
+const onEmployeePageChange=value=>{employeePage.value=value;loadEmployees()}
+const onEmployeeSizeChange=value=>{employeeSize.value=value;employeePage.value=1;loadEmployees()}
 const editDepartment=(row=null,parentId='')=>{departmentForm.value=row?{...row}:{organizationId:organizationId.value,parentId,departmentType:departmentTypes.value[0]?.value||'',sortOrder:0,status:1};departmentEnabled.value=departmentForm.value.status!==0;departmentDialog.value=true}
 const submitDepartment=async()=>{departmentForm.value.status=departmentEnabled.value?1:0;await saveOrganizationUnit(departmentForm.value);departmentDialog.value=false;await loadDepartments();ElMessage.success('部门已保存')}
 const removeDepartment=async id=>{await confirmDelete();await deleteOrganizationUnit(id);await loadDepartments()}
@@ -187,4 +204,4 @@ const dictionaryLabel=(options,value)=>options.find(item=>item.value===value)?.l
 const statusName=value=>dictionaryLabel(employmentStatuses.value,value)
 loadAll()
 </script>
-<style scoped>.directory-tabs{padding:20px 22px;background:#fff;border:1px solid #e1e7eb;border-radius:20px}.toolbar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px}.toolbar .el-select{width:280px}.toolbar .el-input{width:300px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}.assignment-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;color:#84919b;font-size:12px}.account-alert{margin-bottom:18px}@media(max-width:700px){.form-grid{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.toolbar .el-select,.toolbar .el-input{width:100%}}</style>
+<style scoped>.directory-tabs{padding:20px 22px;background:#fff;border:1px solid #e1e7eb;border-radius:20px}.toolbar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px}.toolbar .el-select{width:280px}.toolbar .el-input{width:300px}.pager{display:flex;justify-content:flex-end;margin-top:16px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}.assignment-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;color:#84919b;font-size:12px}.account-alert{margin-bottom:18px}@media(max-width:700px){.form-grid{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.toolbar .el-select,.toolbar .el-input{width:100%}}</style>

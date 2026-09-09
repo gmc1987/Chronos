@@ -27,8 +27,13 @@ public class EducationAgentController {
 	}
 
 	@GetMapping("/education/agents/scheduling/proposals")
-	public ResultData<List<SchedulingAgentProposal>> proposals(@RequestParam String semesterCode) {
-		return ok(service.proposals(semesterCode));
+	public ResultData<?> proposals(
+			@RequestParam String semesterCode,
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null
+				? ok(service.proposals(semesterCode))
+				: ok(service.proposals(semesterCode, page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/education/agents/scheduling/proposals")

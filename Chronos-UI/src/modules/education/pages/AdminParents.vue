@@ -24,6 +24,15 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      :total="total"
+      @size-change="changePageSize"
+      @current-change="loadParents"
+    />
 
     <el-dialog v-model="parentDialog" :title="parentForm.id ? '编辑家长' : '新增家长'" width="600px">
       <el-form label-width="120px">
@@ -101,6 +110,9 @@ const parentForm = ref({})
 const relationForm = ref({})
 const activeParent = ref({})
 const relations = ref([])
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const options = response => (response?.data || []).map(item => ({
   label: item.dictName,
@@ -112,18 +124,23 @@ const studentName = id => {
   return student ? `${student.studentName}（${student.studentNo}）` : id
 }
 
+const loadParents = async () => {
+  const response = await listEducationParents({ page: page.value - 1, size: pageSize.value })
+  parents.value = response?.data?.content || response?.data || []
+  total.value = response?.data?.totalElements ?? parents.value.length
+}
 const load = async () => {
-  const [parentResponse, studentResponse, genderResponse, relationshipResponse] = await Promise.all([
-    listEducationParents(),
+  const [studentResponse, genderResponse, relationshipResponse] = await Promise.all([
     listEducationStudents(),
     dictionaryOptions('COMMON_GENDER'),
     dictionaryOptions('EDU_GUARDIAN_RELATIONSHIP'),
   ])
-  parents.value = parentResponse?.data || []
   students.value = studentResponse?.data || []
   genders.value = options(genderResponse)
   relationships.value = options(relationshipResponse)
+  await loadParents()
 }
+const changePageSize = () => { page.value = 1; loadParents() }
 const editParent = (row = {}) => {
   parentForm.value = { status: 'ACTIVE', ...row }
   parentDialog.value = true
@@ -138,7 +155,8 @@ const saveParent = async () => {
 const removeParent = async row => {
   await ElMessageBox.confirm(`确认删除家长“${row.parentName}”？`, '删除确认', { type: 'warning' })
   await deleteEducationParent(row.id)
-  await load()
+  if (!parents.value.length && page.value > 1) page.value -= 1
+  await loadParents()
 }
 const openRelations = async parent => {
   activeParent.value = parent

@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Page;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -58,6 +59,11 @@ public class KnowledgeService {
 		return knowledgeBases.findAllByOrderByCreateTimeDesc();
 	}
 
+	public Page<KnowledgeBase> knowledgeBases(int page, int size) {
+		return knowledgeBases.findAllByOrderByCreateTimeDesc(PageRequest.of(
+				Math.max(0, page), Math.min(Math.max(1, size), 100)));
+	}
+
 	@Transactional
 	public KnowledgeBase saveKnowledgeBase(String id, KnowledgeBase command) {
 		requireText(command.getBaseCode(), "知识库编码不能为空");
@@ -89,6 +95,14 @@ public class KnowledgeService {
 		knowledgeBases.findById(knowledgeBaseId)
 				.orElseThrow(() -> new IllegalArgumentException("知识库不存在"));
 		return documents.findByKnowledgeBaseIdOrderByCreateTimeDesc(knowledgeBaseId);
+	}
+
+	public Page<KnowledgeDocument> documents(String knowledgeBaseId, int page, int size) {
+		knowledgeBases.findById(knowledgeBaseId)
+				.orElseThrow(() -> new IllegalArgumentException("知识库不存在"));
+		return documents.findByKnowledgeBaseIdOrderByCreateTimeDesc(
+				knowledgeBaseId,
+				PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100)));
 	}
 
 	@Transactional

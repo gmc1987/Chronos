@@ -683,6 +683,11 @@ public class WorkflowService {
 				.toList();
 	}
 
+	@Transactional
+	public Page<Map<String, Object>> pending(String actor, int page, int size) {
+		return page(pending(actor), page, size);
+	}
+
 	/** 门户首页只返回少量可操作摘要，完整数据仍由流程任务中心分页承载。 */
 	@Transactional
 	public Map<String, Object> portalTodo(String actor) {
@@ -794,6 +799,14 @@ public class WorkflowService {
 		return Map.of(
 				"outgoing", delegations.findByDelegatorOrderByCreateTimeDesc(actor),
 				"incoming", delegations.findByDelegateeOrderByCreateTimeDesc(actor));
+	}
+
+	@Transactional(readOnly = true)
+	public Map<String, Page<WorkflowDelegation>> delegations(String actor, int page, int size) {
+		Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
+		return Map.of(
+				"outgoing", delegations.findByDelegatorOrderByCreateTimeDesc(actor, pageable),
+				"incoming", delegations.findByDelegateeOrderByCreateTimeDesc(actor, pageable));
 	}
 
 	@Transactional
@@ -979,9 +992,19 @@ public class WorkflowService {
 	}
 
 	@Transactional(readOnly = true)
+	public Page<Map<String, Object>> handled(String actor, int page, int size) {
+		return page(handled(actor), page, size);
+	}
+
+	@Transactional(readOnly = true)
 	public List<Map<String, Object>> initiated(String actor) {
 		return instances.findByInitiatorOrderByCreateTimeDesc(actor).stream()
 				.map(i -> instanceView(i, requireDefinition(i.getDefinitionId()))).toList();
+	}
+
+	@Transactional(readOnly = true)
+	public Page<Map<String, Object>> initiated(String actor, int page, int size) {
+		return page(initiated(actor), page, size);
 	}
 
 	public List<Map<String, String>> directoryUsers(String actor) {
@@ -1008,6 +1031,13 @@ public class WorkflowService {
 								&& t.getDueAt() != null && t.getDueAt().isBefore(now))
 						.count(),
 				"openIncidents", openIncidents);
+	}
+
+	private <T> Page<T> page(List<T> values, int page, int size) {
+		Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
+		int from = Math.min((int) pageable.getOffset(), values.size());
+		int to = Math.min(from + pageable.getPageSize(), values.size());
+		return new PageImpl<>(values.subList(from, to), pageable, values.size());
 	}
 
 	@Transactional

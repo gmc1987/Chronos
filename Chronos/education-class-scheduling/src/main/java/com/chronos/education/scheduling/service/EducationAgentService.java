@@ -10,6 +10,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +64,12 @@ public class EducationAgentService {
 
 	public List<SchedulingAgentProposal> proposals(String semesterCode) {
 		return proposals.findBySemesterCodeOrderByCreateTimeDesc(required(semesterCode, "学期编码"));
+	}
+
+	public Page<SchedulingAgentProposal> proposals(String semesterCode, int page, int size) {
+		return proposals.findBySemesterCodeOrderByCreateTimeDesc(
+				required(semesterCode, "学期编码"),
+				PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100)));
 	}
 
 	@Transactional

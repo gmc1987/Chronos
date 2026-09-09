@@ -21,6 +21,15 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      :total="total"
+      @size-change="changePageSize"
+      @current-change="load"
+    />
   </div>
 </template>
 
@@ -35,14 +44,20 @@ import {
 
 const events = ref([])
 const loading = ref(false)
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const load = async () => {
   loading.value = true
   try {
-    events.value = (await listDeadWorkflowOutbox())?.data || []
+    const response = await listDeadWorkflowOutbox({ page: page.value - 1, size: pageSize.value })
+    events.value = response?.data?.content || response?.data || []
+    total.value = response?.data?.totalElements ?? events.value.length
   } finally {
     loading.value = false
   }
+  const changePageSize = () => { page.value = 1; load() }
 }
 
 const retry = async row => {

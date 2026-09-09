@@ -23,7 +23,7 @@
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="消息模板">
-        <div class="toolbar"><el-input v-model="keyword" clearable placeholder="模板编码或名称" @keyup.enter="loadTemplates" /><el-button @click="loadTemplates">查询</el-button><el-button type="primary" @click="openTemplate()">新增模板</el-button></div>
+        <div class="toolbar"><el-input v-model="keyword" clearable placeholder="模板编码或名称" @keyup.enter="queryTemplates" /><el-button @click="queryTemplates">查询</el-button><el-button type="primary" @click="openTemplate()">新增模板</el-button></div>
         <el-table :data="templates">
           <el-table-column prop="templateCode" label="模板编码" />
           <el-table-column prop="templateName" label="模板名称" />
@@ -31,6 +31,7 @@
           <el-table-column label="状态" width="100"><template #default="scope">{{ scope.row.enabled ? '启用' : '停用' }}</template></el-table-column>
           <el-table-column label="操作" width="150"><template #default="scope"><el-button link @click="openTemplate(scope.row)">编辑</el-button><el-button link type="danger" @click="removeTemplate(scope.row)">删除</el-button></template></el-table-column>
         </el-table>
+        <el-pagination v-model:current-page="templatePage" v-model:page-size="templatePageSize" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" :total="templateTotal" @size-change="changeTemplatePageSize" @current-change="loadTemplates" />
       </el-tab-pane>
       <el-tab-pane label="投递死信">
         <el-table :data="deadDeliveries">
@@ -45,6 +46,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination v-model:current-page="deadPage" v-model:page-size="deadPageSize" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" :total="deadTotal" @size-change="changeDeadPageSize" @current-change="loadDeadDeliveries" />
       </el-tab-pane>
     </el-tabs>
     <el-dialog v-model="dialog" :title="templateForm.id ? '编辑模板' : '新增模板'" width="680px">
@@ -85,16 +87,31 @@ const keyword = ref('')
 const dialog = ref(false)
 const emptyTemplate = () => ({ id: '', templateCode: '', templateName: '', channel: 'IN_APP', subjectTemplate: '', contentTemplate: '', enabled: true })
 const templateForm = ref(emptyTemplate())
-const loadTemplates = async () => { const response = await listNotificationTemplates({ keyword: keyword.value, page: 0, size: 100 }); templates.value = response.data.content || [] }
+const templatePage = ref(1), templatePageSize = ref(10), templateTotal = ref(0)
+const deadPage = ref(1), deadPageSize = ref(10), deadTotal = ref(0)
+const loadTemplates = async () => {
+  const response = await listNotificationTemplates({ keyword: keyword.value, page: templatePage.value - 1, size: templatePageSize.value })
+  templates.value = response.data?.content || response.data || []
+  templateTotal.value = response.data?.totalElements ?? templates.value.length
+}
+const queryTemplates = () => { templatePage.value = 1; loadTemplates() }
+const changeTemplatePageSize = () => { templatePage.value = 1; loadTemplates() }
+const loadDeadDeliveries = async () => {
+  const response = await listDeadPublicationDeliveries({ page: deadPage.value - 1, size: deadPageSize.value })
+  deadDeliveries.value = response.data?.content || response.data || []
+  deadTotal.value = response.data?.totalElements ?? deadDeliveries.value.length
+}
+const changeDeadPageSize = () => { deadPage.value = 1; loadDeadDeliveries() }
 const load = async () => {
   const [policyResponse, monitorResponse, deadResponse] = await Promise.all([
     listNotificationChannelPolicies(),
     notificationMonitor(),
-    listDeadPublicationDeliveries({ page: 0, size: 100 })
+    listDeadPublicationDeliveries({ page: deadPage.value - 1, size: deadPageSize.value })
   ])
   policies.value = policyResponse.data || []
   Object.assign(monitor, monitorResponse.data || {})
-  deadDeliveries.value = deadResponse.data?.content || []
+  deadDeliveries.value = deadResponse.data?.content || deadResponse.data || []
+  deadTotal.value = deadResponse.data?.totalElements ?? deadDeliveries.value.length
   await loadTemplates()
 }
 const savePolicy = async row => { await saveNotificationChannelPolicy(row.channel, row); ElMessage.success('渠道策略已保存') }

@@ -3,6 +3,9 @@ package com.chronos.education.scheduling.service;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -88,6 +91,10 @@ public class AcademicDataService {
 		return terms.findAllByOrderByStartDateDesc();
 	}
 
+	public Page<AcademicTerm> terms(int page, int size) {
+		return terms.findAllByOrderByStartDateDesc(pageable(page, size));
+	}
+
 	@Transactional
 	public AcademicTerm saveTerm(String id, AcademicTerm command) {
 		if (command.getStartDate() == null || command.getEndDate() == null
@@ -106,6 +113,10 @@ public class AcademicDataService {
 
 	public List<EducationGrade> grades() {
 		return grades.findAllByOrderByEnrollmentYearDescSortOrderAsc();
+	}
+
+	public Page<EducationGrade> grades(int page, int size) {
+		return grades.findAllByOrderByEnrollmentYearDescSortOrderAsc(pageable(page, size));
 	}
 
 	@Transactional
@@ -130,6 +141,10 @@ public class AcademicDataService {
 		return subjects.findAllByOrderBySortOrderAscSubjectCodeAsc();
 	}
 
+	public Page<Subject> subjects(int page, int size) {
+		return subjects.findAllByOrderBySortOrderAscSubjectCodeAsc(pageable(page, size));
+	}
+
 	@Transactional
 	public Subject saveSubject(String id, Subject command) {
 		return subjects.save(entity(id, command, subjects));
@@ -146,6 +161,10 @@ public class AcademicDataService {
 
 	public List<CourseCatalog> courses() {
 		return courses.findAllByOrderByCourseCode();
+	}
+
+	public Page<CourseCatalog> courses(int page, int size) {
+		return courses.findAllByOrderByCourseCode(pageable(page, size));
 	}
 
 	@Transactional
@@ -168,6 +187,10 @@ public class AcademicDataService {
 		return majors.findAllByOrderByMajorCode();
 	}
 
+	public Page<Major> majors(int page, int size) {
+		return majors.findAllByOrderByMajorCode(pageable(page, size));
+	}
+
 	@Transactional
 	public Major saveMajor(String id, Major command) {
 		return majors.save(entity(id, command, majors));
@@ -183,6 +206,10 @@ public class AcademicDataService {
 
 	public List<AdministrativeClass> administrativeClasses() {
 		return administrativeClasses.findAllByOrderByGradeYearDescClassCodeAsc();
+	}
+
+	public Page<AdministrativeClass> administrativeClasses(int page, int size) {
+		return administrativeClasses.findAllByOrderByGradeYearDescClassCodeAsc(pageable(page, size));
 	}
 
 	@Transactional
@@ -207,6 +234,10 @@ public class AcademicDataService {
 		return students.findAllByOrderByStudentNo();
 	}
 
+	public Page<StudentProfile> students(int page, int size) {
+		return students.findAllByOrderByStudentNo(pageable(page, size));
+	}
+
 	@Transactional
 	public StudentProfile saveStudent(String id, StudentProfile command) {
 		majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
@@ -223,6 +254,10 @@ public class AcademicDataService {
 		return teachers.findAllByOrderByTeacherNo();
 	}
 
+	public Page<TeacherAcademicProfile> teachers(int page, int size) {
+		return teachers.findAllByOrderByTeacherNo(pageable(page, size));
+	}
+
 	@Transactional
 	public TeacherAcademicProfile saveTeacher(String id, TeacherAcademicProfile command) {
 		return teachers.save(entity(id, command, teachers));
@@ -230,6 +265,10 @@ public class AcademicDataService {
 
 	public List<ParentProfile> parents() {
 		return parents.findAllByOrderByParentNo();
+	}
+
+	public Page<ParentProfile> parents(int page, int size) {
+		return parents.findAllByOrderByParentNo(pageable(page, size));
 	}
 
 	@Transactional
@@ -278,6 +317,10 @@ public class AcademicDataService {
 
 	public List<TeacherTeachingAssignment> teachingAssignments() {
 		return teachingAssignments.findAllByOrderByCreateTimeDesc();
+	}
+
+	public Page<TeacherTeachingAssignment> teachingAssignments(int page, int size) {
+		return teachingAssignments.findAllByOrderByCreateTimeDesc(pageable(page, size));
 	}
 
 	@Transactional
@@ -369,6 +412,10 @@ public class AcademicDataService {
 
 	private int value(Integer number) {
 		return number == null ? 0 : number;
+	}
+
+	private Pageable pageable(int page, int size) {
+		return PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
 	}
 
 	private <T> T entity(String id, T command, org.springframework.data.jpa.repository.JpaRepository<T, String> repository) {

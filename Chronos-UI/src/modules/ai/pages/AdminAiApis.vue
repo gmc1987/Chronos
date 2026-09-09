@@ -6,8 +6,8 @@
         <div class="subtitle">配置模型 API 与请求参数</div>
       </div>
       <div class="actions">
-        <el-input v-model="keyword" placeholder="API 名称" class="search-input" @keyup.enter="load" />
-        <el-input v-model="methodType" placeholder="Method" class="search-input" @keyup.enter="load" />
+        <el-input v-model="keyword" placeholder="API 名称" class="search-input" @keyup.enter="search" />
+        <el-input v-model="methodType" placeholder="Method" class="search-input" @keyup.enter="search" />
         <el-button type="primary" @click="openCreate">新增 API</el-button>
       </div>
     </div>
@@ -246,6 +246,10 @@ const load = async () => {
   })
   apis.value = res?.data?.content || []
   total.value = res?.data?.totalElements || 0
+}
+const search = () => {
+  page.value = 1
+  load()
 }
 
 const onPageChange = (val) => {

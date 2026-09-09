@@ -15,6 +15,15 @@
           <el-button v-if="scope.row.status === 'DRAFT'" size="small" type="danger" @click.stop="removeForm(scope.row)">删除</el-button>
         </template></el-table-column>
       </el-table>
+      <el-pagination
+        v-model:current-page="formsPage"
+        v-model:page-size="formsPageSize"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
+        :total="formsTotal"
+        @size-change="changeFormsPageSize"
+        @current-change="load"
+      />
     </div>
 
     <div v-else>
@@ -49,11 +58,17 @@ import { listForms, createForm, updateForm, deleteForm, publishForm, createFormV
 const viewMode = ref('list'), forms = ref([]), fields = ref([]), currentForm = ref({})
 const showFormDialog = ref(false), showFieldDialog = ref(false), showPreview = ref(false), optionText = ref('')
 const formDraft = ref({ formKey: '', formName: '', version: 'v1', description: '' })
+const formsPage = ref(1), formsPageSize = ref(10), formsTotal = ref(0)
 const fieldDraft = ref({ id: '', formId: '', fieldKey: '', fieldLabel: '', fieldType: 'TEXT', required: false, sortOrder: 0, optionsJson: '' })
 const fieldTypes = [{ label: '单行文本', value: 'TEXT' }, { label: '多行文本', value: 'TEXTAREA' }, { label: '数字', value: 'NUMBER' }, { label: '日期', value: 'DATE' }, { label: '日期时间', value: 'DATETIME' }, { label: '下拉选择', value: 'SELECT' }, { label: '单选', value: 'RADIO' }, { label: '多选', value: 'CHECKBOX' }, { label: '开关', value: 'BOOLEAN' }, { label: '附件', value: 'FILE' }]
 const editable = computed(() => currentForm.value.status === 'DRAFT')
 const optionField = computed(() => ['SELECT', 'RADIO', 'CHECKBOX'].includes(fieldDraft.value.fieldType))
-const load = async () => { const res = await listForms({ page: 0, size: 200 }); forms.value = res?.data?.content || [] }
+const load = async () => {
+  const res = await listForms({ page: formsPage.value - 1, size: formsPageSize.value })
+  forms.value = res?.data?.content || res?.data || []
+  formsTotal.value = res?.data?.totalElements ?? forms.value.length
+}
+const changeFormsPageSize = () => { formsPage.value = 1; load() }
 const loadFields = async () => { const res = await listFormFields(currentForm.value.id); fields.value = res?.data || [] }
 const openCreate = () => { formDraft.value = { formKey: '', formName: '', version: 'v1', description: '' }; showFormDialog.value = true }
 const createCurrentForm = async () => { const res = await createForm(formDraft.value); showFormDialog.value = false; await load(); if (res?.data) await openDesigner(res.data) }

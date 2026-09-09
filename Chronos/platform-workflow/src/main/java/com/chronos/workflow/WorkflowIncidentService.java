@@ -21,6 +21,9 @@ import org.flowable.engine.ManagementService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.job.api.Job;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -131,6 +134,15 @@ public class WorkflowIncidentService {
 				? incidents.findAllByOrderByCreateTimeDesc()
 				: incidents.findByStatusOrderByCreateTimeDesc(status.toUpperCase());
 		return values.stream().map(this::view).toList();
+	}
+
+	@Transactional(readOnly = true)
+	public Page<Map<String, Object>> list(String status, int page, int size) {
+		Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
+		Page<WorkflowIncident> values = status == null || status.isBlank() || "ALL".equalsIgnoreCase(status)
+				? incidents.findAllByOrderByCreateTimeDesc(pageable)
+				: incidents.findByStatusOrderByCreateTimeDesc(status.toUpperCase(), pageable);
+		return values.map(this::view);
 	}
 
 	@Transactional

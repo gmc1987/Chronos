@@ -34,8 +34,12 @@ public class KnowledgeController {
 	}
 
 	@GetMapping("/admin/knowledge-bases")
-	public ResultData<List<KnowledgeBase>> knowledgeBases() {
-		return ok(service.knowledgeBases());
+	public ResultData<?> knowledgeBases(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null
+				? ok(service.knowledgeBases())
+				: ok(service.knowledgeBases(page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/knowledge-bases")
@@ -60,8 +64,13 @@ public class KnowledgeController {
 	}
 
 	@GetMapping("/admin/knowledge-documents")
-	public ResultData<List<KnowledgeDocument>> documents(@RequestParam String knowledgeBaseId) {
-		return ok(service.documents(knowledgeBaseId));
+	public ResultData<?> documents(
+			@RequestParam String knowledgeBaseId,
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		return page == null && size == null
+				? ok(service.documents(knowledgeBaseId))
+				: ok(service.documents(knowledgeBaseId, page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/knowledge-documents/text")

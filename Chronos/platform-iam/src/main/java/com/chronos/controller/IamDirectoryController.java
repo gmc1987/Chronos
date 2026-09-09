@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.HttpHeaders;
@@ -42,7 +45,7 @@ public class IamDirectoryController {
     @PostMapping("/organization-units") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')") public ResultData<OrganizationUnitVO> createUnit(@Valid @RequestBody OrganizationUnitDTO v){v.setId(null);return ok(service.saveOrganizationUnit(v));}
     @PutMapping("/organization-units/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')") public ResultData<OrganizationUnitVO> updateUnit(@PathVariable String id,@Valid @RequestBody OrganizationUnitDTO v){v.setId(id);return ok(service.saveOrganizationUnit(v));}
     @DeleteMapping("/organization-units/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')") public ResultData<Void> deleteUnit(@PathVariable String id){service.deleteOrganizationUnit(id);return ok(null);}
-    @GetMapping("/positions") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')") public ResultData<List<Position>> positions(){return ok(service.positions());}
+    @GetMapping("/positions") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')") public ResultData<?> positions(@RequestParam(required=false) Integer page,@RequestParam(defaultValue="10") int size){return page==null?ok(service.positions()):ok(service.pagePositions(pageable(page,size))); }
     @PostMapping("/positions") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')") public ResultData<Position> createPosition(@RequestBody Position v){v.setId(null);return ok(service.savePosition(v));}
     @PutMapping("/positions/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')") public ResultData<Position> updatePosition(@PathVariable String id,@RequestBody Position v){v.setId(id);return ok(service.savePosition(v));}
     @DeleteMapping("/positions/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')") public ResultData<Void> deletePosition(@PathVariable String id){service.deletePosition(id);return ok(null);}
@@ -50,11 +53,11 @@ public class IamDirectoryController {
     @PostMapping("/job-titles") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')") public ResultData<JobTitle> createJobTitle(@RequestBody JobTitle v){v.setId(null);return ok(service.saveJobTitle(v));}
     @PutMapping("/job-titles/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')") public ResultData<JobTitle> updateJobTitle(@PathVariable String id,@RequestBody JobTitle v){v.setId(id);return ok(service.saveJobTitle(v));}
     @DeleteMapping("/job-titles/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')") public ResultData<Void> deleteJobTitle(@PathVariable String id){service.deleteJobTitle(id);return ok(null);}
-    @GetMapping("/job-levels") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')") public ResultData<List<JobLevel>> jobLevels(){return ok(service.jobLevels());}
+    @GetMapping("/job-levels") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')") public ResultData<?> jobLevels(@RequestParam(required=false) Integer page,@RequestParam(defaultValue="10") int size){return page==null?ok(service.jobLevels()):ok(service.pageJobLevels(pageable(page,size))); }
     @PostMapping("/job-levels") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')") public ResultData<JobLevel> createJobLevel(@RequestBody JobLevel v){v.setId(null);return ok(service.saveJobLevel(v));}
     @PutMapping("/job-levels/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')") public ResultData<JobLevel> updateJobLevel(@PathVariable String id,@RequestBody JobLevel v){v.setId(id);return ok(service.saveJobLevel(v));}
     @DeleteMapping("/job-levels/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')") public ResultData<Void> deleteJobLevel(@PathVariable String id){service.deleteJobLevel(id);return ok(null);}
-    @GetMapping("/employees") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage','iam:role:authorize')") public ResultData<List<Employee>> employees(){return ok(service.employees());}
+    @GetMapping("/employees") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage','iam:role:authorize')") public ResultData<?> employees(@RequestParam(required=false) Integer page,@RequestParam(defaultValue="10") int size,@RequestParam(defaultValue="") String keyword){return page==null?ok(service.employees()):ok(service.pageEmployees(keyword,pageable(page,size))); }
     @PostMapping("/employees") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')") public ResultData<Employee> createEmployee(@RequestBody Employee v){v.setId(null);return ok(service.saveEmployee(v));}
     @PutMapping("/employees/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')") public ResultData<Employee> updateEmployee(@PathVariable String id,@RequestBody Employee v){v.setId(id);return ok(service.saveEmployee(v));}
     @DeleteMapping("/employees/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')") public ResultData<Void> deleteEmployee(@PathVariable String id){service.deleteEmployee(id);return ok(null);}
@@ -65,4 +68,5 @@ public class IamDirectoryController {
     @PutMapping("/assignments/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')") public ResultData<EmployeeAssignmentVO> updateAssignment(@PathVariable String id,@Valid @RequestBody EmployeeAssignmentDTO v){v.setId(id);return ok(service.saveAssignment(v));}
     @DeleteMapping("/assignments/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')") public ResultData<Void> deleteAssignment(@PathVariable String id){service.deleteAssignment(id);return ok(null);}
     private <T> ResultData<T> ok(T data){return ResultData.<T>builder().code("200").msg("ok").data(data).build();}
+    private Pageable pageable(int page,int size){return PageRequest.of(Math.max(0,page),Math.min(Math.max(1,size),100));}
 }

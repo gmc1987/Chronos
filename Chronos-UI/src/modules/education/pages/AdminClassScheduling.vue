@@ -101,6 +101,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-model:current-page="offeringPage"
+          v-model:page-size="offeringPageSize"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          :total="offeringTotal"
+          @size-change="changeOfferingPageSize"
+          @current-change="loadOfferingsPage"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="教室" name="classrooms">
@@ -118,6 +127,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-model:current-page="classroomPage"
+          v-model:page-size="classroomPageSize"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          :total="classroomTotal"
+          @size-change="changeClassroomPageSize"
+          @current-change="loadClassroomsPage"
+        />
       </el-tab-pane>
 
 	  <el-tab-pane label="调课回写异常" name="incidents">
@@ -137,8 +155,8 @@
 
     <el-dialog v-model="entryDialog" title="课表安排" width="600px">
       <el-form label-width="90px">
-        <el-form-item label="教学任务"><el-select v-model="entryForm.offeringId" filterable><el-option v-for="item in offerings" :key="item.id" :label="`${item.courseName} / ${item.teachingClassName} / ${item.teacherName}`" :value="item.id" /></el-select></el-form-item>
-        <el-form-item label="教室"><el-select v-model="entryForm.classroomId" filterable><el-option v-for="item in classrooms" :key="item.id" :label="`${item.roomName}（${item.capacity}人）`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="教学任务"><el-select v-model="entryForm.offeringId" filterable><el-option v-for="item in offeringOptions" :key="item.id" :label="`${item.courseName} / ${item.teachingClassName} / ${item.teacherName}`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="教室"><el-select v-model="entryForm.classroomId" filterable><el-option v-for="item in classroomOptions" :key="item.id" :label="`${item.roomName}（${item.capacity}人）`" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="星期"><el-select v-model="entryForm.dayOfWeek"><el-option v-for="day in 7" :key="day" :label="`星期${dayName(day)}`" :value="day" /></el-select></el-form-item>
         <el-form-item label="节次"><el-input-number v-model="entryForm.periodNo" :min="1" :max="20" /></el-form-item>
         <el-form-item label="授课周次"><el-input-number v-model="entryForm.startWeek" :min="1" /><span class="separator">至</span><el-input-number v-model="entryForm.endWeek" :min="1" /></el-form-item>
@@ -212,6 +230,8 @@ const semesterCode = ref('2026-2027-1')
 const activeTab = ref('schedule')
 const offerings = ref([])
 const classrooms = ref([])
+const offeringOptions = ref([])
+const classroomOptions = ref([])
 const terms = ref([])
 const courses = ref([])
 const teachers = ref([])
@@ -223,6 +243,12 @@ const scheduleDimension = ref('ALL')
 const scheduleTargetId = ref('')
 const incidents = ref([])
 const versions = ref([])
+const offeringPage = ref(1)
+const offeringPageSize = ref(10)
+const offeringTotal = ref(0)
+const classroomPage = ref(1)
+const classroomPageSize = ref(10)
+const classroomTotal = ref(0)
 const entryDialog = ref(false)
 const offeringDialog = ref(false)
 const classroomDialog = ref(false)
@@ -236,7 +262,7 @@ const dimensionOptions = computed(() => {
     return teachers.value.map(item => ({ label: `${item.teacherName}（${item.teacherNo}）`, value: item.id }))
   }
   if (scheduleDimension.value === 'TEACHING_CLASS') {
-    return offerings.value.map(item => ({ label: `${item.teachingClassName} / ${item.courseName}`, value: item.id }))
+    return offeringOptions.value.map(item => ({ label: `${item.teachingClassName} / ${item.courseName}`, value: item.id }))
   }
   if (scheduleDimension.value === 'ADMIN_CLASS') {
     return administrativeClasses.value.map(item => ({ label: item.className, value: item.id }))
@@ -245,7 +271,7 @@ const dimensionOptions = computed(() => {
     return students.value.map(item => ({ label: `${item.studentName}（${item.studentNo}）`, value: item.id }))
   }
   if (scheduleDimension.value === 'CLASSROOM') {
-    return classrooms.value.map(item => ({ label: item.roomName, value: item.id }))
+    return classroomOptions.value.map(item => ({ label: item.roomName, value: item.id }))
   }
   return []
 })
@@ -267,12 +293,32 @@ const loadAll = async () => {
   teachers.value = teacherResponse.data || []
   students.value = studentResponse.data || []
   administrativeClasses.value = classResponse.data || []
-  offerings.value = offeringResponse.data || []
-  classrooms.value = classroomResponse.data || []
+  offeringOptions.value = offeringResponse.data || []
+  classroomOptions.value = classroomResponse.data || []
   roomTypes.value = (roomTypeResponse?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
   versions.value = versionResponse.data || []
-  await loadSchedule()
+  offeringPage.value = 1
+  classroomPage.value = 1
+  await Promise.all([loadOfferingsPage(), loadClassroomsPage(), loadSchedule()])
 }
+const loadOfferingsPage = async () => {
+  const response = await listCourseOfferings(semesterCode.value, {
+    page: offeringPage.value - 1,
+    size: offeringPageSize.value,
+  })
+  offerings.value = response.data?.content || response.data || []
+  offeringTotal.value = response.data?.totalElements ?? offerings.value.length
+}
+const loadClassroomsPage = async () => {
+  const response = await listClassrooms({
+    page: classroomPage.value - 1,
+    size: classroomPageSize.value,
+  })
+  classrooms.value = response.data?.content || response.data || []
+  classroomTotal.value = response.data?.totalElements ?? classrooms.value.length
+}
+const changeOfferingPageSize = () => { offeringPage.value = 1; loadOfferingsPage() }
+const changeClassroomPageSize = () => { classroomPage.value = 1; loadClassroomsPage() }
 const loadSchedule = async () => {
   if (scheduleDimension.value !== 'ALL' && !scheduleTargetId.value) {
     schedule.value = []

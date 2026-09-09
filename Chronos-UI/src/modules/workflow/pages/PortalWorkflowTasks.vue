@@ -11,7 +11,7 @@
       </div>
     </div>
 
-    <el-tabs v-model="tab" @tab-change="load">
+    <el-tabs v-model="tab" @tab-change="changeTab">
       <el-tab-pane label="待办" name="pending">
         <el-table :data="pending" v-loading="loading">
           <el-table-column prop="flowName" label="流程" />
@@ -79,6 +79,15 @@
         </el-table>
       </el-tab-pane>
     </el-tabs>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      :total="total"
+      @size-change="changePageSize"
+      @current-change="load"
+    />
 
     <el-dialog v-model="operationDialog" :title="operationTitle" width="480px">
       <el-form label-width="80px">
@@ -138,6 +147,9 @@ const initiated = ref([])
 const users = ref([])
 const loading = ref(false)
 const unreadCount = ref(0)
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 const operationDialog = ref(false)
 const operationTask = ref(null)
 const operationType = ref('')
@@ -147,12 +159,20 @@ const operationTitle = computed(() => ({ transfer: '转办任务', 'add-sign': '
 const load = async () => {
   loading.value = true
   try {
-    if (tab.value === 'pending') pending.value = (await pendingWorkflowTasks())?.data || []
-    else if (tab.value === 'handled') handled.value = (await handledWorkflowTasks())?.data || []
-    else initiated.value = (await initiatedWorkflowInstances())?.data || []
+    const params = { page: page.value - 1, size: pageSize.value }
+    const response = tab.value === 'pending'
+      ? await pendingWorkflowTasks(params)
+      : tab.value === 'handled' ? await handledWorkflowTasks(params) : await initiatedWorkflowInstances(params)
+    const values = response?.data?.content || response?.data || []
+    total.value = response?.data?.totalElements ?? values.length
+    if (tab.value === 'pending') pending.value = values
+    else if (tab.value === 'handled') handled.value = values
+    else initiated.value = values
   } finally {
     loading.value = false
   }
+  const changeTab = () => { page.value = 1; load() }
+  const changePageSize = () => { page.value = 1; load() }
 }
 
 const comment = async title => (await ElMessageBox.prompt('请输入处理意见', title, { inputPlaceholder: '意见（可选）' })).value || ''

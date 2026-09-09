@@ -6,7 +6,7 @@
         <p>查看 Flowable 自动节点死信，并执行受控重试、跳过或终止</p>
       </div>
       <div class="actions">
-        <el-select v-model="status" style="width: 140px" @change="load">
+        <el-select v-model="status" style="width: 140px" @change="changeStatus">
           <el-option label="待处理" value="OPEN" />
           <el-option label="重试中" value="RETRYING" />
           <el-option label="已解决" value="RESOLVED" />
@@ -59,6 +59,15 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      :total="total"
+      @size-change="changePageSize"
+      @current-change="load"
+    />
 
     <el-dialog v-model="executionVisible" title="自动节点执行日志" width="900px">
       <el-table :data="executionRows" v-loading="executionLoading" border max-height="520">
@@ -102,14 +111,21 @@ const canManage = hasAdminPermission(
   'workflow:instance:manage',
   'workflow:manage'
 )
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const load = async () => {
   loading.value = true
   try {
-    rows.value = (await listWorkflowIncidents(status.value))?.data || []
+    const response = await listWorkflowIncidents(status.value, { page: page.value - 1, size: pageSize.value })
+    rows.value = response?.data?.content || response?.data || []
+    total.value = response?.data?.totalElements ?? rows.value.length
   } finally {
     loading.value = false
   }
+  const changePageSize = () => { page.value = 1; load() }
+  const changeStatus = () => { page.value = 1; load() }
 }
 
 const retry = async row => {

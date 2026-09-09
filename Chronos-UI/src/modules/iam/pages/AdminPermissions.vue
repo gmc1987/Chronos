@@ -2,7 +2,7 @@
   <div class="admin-page permission-page">
     <div class="header"><div><div class="title">授权管理</div><div class="subtitle">按菜单操作、流程能力和数据范围分别为角色授权</div></div><el-button v-permission="['iam:role:authorize','iam:role:manage']" type="primary" :disabled="!currentRoleId" @click="saveCurrent">保存当前页签</el-button></div>
     <div class="content">
-      <aside class="role-panel"><div class="panel-title">角色列表</div><div class="role-list"><button v-for="role in roles" :key="role.id" class="role-item" :class="{ active: role.id === currentRoleId }" @click="selectRole(role)">{{ role.roleName }}</button></div></aside>
+      <aside class="role-panel"><div class="panel-title">角色列表</div><div class="role-list"><button v-for="role in roles" :key="role.id" class="role-item" :class="{ active: role.id === currentRoleId }" @click="selectRole(role)">{{ role.roleName }}</button></div><el-pagination v-if="roleTotal" class="role-pager" small layout="prev, pager, next" :total="roleTotal" :current-page="rolePage" :page-size="roleSize" @current-change="onRolePageChange"/></aside>
       <section class="authorization-panel">
         <el-tabs v-model="activeTab">
           <el-tab-pane label="菜单权限" name="menu">
@@ -36,7 +36,7 @@ import { nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listRoles, roleDetail, menuTree, permissions, updateRole, orgList, organizationUnits, employees } from '../api'
 
-const roles = ref([]), currentRoleId = ref(''), activeTab = ref('menu'), menuTreeRef = ref(null), menuTreeData = ref([])
+const roles = ref([]), roleTotal = ref(0), rolePage = ref(1), roleSize = ref(10), currentRoleId = ref(''), activeTab = ref('menu'), menuTreeRef = ref(null), menuTreeData = ref([])
 const actionPermissionIds = ref(new Set()), workflowPermissions = ref([]), workflowPermissionIds = ref([])
 const organizations = ref([]), departments = ref([]), employeeRows = ref([]), dataScopeType = ref('SELF')
 const customOrganizationIds = ref([]), customDepartmentIds = ref([]), customEmployeeIds = ref([])
@@ -59,7 +59,8 @@ const loadCatalogs = async () => {
   departments.value = unitResponses.flatMap((res) => res?.data || [])
 }
 
-const loadRoles = async () => { const res = await listRoles({ page: 0, size: 500 }); roles.value = res?.data?.content || []; if (roles.value.length) await selectRole(roles.value[0]) }
+const loadRoles = async () => { const res = await listRoles({ page: rolePage.value - 1, size: roleSize.value }); roles.value = res?.data?.content || []; roleTotal.value = res?.data?.totalElements || 0; if (!currentRoleId.value && roles.value.length) await selectRole(roles.value[0]) }
+const onRolePageChange = async (value) => { rolePage.value = value; await loadRoles() }
 const selectRole = async (role) => {
   currentRoleId.value = role.id
   const detail = (await roleDetail(role.id))?.data || {}

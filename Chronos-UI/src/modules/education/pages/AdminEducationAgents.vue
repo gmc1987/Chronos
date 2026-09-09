@@ -17,6 +17,9 @@ const proposals = ref([])
 const analysis = ref(null)
 const proposing = ref(false)
 const analyzing = ref(false)
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const load = async () => {
   const response = await listAcademicTerms()
@@ -30,10 +33,12 @@ const load = async () => {
 
 const loadProposals = async () => {
   if (!semesterCode.value) return
-  const response = await listSchedulingAgentProposals(semesterCode.value)
-  proposals.value = response.data || []
+  const response = await listSchedulingAgentProposals(semesterCode.value, { page: page.value - 1, size: pageSize.value })
+  proposals.value = response.data?.content || response.data || []
+  total.value = response.data?.totalElements ?? proposals.value.length
   analysis.value = null
 }
+const changePageSize = () => { page.value = 1; loadProposals() }
 
 const propose = async () => {
   if (!requestText.value.trim()) {
@@ -82,6 +87,7 @@ const analyze = async () => {
 }
 
 const statusType = status => ({ DRAFT: 'warning', CONFIRMED: 'success', REJECTED: 'info' })[status] || ''
+const changeSemester = () => { page.value = 1; loadProposals() }
 
 onMounted(load)
 </script>
@@ -93,7 +99,7 @@ onMounted(load)
         <h2>教育智能体</h2>
         <p>排课 Agent 生成待确认草稿，教务 Agent 只读分析课表和教师负荷。</p>
       </div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="loadProposals">
+      <el-select v-model="semesterCode" placeholder="选择学期" @change="changeSemester">
         <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
       </el-select>
     </header>
@@ -134,6 +140,15 @@ onMounted(load)
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          :total="total"
+          @size-change="changePageSize"
+          @current-change="loadProposals"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="AI 教务 Agent">
