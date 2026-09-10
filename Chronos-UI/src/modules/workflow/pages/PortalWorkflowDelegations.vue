@@ -118,8 +118,16 @@ const load = async () => {
   } finally {
     loading.value = false
   }
-  const changeTab = () => { page.value = 1; load() }
-  const changePageSize = () => { page.value = 1; load() }
+}
+
+const changeTab = () => {
+  page.value = 1
+  load()
+}
+
+const changePageSize = () => {
+  page.value = 1
+  load()
 }
 
 const openCreate = () => {

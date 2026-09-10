@@ -9,12 +9,16 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @EntityScan(basePackages = {
         "com.chronos.model",
         "com.chronos.message.model",
-        "com.chronos.industry.model"
+        "com.chronos.file.model",
+        "com.chronos.industry.model",
+        "com.chronos.knowledge.model"
 })
 @EnableJpaRepositories(basePackages = {
         "com.chronos.Idao",
         "com.chronos.message.Idao",
-        "com.chronos.industry.dao"
+        "com.chronos.file.dao",
+        "com.chronos.industry.dao",
+        "com.chronos.knowledge.dao"
 })
 public class ChronosApplication {
 

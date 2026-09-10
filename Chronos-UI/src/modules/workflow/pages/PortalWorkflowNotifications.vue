@@ -2,8 +2,8 @@
   <div class="notification-page">
     <div class="title">
       <div>
-        <h2>流程通知</h2>
-        <p>查看任务催办、即将到期、逾期和升级通知</p>
+        <h2>消息通知</h2>
+        <p>查看流程待办、课表发布及其他业务提醒</p>
       </div>
       <div>
         <el-tag v-if="unreadCount" type="danger" class="unread">{{ unreadCount }} 条未读</el-tag>
@@ -25,6 +25,7 @@
         <template #default="{ row }">
           <el-button v-if="!row.readAt" link type="primary" @click="markRead(row)">标记已读</el-button>
           <el-button v-if="row.instanceId" link @click="$router.push(`/portal/workflow-instances/${row.instanceId}/forms`)">查看流程</el-button>
+          <el-button v-else-if="isScheduleNotification(row)" link @click="openSchedule(row)">查看课表</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -43,6 +44,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import {
   listWorkflowNotifications,
   readAllWorkflowNotifications,
@@ -51,6 +53,7 @@ import {
 } from '../../../api/admin'
 
 const loading = ref(false)
+const router = useRouter()
 const notifications = ref([])
 const unreadCount = ref(0)
 const page = ref(1)
@@ -70,7 +73,11 @@ const load = async () => {
   } finally {
     loading.value = false
   }
-  const changePageSize = () => { page.value = 1; load() }
+}
+
+const changePageSize = () => {
+  page.value = 1
+  load()
 }
 
 const readAll = async () => {
@@ -83,6 +90,18 @@ const markRead = async row => {
   await readWorkflowNotification(row.id)
   ElMessage.success('已标记为已读')
   await load()
+}
+
+const isScheduleNotification = row => [
+  'EDUCATION_SCHEDULE_PUBLISHED',
+  'EDUCATION_SCHEDULE_ROLLBACK',
+].includes(row.notificationType)
+
+const openSchedule = async row => {
+  if (!row.readAt) {
+    await readWorkflowNotification(row.id)
+  }
+  await router.push('/portal/education/schedule')
 }
 
 onMounted(load)

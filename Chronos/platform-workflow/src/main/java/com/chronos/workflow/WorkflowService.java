@@ -3,6 +3,7 @@ package com.chronos.workflow;
 import com.chronos.Idao.workflow.*;
 import com.chronos.Idao.form.IFormDefinitionRepository;
 import com.chronos.form.FormService;
+import com.chronos.file.service.ManagedFileService;
 import com.chronos.model.form.*;
 import com.chronos.model.workflow.*;
 import com.chronos.service.iService.IAuditLogService;
@@ -40,6 +41,7 @@ public class WorkflowService {
 	private final FlowableDeploymentService flowableDeployment;
 	private final FlowableRuntimeCoordinator flowableRuntime;
 	private final FormService formService;
+	private final ManagedFileService managedFiles;
 	private final WorkflowAssigneeResolver assigneeResolver;
 	private final WorkflowSecurityService security;
 	private final IWorkflowDefinitionAclRepository acls;
@@ -51,6 +53,7 @@ public class WorkflowService {
 	private final WorkflowExecutorRegistry executorRegistry;
 	private final IAuditLogService audit;
 	private final ApplicationEventPublisher eventPublisher;
+	private final List<WorkflowStartValidator> startValidators;
 	private final ObjectMapper json = new ObjectMapper();
 
 	public WorkflowService(IWorkflowDefinitionRepository definitions, IWorkflowNodeRepository nodes,
@@ -58,13 +61,15 @@ public class WorkflowService {
 			IWorkflowInstanceRepository instances, IWorkflowTaskRepository tasks, List<WorkflowAiProvider> aiProviders,
 			IAuditLogService audit, IFormDefinitionRepository formDefinitions,
 			FlowableDeploymentService flowableDeployment, FlowableRuntimeCoordinator flowableRuntime,
-			FormService formService, WorkflowAssigneeResolver assigneeResolver,
+			FormService formService, ManagedFileService managedFiles,
+			WorkflowAssigneeResolver assigneeResolver,
 			WorkflowExecutorRegistry executorRegistry, WorkflowSecurityService security,
 			IWorkflowDefinitionAclRepository acls, IWorkflowInstanceParticipantRepository participants,
 			IWorkflowTaskCandidateRepository candidates, IWorkflowDelegationRepository delegations,
 			IWorkflowIncidentRepository incidents,
 			WorkflowSlaService sla,
-			ApplicationEventPublisher eventPublisher) {
+			ApplicationEventPublisher eventPublisher,
+			List<WorkflowStartValidator> startValidators) {
 		this.definitions = definitions;
 		this.nodes = nodes;
 		this.edges = edges;
@@ -78,6 +83,7 @@ public class WorkflowService {
 		this.flowableDeployment = flowableDeployment;
 		this.flowableRuntime = flowableRuntime;
 		this.formService = formService;
+		this.managedFiles = managedFiles;
 		this.assigneeResolver = assigneeResolver;
 		this.executorRegistry = executorRegistry;
 		this.security = security;
@@ -88,6 +94,7 @@ public class WorkflowService {
 		this.incidents = incidents;
 		this.sla = sla;
 		this.eventPublisher = eventPublisher;
+		this.startValidators = startValidators;
 	}
 
 	@Transactional(readOnly = true)
@@ -585,6 +592,13 @@ public class WorkflowService {
 			throw new IllegalArgumentException("只能发起已发布流程");
 		if (!security.canStart(actor, flowId))
 			throw new AccessDeniedException("不在该流程的发起范围内");
+		Map<String, Object> submittedForm = formData == null ? Map.of() : formData;
+		for (WorkflowStartValidator validator : startValidators) {
+			if (validator.supports(d.getFlowCode())) {
+				// 行业资源授权必须先于实例落库和附件绑定，失败时不产生半成品流程。
+				validator.validate(actor, submittedForm);
+			}
+		}
 		WorkflowInstance i = new WorkflowInstance();
 		i.setDefinitionId(d.getId());
 		i.setDefinitionVersion(d.getVersion());
@@ -599,15 +613,47 @@ public class WorkflowService {
 		i = instances.save(i);
 		addParticipant(i.getId(), actor, "INITIATOR", null);
 		if (d.getMainFormId() != null && !d.getMainFormId().isBlank()) {
+			List<FormField> fields = formService.fields(d.getMainFormId());
 			Map<String, String> editable = new HashMap<>();
-			for (FormField f : formService.fields(d.getMainFormId()))
+			for (FormField f : fields)
 				editable.put(d.getMainFormId() + "." + f.getFieldKey(), "EDIT");
 			formService.saveRuntime(i.getId(), d.getMainFormId(), "_MAIN", "MAIN", actor,
-					formData == null ? Map.of() : formData, editable, Set.of(), false);
+					submittedForm, editable, Set.of(), false);
+
+			// 绑定操作加入流程发起事务，防止流程与附件引用出现半成功状态。
+			List<String> attachmentIds = attachmentIds(submittedForm, fields);
+			if (!attachmentIds.isEmpty()) {
+				managedFiles.bind(attachmentIds, "WORKFLOW_FORM", i.getId(), actor);
+			}
 		}
 		i = flowableRuntime.start(d, i, actor);
 		audit.log(actor, "WORKFLOW_START", "flowId=" + flowId + ", instanceId=" + i.getId());
 		return i;
+	}
+
+	private List<String> attachmentIds(
+			Map<String, Object> formData,
+			List<FormField> fields) {
+		if (formData == null || formData.isEmpty()) {
+			return List.of();
+		}
+
+		Set<String> ids = new LinkedHashSet<>();
+		for (FormField field : fields) {
+			if (!"FILE".equals(field.getFieldType())) {
+				continue;
+			}
+			Object raw = formData.get(field.getFieldKey());
+			if (!(raw instanceof List<?> attachments)) {
+				continue;
+			}
+			for (Object attachment : attachments) {
+				if (attachment instanceof Map<?, ?> metadata && metadata.get("id") != null) {
+					ids.add(String.valueOf(metadata.get("id")));
+				}
+			}
+		}
+		return List.copyOf(ids);
 	}
 
 	@Transactional
@@ -656,8 +702,14 @@ public class WorkflowService {
 		boolean main = Objects.equals(definition.getMainFormId(), formId);
 		if (!main && !additionalForms(node).contains(formId))
 			throw new IllegalArgumentException("当前节点未绑定该表单");
+		Map<String, Object> runtimeData = data == null ? Map.of() : data;
+		List<FormField> fields = formService.fields(formId);
+		managedFiles.requireBound(
+				attachmentIds(runtimeData, fields),
+				"WORKFLOW_FORM",
+				instanceId);
 		return formService.saveRuntime(instanceId, formId, main ? "_MAIN" : node.getNodeKey(),
-				main ? "MAIN" : "ADDITIONAL", actor, data == null ? Map.of() : data, permissionMap(node, "permissions"),
+				main ? "MAIN" : "ADDITIONAL", actor, runtimeData, permissionMap(node, "permissions"),
 				permissionSet(node, "required"), draft);
 	}
 
@@ -1098,19 +1150,29 @@ public class WorkflowService {
 		instances.findLockedById(snapshot.getInstanceId()).orElseThrow();
 		WorkflowTask source = requirePendingTask(taskId, actor);
 		requireOperation(source, "addSign");
-		if (flowableRuntime.isFlowable(requireInstance(source.getInstanceId()))) {
-			throw new IllegalArgumentException("Flowable 实例的动态加签将在候选/会签阶段启用，当前禁止使用 Legacy 加签");
+		WorkflowInstance instance = requireInstance(source.getInstanceId());
+		String target = required(assignee, "加签人不能为空");
+		if (flowableRuntime.isFlowable(instance)) {
+			WorkflowTask task = flowableRuntime.addSign(
+					instance,
+					source,
+					actor,
+					target,
+					operationComment("由 " + actor + " 加签", comment));
+			addParticipant(task.getInstanceId(), target, "ASSIGNEE", task.getId());
+			addCandidate(task.getId(), "USER", target);
+			audit.log(actor, "WORKFLOW_TASK_ADD_SIGN", "taskId=" + taskId + ", assignee=" + target + ", engine=FLOWABLE");
+			return task;
 		}
 		WorkflowTask task = new WorkflowTask();
 		task.setInstanceId(source.getInstanceId());
 		task.setNodeKey(source.getNodeKey());
 		task.setNodeName(source.getNodeName());
 		task.setRoundKey(source.getRoundKey());
-		WorkflowInstance instance = requireInstance(source.getInstanceId());
 		WorkflowNode node = nodes.findByFlowIdAndNodeKey(instance.getDefinitionId(), source.getNodeKey()).orElseThrow();
 		if ("SEQUENTIAL".equals(approvalMode(node)))
 			task.setStatus("WAITING");
-		task.setAssignee(required(assignee, "加签人不能为空"));
+		task.setAssignee(target);
 		task.setComment(operationComment("由 " + actor + " 加签", comment));
 		task = tasks.save(task);
 		addParticipant(task.getInstanceId(), task.getAssignee(), "ASSIGNEE", task.getId());
@@ -1197,7 +1259,7 @@ public class WorkflowService {
 	private WorkflowTask requirePendingTask(String id, String actor) {
 		WorkflowTask task = tasks.findById(id).orElseThrow(() -> new IllegalArgumentException("任务不存在"));
 		if (!"PENDING".equals(task.getStatus()))
-			throw new IllegalArgumentException("任务已处理");
+			throw new IllegalStateException("任务已处理，请勿重复提交");
 		if (!actor.equals(task.getAssignee()))
 			throw new AccessDeniedException("不是当前任务处理人");
 		return task;
@@ -1205,7 +1267,7 @@ public class WorkflowService {
 
 	private void cancelPending(String instanceId, String comment) {
 		for (WorkflowTask task : tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId))
-			if ("PENDING".equals(task.getStatus())) {
+			if (Set.of("PENDING", "CLAIMABLE", "WAITING").contains(task.getStatus())) {
 				task.setStatus("CANCELLED");
 				task.setComment(comment);
 				task.setCompletedAt(LocalDateTime.now());
@@ -1468,8 +1530,14 @@ public class WorkflowService {
 
 	private Map<String, Boolean> operationView(WorkflowNode n, boolean current) {
 		Map<String, Boolean> value = new LinkedHashMap<>();
-		for (String op : List.of("approve", "reject", "return", "transfer", "addSign", "cc"))
+		for (String op : List.of("approve", "reject", "return", "transfer", "addSign", "cc")) {
 			value.put(op, current && operationEnabled(n, op));
+		}
+		// Flowable 动态加签依赖多实例节点。单人审批节点展示该操作只会让用户
+		// 在提交后收到错误，因此接口视图也明确关闭，前后端保持同一规则。
+		if ("SINGLE".equals(approvalMode(n))) {
+			value.put("addSign", false);
+		}
 		return value;
 	}
 
@@ -1750,6 +1818,7 @@ public class WorkflowService {
 				? null
 				: nodes.findByFlowIdAndNodeKey(i.getDefinitionId(), t.getNodeKey()).orElse(null);
 		if (node != null) {
+			v.put("operations", operationView(node, true));
 			v.put("returnPolicy", nodeStringProperty(node, "returnPolicy", "PREVIOUS"));
 			v.put("rejectPolicy", nodeStringProperty(node, "rejectPolicy", "TERMINATE"));
 			v.put("returnTargets", returnTargetKeys(i.getId(), t.getNodeKey()).stream().map(key -> {

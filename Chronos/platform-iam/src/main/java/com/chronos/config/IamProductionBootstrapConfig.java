@@ -94,7 +94,9 @@ public class IamProductionBootstrapConfig {
         required.put("iam:user:manage","用户账号管理"); required.put("iam:role:manage","角色权限管理");
         required.put("iam:permission:manage","权限定义管理"); required.put("iam:menu:manage","菜单管理");
         required.put("iam:organization:manage","组织机构管理"); required.put("iam:directory:manage","人员岗位任职管理");
-        required.put("iam:dictionary:manage","字典管理"); required.put("iam:audit:view","IAM审计查询");
+		required.put("iam:dictionary:manage", "字典管理");
+		required.put("iam:audit:view", "IAM审计查询");
+		required.put("iam:audit:export", "导出审计日志");
         required.put("portal:manage","门户配置管理");
         required.put("workflow:manage","流程中心管理"); required.put("workflow:use","流程发起与审批");
         required.put("workflow:definition:view","查看流程定义"); required.put("workflow:definition:create","创建流程定义");
@@ -126,6 +128,11 @@ public class IamProductionBootstrapConfig {
         dataScopes.put("ALL","全部数据"); dataScopes.put("ORGANIZATION","本机构"); dataScopes.put("DEPARTMENT","本部门");
         dataScopes.put("DEPARTMENT_AND_CHILDREN","本部门及下级"); dataScopes.put("SELF","仅本人");
         dataScopes.put("CUSTOM_ORGANIZATION","自定义机构"); dataScopes.put("CUSTOM_DEPARTMENT","自定义部门"); dataScopes.put("CUSTOM_EMPLOYEE","自定义员工");
+		dataScopes.put("EDUCATION_CLASS", "本班级");
+		dataScopes.put("EDUCATION_GRADE", "本年级");
+		dataScopes.put("EDUCATION_SUBJECT_GROUP", "本教研组");
+		dataScopes.put("CUSTOM_EDUCATION_CLASS", "指定班级");
+		dataScopes.put("CUSTOM_EDUCATION_GRADE", "指定年级");
         dataScopes.forEach((scope,name)->required.put("data:scope:"+scope.toLowerCase(),name));
         addAtomic(required,"iam:user","用户",Map.of("view","查看","create","新增","update","修改","disable","停用","unlock","解锁","force-logout","强制下线","reset-password","重置密码"));
         addAtomic(required,"iam:role","角色",Map.of("view","查看","create","新增","update","修改","delete","删除","authorize","授权"));
@@ -148,6 +155,27 @@ public class IamProductionBootstrapConfig {
             menus.saveAndFlush(definitionMenu);
             roles.findAll().stream().filter(role -> "SUPER_ADMIN".equalsIgnoreCase(role.getRoleCode())).forEach(role -> {role.getMenus().add(definitionMenu);roles.save(role);});
         }
+		if (menus != null
+				&& menus.findAll().stream()
+						.noneMatch(menu -> "/admin/audit-logs".equals(menu.getPath()))) {
+			Menu system = menus.findAll().stream()
+					.filter(menu -> "/system".equals(menu.getPath()))
+					.findFirst()
+					.orElse(null);
+			Menu auditMenu = new Menu();
+			auditMenu.setMenuName("审计中心");
+			auditMenu.setPath("/admin/audit-logs");
+			auditMenu.setParentId(system == null ? null : system.getId());
+			auditMenu.setOrderNum(36);
+			auditMenu.setCreateTime(LocalDateTime.now());
+			menus.saveAndFlush(auditMenu);
+			roles.findAll().stream()
+					.filter(role -> "SUPER_ADMIN".equalsIgnoreCase(role.getRoleCode()))
+					.forEach(role -> {
+						role.getMenus().add(auditMenu);
+						roles.save(role);
+					});
+		}
 		if (menus != null
 				&& menus.findAll().stream()
 						.noneMatch(menu -> "/admin/publications".equals(menu.getPath()))) {
@@ -295,6 +323,7 @@ public class IamProductionBootstrapConfig {
         if(code.startsWith("iam:organization:"))return "/admin/organizations";
         if(code.startsWith("iam:directory:"))return "/admin/directory";
         if(code.startsWith("iam:dictionary:"))return "/system/dicts";
+		if (code.startsWith("iam:audit:")) return "/admin/audit-logs";
         if(code.startsWith("portal:admin:"))return "/admin/portal";
 		if (code.startsWith("message:publication:")) return "/admin/publications";
         return switch(code){

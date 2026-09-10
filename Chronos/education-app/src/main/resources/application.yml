@@ -39,6 +39,9 @@ spring:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}
       port: ${CHRONOS_REDIS_PORT:6379}
   ai:
+    model:
+      # 启用真实模型时同时设置 CHRONOS_AI_CHAT_MODEL=deepseek 和 API Key。
+      chat: ${CHRONOS_AI_CHAT_MODEL:none}
     deepseek:
       chat:
         # 生产密钥只允许通过环境变量注入，仓库不保留真实凭据。
@@ -60,8 +63,13 @@ minio:
 chronos:
   industry:
     active: EDUCATION
+  file:
+    storage-type: ${CHRONOS_FILE_STORAGE_TYPE:MINIO}
+    storage-path: ${CHRONOS_FILE_STORAGE_PATH:./data/files}
+    minio-bucket: ${CHRONOS_FILE_MINIO_BUCKET:chronos-education-files}
   message:
-    storage-type: ${CHRONOS_MESSAGE_STORAGE_TYPE:LOCAL}
+    # 教育生产模板默认使用对象存储，避免多实例部署时公告附件只存在单机磁盘。
+    storage-type: ${CHRONOS_MESSAGE_STORAGE_TYPE:MINIO}
     storage-path: ${CHRONOS_MESSAGE_STORAGE_PATH:./data/publications}
     minio-bucket: ${CHRONOS_MESSAGE_MINIO_BUCKET:chronos-education-publications}
     lifecycle-delay-ms: ${CHRONOS_MESSAGE_LIFECYCLE_DELAY_MS:30000}

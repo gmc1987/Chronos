@@ -77,7 +77,21 @@ const blank=()=>({id:'',permissionName:'',permissionCode:'',permissionType:activ
 const form=ref(blank()),enabled=computed({get:()=>form.value.status===1,set:value=>form.value.status=value?1:0})
 const actionTypes=['VIEW','CREATE','UPDATE','DELETE','UPLOAD','DOWNLOAD','IMPORT','EXPORT','MANAGE'],httpMethods=['GET','POST','PUT','PATCH','DELETE']
 const workflowResources=['WORKFLOW','DEFINITION','FORM','INSTANCE','TASK','MONITOR','DIRECTORY']
-const scopeTypes=['ALL','ORGANIZATION','DEPARTMENT','DEPARTMENT_AND_CHILDREN','SELF','CUSTOM_ORGANIZATION','CUSTOM_DEPARTMENT','CUSTOM_EMPLOYEE']
+const scopeTypes = [
+  'ALL',
+  'ORGANIZATION',
+  'DEPARTMENT',
+  'DEPARTMENT_AND_CHILDREN',
+  'SELF',
+  'CUSTOM_ORGANIZATION',
+  'CUSTOM_DEPARTMENT',
+  'CUSTOM_EMPLOYEE',
+  'EDUCATION_CLASS',
+  'EDUCATION_GRADE',
+  'EDUCATION_SUBJECT_GROUP',
+  'CUSTOM_EDUCATION_CLASS',
+  'CUSTOM_EDUCATION_GRADE',
+]
 const flatten=(nodes=[])=>nodes.flatMap(item=>[item,...flatten(item.children||[])])
 const load=async()=>{
   const res=await permissions({page:page.value-1,size:size.value,permissionType:activeType.value,keyword:keyword.value||undefined,status:statusFilter.value})

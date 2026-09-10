@@ -23,6 +23,16 @@
               <el-form-item v-if="dataScopeType === 'CUSTOM_ORGANIZATION'" label="指定机构"><el-select v-model="customOrganizationIds" multiple filterable style="width:100%" placeholder="请选择机构"><el-option v-for="item in organizations" :key="item.id" :label="item.organizationName || item.name" :value="item.id" /></el-select></el-form-item>
               <el-form-item v-if="dataScopeType === 'CUSTOM_DEPARTMENT'" label="指定部门"><el-select v-model="customDepartmentIds" multiple filterable style="width:100%" placeholder="请选择部门"><el-option v-for="item in departments" :key="item.id" :label="item.organizationUnitName || item.unitName || item.name" :value="item.id" /></el-select></el-form-item>
               <el-form-item v-if="dataScopeType === 'CUSTOM_EMPLOYEE'" label="指定员工"><el-select v-model="customEmployeeIds" multiple filterable style="width:100%" placeholder="请选择员工"><el-option v-for="item in employeeRows" :key="item.id" :label="item.employeeName || item.name" :value="item.id" /></el-select></el-form-item>
+              <el-form-item v-if="dataScopeType === 'CUSTOM_EDUCATION_CLASS'" label="指定班级">
+                <el-select v-model="customClassIds" multiple filterable style="width:100%" placeholder="请选择班级">
+                  <el-option v-for="item in educationClasses" :key="item.id" :label="item.className" :value="item.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="dataScopeType === 'CUSTOM_EDUCATION_GRADE'" label="指定年级">
+                <el-select v-model="customGradeIds" multiple filterable style="width:100%" placeholder="请选择年级">
+                  <el-option v-for="item in educationGrades" :key="item.id" :label="item.gradeName" :value="item.id" />
+                </el-select>
+              </el-form-item>
             </el-form>
           </el-tab-pane>
         </el-tabs>
@@ -35,11 +45,14 @@
 import { nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listRoles, roleDetail, menuTree, permissions, updateRole, orgList, organizationUnits, employees } from '../api'
+import { listAdministrativeClasses, listEducationGrades } from '../../../api/admin'
 
 const roles = ref([]), roleTotal = ref(0), rolePage = ref(1), roleSize = ref(10), currentRoleId = ref(''), activeTab = ref('menu'), menuTreeRef = ref(null), menuTreeData = ref([])
 const actionPermissionIds = ref(new Set()), workflowPermissions = ref([]), workflowPermissionIds = ref([])
 const organizations = ref([]), departments = ref([]), employeeRows = ref([]), dataScopeType = ref('SELF')
 const customOrganizationIds = ref([]), customDepartmentIds = ref([]), customEmployeeIds = ref([])
+const customClassIds = ref([]), customGradeIds = ref([])
+const educationClasses = ref([]), educationGrades = ref([])
 const dataScopeTypes = ref([])
 
 const mapMenus = (nodes, actions) => nodes.map((menu) => {
@@ -49,11 +62,30 @@ const mapMenus = (nodes, actions) => nodes.map((menu) => {
 })
 
 const loadCatalogs = async () => {
-  const [menusRes, actionsRes, workflowsRes, dataRes, orgRes, employeeRes] = await Promise.all([menuTree(), permissions({ page: 0, size: 500, permissionType: 'MENU_ACTION' }), permissions({ page: 0, size: 500, permissionType: 'WORKFLOW' }), permissions({ page: 0, size: 500, permissionType: 'DATA' }), orgList({ page: 0, size: 500 }), employees()])
+  const [menusRes, actionsRes, workflowsRes, dataRes, orgRes, employeeRes] = await Promise.all([
+    menuTree(),
+    permissions({ page: 0, size: 500, permissionType: 'MENU_ACTION' }),
+    permissions({ page: 0, size: 500, permissionType: 'WORKFLOW' }),
+    permissions({ page: 0, size: 500, permissionType: 'DATA' }),
+    orgList({ page: 0, size: 500 }),
+    employees()
+  ])
+  // 班级、年级属于教育行业扩展资源。医院模板没有对应接口时，
+  // 不能因此阻断菜单权限、流程权限和通用数据权限的授权页面。
+  const [classResult, gradeResult] = await Promise.allSettled([
+    listAdministrativeClasses(),
+    listEducationGrades()
+  ])
   const actions = (actionsRes?.data?.content || []).filter((item) => item.status === 1)
   actionPermissionIds.value = new Set(actions.map((item) => item.id)); workflowPermissions.value = (workflowsRes?.data?.content || []).filter((item) => item.status === 1)
   dataScopeTypes.value = (dataRes?.data?.content || []).filter((item) => item.status === 1).map((item) => ({ label: item.permissionName, value: item.scopeType }))
   organizations.value = orgRes?.data?.content || orgRes?.data || []; employeeRows.value = employeeRes?.data || []
+  educationClasses.value = classResult.status === 'fulfilled'
+    ? classResult.value?.data?.content || classResult.value?.data || []
+    : []
+  educationGrades.value = gradeResult.status === 'fulfilled'
+    ? gradeResult.value?.data?.content || gradeResult.value?.data || []
+    : []
   menuTreeData.value = mapMenus(menusRes?.data || [], actions)
   const unitResponses = await Promise.all(organizations.value.map((item) => organizationUnits(item.id)))
   departments.value = unitResponses.flatMap((res) => res?.data || [])
@@ -74,6 +106,8 @@ const applyDataScopes = (scopes) => {
   customOrganizationIds.value = scopes.filter((item) => item.scopeType === 'CUSTOM_ORGANIZATION').map((item) => item.organizationId)
   customDepartmentIds.value = scopes.filter((item) => item.scopeType === 'CUSTOM_DEPARTMENT').map((item) => item.organizationUnitId)
   customEmployeeIds.value = scopes.filter((item) => item.scopeType === 'CUSTOM_EMPLOYEE').map((item) => item.employeeId)
+  customClassIds.value = scopes.filter((item) => item.scopeType === 'CUSTOM_EDUCATION_CLASS').map((item) => item.resourceId)
+  customGradeIds.value = scopes.filter((item) => item.scopeType === 'CUSTOM_EDUCATION_GRADE').map((item) => item.resourceId)
   dataScopeType.value = scopes[0]?.scopeType || 'SELF'
 }
 
@@ -99,6 +133,8 @@ const buildDataScopes = () => {
   if (dataScopeType.value === 'CUSTOM_ORGANIZATION') return customOrganizationIds.value.map((organizationId) => ({ scopeType: dataScopeType.value, organizationId }))
   if (dataScopeType.value === 'CUSTOM_DEPARTMENT') return customDepartmentIds.value.map((organizationUnitId) => ({ scopeType: dataScopeType.value, organizationUnitId }))
   if (dataScopeType.value === 'CUSTOM_EMPLOYEE') return customEmployeeIds.value.map((employeeId) => ({ scopeType: dataScopeType.value, employeeId }))
+  if (dataScopeType.value === 'CUSTOM_EDUCATION_CLASS') return customClassIds.value.map((resourceId) => ({ scopeType: dataScopeType.value, resourceType: 'EDUCATION_CLASS', resourceId }))
+  if (dataScopeType.value === 'CUSTOM_EDUCATION_GRADE') return customGradeIds.value.map((resourceId) => ({ scopeType: dataScopeType.value, resourceType: 'EDUCATION_GRADE', resourceId }))
   return [{ scopeType: dataScopeType.value }]
 }
 const init = async () => { await loadCatalogs(); await loadRoles() }

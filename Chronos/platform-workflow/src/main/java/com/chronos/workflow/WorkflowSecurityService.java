@@ -2,12 +2,18 @@ package com.chronos.workflow;
 
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeAssignmentRepository;
+import com.chronos.Idao.form.IFormInstanceRepository;
 import com.chronos.Idao.workflow.*;
+import com.chronos.form.FormService;
+import com.chronos.model.form.FormField;
+import com.chronos.model.form.FormInstance;
 import com.chronos.model.pojo.AdminUser;
 import com.chronos.model.pojo.Role;
 import com.chronos.model.workflow.*;
 import com.chronos.model.vo.DataScopeContext;
 import com.chronos.service.iService.IDataScopeService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.util.*;
 import org.springframework.security.access.AccessDeniedException;
@@ -28,12 +34,16 @@ public class WorkflowSecurityService {
 	private final IEmployeeAssignmentRepository assignments;
 	private final IDataScopeService dataScopes;
 	private final WorkflowAssigneeResolver assigneeResolver;
+	private final IFormInstanceRepository formInstances;
+	private final FormService formService;
+	private final ObjectMapper json = new ObjectMapper();
 
 	public WorkflowSecurityService(IWorkflowDefinitionRepository definitions, IWorkflowDefinitionAclRepository acls,
 			IWorkflowInstanceRepository instances, IWorkflowInstanceParticipantRepository participants,
 			IWorkflowTaskRepository tasks, IWorkflowNodeRepository nodes, IWorkflowEdgeRepository edges,
 			IAdminUserRepository users, IEmployeeAssignmentRepository assignments, IDataScopeService dataScopes,
-			WorkflowAssigneeResolver assigneeResolver) {
+			WorkflowAssigneeResolver assigneeResolver, IFormInstanceRepository formInstances,
+			FormService formService) {
 		this.definitions = definitions;
 		this.acls = acls;
 		this.instances = instances;
@@ -45,6 +55,8 @@ public class WorkflowSecurityService {
 		this.assignments = assignments;
 		this.dataScopes = dataScopes;
 		this.assigneeResolver = assigneeResolver;
+		this.formInstances = formInstances;
+		this.formService = formService;
 	}
 
 	public boolean canDefinition(String actor, String definitionId, String action) {
@@ -111,6 +123,61 @@ public class WorkflowSecurityService {
 				.anyMatch(t -> "PENDING".equals(t.getStatus()) && actor.equals(t.getAssignee()));
 	}
 
+	/**
+	 * 当前任务处理人只有在节点把至少一个 FILE 字段声明为 EDIT 时才可以
+	 * 直接向流程实例上传附件，避免绕过动态表单制造不可见的绑定文件。
+	 */
+	public boolean canEditAnyFileField(String actor, String instanceId) {
+		if (!canEditCurrentTask(actor, instanceId)) {
+			return false;
+		}
+		WorkflowContext context = workflowContext(instanceId);
+		if (context == null) {
+			return false;
+		}
+		Map<String, String> permissions = fieldPermissions(context.node());
+		for (String formId : context.formIds()) {
+			for (FormField field : formService.fields(formId)) {
+				if ("FILE".equals(field.getFieldType())
+						&& "EDIT".equals(permissions.get(formId + "." + field.getFieldKey()))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** 当前节点必须对实际引用该文件的 FILE 字段拥有 EDIT 权限。 */
+	public boolean canEditFile(String actor, String instanceId, String fileId) {
+		if (!canEditCurrentTask(actor, instanceId)) {
+			return false;
+		}
+		WorkflowContext context = workflowContext(instanceId);
+		if (context == null) {
+			return false;
+		}
+		Map<String, String> permissions = fieldPermissions(context.node());
+		for (FormInstance form : formInstances.findByWorkflowInstanceIdOrderByCreateTimeAsc(instanceId)) {
+			if (!context.formIds().contains(form.getFormId())) {
+				continue;
+			}
+			JsonNode data = readJson(form.getDataJson());
+			for (FormField field : formService.fields(form.getFormId())) {
+				String permissionKey = form.getFormId() + "." + field.getFieldKey();
+				if (!"FILE".equals(field.getFieldType())
+						|| !"EDIT".equals(permissions.get(permissionKey))) {
+					continue;
+				}
+				for (JsonNode attachment : data.path(field.getFieldKey())) {
+					if (fileId.equals(attachment.path("id").asText())) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
 	public boolean canNode(String actor, String nodeId, String action) {
 		return nodeId != null
 				&& nodes.findById(nodeId).map(n -> canDefinition(actor, n.getFlowId(), action)).orElse(false);
@@ -139,6 +206,55 @@ public class WorkflowSecurityService {
 	public void requireCurrentTask(String actor, String instanceId) {
 		if (!canEditCurrentTask(actor, instanceId))
 			throw new AccessDeniedException("仅当前任务处理人可修改表单");
+	}
+
+	private WorkflowContext workflowContext(String instanceId) {
+		WorkflowInstance instance = instances.findById(instanceId).orElse(null);
+		if (instance == null) {
+			return null;
+		}
+		WorkflowDefinition definition = definitions.findById(instance.getDefinitionId()).orElse(null);
+		if (definition == null) {
+			return null;
+		}
+		WorkflowNode node = nodes.findByFlowIdAndNodeKey(
+				definition.getId(),
+				instance.getCurrentNodeKey()).orElse(null);
+		if (node == null) {
+			return null;
+		}
+		Set<String> formIds = new LinkedHashSet<>();
+		if (definition.getMainFormId() != null && !definition.getMainFormId().isBlank()) {
+			formIds.add(definition.getMainFormId());
+		}
+		JsonNode additionalForms = readJson(node.getAdditionalFormIds());
+		if (additionalForms.isArray()) {
+			for (JsonNode formId : additionalForms) {
+				if (!formId.asText().isBlank()) {
+					formIds.add(formId.asText());
+				}
+			}
+		}
+		return new WorkflowContext(node, List.copyOf(formIds));
+	}
+
+	private Map<String, String> fieldPermissions(WorkflowNode node) {
+		Map<String, String> permissions = new HashMap<>();
+		readJson(node.getFieldPermissionsJson())
+				.path("permissions")
+				.fields()
+				.forEachRemaining(entry -> permissions.put(
+						entry.getKey(),
+						entry.getValue().asText()));
+		return permissions;
+	}
+
+	private JsonNode readJson(String value) {
+		try {
+			return json.readTree(value == null || value.isBlank() ? "{}" : value);
+		} catch (Exception exception) {
+			return json.createObjectNode();
+		}
 	}
 
 	private boolean matches(String actor, String type, String id) {
@@ -191,5 +307,8 @@ public class WorkflowSecurityService {
 
 	private String normalize(String value) {
 		return value == null ? "" : value.trim().toUpperCase();
+	}
+
+	private record WorkflowContext(WorkflowNode node, List<String> formIds) {
 	}
 }

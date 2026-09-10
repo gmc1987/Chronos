@@ -11,6 +11,7 @@ import AdminOrganizations from '../modules/iam/pages/AdminOrganizations.vue'
 import AdminDirectory from '../modules/iam/pages/AdminDirectory.vue'
 import AdminCustomers from '../modules/iam/pages/AdminCustomers.vue'
 import AdminDicts from '../modules/iam/pages/AdminDicts.vue'
+import AdminAuditLogs from '../modules/iam/pages/AdminAuditLogs.vue'
 import AdminAiModels from '../modules/ai/pages/AdminAiModels.vue'
 import AdminAiApis from '../modules/ai/pages/AdminAiApis.vue'
 import AdminWorkflows from '../modules/workflow/pages/AdminWorkflows.vue'
@@ -80,6 +81,7 @@ const router = createRouter({
         { path: 'directory', name: 'admin-directory', component: AdminDirectory },
         { path: 'customers', name: 'admin-customers', component: AdminCustomers },
         { path: 'dicts', name: 'admin-dicts', component: AdminDicts },
+        { path: 'audit-logs', name: 'admin-audit-logs', component: AdminAuditLogs },
         { path: 'portal', name: 'admin-portal', component: AdminPortal },
         { path: 'ai-model/models', name: 'admin-ai-models', component: AdminAiModels },
         { path: 'ai-model/apis', name: 'admin-ai-apis', component: AdminAiApis },

@@ -6,12 +6,11 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.springframework.security.core.Authentication;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +44,7 @@ public class EducationAgentService {
 	private final TeacherTimeConstraintRepository constraints;
 	private final CourseOfferingRepository offerings;
 	private final ScheduleEntryRepository entries;
+	private final EducationDataScopeService dataScopes;
 	private final IAuditLogService auditLogService;
 
 	public EducationAgentService(
@@ -53,23 +53,25 @@ public class EducationAgentService {
 			TeacherTimeConstraintRepository constraints,
 			CourseOfferingRepository offerings,
 			ScheduleEntryRepository entries,
+			EducationDataScopeService dataScopes,
 			IAuditLogService auditLogService) {
 		this.proposals = proposals;
 		this.teachers = teachers;
 		this.constraints = constraints;
 		this.offerings = offerings;
 		this.entries = entries;
+		this.dataScopes = dataScopes;
 		this.auditLogService = auditLogService;
 	}
 
-	public List<SchedulingAgentProposal> proposals(String semesterCode) {
-		return proposals.findBySemesterCodeOrderByCreateTimeDesc(required(semesterCode, "学期编码"));
-	}
-
-	public Page<SchedulingAgentProposal> proposals(String semesterCode, int page, int size) {
+	public List<SchedulingAgentProposal> proposals(
+			String semesterCode,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
 		return proposals.findBySemesterCodeOrderByCreateTimeDesc(
-				required(semesterCode, "学期编码"),
-				PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100)));
+				required(semesterCode, "学期编码")).stream()
+				.filter(proposal -> dataScopes.canAccessTeacher(scope, proposal.getTeacherId()))
+				.toList();
 	}
 
 	@Transactional
@@ -78,7 +80,8 @@ public class EducationAgentService {
 			Authentication authentication) {
 		String semesterCode = required(command.semesterCode(), "学期编码");
 		String requestText = required(command.requestText(), "自然语言约束");
-		TeacherAcademicProfile teacher = resolveTeacher(requestText);
+		var scope = dataScopes.resolve(authentication.getName());
+		TeacherAcademicProfile teacher = resolveTeacher(requestText, scope);
 		Integer dayOfWeek = resolveDay(requestText);
 		Integer periodNo = resolvePeriod(requestText);
 		String constraintType = requestText.contains("优先") || requestText.contains("尽量")
@@ -101,8 +104,12 @@ public class EducationAgentService {
 
 	@Transactional
 	public SchedulingAgentProposal confirm(String id, Authentication authentication) {
-		SchedulingAgentProposal proposal = proposals.findById(id)
+		// 对草稿加行锁，避免两个管理员并发确认时重复生成正式约束。
+		SchedulingAgentProposal proposal = proposals.findLockedById(id)
 				.orElseThrow(() -> new IllegalArgumentException("排课建议不存在"));
+		dataScopes.assertTeacherAccess(
+				dataScopes.resolve(authentication.getName()),
+				proposal.getTeacherId());
 		if (!"DRAFT".equals(proposal.getStatus())) {
 			throw new IllegalStateException("只有草稿状态的建议可以确认");
 		}
@@ -126,8 +133,12 @@ public class EducationAgentService {
 
 	@Transactional
 	public SchedulingAgentProposal reject(String id, Authentication authentication) {
-		SchedulingAgentProposal proposal = proposals.findById(id)
+		// 确认与驳回竞争同一把行锁，最终只能有一个状态迁移成功。
+		SchedulingAgentProposal proposal = proposals.findLockedById(id)
 				.orElseThrow(() -> new IllegalArgumentException("排课建议不存在"));
+		dataScopes.assertTeacherAccess(
+				dataScopes.resolve(authentication.getName()),
+				proposal.getTeacherId());
 		if (!"DRAFT".equals(proposal.getStatus())) {
 			throw new IllegalStateException("只有草稿状态的建议可以驳回");
 		}
@@ -143,8 +154,17 @@ public class EducationAgentService {
 	@Transactional
 	public AcademicAnalysis analyze(String semesterCode, Authentication authentication) {
 		String semester = required(semesterCode, "学期编码");
-		List<CourseOffering> semesterOfferings = offerings.findBySemesterCodeOrderByOfferingCode(semester);
-		List<ScheduleEntry> semesterEntries = entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(semester);
+		var scope = dataScopes.resolve(authentication.getName());
+		List<CourseOffering> semesterOfferings = dataScopes.visibleOfferings(
+				scope,
+				offerings.findBySemesterCodeOrderByOfferingCode(semester));
+		Set<String> visibleOfferingIds = semesterOfferings.stream()
+				.map(CourseOffering::getId)
+				.collect(java.util.stream.Collectors.toSet());
+		List<ScheduleEntry> semesterEntries = entries
+				.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(semester).stream()
+				.filter(entry -> visibleOfferingIds.contains(entry.getOfferingId()))
+				.toList();
 		Map<String, TeacherLoad> loads = new LinkedHashMap<>();
 		for (CourseOffering offering : semesterOfferings) {
 			TeacherLoad previous = loads.get(offering.getTeacherId());
@@ -157,7 +177,9 @@ public class EducationAgentService {
 					false));
 		}
 		Map<String, Integer> maxLessons = new LinkedHashMap<>();
-		for (TeacherAcademicProfile teacher : teachers.findAllByOrderByTeacherNo()) {
+		for (TeacherAcademicProfile teacher : teachers.findAllByOrderByTeacherNo().stream()
+				.filter(value -> dataScopes.canAccessTeacher(scope, value.getId()))
+				.toList()) {
 			maxLessons.put(teacher.getId(), teacher.getMaxWeeklyLessons());
 		}
 		List<TeacherLoad> teacherLoads = loads.values().stream()
@@ -198,8 +220,11 @@ public class EducationAgentService {
 				violations);
 	}
 
-	private TeacherAcademicProfile resolveTeacher(String requestText) {
+	private TeacherAcademicProfile resolveTeacher(
+			String requestText,
+			com.chronos.education.scheduling.model.EducationDataScope scope) {
 		return teachers.findAllByOrderByTeacherNo().stream()
+				.filter(item -> dataScopes.canAccessTeacher(scope, item.getId()))
 				.filter(item -> requestText.contains(item.getTeacherName())
 						|| requestText.contains(item.getTeacherNo()))
 				.max(Comparator.comparingInt(item -> item.getTeacherName().length()))

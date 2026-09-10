@@ -90,6 +90,9 @@ export const createDict = (payload) => http.post('/admin/dicts', payload)
 export const updateDict = (payload) => http.put('/admin/dicts', payload)
 export const deleteDict = (id) => http.delete(`/admin/dicts/${id}`)
 
+export const auditLogs = (params) => http.get(`/admin/audit-logs?${qs(params)}`)
+export const exportAuditLogs = (params) => http.download(`/admin/audit-logs/export?${qs(params)}`)
+
 export const customerList = (params) => http.get(`/admin/customers/list?${qs(params)}`)
 export const customerDetail = (id) => http.get(`/admin/customers/${id}`)
 export const createCustomer = (payload) => http.post('/admin/customers', payload)
@@ -159,6 +162,13 @@ export const getWorkflowStartForm = (id) => http.get(`/workflows/${id}/start-for
 export const startWorkflow = (id, payload) => http.post(`/workflows/${id}/start`, payload)
 export const getWorkflowRuntimeForms = (id) => http.get(`/workflow-instances/${id}/forms`)
 export const saveWorkflowRuntimeForm = (id, formId, payload) => http.put(`/workflow-instances/${id}/forms/${formId}`, payload)
+export const uploadManagedFile = (file, businessType = 'WORKFLOW_FORM_DRAFT', businessId) => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload(`/files?${qs({ businessType, businessId })}`, data)
+}
+export const deleteManagedFile = (id) => http.delete(`/files/${id}`)
+export const downloadManagedFile = (id) => http.download(`/files/${id}/content`)
 export const pendingWorkflowTasks = (params) => http.get(`/workflow-tasks/pending?${qs(params)}`)
 export const handledWorkflowTasks = (params) => http.get(`/workflow-tasks/handled?${qs(params)}`)
 export const initiatedWorkflowInstances = (params) => http.get(`/workflow-instances/initiated?${qs(params)}`)
@@ -239,11 +249,26 @@ export const listClassSchedule = (semesterCode, dimension = 'ALL', targetId) =>
 export const createScheduleEntry = (payload) => http.post('/admin/education/schedules', payload)
 export const updateScheduleEntry = (id, payload) => http.put(`/admin/education/schedules/${id}`, payload)
 export const deleteScheduleEntry = (id) => http.delete(`/admin/education/schedules/${id}`)
-export const listCourseAdjustmentIncidents = () => http.get('/admin/education/course-adjustment-incidents')
+export const listCourseAdjustmentIncidents = (params) =>
+  http.get(`/admin/education/course-adjustment-incidents?${qs(params)}`)
 export const retryCourseAdjustmentIncident = (id) => http.post(`/admin/education/course-adjustment-incidents/${id}/retry`)
+export const batchRetryCourseAdjustmentIncidents = (ids) =>
+  http.post('/admin/education/course-adjustment-incidents/batch-retry', { ids })
 export const listScheduleVersions = (semesterCode) => http.get(`/admin/education/schedule-versions?${qs({ semesterCode })}`)
 export const publishScheduleVersion = (semesterCode) => http.post(`/admin/education/schedule-versions/publish?${qs({ semesterCode })}`)
 export const rollbackScheduleVersion = (id) => http.post(`/admin/education/schedule-versions/${id}/rollback`)
+export const previewSchedulePublication = (semesterCode) =>
+  http.get(`/admin/education/schedule-versions/publication-preview?${qs({ semesterCode })}`)
+export const listScheduleCandidates = (semesterCode) =>
+  http.get(`/admin/education/schedule-candidates?${qs({ semesterCode })}`)
+export const generateScheduleCandidates = (payload) =>
+  http.post('/admin/education/schedule-candidates/generate', payload)
+export const previewScheduleCandidate = (id) =>
+  http.get(`/admin/education/schedule-candidates/${id}/preview`)
+export const applyScheduleCandidate = (id) =>
+  http.post(`/admin/education/schedule-candidates/${id}/apply`)
+export const discardScheduleCandidate = (id) =>
+  http.post(`/admin/education/schedule-candidates/${id}/discard`)
 export const listAcademicTerms = (params) => http.get(`/admin/education/terms?${qs(params)}`)
 export const createAcademicTerm = (payload) => http.post('/admin/education/terms', payload)
 export const updateAcademicTerm = (id, payload) => http.put(`/admin/education/terms/${id}`, payload)
@@ -267,6 +292,7 @@ export const createAdministrativeClass = (payload) => http.post('/admin/educatio
 export const updateAdministrativeClass = (id, payload) => http.put(`/admin/education/administrative-classes/${id}`, payload)
 export const deleteAdministrativeClass = (id) => http.delete(`/admin/education/administrative-classes/${id}`)
 export const listEducationStudents = (params) => http.get(`/admin/education/students?${qs(params)}`)
+export const exportEducationStudents = () => http.download('/admin/education/students/export')
 export const createEducationStudent = (payload) => http.post('/admin/education/students', payload)
 export const updateEducationStudent = (id, payload) => http.put(`/admin/education/students/${id}`, payload)
 export const listEducationTeachers = (params) => http.get(`/admin/education/teachers?${qs(params)}`)
@@ -300,6 +326,7 @@ export const importKnowledgeDocument = (knowledgeBaseId, title, file) => {
   return http.upload(`/admin/knowledge-documents/import?${qs({ knowledgeBaseId, title })}`, data)
 }
 export const deleteKnowledgeDocument = (id) => http.delete(`/admin/knowledge-documents/${id}`)
+export const rebuildKnowledgeDocument = (id) => http.post(`/admin/knowledge-documents/${id}/rebuild`)
 export const searchKnowledge = (knowledgeBaseId, keyword, limit = 20) => (
   http.get(`/admin/knowledge-search?${qs({ knowledgeBaseId, keyword, limit })}`)
 )

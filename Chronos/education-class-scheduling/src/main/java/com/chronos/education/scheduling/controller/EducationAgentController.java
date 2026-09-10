@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.SchedulingAgentProposal;
+import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.service.EducationAgentService;
 import com.chronos.education.scheduling.service.EducationAgentService.AcademicAnalysis;
 import com.chronos.education.scheduling.service.EducationAgentService.ProposalCommand;
@@ -30,10 +31,17 @@ public class EducationAgentController {
 	public ResultData<?> proposals(
 			@RequestParam String semesterCode,
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
+			@RequestParam(required = false) Integer size,
+			Authentication authentication) {
+		List<SchedulingAgentProposal> visible = service.proposals(
+				semesterCode,
+				authentication);
 		return page == null && size == null
-				? ok(service.proposals(semesterCode))
-				: ok(service.proposals(semesterCode, page == null ? 0 : page, size == null ? 10 : size));
+				? ok(visible)
+				: ok(PageView.from(
+						visible,
+						page == null ? 0 : page,
+						size == null ? 10 : size));
 	}
 
 	@PostMapping("/education/agents/scheduling/proposals")

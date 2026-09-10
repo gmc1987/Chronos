@@ -242,7 +242,21 @@
         <el-form-item label="逾期提醒间隔"><el-input-number v-model="nodeForm.properties.reminderIntervalMinutes" :min="1" /><span class="tip">分钟</span></el-form-item>
         <el-form-item label="升级间隔"><el-input-number v-model="nodeForm.properties.escalationIntervalMinutes" :min="1" /><span class="tip">分钟</span></el-form-item>
         <el-form-item label="升级通知人"><el-input v-model="nodeForm.properties.escalationUser" placeholder="留空通知流程管理员" /></el-form-item>
-        <el-form-item label="允许操作"><el-checkbox-group v-model="nodeForm.properties.enabledOperations"><el-checkbox label="approve">通过</el-checkbox><el-checkbox label="reject">拒绝</el-checkbox><el-checkbox label="return">退回</el-checkbox><el-checkbox label="transfer">转办</el-checkbox><el-checkbox label="addSign">加签</el-checkbox><el-checkbox label="cc">抄送</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item label="允许操作">
+          <el-checkbox-group v-model="nodeForm.properties.enabledOperations">
+            <el-checkbox label="approve">通过</el-checkbox>
+            <el-checkbox label="reject">拒绝</el-checkbox>
+            <el-checkbox label="return">退回</el-checkbox>
+            <el-checkbox label="transfer">转办</el-checkbox>
+            <el-checkbox
+              label="addSign"
+              :disabled="nodeForm.properties.approvalMode === 'SINGLE'"
+            >
+              加签
+            </el-checkbox>
+            <el-checkbox label="cc">抄送</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
         <el-form-item label="办理时限(小时)"><el-input-number v-model="nodeForm.properties.dueHours" :min="0" /></el-form-item>
         <el-form-item label="退回策略"><el-select v-model="nodeForm.properties.returnPolicy" style="width: 100%"><el-option label="退回上一节点" value="PREVIOUS" /><el-option label="退回发起人" value="STARTER" /><el-option label="允许选择节点" value="SELECTABLE" /></el-select></el-form-item>
         <el-form-item label="拒绝策略"><el-select v-model="nodeForm.properties.rejectPolicy" style="width: 100%"><el-option label="直接结束流程" value="TERMINATE" /><el-option label="退回上一节点" value="PREVIOUS" /><el-option label="退回发起人" value="STARTER" /><el-option label="允许选择节点" value="SELECTABLE" /></el-select></el-form-item>
@@ -989,7 +1003,10 @@ const saveNodeEdit = () => {
   if (automaticNode.value && (!outputMapping || Array.isArray(outputMapping))) return ElMessage.warning('输出映射必须是合法的 JSON 对象')
   if (nodeForm.value.executor === 'spring-service' && value === undefined) return ElMessage.warning('写入值必须是合法 JSON')
   const enabledOperations = new Set(nodeForm.value.properties.enabledOperations || [])
-  const operations = Object.fromEntries(['approve','reject','return','transfer','addSign','cc'].map((op) => [op, enabledOperations.has(op)]))
+  const operations = Object.fromEntries(['approve','reject','return','transfer','addSign','cc'].map((op) => [
+    op,
+    enabledOperations.has(op) && !(op === 'addSign' && nodeForm.value.properties.approvalMode === 'SINGLE')
+  ]))
   const {
     enabledOperations: _enabledOperations,
     headersText: _headersText,

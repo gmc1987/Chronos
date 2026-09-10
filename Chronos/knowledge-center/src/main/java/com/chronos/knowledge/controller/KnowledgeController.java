@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.chronos.commons.model.ResultData;
+import com.chronos.commons.model.PageView;
 import com.chronos.knowledge.model.KnowledgeBase;
 import com.chronos.knowledge.model.KnowledgeDocument;
 import com.chronos.knowledge.service.KnowledgeService;
@@ -39,7 +40,9 @@ public class KnowledgeController {
 			@RequestParam(required = false) Integer size) {
 		return page == null && size == null
 				? ok(service.knowledgeBases())
-				: ok(service.knowledgeBases(page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(service.knowledgeBases(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/knowledge-bases")
@@ -70,7 +73,10 @@ public class KnowledgeController {
 			@RequestParam(required = false) Integer size) {
 		return page == null && size == null
 				? ok(service.documents(knowledgeBaseId))
-				: ok(service.documents(knowledgeBaseId, page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(service.documents(
+						knowledgeBaseId,
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/knowledge-documents/text")
@@ -86,6 +92,14 @@ public class KnowledgeController {
 			@RequestParam(required = false) String title,
 			@RequestPart("file") MultipartFile file) throws IOException {
 		return ok(service.importDocument(knowledgeBaseId, title, file));
+	}
+
+	@PostMapping("/admin/knowledge-documents/{id}/rebuild")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
+	public ResultData<KnowledgeDocument> rebuildDocument(
+			@PathVariable String id,
+			Authentication authentication) {
+		return ok(service.rebuildDocument(id, authentication.getName()));
 	}
 
 	@DeleteMapping("/admin/knowledge-documents/{id}")

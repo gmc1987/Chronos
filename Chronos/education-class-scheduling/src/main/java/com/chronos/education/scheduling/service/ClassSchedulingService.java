@@ -186,6 +186,9 @@ public class ClassSchedulingService {
 				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
 		Classroom classroom = classrooms.findById(command.classroomId())
 				.orElseThrow(() -> new IllegalArgumentException("教室不存在"));
+		if (campusMismatch(offering, classroom)) {
+			throw new IllegalArgumentException("教学任务和教室必须属于同一校区");
+		}
 		if (!Boolean.TRUE.equals(classroom.getEnabled())) {
 			throw new IllegalStateException("教室已停用");
 		}
@@ -251,6 +254,12 @@ public class ClassSchedulingService {
 	public List<TeacherTimeConstraint> teacherConstraints(String semesterCode) {
 		return teacherConstraints.findBySemesterCodeOrderByTeacherIdAscDayOfWeekAscPeriodNoAsc(
 				required(semesterCode, "学期编码"));
+	}
+
+	@Transactional(readOnly = true)
+	public TeacherTimeConstraint teacherConstraint(String id) {
+		return teacherConstraints.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("教师时间约束不存在"));
 	}
 
 	@Transactional
@@ -350,6 +359,12 @@ public class ClassSchedulingService {
 			}
 			default -> throw new IllegalArgumentException("不支持的课表维度：" + dimension);
 		};
+	}
+
+	private boolean campusMismatch(CourseOffering offering, Classroom classroom) {
+		return offering.getCampusId() != null
+				&& classroom.getCampusId() != null
+				&& !offering.getCampusId().equals(classroom.getCampusId());
 	}
 
 	private void validateOffering(CourseOffering value) {

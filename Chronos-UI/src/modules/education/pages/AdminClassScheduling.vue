@@ -85,6 +85,70 @@
         </el-table>
       </el-tab-pane>
 
+      <el-tab-pane label="自动排课候选" name="candidates">
+        <div class="toolbar">
+          <el-button @click="loadCandidates">刷新</el-button>
+          <el-button
+            v-permission="['education:scheduling:manage']"
+            type="primary"
+            @click="openCandidateDialog">
+            生成候选方案
+          </el-button>
+        </div>
+        <el-alert
+          title="候选方案生成不会直接修改当前课表。预览差异并确认应用后，才会替换当前草稿。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <el-empty v-if="!candidates.length" description="暂无自动排课候选方案" />
+        <el-table v-else :data="candidates" class="candidate-table">
+          <el-table-column prop="planName" label="方案名称" min-width="180" />
+          <el-table-column label="模式" width="100">
+            <template #default="scope">
+              {{ scope.row.generationMode === 'LOCAL' ? '局部重排' : '全量排课' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="totalScore" label="评分" width="90" />
+          <el-table-column prop="entryCount" label="课表项" width="90" />
+          <el-table-column prop="unscheduledLessons" label="未排课时" width="100">
+            <template #default="scope">
+              <el-tag :type="scope.row.unscheduledLessons ? 'danger' : 'success'">
+                {{ scope.row.unscheduledLessons }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="scope">{{ candidateStatus(scope.row.status) }}</template>
+          </el-table-column>
+          <el-table-column label="生成时间" min-width="170">
+            <template #default="scope">{{ formatTime(scope.row.generatedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="220" fixed="right">
+            <template #default="scope">
+              <el-button link @click="showCandidateDiff(scope.row)">预览差异</el-button>
+              <template v-if="scope.row.status === 'CANDIDATE'">
+                <el-button
+                  v-permission="['education:scheduling:manage']"
+                  link
+                  type="primary"
+                  :disabled="scope.row.unscheduledLessons > 0"
+                  @click="applyCandidate(scope.row)">
+                  应用
+                </el-button>
+                <el-button
+                  v-permission="['education:scheduling:manage']"
+                  link
+                  type="danger"
+                  @click="discardCandidate(scope.row)">
+                  废弃
+                </el-button>
+              </template>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
       <el-tab-pane label="教学任务" name="offerings">
         <div class="toolbar"><el-button type="primary" @click="openOffering()">新增教学任务</el-button></div>
         <el-table :data="offerings">
@@ -139,17 +203,77 @@
       </el-tab-pane>
 
 	  <el-tab-pane label="调课回写异常" name="incidents">
-		<div class="toolbar"><el-button @click="loadIncidents">刷新</el-button></div>
+		<div class="incident-toolbar">
+		  <div class="incident-filters">
+			<el-select v-model="incidentStatus" class="incident-status" @change="searchIncidents">
+			  <el-option label="待处理" value="FAILED" />
+			  <el-option label="已处理" value="APPLIED" />
+			  <el-option label="全部" value="ALL" />
+			</el-select>
+			<el-select
+			  v-model="incidentAdjustmentType"
+			  class="incident-type"
+			  clearable
+			  placeholder="调整类型"
+			  @change="searchIncidents">
+			  <el-option label="调课" value="MOVE" />
+			  <el-option label="停课" value="CANCEL" />
+			  <el-option label="代课" value="SUBSTITUTE" />
+			  <el-option label="补课" value="MAKEUP" />
+			</el-select>
+			<el-input
+			  v-model="incidentKeyword"
+			  class="incident-keyword"
+			  clearable
+			  placeholder="流程、业务编号、课表项或原因"
+			  @keyup.enter="searchIncidents" />
+			<el-button type="primary" @click="searchIncidents">查询</el-button>
+		  </div>
+		  <div>
+			<el-button
+			  type="warning"
+			  :disabled="!incidentSelection.length"
+			  :loading="incidentBatchRetrying"
+			  @click="batchRetryIncidents">
+			  批量重放（{{ incidentSelection.length }}）
+			</el-button>
+			<el-button @click="loadIncidents">刷新</el-button>
+		  </div>
+		</div>
 		<el-empty v-if="!incidents.length" description="暂无待处理异常" />
-		<el-table v-else :data="incidents">
+		<el-table v-else :data="incidents" @selection-change="incidentSelection = $event">
+		  <el-table-column type="selection" width="46" :selectable="row => row.status === 'FAILED'" />
 		  <el-table-column prop="workflowInstanceId" label="流程实例" min-width="210" />
 		  <el-table-column prop="adjustmentType" label="调整类型" width="110" />
+		  <el-table-column label="状态" width="100">
+			<template #default="scope">
+			  <el-tag :type="scope.row.status === 'APPLIED' ? 'success' : 'danger'">
+				{{ scope.row.status === 'APPLIED' ? '已处理' : '待处理' }}
+			  </el-tag>
+			</template>
+		  </el-table-column>
 		  <el-table-column prop="message" label="失败原因" min-width="220" show-overflow-tooltip />
 		  <el-table-column prop="retryCount" label="重试次数" width="100" />
 		  <el-table-column label="操作" width="100">
-			<template #default="scope"><el-button link type="primary" @click="retryIncident(scope.row)">重试</el-button></template>
+			<template #default="scope">
+			  <el-button
+				v-if="scope.row.status === 'FAILED'"
+				link
+				type="primary"
+				@click="retryIncident(scope.row)">
+				重试
+			  </el-button>
+			</template>
 		  </el-table-column>
 		</el-table>
+		<el-pagination
+		  v-model:current-page="incidentPage"
+		  v-model:page-size="incidentPageSize"
+		  :page-sizes="[10, 20, 50, 100]"
+		  layout="total, sizes, prev, pager, next"
+		  :total="incidentTotal"
+		  @size-change="searchIncidents"
+		  @current-change="loadIncidents" />
 	  </el-tab-pane>
     </el-tabs>
 
@@ -194,6 +318,79 @@
       </el-form>
       <template #footer><el-button @click="classroomDialog = false">取消</el-button><el-button type="primary" @click="saveClassroom">保存</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="candidateDialog" title="生成自动排课候选方案" width="660px">
+      <el-form label-width="110px">
+        <el-form-item label="方案名称">
+          <el-input v-model="candidateForm.planName" maxlength="80" />
+        </el-form-item>
+        <el-form-item label="生成模式">
+          <el-radio-group v-model="candidateForm.mode">
+            <el-radio value="FULL">全量排课</el-radio>
+            <el-radio value="LOCAL">局部重排</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="candidateForm.mode === 'LOCAL'" label="教学任务" required>
+          <el-select
+            v-model="candidateForm.selectedOfferingIds"
+            multiple
+            filterable
+            collapse-tags
+            class="full-width"
+            placeholder="选择需要局部重排的教学任务">
+            <el-option
+              v-for="item in offeringOptions"
+              :key="item.id"
+              :label="`${item.courseName} / ${item.teachingClassName} / ${item.teacherName}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="候选数量">
+          <el-input-number v-model="candidateForm.candidateCount" :min="1" :max="5" />
+        </el-form-item>
+        <el-form-item label="排课日范围">
+          <el-input-number v-model="candidateForm.weekdays" :min="1" :max="7" />
+          <span class="unit-label">天/周</span>
+        </el-form-item>
+        <el-form-item label="每日节次">
+          <el-input-number v-model="candidateForm.periodsPerDay" :min="1" :max="20" />
+        </el-form-item>
+        <el-form-item label="授课周次">
+          <el-input-number v-model="candidateForm.startWeek" :min="1" />
+          <span class="separator">至</span>
+          <el-input-number v-model="candidateForm.endWeek" :min="1" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="candidateDialog = false">取消</el-button>
+        <el-button type="primary" :loading="candidateGenerating" @click="generateCandidates">
+          生成候选
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="diffDialog" :title="diffTitle" width="860px">
+      <div v-if="currentDiff" class="diff-summary">
+        <el-tag type="success">新增 {{ currentDiff.added }}</el-tag>
+        <el-tag type="warning">移动 {{ currentDiff.moved }}</el-tag>
+        <el-tag type="danger">移除 {{ currentDiff.removed }}</el-tag>
+        <el-tag type="info">未变化 {{ currentDiff.unchanged }}</el-tag>
+      </div>
+      <el-table :data="currentDiff?.items || []" max-height="480">
+        <el-table-column label="变化" width="90">
+          <template #default="scope">{{ changeTypeName(scope.row.changeType) }}</template>
+        </el-table-column>
+        <el-table-column prop="courseName" label="课程" min-width="130" />
+        <el-table-column prop="teachingClassName" label="教学班" min-width="150" />
+        <el-table-column prop="teacherName" label="教师" width="110" />
+        <el-table-column prop="beforeSlot" label="变更前" min-width="150" />
+        <el-table-column prop="afterSlot" label="变更后" min-width="150" />
+      </el-table>
+      <template #footer>
+        <el-button @click="diffDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -201,12 +398,16 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  applyScheduleCandidate,
+  batchRetryCourseAdjustmentIncidents,
   createClassroom,
   createCourseOffering,
   createScheduleEntry,
   deleteClassroom,
   deleteCourseOffering,
   deleteScheduleEntry,
+  discardScheduleCandidate,
+  generateScheduleCandidates,
   listClassrooms,
   listClassSchedule,
   listAcademicTerms,
@@ -217,6 +418,9 @@ import {
   listEducationTeachers,
   listEducationStudents,
   listScheduleVersions,
+  listScheduleCandidates,
+  previewScheduleCandidate,
+  previewSchedulePublication,
   publishScheduleVersion,
   retryCourseAdjustmentIncident,
   rollbackScheduleVersion,
@@ -242,7 +446,16 @@ const schedule = ref([])
 const scheduleDimension = ref('ALL')
 const scheduleTargetId = ref('')
 const incidents = ref([])
+const incidentSelection = ref([])
+const incidentStatus = ref('FAILED')
+const incidentAdjustmentType = ref('')
+const incidentKeyword = ref('')
+const incidentPage = ref(1)
+const incidentPageSize = ref(20)
+const incidentTotal = ref(0)
+const incidentBatchRetrying = ref(false)
 const versions = ref([])
+const candidates = ref([])
 const offeringPage = ref(1)
 const offeringPageSize = ref(10)
 const offeringTotal = ref(0)
@@ -252,9 +465,15 @@ const classroomTotal = ref(0)
 const entryDialog = ref(false)
 const offeringDialog = ref(false)
 const classroomDialog = ref(false)
+const candidateDialog = ref(false)
+const candidateGenerating = ref(false)
+const diffDialog = ref(false)
+const diffTitle = ref('方案差异')
+const currentDiff = ref(null)
 const entryForm = reactive({})
 const offeringForm = reactive({})
 const classroomForm = reactive({})
+const candidateForm = reactive({})
 const dayName = (day) => ['一', '二', '三', '四', '五', '六', '日'][day - 1]
 const formatTime = value => value ? new Date(value).toLocaleString() : '-'
 const dimensionOptions = computed(() => {
@@ -277,7 +496,7 @@ const dimensionOptions = computed(() => {
 })
 const reset = (target, value) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, value) }
 const loadAll = async () => {
-  const [termResponse, courseResponse, teacherResponse, studentResponse, classResponse, offeringResponse, classroomResponse, roomTypeResponse, versionResponse] = await Promise.all([
+  const [termResponse, courseResponse, teacherResponse, studentResponse, classResponse, offeringResponse, classroomResponse, roomTypeResponse, versionResponse, candidateResponse] = await Promise.all([
     listAcademicTerms(),
     listCourseCatalog(),
     listEducationTeachers(),
@@ -287,6 +506,7 @@ const loadAll = async () => {
     listClassrooms(),
     dictionaryOptions('EDU_ROOM_TYPE'),
     listScheduleVersions(semesterCode.value),
+    listScheduleCandidates(semesterCode.value),
   ])
   terms.value = termResponse.data || []
   courses.value = courseResponse.data || []
@@ -297,6 +517,7 @@ const loadAll = async () => {
   classroomOptions.value = classroomResponse.data || []
   roomTypes.value = (roomTypeResponse?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
   versions.value = versionResponse.data || []
+  candidates.value = candidateResponse.data || []
   offeringPage.value = 1
   classroomPage.value = 1
   await Promise.all([loadOfferingsPage(), loadClassroomsPage(), loadSchedule()])
@@ -351,7 +572,20 @@ const openClassroom = (row) => { reset(classroomForm, row ? { ...row } : { capac
 const saveClassroom = async () => { await (classroomForm.id ? updateClassroom(classroomForm.id, classroomForm) : createClassroom(classroomForm)); classroomDialog.value = false; ElMessage.success('教室已保存'); await loadAll() }
 const removeClassroom = async (row) => { await ElMessageBox.confirm('确认删除该教室？', '删除'); await deleteClassroom(row.id); await loadAll() }
 const loadIncidents = async () => {
-  incidents.value = (await listCourseAdjustmentIncidents()).data || []
+  const response = await listCourseAdjustmentIncidents({
+    status: incidentStatus.value,
+    adjustmentType: incidentAdjustmentType.value || undefined,
+    keyword: incidentKeyword.value || undefined,
+    page: incidentPage.value - 1,
+    size: incidentPageSize.value,
+  })
+  incidents.value = response.data?.content || []
+  incidentTotal.value = response.data?.totalElements || 0
+  incidentSelection.value = []
+}
+const searchIncidents = async () => {
+  incidentPage.value = 1
+  await loadIncidents()
 }
 const retryIncident = async (row) => {
   const response = await retryCourseAdjustmentIncident(row.id)
@@ -361,11 +595,104 @@ const retryIncident = async (row) => {
   await loadIncidents()
   await loadAll()
 }
+const batchRetryIncidents = async () => {
+  await ElMessageBox.confirm(
+    `确认重放选中的 ${incidentSelection.value.length} 条调课事故？每条记录会独立处理。`,
+    '批量重放',
+    { type: 'warning' },
+  )
+  incidentBatchRetrying.value = true
+  try {
+    const response = await batchRetryCourseAdjustmentIncidents(
+      incidentSelection.value.map(item => item.id),
+    )
+    const result = response.data
+    if (result.failed) {
+      ElMessage.warning(`批量重放完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条`)
+    } else {
+      ElMessage.success(`批量重放成功，共处理 ${result.succeeded} 条`)
+    }
+    await Promise.all([loadIncidents(), loadAll()])
+  } finally {
+    incidentBatchRetrying.value = false
+  }
+}
 const loadVersions = async () => {
   versions.value = (await listScheduleVersions(semesterCode.value)).data || []
 }
+const loadCandidates = async () => {
+  candidates.value = (await listScheduleCandidates(semesterCode.value)).data || []
+}
+const openCandidateDialog = () => {
+  reset(candidateForm, {
+    planName: `${semesterCode.value}-自动排课`,
+    mode: 'FULL',
+    selectedOfferingIds: [],
+    candidateCount: 3,
+    weekdays: 5,
+    periodsPerDay: 8,
+    startWeek: 1,
+    endWeek: 20,
+  })
+  candidateDialog.value = true
+}
+const generateCandidates = async () => {
+  if (candidateForm.mode === 'LOCAL' && !candidateForm.selectedOfferingIds.length) {
+    ElMessage.warning('局部重排至少选择一个教学任务')
+    return
+  }
+  candidateGenerating.value = true
+  try {
+    await generateScheduleCandidates({
+      ...candidateForm,
+      semesterCode: semesterCode.value,
+    })
+    candidateDialog.value = false
+    ElMessage.success('候选方案已生成，请先预览差异再应用')
+    await loadCandidates()
+  } finally {
+    candidateGenerating.value = false
+  }
+}
+const showCandidateDiff = async (row) => {
+  currentDiff.value = (await previewScheduleCandidate(row.id)).data
+  diffTitle.value = `${row.planName}－方案差异`
+  diffDialog.value = true
+}
+const applyCandidate = async (row) => {
+  const diff = (await previewScheduleCandidate(row.id)).data
+  await ElMessageBox.confirm(
+    `确认应用“${row.planName}”？将新增 ${diff.added}、移动 ${diff.moved}、移除 ${diff.removed} 条课表安排。`,
+    '应用候选方案',
+    { type: 'warning' },
+  )
+  await applyScheduleCandidate(row.id)
+  ElMessage.success('候选方案已应用到当前课表草稿')
+  await loadAll()
+}
+const discardCandidate = async (row) => {
+  await ElMessageBox.confirm(`确认废弃“${row.planName}”？`, '废弃候选方案')
+  await discardScheduleCandidate(row.id)
+  ElMessage.success('候选方案已废弃')
+  await loadCandidates()
+}
+const candidateStatus = (status) => ({
+  CANDIDATE: '待应用',
+  APPLIED: '已应用',
+  DISCARDED: '已废弃',
+})[status] || status
+const changeTypeName = (type) => ({
+  ADDED: '新增',
+  MOVED: '移动',
+  REMOVED: '移除',
+})[type] || type
 const publishVersion = async () => {
-  await ElMessageBox.confirm('发布后会生成不可变版本快照，确认发布当前课表？', '发布课表')
+  const diff = (await previewSchedulePublication(semesterCode.value)).data
+  await ElMessageBox.confirm(
+    `发布后会生成不可变版本快照。本次将新增 ${diff.added}、移动 ${diff.moved}、移除 ${diff.removed} 条安排，确认发布？`,
+    '发布课表',
+    { type: 'warning' },
+  )
   await publishScheduleVersion(semesterCode.value)
   ElMessage.success('课表版本已发布')
   await loadVersions()
@@ -382,15 +709,84 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page { padding: 24px; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
-header h2 { margin: 0 0 6px; }
-header p { margin: 0; color: #84909a; }
-header .el-input { width: 260px; }
-.toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
-.schedule-toolbar { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.dimension-filter { display: flex; gap: 10px; }
-.dimension-select { width: 140px; }
-.target-select { width: 280px; }
-.separator { margin: 0 12px; color: #84909a; }
+.page {
+  padding: 24px;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+header h2 {
+  margin: 0 0 6px;
+}
+header p {
+  margin: 0;
+  color: #84909a;
+}
+header .el-input {
+  width: 260px;
+}
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.incident-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.incident-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.incident-status,
+.incident-type {
+  width: 120px;
+}
+.incident-keyword {
+  width: 280px;
+}
+.schedule-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.dimension-filter {
+  display: flex;
+  gap: 10px;
+}
+.dimension-select {
+  width: 140px;
+}
+.target-select {
+  width: 280px;
+}
+.separator {
+  margin: 0 12px;
+  color: #84909a;
+}
+.unit-label {
+  margin-left: 10px;
+  color: #84909a;
+}
+.full-width {
+  width: 100%;
+}
+.candidate-table {
+  margin-top: 12px;
+}
+.diff-summary {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
 </style>

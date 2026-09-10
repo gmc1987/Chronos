@@ -27,6 +27,7 @@ import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.CourseCatalog;
 import com.chronos.education.scheduling.model.EducationGrade;
+import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.Major;
 import com.chronos.education.scheduling.model.ParentProfile;
 import com.chronos.education.scheduling.model.ScheduleEntry;
@@ -212,6 +213,28 @@ public class AcademicDataService {
 		return administrativeClasses.findAllByOrderByGradeYearDescClassCodeAsc(pageable(page, size));
 	}
 
+	public List<AdministrativeClass> administrativeClasses(EducationDataScope scope) {
+		return scope.fullAccess()
+				? administrativeClasses()
+				: administrativeClasses.findVisible(
+						nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()),
+						nonEmpty(scope.campusIds()));
+	}
+
+	public Page<AdministrativeClass> administrativeClasses(
+			EducationDataScope scope,
+			int page,
+			int size) {
+		return scope.fullAccess()
+				? administrativeClasses(page, size)
+				: administrativeClasses.findVisible(
+						nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()),
+						nonEmpty(scope.campusIds()),
+						pageable(page, size));
+	}
+
 	@Transactional
 	public AdministrativeClass saveAdministrativeClass(String id, AdministrativeClass command) {
 		majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
@@ -238,6 +261,26 @@ public class AcademicDataService {
 		return students.findAllByOrderByStudentNo(pageable(page, size));
 	}
 
+	public List<StudentProfile> students(EducationDataScope scope) {
+		return scope.fullAccess()
+				? students()
+				: students.findVisible(
+						nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()));
+	}
+
+	public Page<StudentProfile> students(
+			EducationDataScope scope,
+			int page,
+			int size) {
+		return scope.fullAccess()
+				? students(page, size)
+				: students.findVisible(
+						nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()),
+						pageable(page, size));
+	}
+
 	@Transactional
 	public StudentProfile saveStudent(String id, StudentProfile command) {
 		majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
@@ -256,6 +299,23 @@ public class AcademicDataService {
 
 	public Page<TeacherAcademicProfile> teachers(int page, int size) {
 		return teachers.findAllByOrderByTeacherNo(pageable(page, size));
+	}
+
+	public List<TeacherAcademicProfile> teachers(EducationDataScope scope) {
+		return scope.fullAccess()
+				? teachers()
+				: teachers.findByIdInOrderByTeacherNo(nonEmpty(scope.teacherIds()));
+	}
+
+	public Page<TeacherAcademicProfile> teachers(
+			EducationDataScope scope,
+			int page,
+			int size) {
+		return scope.fullAccess()
+				? teachers(page, size)
+				: teachers.findByIdInOrderByTeacherNo(
+						nonEmpty(scope.teacherIds()),
+						pageable(page, size));
 	}
 
 	@Transactional
@@ -321,6 +381,28 @@ public class AcademicDataService {
 
 	public Page<TeacherTeachingAssignment> teachingAssignments(int page, int size) {
 		return teachingAssignments.findAllByOrderByCreateTimeDesc(pageable(page, size));
+	}
+
+	public List<TeacherTeachingAssignment> teachingAssignments(EducationDataScope scope) {
+		return scope.fullAccess()
+				? teachingAssignments()
+				: teachingAssignments.findVisible(
+						nonEmpty(scope.teacherIds()),
+						nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()));
+	}
+
+	public Page<TeacherTeachingAssignment> teachingAssignments(
+			EducationDataScope scope,
+			int page,
+			int size) {
+		return scope.fullAccess()
+				? teachingAssignments(page, size)
+				: teachingAssignments.findVisible(
+						nonEmpty(scope.teacherIds()),
+						nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()),
+						pageable(page, size));
 	}
 
 	@Transactional
@@ -416,6 +498,11 @@ public class AcademicDataService {
 
 	private Pageable pageable(int page, int size) {
 		return PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
+	}
+
+	/** Hibernate/PostgreSQL 对空 IN 参数的处理依版本不同，使用不可命中的占位值保持查询稳定。 */
+	private List<String> nonEmpty(java.util.Set<String> values) {
+		return values.isEmpty() ? List.of("__NO_EDUCATION_RESOURCE__") : values.stream().toList();
 	}
 
 	private <T> T entity(String id, T command, org.springframework.data.jpa.repository.JpaRepository<T, String> repository) {

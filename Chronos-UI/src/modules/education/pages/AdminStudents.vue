@@ -1,9 +1,49 @@
 <template>
-  <AcademicCrudPage title="学生档案" description="维护学生学籍、年级、专业和行政班" entity-label="学生" :columns="columns" :fields="fields" :defaults="defaults" :lookups="lookups" :loader="listEducationStudents" :creator="createEducationStudent" :updater="updateEducationStudent" />
+  <AcademicCrudPage
+    title="学生档案"
+    description="维护学生学籍、年级、专业和行政班"
+    entity-label="学生"
+    permission-prefix="education:student"
+    :columns="columns"
+    :fields="fields"
+    :defaults="defaults"
+    :lookups="lookups"
+    :loader="listEducationStudents"
+    :creator="createEducationStudent"
+    :updater="updateEducationStudent"
+  >
+    <template #actions>
+      <el-button
+        v-permission="['education:student:export', 'education:student:manage']"
+        @click="exportStudents"
+      >
+        导出 Excel
+      </el-button>
+    </template>
+  </AcademicCrudPage>
 </template>
 <script setup>
 import AcademicCrudPage from '../components/AcademicCrudPage.vue'
-import { createEducationStudent, listAdministrativeClasses, listEducationGrades, listEducationMajors, listEducationStudents, updateEducationStudent } from '../../../api/admin'
+import {
+  createEducationStudent,
+  exportEducationStudents,
+  listAdministrativeClasses,
+  listEducationGrades,
+  listEducationMajors,
+  listEducationStudents,
+  updateEducationStudent,
+} from '../../../api/admin'
+
+const exportStudents = async () => {
+  const blob = await exportEducationStudents()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = '学生档案.xlsx'
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 const columns = [
   { prop: 'studentNo', label: '学号' },
   { prop: 'studentName', label: '姓名' },

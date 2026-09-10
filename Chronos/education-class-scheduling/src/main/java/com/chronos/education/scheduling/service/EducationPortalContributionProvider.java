@@ -14,13 +14,17 @@ import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.ScheduleEntry;
+import com.chronos.education.scheduling.model.StudentGuardianRelation;
+import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.portal.spi.PortalContribution;
 import com.chronos.portal.spi.PortalContributionProvider;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -144,6 +148,126 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 					.forEach(result::add));
 		}
 		return result;
+	}
+
+	/**
+	 * 返回当前账号可以切换查看的学生身份。响应只包含课表选择所需字段，
+	 * 不向家长门户暴露手机号、性别等学生隐私信息。
+	 */
+	@Transactional(readOnly = true)
+	public List<Map<String, Object>> studentContexts(String username) {
+		return studentContextViews(resolveStudentContexts(username));
+	}
+
+	/** 根据账号和可选学生身份返回最近发布课表，禁止横向查询其他学生。 */
+	@Transactional(readOnly = true)
+	public Map<String, Object> personalSchedule(
+			String username,
+			String requestedStudentId) {
+		Map<String, StudentContext> contexts = resolveStudentContexts(username);
+		String selectedStudentId = selectStudentId(contexts, requestedStudentId);
+		Map<String, Object> data = new LinkedHashMap<>();
+		data.put("selectedStudentId", selectedStudentId == null ? "" : selectedStudentId);
+		data.put("studentContexts", studentContextViews(contexts));
+
+		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
+				.ifPresentOrElse(term -> {
+					Map<String, CourseOffering> byId = offerings
+							.findBySemesterCodeOrderByOfferingCode(term.getTermCode())
+							.stream()
+							.collect(Collectors.toMap(CourseOffering::getId, value -> value));
+					Map<String, Classroom> classroomById = classrooms.findAll().stream()
+							.collect(Collectors.toMap(Classroom::getId, value -> value));
+					Set<String> allowedOfferingIds = selectedStudentId == null
+							? resolvePersonalOfferingIds(username, byId)
+							: studentOfferingIds(selectedStudentId);
+					data.put("termName", term.getTermName());
+					data.put("schedule", planVersions.latestPublishedEntries(term.getTermCode()).stream()
+							.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
+							.filter(entry -> allowedOfferingIds.contains(entry.getOfferingId()))
+							.map(entry -> scheduleItem(
+									entry,
+									byId.get(entry.getOfferingId()),
+									classroomById.get(entry.getClassroomId())))
+							.toList());
+				}, () -> {
+					data.put("termName", "");
+					data.put("schedule", List.of());
+				});
+		return data;
+	}
+
+	private Map<String, StudentContext> resolveStudentContexts(String username) {
+		Map<String, StudentContext> contexts = new LinkedHashMap<>();
+		List<EducationUserBinding> activeBindings = bindings
+				.findByUsernameAndStatusOrderByProfileType(username, "ACTIVE");
+		for (EducationUserBinding binding : activeBindings) {
+			if ("STUDENT".equals(binding.getProfileType())) {
+				students.findById(binding.getProfileId()).ifPresent(student -> contexts.put(
+						student.getId(),
+						new StudentContext(student, "本人", true)));
+			}
+			if ("PARENT".equals(binding.getProfileType())) {
+				for (StudentGuardianRelation relation : guardians
+						.findByParentIdOrderByCreateTime(binding.getProfileId())) {
+					students.findById(relation.getStudentId()).ifPresent(student -> contexts.put(
+							student.getId(),
+							new StudentContext(
+									student,
+									relation.getRelationship(),
+									Boolean.TRUE.equals(relation.getPrimaryGuardian()))));
+				}
+			}
+		}
+		return contexts;
+	}
+
+	private List<Map<String, Object>> studentContextViews(
+			Map<String, StudentContext> contexts) {
+		return contexts.values().stream()
+				.sorted(studentContextComparator())
+				.map(context -> Map.<String, Object>of(
+						"studentId", context.student().getId(),
+						"studentNo", context.student().getStudentNo(),
+						"studentName", context.student().getStudentName(),
+						"relationship", context.relationship(),
+						"primary", context.primary()))
+				.toList();
+	}
+
+	private Comparator<StudentContext> studentContextComparator() {
+		return Comparator.comparing(StudentContext::primary)
+				.reversed()
+				.thenComparing(context -> context.student().getStudentNo())
+				.thenComparing(context -> context.student().getId());
+	}
+
+	private String selectStudentId(
+			Map<String, StudentContext> contexts,
+			String requestedStudentId) {
+		if (requestedStudentId != null && !requestedStudentId.isBlank()) {
+			if (!contexts.containsKey(requestedStudentId)) {
+				throw new AccessDeniedException("无权查看该学生课表");
+			}
+			return requestedStudentId;
+		}
+		return contexts.values().stream()
+				.sorted(studentContextComparator())
+				.map(context -> context.student().getId())
+				.findFirst()
+				.orElse(null);
+	}
+
+	private Set<String> studentOfferingIds(String studentId) {
+		Set<String> result = new java.util.HashSet<>();
+		addStudentOfferings(studentId, result);
+		return result;
+	}
+
+	private record StudentContext(
+			StudentProfile student,
+			String relationship,
+			boolean primary) {
 	}
 
 	private void addStudentOfferings(String studentId, Set<String> target) {

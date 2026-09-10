@@ -7,5 +7,6 @@ export {
   jobLevels, saveJobLevel, deleteJobLevel,
   employees, saveEmployee, deleteEmployee, employeeAssignments, saveEmployeeAssignment, deleteEmployeeAssignment, downloadDirectoryImportTemplate, importDirectoryData,
   dictTree, dictListByCode, dictionaryOptions, createDict, updateDict, deleteDict,
+  auditLogs, exportAuditLogs,
   customerList, customerDetail, createCustomer, updateCustomer, deleteCustomer,
 } from '../../api/admin'

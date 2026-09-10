@@ -28,6 +28,7 @@ import org.flowable.engine.HistoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.common.engine.api.FlowableTaskAlreadyClaimedException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -137,7 +138,7 @@ public class FlowableRuntimeCoordinator {
 		// Flowable 中已经消失的待办说明已由引擎推进或取消，不能继续在门户显示为可处理。
 		for (WorkflowTask projection : tasks.findByInstanceIdOrderByCreateTimeAsc(instance.getId())) {
 			if (projection.getEngineTaskId() != null
-					&& "PENDING".equals(projection.getStatus())
+					&& Set.of("PENDING", "CLAIMABLE").contains(projection.getStatus())
 					&& !activeTaskIds.contains(projection.getEngineTaskId())) {
 				projection.setStatus("COMPLETED");
 				projection.setCompletedAt(LocalDateTime.now());
@@ -194,15 +195,81 @@ public class FlowableRuntimeCoordinator {
 		return tasks.save(projection);
 	}
 
+	/**
+	 * 在正在运行的 Flowable 多实例人工节点中增加一个真实执行实例。
+	 *
+	 * 这里不能只向 wf_task 写一条投影记录，否则门户虽然能看到“加签任务”，
+	 * Flowable 状态机却完全不知道它的存在，原任务通过后流程仍会直接向后推进。
+	 * addMultiInstanceExecution 会同步增加 nrOfInstances，并让 ALL、COUNT、
+	 * PERCENTAGE 等完成条件继续由引擎统一裁决。
+	 */
+	public WorkflowTask addSign(
+			WorkflowInstance instance,
+			WorkflowTask projection,
+			String actor,
+			String target,
+			String comment) {
+		org.flowable.task.api.Task engineTask = requireEngineTask(projection);
+		requireAssignee(engineTask, actor);
+
+		WorkflowNode node = nodes.findByFlowIdAndNodeKey(
+				instance.getDefinitionId(),
+				projection.getNodeKey())
+				.orElseThrow(() -> new IllegalArgumentException("流程节点不存在"));
+		if ("SINGLE".equals(approvalMode(node))) {
+			throw new IllegalArgumentException("动态加签要求审批节点配置为多人会签模式");
+		}
+
+		boolean alreadyActive = taskService.createTaskQuery()
+				.processInstanceId(instance.getEngineInstanceId())
+				.taskDefinitionKey(projection.getNodeKey())
+				.taskAssignee(target)
+				.active()
+				.count() > 0;
+		if (alreadyActive) {
+			throw new IllegalStateException("该用户已存在当前节点的待办任务");
+		}
+
+		runtimeService.addMultiInstanceExecution(
+				projection.getNodeKey(),
+				instance.getEngineInstanceId(),
+				Map.of("chronosAssignee", target));
+		synchronize(instance);
+
+		org.flowable.task.api.Task addedTask = taskService.createTaskQuery()
+				.processInstanceId(instance.getEngineInstanceId())
+				.taskDefinitionKey(projection.getNodeKey())
+				.taskAssignee(target)
+				.active()
+				.singleResult();
+		if (addedTask == null) {
+			throw new IllegalStateException("Flowable 未能创建加签任务");
+		}
+		if (comment != null && !comment.isBlank()) {
+			taskService.addComment(
+					addedTask.getId(),
+					instance.getEngineInstanceId(),
+					comment.trim());
+		}
+		return tasks.findByEngineTaskId(addedTask.getId())
+				.orElseThrow(() -> new IllegalStateException("加签任务投影同步失败"));
+	}
+
 	public WorkflowTask claim(WorkflowTask projection, String actor) {
 		org.flowable.task.api.Task engineTask = requireEngineTask(projection);
 		if (engineTask.getAssignee() != null) {
-			throw new IllegalArgumentException("任务已被 " + engineTask.getAssignee() + " 认领");
+			throw new IllegalStateException("任务已被 " + engineTask.getAssignee() + " 认领");
 		}
 		if (!candidates.existsByTaskIdAndSubjectTypeAndSubjectId(projection.getId(), "USER", actor)) {
 			throw new org.springframework.security.access.AccessDeniedException("不在当前任务候选范围内");
 		}
-		taskService.claim(engineTask.getId(), actor);
+		try {
+			taskService.claim(engineTask.getId(), actor);
+		} catch (FlowableTaskAlreadyClaimedException exception) {
+			// 两个候选人可能同时读取到未认领状态，Flowable 的原子更新是最终裁决。
+			// 对外统一为 409，前端即可刷新待办而不是误报参数错误。
+			throw new IllegalStateException("任务已被其他候选人认领", exception);
+		}
 		projection.setAssignee(actor);
 		projection.setStatus("PENDING");
 		return tasks.save(projection);
@@ -244,14 +311,38 @@ public class FlowableRuntimeCoordinator {
 			String targetNodeKey,
 			String comment) {
 		org.flowable.task.api.Task engineTask = requireEngineTask(projection);
+		requireAssignee(engineTask, projection.getAssignee());
+
+		List<org.flowable.task.api.Task> currentNodeTasks = taskService.createTaskQuery()
+				.processInstanceId(instance.getEngineInstanceId())
+				.taskDefinitionKey(engineTask.getTaskDefinitionKey())
+				.active()
+				.list();
+		List<String> executionIds = currentNodeTasks.stream()
+				.map(org.flowable.task.api.Task::getExecutionId)
+				.distinct()
+				.toList();
+		if (executionIds.isEmpty()) {
+			throw new IllegalStateException("Flowable 任务已处理，请刷新待办列表");
+		}
+
+		// 会签节点必须把该节点全部活动执行合并后退回，否则其他审批人的并行任务
+		// 仍可能继续完成并将流程推向后续节点。
 		runtimeService.createChangeActivityStateBuilder()
 				.processInstanceId(instance.getEngineInstanceId())
-				.moveExecutionToActivityId(engineTask.getExecutionId(), targetNodeKey)
+				.moveExecutionsToSingleActivityId(executionIds, targetNodeKey)
 				.changeState();
-		projection.setStatus("RETURNED");
-		projection.setComment(comment);
-		projection.setCompletedAt(LocalDateTime.now());
-		tasks.saveAndFlush(projection);
+		for (org.flowable.task.api.Task currentNodeTask : currentNodeTasks) {
+			tasks.findByEngineTaskId(currentNodeTask.getId()).ifPresent(currentProjection -> {
+				currentProjection.setStatus("RETURNED");
+				currentProjection.setComment(currentProjection.getId().equals(projection.getId())
+						? comment
+						: "同节点会签任务随退回取消");
+				currentProjection.setCompletedAt(LocalDateTime.now());
+				tasks.save(currentProjection);
+			});
+		}
+		tasks.flush();
 		return synchronize(instance);
 	}
 
@@ -350,6 +441,16 @@ public class FlowableRuntimeCoordinator {
 		}
 	}
 
+	private String approvalMode(WorkflowNode node) {
+		try {
+			return json.readTree(node.getPropertiesJson() == null ? "{}" : node.getPropertiesJson())
+					.path("approvalMode")
+					.asText("SINGLE");
+		} catch (Exception exception) {
+			throw new IllegalArgumentException("审批节点扩展配置不是有效 JSON", exception);
+		}
+	}
+
 	private String effectiveAssignee(String user, String definitionId) {
 		LocalDateTime now = LocalDateTime.now();
 		return delegations.findByDelegatorAndEnabledTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqual(
@@ -402,7 +503,7 @@ public class FlowableRuntimeCoordinator {
 				.active()
 				.singleResult();
 		if (task == null) {
-			throw new IllegalArgumentException("Flowable 任务已处理或不存在");
+			throw new IllegalStateException("Flowable 任务已处理，请刷新待办列表");
 		}
 		return task;
 	}

@@ -24,6 +24,7 @@ public class SchedulePlanVersionService {
 	private final AcademicTermRepository terms;
 	private final IAuditLogService audit;
 	private final EntityManager entityManager;
+	private final SchedulePublicationNotificationService publicationNotifications;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
 	public SchedulePlanVersionService(
@@ -31,12 +32,14 @@ public class SchedulePlanVersionService {
 			SchedulePlanVersionRepository versions,
 			AcademicTermRepository terms,
 			IAuditLogService audit,
-			EntityManager entityManager) {
+			EntityManager entityManager,
+			SchedulePublicationNotificationService publicationNotifications) {
 		this.entries = entries;
 		this.versions = versions;
 		this.terms = terms;
 		this.audit = audit;
 		this.entityManager = entityManager;
+		this.publicationNotifications = publicationNotifications;
 	}
 
 	@Transactional(readOnly = true)
@@ -54,7 +57,14 @@ public class SchedulePlanVersionService {
 		if (current.isEmpty()) {
 			throw new IllegalStateException("当前学期没有可发布的课表");
 		}
-		return createVersion(semester, current, actor, null, "EDUCATION_SCHEDULE_PUBLISH");
+		SchedulePlanVersion version = createVersion(
+				semester,
+				current,
+				actor,
+				null,
+				"EDUCATION_SCHEDULE_PUBLISH");
+		publicationNotifications.enqueue(version, current, false);
+		return version;
 	}
 
 	@Transactional
@@ -69,12 +79,14 @@ public class SchedulePlanVersionService {
 			insertSnapshotEntry(entry);
 		}
 		entityManager.flush();
-		return createVersion(
+		SchedulePlanVersion version = createVersion(
 				source.getSemesterCode(),
 				snapshot,
 				actor,
 				source.getVersionNo(),
 				"EDUCATION_SCHEDULE_ROLLBACK");
+		publicationNotifications.enqueue(version, snapshot, true);
+		return version;
 	}
 
 	@Transactional(readOnly = true)
@@ -131,7 +143,7 @@ public class SchedulePlanVersionService {
 	}
 
 	private void lockTerm(String semesterCode) {
-		terms.findByTermCode(semesterCode)
+		terms.findForUpdateByTermCode(semesterCode)
 				.orElseThrow(() -> new IllegalArgumentException("学期不存在：" + semesterCode));
 	}
 

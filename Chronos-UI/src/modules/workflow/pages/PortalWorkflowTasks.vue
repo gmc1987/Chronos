@@ -4,7 +4,7 @@
       <div><h2>流程任务</h2><p>集中处理待办、已办和我发起的流程</p></div>
       <div>
         <el-badge :value="unreadCount" :hidden="!unreadCount" class="notification-badge">
-          <el-button @click="$router.push('/portal/workflow-notifications')">流程通知</el-button>
+          <el-button @click="$router.push('/portal/workflow-notifications')">消息通知</el-button>
         </el-badge>
         <el-button v-if="canDelegate" @click="$router.push('/portal/workflow-delegations')">委托设置</el-button>
         <el-button v-if="canStart" type="primary" @click="$router.push('/portal/workflows')">发起流程</el-button>
@@ -29,17 +29,17 @@
               <el-button v-if="row.claimable && canClaim" link type="primary" @click="claim(row)">认领</el-button>
               <template v-else>
                 <el-button link type="primary" @click="openForm(row)">办理</el-button>
-                <el-button v-if="canApprove" link type="success" @click="approve(row)">通过</el-button>
-                <el-button v-if="canReject" link type="danger" @click="reject(row)">拒绝</el-button>
+                <el-button v-if="canApprove && row.operations?.approve !== false" link type="success" @click="approve(row)">通过</el-button>
+                <el-button v-if="canReject && row.operations?.reject !== false" link type="danger" @click="reject(row)">拒绝</el-button>
                 <el-dropdown @command="command => operate(row, command)">
                   <el-button link>更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item v-if="canClaim" command="unclaim">取消认领</el-dropdown-item>
-                      <el-dropdown-item v-if="canReturn" command="return">退回</el-dropdown-item>
-                      <el-dropdown-item v-if="canTransfer" command="transfer">转办</el-dropdown-item>
-                      <el-dropdown-item v-if="canAddSign" command="add-sign">加签</el-dropdown-item>
-                      <el-dropdown-item v-if="canCc" command="cc">抄送</el-dropdown-item>
+                      <el-dropdown-item v-if="canReturn && row.operations?.return !== false" command="return">退回</el-dropdown-item>
+                      <el-dropdown-item v-if="canTransfer && row.operations?.transfer !== false" command="transfer">转办</el-dropdown-item>
+                      <el-dropdown-item v-if="canAddSign && row.operations?.addSign !== false" command="add-sign">加签</el-dropdown-item>
+                      <el-dropdown-item v-if="canCc && row.operations?.cc !== false" command="cc">抄送</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -171,8 +171,16 @@ const load = async () => {
   } finally {
     loading.value = false
   }
-  const changeTab = () => { page.value = 1; load() }
-  const changePageSize = () => { page.value = 1; load() }
+}
+
+const changeTab = () => {
+  page.value = 1
+  load()
+}
+
+const changePageSize = () => {
+  page.value = 1
+  load()
 }
 
 const comment = async title => (await ElMessageBox.prompt('请输入处理意见', title, { inputPlaceholder: '意见（可选）' })).value || ''

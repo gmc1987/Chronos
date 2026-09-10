@@ -10,6 +10,7 @@ import {
   importKnowledgeDocument,
   listKnowledgeBases,
   listKnowledgeDocuments,
+  rebuildKnowledgeDocument,
   searchKnowledge,
   updateKnowledgeBase,
 } from '../../../api/admin'
@@ -138,6 +139,12 @@ const removeDocument = async row => {
   await loadDocuments()
 }
 
+const rebuildDocument = async row => {
+  await rebuildKnowledgeDocument(row.id)
+  ElMessage.success('文档分段索引已重建')
+  await loadDocuments()
+}
+
 const search = async () => {
   if (!keyword.value.trim()) {
     ElMessage.warning('请输入检索关键词')
@@ -220,7 +227,7 @@ onMounted(loadBases)
               <div class="toolbar">
                 <el-button type="primary" @click="openTextDocument">录入文本</el-button>
                 <el-button @click="importDialog = true">导入文档</el-button>
-                <span>支持 TXT、Markdown、DOC、DOCX，单文件最大 10MB</span>
+                <span>支持 TXT、Markdown、DOC、DOCX、文本型 PDF，单文件最大 10MB</span>
               </div>
               <el-table :data="documents" border>
                 <el-table-column prop="title" label="标题" min-width="180" />
@@ -228,8 +235,9 @@ onMounted(loadBases)
                 <el-table-column prop="sourceType" label="来源" width="90" />
                 <el-table-column prop="chunkCount" label="分段数" width="90" />
                 <el-table-column prop="status" label="状态" width="90" />
-                <el-table-column label="操作" width="90">
+                <el-table-column label="操作" width="150">
                   <template #default="scope">
+                    <el-button link type="primary" @click="rebuildDocument(scope.row)">重建索引</el-button>
                     <el-button link type="danger" @click="removeDocument(scope.row)">删除</el-button>
                   </template>
                 </el-table-column>
@@ -317,9 +325,10 @@ onMounted(loadBases)
       <el-form label-width="80px">
         <el-form-item label="标题"><el-input v-model="importTitle" placeholder="不填则使用文件名" /></el-form-item>
         <el-form-item label="文件">
-          <el-upload :auto-upload="false" :limit="1" accept=".txt,.md,.doc,.docx" :on-change="chooseFile">
+          <el-upload :auto-upload="false" :limit="1" accept=".txt,.md,.doc,.docx,.pdf" :on-change="chooseFile">
             <el-button>选择文件</el-button>
           </el-upload>
+          <div class="upload-tip">支持 TXT、Markdown、Word 和文本型 PDF；扫描版 PDF 需先完成 OCR。</div>
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="importDialog = false">取消</el-button><el-button type="primary" @click="upload">导入</el-button></template>
@@ -346,4 +355,5 @@ header p, .result p { margin: 0; }
 .citation { margin-bottom: 8px; color: #606266; }
 .result { margin-bottom: 12px; }
 .result p { margin: 10px 0; white-space: pre-wrap; line-height: 1.7; }
+.upload-tip { margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5; }
 </style>

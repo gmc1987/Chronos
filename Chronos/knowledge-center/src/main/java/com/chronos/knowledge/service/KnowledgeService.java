@@ -1,7 +1,6 @@
 package com.chronos.knowledge.service;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.chronos.commons.utils.DocToMarkdownUtil;
 import com.chronos.knowledge.dao.KnowledgeBaseRepository;
 import com.chronos.knowledge.dao.KnowledgeChunkRepository;
 import com.chronos.knowledge.dao.KnowledgeDocumentRepository;
@@ -39,6 +37,7 @@ public class KnowledgeService {
 	private final KnowledgeBaseRepository knowledgeBases;
 	private final KnowledgeDocumentRepository documents;
 	private final KnowledgeChunkRepository chunks;
+	private final KnowledgeDocumentTextExtractor textExtractor;
 	private final LLMServiceStrategy llmService;
 	private final IAuditLogService auditLogService;
 
@@ -46,11 +45,13 @@ public class KnowledgeService {
 			KnowledgeBaseRepository knowledgeBases,
 			KnowledgeDocumentRepository documents,
 			KnowledgeChunkRepository chunks,
+			KnowledgeDocumentTextExtractor textExtractor,
 			@Qualifier("deepseekService") LLMServiceStrategy llmService,
 			IAuditLogService auditLogService) {
 		this.knowledgeBases = knowledgeBases;
 		this.documents = documents;
 		this.chunks = chunks;
+		this.textExtractor = textExtractor;
 		this.llmService = llmService;
 		this.auditLogService = auditLogService;
 	}
@@ -130,7 +131,7 @@ public class KnowledgeService {
 			throw new IllegalArgumentException("文档不能超过 10MB");
 		}
 		String filename = file.getOriginalFilename();
-		String content = readContent(file, filename);
+		String content = textExtractor.extract(file, filename);
 		String resolvedTitle = trimToNull(title);
 		if (resolvedTitle == null) {
 			resolvedTitle = filename;
@@ -150,6 +151,41 @@ public class KnowledgeService {
 		}
 		chunks.deleteByDocumentId(id);
 		documents.deleteById(id);
+	}
+
+	/**
+	 * 从已保存的原始文本重新生成全部分段。
+	 *
+	 * <p>文档行锁避免两个管理员并发重建；删除旧分段和写入新分段位于同一事务，
+	 * 任一新分段失败都会回滚并保留旧索引。</p>
+	 */
+	@Transactional
+	public KnowledgeDocument rebuildDocument(String id, String actor) {
+		KnowledgeDocument document = documents.findLockedById(id)
+				.orElseThrow(() -> new IllegalArgumentException("知识文档不存在"));
+		knowledgeBases.findById(document.getKnowledgeBaseId())
+				.filter(item -> Boolean.TRUE.equals(item.getEnabled()))
+				.orElseThrow(() -> new IllegalArgumentException("知识库不存在或已停用"));
+		requireText(document.getContent(), "知识文档没有可重建的文本内容");
+		List<String> segments = split(document.getContent());
+
+		chunks.deleteByDocumentId(id);
+		chunks.flush();
+		for (int index = 0; index < segments.size(); index++) {
+			KnowledgeChunk chunk = new KnowledgeChunk();
+			chunk.setDocumentId(id);
+			chunk.setChunkIndex(index + 1);
+			chunk.setContent(segments.get(index));
+			chunks.save(chunk);
+		}
+		document.setChunkCount(segments.size());
+		document.setStatus("READY");
+		document = documents.save(document);
+		auditLogService.log(
+				actor,
+				"EDUCATION_KNOWLEDGE_DOCUMENT_REBUILD",
+				"documentId=" + id + ", chunkCount=" + segments.size());
+		return document;
 	}
 
 	@Transactional(readOnly = true)
@@ -299,17 +335,6 @@ public class KnowledgeService {
 			chunks.save(chunk);
 		}
 		return document;
-	}
-
-	private String readContent(MultipartFile file, String filename) throws IOException {
-		String lower = filename == null ? "" : filename.toLowerCase();
-		if (lower.endsWith(".txt") || lower.endsWith(".md")) {
-			return new String(file.getBytes(), StandardCharsets.UTF_8);
-		}
-		if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
-			return DocToMarkdownUtil.convert(file.getInputStream(), filename);
-		}
-		throw new IllegalArgumentException("首版仅支持 TXT、Markdown、DOC 和 DOCX 文档");
 	}
 
 	private List<String> split(String source) {

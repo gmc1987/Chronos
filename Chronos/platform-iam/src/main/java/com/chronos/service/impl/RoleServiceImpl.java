@@ -108,7 +108,8 @@ public class RoleServiceImpl implements IRoleService {
 		// 6. 返回
 		List<RoleDataScopeDTO> scopes = roleDataScopeRepository.findByRoleIdIn(List.of(r.getId())).stream()
 				.map(s -> RoleDataScopeDTO.builder().scopeType(s.getScopeType()).organizationId(s.getOrganizationId())
-						.organizationUnitId(s.getOrganizationUnitId()).employeeId(s.getEmployeeId()).build()).toList();
+						.organizationUnitId(s.getOrganizationUnitId()).employeeId(s.getEmployeeId())
+						.resourceType(s.getResourceType()).resourceId(s.getResourceId()).build()).toList();
 		return RoleDetailVO.builder().id(r.getId()).roleName(r.getRoleName()).roleCode(r.getRoleCode())
 				.status(r.getStatus()).builtIn(r.getBuiltIn()).description(r.getDescription())
 				.menuIds(menuIds).permissionIds(permissionIds).workflowPermissionIds(workflowPermissionIds).menuActionPermissionIds(menuActionPermissionIds)
@@ -297,9 +298,15 @@ public class RoleServiceImpl implements IRoleService {
 		if (roleId == null || dto == null || dto.getDataScopes() == null) return;
 		roleDataScopeRepository.deleteByRoleId(roleId);
 		List<RoleDataScope> values = dto.getDataScopes().stream().map(scope -> {
-			RoleDataScope value = new RoleDataScope(); value.setRoleId(roleId); value.setScopeType(scope.getScopeType());
-			value.setOrganizationId(scope.getOrganizationId()); value.setOrganizationUnitId(scope.getOrganizationUnitId());
-			value.setEmployeeId(scope.getEmployeeId()); return value;
+			RoleDataScope value = new RoleDataScope();
+			value.setRoleId(roleId);
+			value.setScopeType(scope.getScopeType());
+			value.setOrganizationId(scope.getOrganizationId());
+			value.setOrganizationUnitId(scope.getOrganizationUnitId());
+			value.setEmployeeId(scope.getEmployeeId());
+			value.setResourceType(scope.getResourceType());
+			value.setResourceId(scope.getResourceId());
+			return value;
 		}).toList();
 		roleDataScopeRepository.saveAll(values);
 	}

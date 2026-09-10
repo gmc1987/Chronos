@@ -10,5 +10,10 @@ import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 public interface TeacherAcademicProfileRepository extends JpaRepository<TeacherAcademicProfile, String> {
 	List<TeacherAcademicProfile> findAllByOrderByTeacherNo();
 	Page<TeacherAcademicProfile> findAllByOrderByTeacherNo(Pageable pageable);
+	List<TeacherAcademicProfile> findByIdInOrderByTeacherNo(List<String> ids);
+	Page<TeacherAcademicProfile> findByIdInOrderByTeacherNo(
+			List<String> ids,
+			Pageable pageable);
 	Optional<TeacherAcademicProfile> findByEmployeeId(String employeeId);
+	List<TeacherAcademicProfile> findByDepartmentIdAndEnabledTrueOrderByTeacherNo(String departmentId);
 }

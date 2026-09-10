@@ -13,6 +13,29 @@
       title="仅展示教务处最近发布的课表版本；未发布的调整草稿不会出现在这里。"
       type="info"
       :closable="false" />
+    <el-card v-if="studentContexts.length" shadow="never" class="student-context">
+      <div>
+        <small>当前学生</small>
+        <strong>{{ selectedStudent?.studentName || '-' }}</strong>
+        <span>{{ selectedStudent?.studentNo }} · {{ selectedStudent?.relationship }}</span>
+      </div>
+      <el-select
+        v-if="studentContexts.length > 1"
+        v-model="selectedStudentId"
+        aria-label="切换学生"
+        placeholder="请选择学生"
+        :loading="loading"
+        @change="changeStudent">
+        <el-option
+          v-for="student in studentContexts"
+          :key="student.studentId"
+          :label="`${student.studentName}（${student.studentNo}）`"
+          :value="student.studentId">
+          <span>{{ student.studentName }}（{{ student.relationship }}）</span>
+          <small class="student-no">{{ student.studentNo }}</small>
+        </el-option>
+      </el-select>
+    </el-card>
     <el-skeleton v-if="loading" :rows="7" animated />
     <el-empty v-else-if="!schedule.length" description="当前账号没有已发布的课表" />
     <el-table v-else :data="schedule" stripe>
@@ -34,20 +57,40 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { portalBootstrap } from '../../../api/portal'
+import { portalEducationSchedule } from '../../../api/portal'
 
 const loading = ref(true)
-const contribution = ref({ data: {} })
-const schedule = computed(() => contribution.value?.data?.mySchedule || [])
-const termName = computed(() => contribution.value?.data?.termName || '')
+const scheduleData = ref({})
+const selectedStudentId = ref('')
+const schedule = computed(() => scheduleData.value?.schedule || [])
+const termName = computed(() => scheduleData.value?.termName || '')
+const studentContexts = computed(() => scheduleData.value?.studentContexts || [])
+const selectedStudent = computed(() => studentContexts.value.find(
+  student => student.studentId === selectedStudentId.value,
+))
 const dayName = day => ['一', '二', '三', '四', '五', '六', '日'][Number(day) - 1] || '-'
 
-onMounted(async () => {
+const loadSchedule = async studentId => {
+  loading.value = true
   try {
-    const response = await portalBootstrap()
-    contribution.value = response.data?.contributions?.DATA || { data: {} }
+    const response = await portalEducationSchedule(studentId)
+    scheduleData.value = response.data || {}
+    selectedStudentId.value = scheduleData.value.selectedStudentId || ''
   } finally {
     loading.value = false
+  }
+}
+
+const changeStudent = async studentId => {
+  localStorage.setItem('chronos.portal.education.studentId', studentId)
+  await loadSchedule(studentId)
+}
+
+onMounted(async () => {
+  await loadSchedule()
+  const remembered = localStorage.getItem('chronos.portal.education.studentId')
+  if (remembered && studentContexts.value.some(student => student.studentId === remembered)) {
+    await loadSchedule(remembered)
   }
 })
 </script>
@@ -58,4 +101,9 @@ onMounted(async () => {
 .portal-schedule :deep(.el-page-header__content strong) { color: #263f49; font-size: 20px; }
 .portal-schedule :deep(.el-page-header__content small) { color: #819097; font-size: 12px; }
 .portal-schedule span { color: #829197; font-size: 12px; }
+.student-context :deep(.el-card__body) { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.student-context div { display: grid; gap: 4px; }
+.student-context small { color: #819097; }
+.student-context .el-select { width: 280px; }
+.student-no { float: right; margin-left: 24px; }
 </style>

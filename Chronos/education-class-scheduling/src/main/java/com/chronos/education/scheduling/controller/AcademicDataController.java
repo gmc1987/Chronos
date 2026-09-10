@@ -1,9 +1,15 @@
 package com.chronos.education.scheduling.controller;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,20 +26,35 @@ import com.chronos.education.scheduling.model.CourseCatalog;
 import com.chronos.education.scheduling.model.EducationGrade;
 import com.chronos.education.scheduling.model.Major;
 import com.chronos.education.scheduling.model.ParentProfile;
+import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.model.StudentProfile;
+import com.chronos.education.scheduling.model.StudentProfileView;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.scheduling.model.Subject;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.chronos.education.scheduling.model.TeacherTeachingAssignment;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.education.scheduling.service.AcademicDataService;
+import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.education.scheduling.service.StudentProfileExportService;
+import com.chronos.security.IamAuthorization;
 
 @RestController
 public class AcademicDataController {
 	private final AcademicDataService service;
+	private final StudentProfileExportService studentExports;
+	private final IamAuthorization authorization;
+	private final EducationDataScopeService dataScopes;
 
-	public AcademicDataController(AcademicDataService service) {
+	public AcademicDataController(
+			AcademicDataService service,
+			StudentProfileExportService studentExports,
+			IamAuthorization authorization,
+			EducationDataScopeService dataScopes) {
 		this.service = service;
+		this.studentExports = studentExports;
+		this.authorization = authorization;
+		this.dataScopes = dataScopes;
 	}
 
 	@GetMapping("/admin/education/terms")
@@ -41,7 +62,11 @@ public class AcademicDataController {
 	public ResultData<?> terms(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.terms()) : ok(service.terms(page == null ? 0 : page, size == null ? 10 : size));
+		return page == null && size == null
+				? ok(service.terms())
+				: ok(PageView.from(service.terms(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/terms")
@@ -61,7 +86,11 @@ public class AcademicDataController {
 	public ResultData<?> grades(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.grades()) : ok(service.grades(page == null ? 0 : page, size == null ? 10 : size));
+		return page == null && size == null
+				? ok(service.grades())
+				: ok(PageView.from(service.grades(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/grades")
@@ -90,7 +119,11 @@ public class AcademicDataController {
 	public ResultData<?> subjects(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.subjects()) : ok(service.subjects(page == null ? 0 : page, size == null ? 10 : size));
+		return page == null && size == null
+				? ok(service.subjects())
+				: ok(PageView.from(service.subjects(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/subjects")
@@ -119,7 +152,11 @@ public class AcademicDataController {
 	public ResultData<?> courses(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.courses()) : ok(service.courses(page == null ? 0 : page, size == null ? 10 : size));
+		return page == null && size == null
+				? ok(service.courses())
+				: ok(PageView.from(service.courses(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/courses")
@@ -139,7 +176,11 @@ public class AcademicDataController {
 	public ResultData<?> majors(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.majors()) : ok(service.majors(page == null ? 0 : page, size == null ? 10 : size));
+		return page == null && size == null
+				? ok(service.majors())
+				: ok(PageView.from(service.majors(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/majors")
@@ -165,13 +206,23 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:view','education:class:manage')")
 	public ResultData<?> administrativeClasses(
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.administrativeClasses()) : ok(service.administrativeClasses(page == null ? 0 : page, size == null ? 10 : size));
+			@RequestParam(required = false) Integer size,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		return page == null && size == null
+				? ok(service.administrativeClasses(scope))
+				: ok(PageView.from(service.administrativeClasses(
+						scope,
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/administrative-classes")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:create','education:class:manage')")
-	public ResultData<AdministrativeClass> createAdministrativeClass(@RequestBody AdministrativeClass command) {
+	public ResultData<AdministrativeClass> createAdministrativeClass(
+			@RequestBody AdministrativeClass command,
+			Authentication authentication) {
+		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
 		return ok(service.saveAdministrativeClass(null, command));
 	}
 
@@ -179,13 +230,20 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:update','education:class:manage')")
 	public ResultData<AdministrativeClass> updateAdministrativeClass(
 			@PathVariable String id,
-			@RequestBody AdministrativeClass command) {
+			@RequestBody AdministrativeClass command,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertClassUpdate(scope, id, command.getGradeId());
+		// 班级范围管理员不能通过修改年级字段把记录移动到授权边界之外。
 		return ok(service.saveAdministrativeClass(id, command));
 	}
 
 	@DeleteMapping("/admin/education/administrative-classes/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:delete','education:class:manage')")
-	public ResultData<Void> deleteAdministrativeClass(@PathVariable String id) {
+	public ResultData<Void> deleteAdministrativeClass(
+			@PathVariable String id,
+			Authentication authentication) {
+		dataScopes.assertClassAccess(dataScopes.resolve(authentication.getName()), id);
 		service.deleteAdministrativeClass(id);
 		return ok(null);
 	}
@@ -194,33 +252,95 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:view','education:student:manage')")
 	public ResultData<?> students(
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.students()) : ok(service.students(page == null ? 0 : page, size == null ? 10 : size));
+			@RequestParam(required = false) Integer size,
+			Authentication authentication) {
+		boolean privacyVisible = authorization.any(
+				authentication,
+				"education:student:privacy:view",
+				"education:student:update",
+				"education:student:manage");
+		var scope = dataScopes.resolve(authentication.getName());
+		if (page == null && size == null) {
+			return ok(service.students(scope).stream()
+					.map(student -> StudentProfileView.from(student, privacyVisible))
+					.toList());
+		}
+		return ok(PageView.from(service.students(
+				scope,
+				page == null ? 0 : page,
+				size == null ? 10 : size)
+				.map(student -> StudentProfileView.from(student, privacyVisible))));
 	}
 
 	@PostMapping("/admin/education/students")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:create','education:student:manage')")
-	public ResultData<StudentProfile> createStudent(@RequestBody StudentProfile command) {
+	public ResultData<StudentProfile> createStudent(
+			@RequestBody StudentProfile command,
+			Authentication authentication) {
+		dataScopes.assertClassAccess(
+				dataScopes.resolve(authentication.getName()),
+				command.getAdministrativeClassId());
 		return ok(service.saveStudent(null, command));
 	}
 
 	@PutMapping("/admin/education/students/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:update','education:student:manage')")
-	public ResultData<StudentProfile> updateStudent(@PathVariable String id, @RequestBody StudentProfile command) {
+	public ResultData<StudentProfile> updateStudent(
+			@PathVariable String id,
+			@RequestBody StudentProfile command,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertStudentAccess(scope, id);
+		dataScopes.assertClassAccess(scope, command.getAdministrativeClassId());
 		return ok(service.saveStudent(id, command));
+	}
+
+	@GetMapping(
+			value = "/admin/education/students/export",
+			produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:export','education:student:manage')")
+	public ResponseEntity<byte[]> exportStudents(Authentication authentication) {
+		boolean privacyVisible = authorization.any(
+				authentication,
+				"education:student:privacy:view",
+				"education:student:manage");
+		byte[] content = studentExports.export(
+				authentication.getName(),
+				privacyVisible,
+				dataScopes.resolve(authentication.getName()));
+		return ResponseEntity.ok()
+				.header(
+						HttpHeaders.CONTENT_DISPOSITION,
+						ContentDisposition.attachment()
+								.filename("学生档案.xlsx", StandardCharsets.UTF_8)
+								.build()
+								.toString())
+				.contentType(MediaType.parseMediaType(
+						"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+				.body(content);
 	}
 
 	@GetMapping("/admin/education/teachers")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:view','education:teacher:business:manage')")
 	public ResultData<?> teachers(
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.teachers()) : ok(service.teachers(page == null ? 0 : page, size == null ? 10 : size));
+			@RequestParam(required = false) Integer size,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		return page == null && size == null
+				? ok(service.teachers(scope))
+				: ok(PageView.from(service.teachers(
+						scope,
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/teachers")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:create','education:teacher:business:manage')")
-	public ResultData<TeacherAcademicProfile> createTeacher(@RequestBody TeacherAcademicProfile command) {
+	public ResultData<TeacherAcademicProfile> createTeacher(
+			@RequestBody TeacherAcademicProfile command,
+			Authentication authentication) {
+		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
 		return ok(service.saveTeacher(null, command));
 	}
 
@@ -228,7 +348,9 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:update','education:teacher:business:manage')")
 	public ResultData<TeacherAcademicProfile> updateTeacher(
 			@PathVariable String id,
-			@RequestBody TeacherAcademicProfile command) {
+			@RequestBody TeacherAcademicProfile command,
+			Authentication authentication) {
+		dataScopes.assertTeacherAccess(dataScopes.resolve(authentication.getName()), id);
 		return ok(service.saveTeacher(id, command));
 	}
 
@@ -237,7 +359,11 @@ public class AcademicDataController {
 	public ResultData<?> parents(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.parents()) : ok(service.parents(page == null ? 0 : page, size == null ? 10 : size));
+		return page == null && size == null
+				? ok(service.parents())
+				: ok(PageView.from(service.parents(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/parents")
@@ -265,17 +391,26 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:view','education:student:manage')")
 	public ResultData<List<StudentGuardianRelation>> guardians(
 			@RequestParam(required = false) String studentId,
-			@RequestParam(required = false) String parentId) {
+			@RequestParam(required = false) String parentId,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
 		if (parentId != null && !parentId.isBlank()) {
-			return ok(service.guardiansByParent(parentId));
+			return ok(dataScopes.visibleGuardians(
+					scope,
+					service.guardiansByParent(parentId)));
 		}
+		dataScopes.assertStudentAccess(scope, studentId);
 		return ok(service.guardians(studentId));
 	}
 
 	@PostMapping("/admin/education/student-guardians")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:update','education:student:manage')")
 	public ResultData<StudentGuardianRelation> createGuardian(
-			@RequestBody StudentGuardianRelation command) {
+			@RequestBody StudentGuardianRelation command,
+			Authentication authentication) {
+		dataScopes.assertStudentAccess(
+				dataScopes.resolve(authentication.getName()),
+				command.getStudentId());
 		return ok(service.saveGuardian(null, command));
 	}
 
@@ -283,13 +418,20 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:update','education:student:manage')")
 	public ResultData<StudentGuardianRelation> updateGuardian(
 			@PathVariable String id,
-			@RequestBody StudentGuardianRelation command) {
+			@RequestBody StudentGuardianRelation command,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertGuardianAccess(scope, id);
+		dataScopes.assertStudentAccess(scope, command.getStudentId());
 		return ok(service.saveGuardian(id, command));
 	}
 
 	@DeleteMapping("/admin/education/student-guardians/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:update','education:student:manage')")
-	public ResultData<Void> deleteGuardian(@PathVariable String id) {
+	public ResultData<Void> deleteGuardian(
+			@PathVariable String id,
+			Authentication authentication) {
+		dataScopes.assertGuardianAccess(dataScopes.resolve(authentication.getName()), id);
 		service.deleteGuardian(id);
 		return ok(null);
 	}
@@ -298,14 +440,25 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching-assignment:view','education:teaching-assignment:manage')")
 	public ResultData<?> teachingAssignments(
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null ? ok(service.teachingAssignments()) : ok(service.teachingAssignments(page == null ? 0 : page, size == null ? 10 : size));
+			@RequestParam(required = false) Integer size,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		return page == null && size == null
+				? ok(service.teachingAssignments(scope))
+				: ok(PageView.from(service.teachingAssignments(
+						scope,
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/teaching-assignments")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching-assignment:create','education:teaching-assignment:manage')")
 	public ResultData<TeacherTeachingAssignment> createTeachingAssignment(
-			@RequestBody TeacherTeachingAssignment command) {
+			@RequestBody TeacherTeachingAssignment command,
+			Authentication authentication) {
+		dataScopes.assertTeachingAssignmentAccess(
+				dataScopes.resolve(authentication.getName()),
+				command);
 		return ok(service.saveTeachingAssignment(null, command));
 	}
 
@@ -313,28 +466,45 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching-assignment:update','education:teaching-assignment:manage')")
 	public ResultData<TeacherTeachingAssignment> updateTeachingAssignment(
 			@PathVariable String id,
-			@RequestBody TeacherTeachingAssignment command) {
+			@RequestBody TeacherTeachingAssignment command,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertTeachingAssignmentAccess(scope, id);
+		dataScopes.assertTeachingAssignmentAccess(scope, command);
 		return ok(service.saveTeachingAssignment(id, command));
 	}
 
 	@DeleteMapping("/admin/education/teaching-assignments/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching-assignment:delete','education:teaching-assignment:manage')")
-	public ResultData<Void> deleteTeachingAssignment(@PathVariable String id) {
+	public ResultData<Void> deleteTeachingAssignment(
+			@PathVariable String id,
+			Authentication authentication) {
+		dataScopes.assertTeachingAssignmentAccess(
+				dataScopes.resolve(authentication.getName()),
+				id);
 		service.deleteTeachingAssignment(id);
 		return ok(null);
 	}
 
 	@GetMapping("/admin/education/teaching-class-members")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:view','education:course:manage')")
-	public ResultData<List<TeachingClassMember>> members(@RequestParam String offeringId) {
-		return ok(service.members(offeringId));
+	public ResultData<List<TeachingClassMember>> members(
+			@RequestParam String offeringId,
+			Authentication authentication) {
+		return ok(dataScopes.visibleMembers(
+				dataScopes.resolve(authentication.getName()),
+				service.members(offeringId)));
 	}
 
 	@PostMapping("/admin/education/course-offerings/{offeringId}/enroll")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:update','education:course:manage')")
 	public ResultData<TeachingClassMember> enroll(
 			@PathVariable String offeringId,
-			@RequestBody Map<String, String> command) {
+			@RequestBody Map<String, String> command,
+			Authentication authentication) {
+		dataScopes.assertStudentAccess(
+				dataScopes.resolve(authentication.getName()),
+				command.get("studentId"));
 		return ok(service.enroll(offeringId, command.get("studentId")));
 	}
 
@@ -342,7 +512,11 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:update','education:course:manage')")
 	public ResultData<TeachingClassMember> withdraw(
 			@PathVariable String offeringId,
-			@RequestBody Map<String, String> command) {
+			@RequestBody Map<String, String> command,
+			Authentication authentication) {
+		dataScopes.assertStudentAccess(
+				dataScopes.resolve(authentication.getName()),
+				command.get("studentId"));
 		return ok(service.withdraw(offeringId, command.get("studentId")));
 	}
 

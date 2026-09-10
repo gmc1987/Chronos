@@ -12,6 +12,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +26,8 @@ public class CourseAdjustmentApplicationService {
 	private final ScheduleEntryRepository entries;
 	private final CourseAdjustmentRecordRepository records;
 	private final ClassSchedulingService scheduling;
+	private final CourseAdjustmentStartValidator startValidator;
+	private final CourseAdjustmentIncidentNotificationService incidentNotifications;
 	private final IAuditLogService audit;
 	private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
@@ -29,10 +35,14 @@ public class CourseAdjustmentApplicationService {
 			ScheduleEntryRepository entries,
 			CourseAdjustmentRecordRepository records,
 			ClassSchedulingService scheduling,
+			CourseAdjustmentStartValidator startValidator,
+			CourseAdjustmentIncidentNotificationService incidentNotifications,
 			IAuditLogService audit) {
 		this.entries = entries;
 		this.records = records;
 		this.scheduling = scheduling;
+		this.startValidator = startValidator;
+		this.incidentNotifications = incidentNotifications;
 		this.audit = audit;
 	}
 
@@ -46,6 +56,8 @@ public class CourseAdjustmentApplicationService {
 		record.setWorkflowInstanceId(event.instanceId());
 		record.setBusinessKey(event.businessKey());
 		record.setRequestPayload(writePayload(event.mainFormData()));
+		// 审批人可能拥有主表单编辑权，因此完成时再次按发起人范围校验最终快照。
+		startValidator.validate(event.initiatedBy(), event.mainFormData());
 		applyRecord(record, event.mainFormData(), event.completedBy());
 	}
 
@@ -60,14 +72,17 @@ public class CourseAdjustmentApplicationService {
 		record.setRequestPayload(writePayload(event.mainFormData()));
 		record.setStatus("FAILED");
 		record.setMessage(limit(exception.getMessage(), 1000));
-		records.save(record);
+		record = records.save(record);
+		// 事故记录和可靠 Outbox 在同一事务提交，避免出现有事故但管理员未收到消息。
+		incidentNotifications.enqueueFailure(record, "INITIAL");
 		audit.log(event.completedBy(), "EDUCATION_COURSE_ADJUSTMENT_FAILED",
 				"workflowInstanceId=" + event.instanceId() + ", error=" + limit(exception.getMessage(), 500));
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public CourseAdjustmentRecord retry(String recordId, String actor) {
-		CourseAdjustmentRecord record = records.findById(recordId)
+		// 同一事故的重放必须串行化，防止两个管理员同时重复修改正式课表。
+		CourseAdjustmentRecord record = records.findLockedById(recordId)
 				.orElseThrow(() -> new IllegalArgumentException("调课事故不存在"));
 		if ("APPLIED".equals(record.getStatus())) {
 			return record;
@@ -83,13 +98,18 @@ public class CourseAdjustmentApplicationService {
 			String recordId,
 			String actor,
 			RuntimeException exception) {
-		CourseAdjustmentRecord record = records.findById(recordId)
+		CourseAdjustmentRecord record = records.findLockedById(recordId)
 				.orElseThrow(() -> new IllegalArgumentException("调课事故不存在"));
+		// 另一并发请求可能已经成功，失败请求不能把 APPLIED 状态覆盖回 FAILED。
+		if ("APPLIED".equals(record.getStatus())) {
+			return record;
+		}
 		record.setRetryCount(record.getRetryCount() == null ? 1 : record.getRetryCount() + 1);
 		record.setLastRetryBy(actor);
 		record.setStatus("FAILED");
 		record.setMessage(limit(exception.getMessage(), 1000));
-		records.save(record);
+		record = records.save(record);
+		incidentNotifications.enqueueFailure(record, "RETRY-" + record.getRetryCount());
 		audit.log(actor, "EDUCATION_COURSE_ADJUSTMENT_RETRY_FAILED",
 				"recordId=" + recordId + ", error=" + limit(exception.getMessage(), 500));
 		return record;
@@ -98,6 +118,43 @@ public class CourseAdjustmentApplicationService {
 	@Transactional(readOnly = true)
 	public List<CourseAdjustmentRecord> failures() {
 		return records.findByStatusOrderByCreateTimeDesc("FAILED");
+	}
+
+	@Transactional(readOnly = true)
+	public Page<CourseAdjustmentRecord> incidents(
+			String status,
+			String adjustmentType,
+			String keyword,
+			int page,
+			int size) {
+		Specification<CourseAdjustmentRecord> specification = (root, query, builder) -> {
+			var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+			if (hasText(status) && !"ALL".equalsIgnoreCase(status)) {
+				predicates.add(builder.equal(
+						builder.upper(root.get("status")),
+						status.trim().toUpperCase()));
+			}
+			if (hasText(adjustmentType)) {
+				predicates.add(builder.equal(
+						builder.upper(root.get("adjustmentType")),
+						adjustmentType.trim().toUpperCase()));
+			}
+			if (hasText(keyword)) {
+				String pattern = "%" + keyword.trim().toLowerCase() + "%";
+				predicates.add(builder.or(
+						builder.like(builder.lower(root.get("workflowInstanceId")), pattern),
+						builder.like(builder.lower(root.get("businessKey")), pattern),
+						builder.like(builder.lower(root.get("scheduleEntryId")), pattern),
+						builder.like(builder.lower(root.get("message")), pattern)));
+			}
+			return builder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+		return records.findAll(
+				specification,
+				PageRequest.of(
+						Math.max(page, 0),
+						Math.min(Math.max(size, 1), 100),
+						Sort.by(Sort.Direction.DESC, "createTime")));
 	}
 
 	private void applyRecord(CourseAdjustmentRecord record, Map<String, Object> form, String actor) {
@@ -210,5 +267,9 @@ public class CourseAdjustmentApplicationService {
 			return "未知错误";
 		}
 		return value.length() <= maximum ? value : value.substring(0, maximum);
+	}
+
+	private boolean hasText(String value) {
+		return value != null && !value.isBlank();
 	}
 }

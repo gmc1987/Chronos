@@ -2,6 +2,12 @@ import { http } from './http'
 
 export const portalBootstrap = () => http.get('/portal/bootstrap')
 export const portalHome = () => http.get('/portal/home')
+export const portalEducationStudentContexts = () => http.get('/portal/education/student-contexts')
+export const portalEducationSchedule = (studentId) => http.get(
+  `/portal/education/schedule?${new URLSearchParams(
+    Object.entries({ studentId }).filter(([, value]) => value),
+  )}`,
+)
 export const portalApplications = () => http.get('/portal/applications')
 export const savePortalPreference = (payload) => http.put('/portal/preference', payload)
 export const resetPortalPreference = () => http.post('/portal/preference/reset')

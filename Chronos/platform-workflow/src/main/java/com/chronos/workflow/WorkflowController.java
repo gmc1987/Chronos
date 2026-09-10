@@ -4,7 +4,6 @@ import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.form.FormInstance;
 import com.chronos.model.workflow.WorkflowAiSetting;
@@ -66,10 +66,11 @@ public class WorkflowController {
 
 	@GetMapping("/admin/workflows/list")
 	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:definition:view','workflow:manage')")
-	public ResultData<Page<WorkflowDefinition>> list(@RequestParam(defaultValue = "0") int page,
+	public ResultData<PageView<WorkflowDefinition>> list(@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size, Principal p) {
-		return ok(service.list(PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "createTime")),
-				p.getName()));
+		return ok(PageView.from(service.list(
+				PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "createTime")),
+				p.getName())));
 	}
 
 	@GetMapping("/admin/workflows/{id}")
@@ -288,7 +289,10 @@ public class WorkflowController {
 			Principal p) {
 		return page == null && size == null
 				? ok(service.pending(p.getName()))
-				: ok(service.pending(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(service.pending(
+						p.getName(),
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@GetMapping("/workflow-tasks/handled")
@@ -299,7 +303,10 @@ public class WorkflowController {
 			Principal p) {
 		return page == null && size == null
 				? ok(service.handled(p.getName()))
-				: ok(service.handled(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(service.handled(
+						p.getName(),
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@GetMapping("/workflow-instances/initiated")
@@ -310,7 +317,10 @@ public class WorkflowController {
 			Principal p) {
 		return page == null && size == null
 				? ok(service.initiated(p.getName()))
-				: ok(service.initiated(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(service.initiated(
+						p.getName(),
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@GetMapping("/workflow-directory/users")
@@ -339,7 +349,10 @@ public class WorkflowController {
 			Principal p) {
 		return page == null && size == null
 				? ok(notifications.list(p.getName()))
-				: ok(notifications.list(p.getName(), page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(notifications.list(
+						p.getName(),
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@GetMapping("/workflow-notifications/unread-count")
@@ -367,7 +380,9 @@ public class WorkflowController {
 			@RequestParam(required = false) Integer size) {
 		return page == null && size == null
 				? ok(notifications.deadEvents())
-				: ok(notifications.deadEvents(page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(notifications.deadEvents(
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/workflow-outbox/{id}/retry")
@@ -392,7 +407,10 @@ public class WorkflowController {
 		incidents.synchronizeDeadLetters();
 		return page == null && size == null
 				? ok(incidents.list(status))
-				: ok(incidents.list(status, page == null ? 0 : page, size == null ? 10 : size));
+				: ok(PageView.from(incidents.list(
+						status,
+						page == null ? 0 : page,
+						size == null ? 10 : size)));
 	}
 
 	@GetMapping("/admin/workflow-executions")

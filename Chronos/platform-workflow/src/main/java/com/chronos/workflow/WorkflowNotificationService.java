@@ -132,6 +132,44 @@ public class WorkflowNotificationService {
 		outbox.save(event);
 	}
 
+	/**
+	 * 为行业模块提供可靠的门户站内通知入口。
+	 *
+	 * <p>deduplicationKey 同时包含业务聚合、业务发生标识和收件人，保证事务重试、
+	 * 定时任务重入或同一用户拥有多个领域身份时都只生成一条消息。</p>
+	 */
+	@Transactional
+	public void enqueueUserEvent(
+			String eventType,
+			String aggregateId,
+			String recipient,
+			String title,
+			String content,
+			String occurrenceKey) {
+		String deduplicationKey = eventType
+				+ ":"
+				+ aggregateId
+				+ ":"
+				+ occurrenceKey
+				+ ":"
+				+ recipient;
+		if (outbox.existsByDeduplicationKey(deduplicationKey)) {
+			return;
+		}
+		WorkflowOutbox event = new WorkflowOutbox();
+		event.setEventType(eventType);
+		event.setAggregateId(aggregateId);
+		event.setDeduplicationKey(deduplicationKey);
+		event.setNextAttemptAt(LocalDateTime.now());
+		event.setPayloadJson(write(Map.of(
+				"recipient", recipient,
+				"title", title,
+				"content", content,
+				"instanceId", "",
+				"taskId", "")));
+		outbox.save(event);
+	}
+
 	@Transactional
 	public void dispatchPending() {
 		List<WorkflowOutbox> events = outbox.lockDispatchBatch(LocalDateTime.now());

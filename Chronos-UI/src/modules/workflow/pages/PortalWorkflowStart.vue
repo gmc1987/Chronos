@@ -8,20 +8,23 @@
         <el-empty v-if="!loading&&!flows.length" description="当前账号没有可发起的已发布流程" />
       </el-card>
       <el-card v-if="schema" shadow="never" class="form-card"><template #header><div><div class="card-title"><strong>{{ schema.flowName }}</strong><el-tag type="success">{{ selectedFlow?.version }}</el-tag></div><p>{{ schema.description || '请填写以下申请信息' }}</p></div></template>
-        <el-form-item label="业务编号"><el-input v-model="businessKey" placeholder="不填写则由系统自动生成" /></el-form-item><h3 v-if="schema.formName">{{ schema.formName }}</h3><DynamicForm v-model="formData" :fields="schema.fields" />
-        <div class="actions"><el-button @click="reset">重置</el-button><el-button type="primary" :loading="submitting" @click="submit">提交申请</el-button></div>
+        <el-form-item label="业务编号"><el-input v-model="businessKey" placeholder="不填写则由系统自动生成" /></el-form-item><h3 v-if="schema.formName">{{ schema.formName }}</h3><DynamicForm v-model="formData" :fields="schema.fields" @uploading-change="uploading = $event" />
+        <div class="actions"><el-button @click="reset">重置</el-button><el-button type="primary" :loading="submitting" :disabled="uploading" @click="submit">{{ uploading ? '附件上传中' : '提交申请' }}</el-button></div>
       </el-card><el-empty v-else-if="!loading&&flows.length" description="请选择一个流程" />
     </div>
   </div>
 </template>
 <script setup>
 import { computed,onMounted,ref } from 'vue';import { ElMessage } from 'element-plus';import { useRouter } from 'vue-router';import DynamicForm from '../components/DynamicForm.vue';import { listAvailableWorkflows,getWorkflowStartForm,startWorkflow } from '../../../api/admin'
-const router=useRouter(),flows=ref([]),selectedId=ref(''),schema=ref(null),formData=ref({}),businessKey=ref(''),loading=ref(false),submitting=ref(false),error=ref('')
+const router=useRouter(),flows=ref([]),selectedId=ref(''),schema=ref(null),formData=ref({}),businessKey=ref(''),loading=ref(false),submitting=ref(false),uploading=ref(false),error=ref('')
 const selectedFlow=computed(()=>flows.value.find(f=>f.id===selectedId.value))
 const load=async()=>{loading.value=true;error.value='';try{const res=await listAvailableWorkflows();flows.value=res?.data||[];if(flows.value.length)await selectFlow(flows.value[0].id)}catch(e){error.value=`流程加载失败：${e?.message||'请求失败'}`}finally{loading.value=false}}
 const selectFlow=async(id)=>{selectedId.value=id;schema.value=null;try{const res=await getWorkflowStartForm(id);schema.value=res?.data;reset()}catch(e){error.value=`表单加载失败：${e?.message||'请求失败'}`}}
 const reset=()=>{formData.value={};businessKey.value='';(schema.value?.fields||[]).forEach(f=>{if(f.fieldType==='CHECKBOX')formData.value[f.fieldKey]=[];if(f.fieldType==='BOOLEAN')formData.value[f.fieldKey]=false})}
 const submit = async () => {
+  if (uploading.value) {
+    return ElMessage.warning('请等待附件上传完成')
+  }
   const missing = (schema.value?.fields || []).filter((field) =>
     field.required && (
       formData.value[field.fieldKey] === undefined ||
