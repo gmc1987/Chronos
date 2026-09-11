@@ -16,7 +16,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** AI 模型的可持久化配置。配置只描述模型，不参与实际调用链。 */
+/** AI 模型的可持久化配置，也作为网关运行时路由的选择来源。 */
 @Entity
 @Getter
 @Setter
@@ -64,4 +64,11 @@ public class AiModel extends BaseEntity {
 	@Max(1)
 	@Column(name = "status", nullable = false)
 	private Integer status = 1;
+
+	/**
+	 * Nullable at the database level so ddl-auto can add this column to an
+	 * existing installation without failing on pre-existing rows.
+	 */
+	@Column(name = "is_default")
+	private Boolean isDefault = false;
 }

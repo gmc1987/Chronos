@@ -34,7 +34,9 @@ public class AiModelService {
 
 	@Transactional
 	public AiModel create(AiModel command) {
-		return models.save(normalize(command, new AiModel(), true));
+		AiModel target = normalize(command, new AiModel(), true);
+		applyDefault(target, Boolean.TRUE.equals(target.getIsDefault()), null);
+		return models.save(target);
 	}
 
 	@Transactional
@@ -43,7 +45,18 @@ public class AiModelService {
 			throw new IllegalArgumentException("AI 模型 ID 不能为空");
 		}
 		AiModel target = get(command.getId());
+		boolean explicitlyDefault = Boolean.TRUE.equals(command.getIsDefault());
+		boolean requestedDefault = command.getIsDefault() == null
+				? Boolean.TRUE.equals(target.getIsDefault())
+				: Boolean.TRUE.equals(command.getIsDefault());
 		normalize(command, target, false);
+		if (explicitlyDefault && !Integer.valueOf(1).equals(target.getStatus())) {
+			throw new IllegalArgumentException("只有启用的模型才能设为默认模型");
+		}
+		if (!Integer.valueOf(1).equals(target.getStatus())) {
+			requestedDefault = false;
+		}
+		applyDefault(target, requestedDefault, target.getId());
 		return models.save(target);
 	}
 
@@ -76,7 +89,29 @@ public class AiModelService {
 			throw new IllegalArgumentException("模型状态只能是启用或禁用");
 		}
 		target.setStatus(status);
+		if (creating || source.getIsDefault() != null) {
+			target.setIsDefault(Boolean.TRUE.equals(source.getIsDefault()));
+		}
 		return target;
+	}
+
+	private void applyDefault(AiModel target, boolean requested, String existingId) {
+		if (!requested) {
+			target.setIsDefault(false);
+			return;
+		}
+		if (!Integer.valueOf(1).equals(target.getStatus())) {
+			throw new IllegalArgumentException("只有启用的模型才能设为默认模型");
+		}
+		if (target.getApiKey() == null || target.getApiKey().isBlank()) {
+			throw new IllegalArgumentException("只有已配置 API Key 的模型才能设为默认模型");
+		}
+		if (existingId == null) {
+			models.clearDefaults();
+		} else {
+			models.clearDefaultsExcept(existingId);
+		}
+		target.setIsDefault(true);
 	}
 
 	private String requiredApiKey(String value) {

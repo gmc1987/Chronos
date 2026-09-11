@@ -42,6 +42,18 @@
           />
         </template>
       </el-table-column>
+      <el-table-column prop="isDefault" label="默认模型" width="110">
+        <template #default="scope">
+          <el-switch
+            v-permission="['ai:model:update', 'ai:model:manage']"
+            :model-value="scope.row.isDefault === true"
+            inline-prompt
+            active-text="是"
+            inactive-text="否"
+            @change="toggleDefault(scope.row, $event)"
+          />
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="100">
         <template #default="scope">
           <el-button v-permission="['ai:model:update', 'ai:model:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
@@ -100,6 +112,10 @@
             <el-option :value="1" label="启用" />
             <el-option :value="0" label="禁用" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="默认模型">
+          <el-switch v-model="form.isDefault" active-text="是" inactive-text="否" />
+          <span class="form-tip">仅启用且已配置 API Key 的模型可以设为默认</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -228,6 +244,7 @@ const openCreate = () => {
     hasApiKey: false,
     adapterClass: '',
     status: 1,
+    isDefault: false,
   }
   showDialog.value = true
 }
@@ -275,9 +292,31 @@ const toggleStatus = async (row, enabled) => {
       signatureHandler: row.signatureHandler,
       adapterClass: row.adapterClass,
       status,
+      isDefault: enabled && row.isDefault === true,
     })
     row.status = status
+    if (!enabled) row.isDefault = false
     ElMessage.success(status === 1 ? '模型已启用' : '模型已禁用')
+  } catch {
+    await load()
+  }
+}
+
+const toggleDefault = async (row, isDefault) => {
+  try {
+    await updateAiModel({
+      id: row.id,
+      modelName: row.modelName,
+      version: row.version,
+      modelType: row.modelType,
+      provider: row.provider,
+      signatureHandler: row.signatureHandler,
+      adapterClass: row.adapterClass,
+      status: row.status,
+      isDefault: Boolean(isDefault),
+    })
+    await load()
+    ElMessage.success(isDefault ? '已设为默认模型' : '已取消默认模型')
   } catch {
     await load()
   }
@@ -314,5 +353,10 @@ load()
 }
 .muted {
   color: var(--el-text-color-secondary);
+}
+.form-tip {
+  margin-left: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

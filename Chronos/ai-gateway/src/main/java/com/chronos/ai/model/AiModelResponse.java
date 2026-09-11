@@ -2,6 +2,7 @@ package com.chronos.ai.model;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 
 /**
@@ -25,6 +26,8 @@ public class AiModelResponse {
 	private final String signatureHandler;
 	private final String adapterClass;
 	private final Integer status;
+	@JsonProperty("isDefault")
+	private final Boolean isDefault;
 	private final String maskedApiKey;
 	private final boolean hasApiKey;
 
@@ -41,6 +44,7 @@ public class AiModelResponse {
 		this.signatureHandler = model.getSignatureHandler();
 		this.adapterClass = model.getAdapterClass();
 		this.status = model.getStatus();
+		this.isDefault = Boolean.TRUE.equals(model.getIsDefault());
 		this.maskedApiKey = mask(model.getApiKey());
 		this.hasApiKey = model.getApiKey() != null && !model.getApiKey().isBlank();
 	}

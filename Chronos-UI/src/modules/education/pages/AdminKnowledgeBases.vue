@@ -15,6 +15,7 @@ import {
   searchKnowledge,
   updateKnowledgeBase,
 } from '../../../api/admin'
+import { aiModels } from '../../ai/api'
 
 const bases = ref([])
 const documents = ref([])
@@ -32,6 +33,7 @@ const assistantQuestion = ref('')
 const assistantLoading = ref(false)
 const assistantAnswer = ref(null)
 const modelStatus = ref({ available: false, message: '正在检查 AI 模型配置' })
+const answerModels = ref([])
 const basePage = ref(1)
 const basePageSize = ref(10)
 const baseTotal = ref(0)
@@ -39,10 +41,25 @@ const documentPage = ref(1)
 const documentPageSize = ref(10)
 const documentTotal = ref(0)
 const activeBase = computed(() => bases.value.find(item => item.id === activeBaseId.value))
+const modelConfigured = computed(() => Boolean(
+  activeBase.value?.answerModelId
+  || answerModels.value.some(item => item.isDefault === true),
+))
 
 const resetObject = (target, value) => {
   Object.keys(target).forEach(key => delete target[key])
   Object.assign(target, value)
+}
+
+const loadAnswerModels = async () => {
+  try {
+    const response = await aiModels({ status: 1, page: 0, size: 100 })
+    answerModels.value = (response.data?.content || response.data || [])
+      .filter(item => Number(item.status) === 1 && item.hasApiKey)
+  } catch {
+    // A knowledge user may not have model-view permission.
+    answerModels.value = []
+  }
 }
 
 const loadBases = async () => {
@@ -157,10 +174,6 @@ const search = async () => {
 }
 
 const askAssistant = async () => {
-  if (!modelStatus.value.available) {
-    ElMessage.warning(modelStatus.value.message)
-    return
-  }
   if (!assistantQuestion.value.trim()) {
     ElMessage.warning('请输入需要咨询的问题')
     return
@@ -180,6 +193,7 @@ const askAssistant = async () => {
 onMounted(async () => {
   await Promise.all([
     loadBases(),
+    loadAnswerModels(),
     getAiModelStatus().then(response => {
       modelStatus.value = response.data || modelStatus.value
     }),
@@ -287,7 +301,7 @@ onMounted(async () => {
                 show-icon
               />
               <el-alert
-                v-if="!modelStatus.available"
+                v-if="!modelStatus.available && !modelConfigured"
                 :title="modelStatus.message"
                 type="warning"
                 :closable="false"
@@ -303,7 +317,7 @@ onMounted(async () => {
                 <el-button
                   type="primary"
                   :loading="assistantLoading"
-                  :disabled="!modelStatus.available"
+                  :disabled="assistantLoading"
                   @click="askAssistant"
                 >提问</el-button>
               </div>
@@ -334,6 +348,18 @@ onMounted(async () => {
         <el-form-item label="知识库名称"><el-input v-model="baseForm.baseName" /></el-form-item>
         <el-form-item label="说明"><el-input v-model="baseForm.description" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="baseForm.enabled" /></el-form-item>
+        <el-form-item label="回答模型">
+          <el-select v-model="baseForm.answerModelId" clearable placeholder="继承默认模型" style="width: 100%">
+            <el-option label="继承默认模型" value="" />
+            <el-option
+              v-for="model in answerModels"
+              :key="model.id"
+              :label="`${model.modelName}（${model.provider}）`"
+              :value="model.id"
+            />
+          </el-select>
+          <div class="model-tip">仅展示已启用且已配置 API Key 的模型</div>
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="baseDialog = false">取消</el-button><el-button type="primary" @click="saveBase">保存</el-button></template>
     </el-dialog>
@@ -381,4 +407,5 @@ header p, .result p { margin: 0; }
 .result { margin-bottom: 12px; }
 .result p { margin: 10px 0; white-space: pre-wrap; line-height: 1.7; }
 .upload-tip { margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5; }
+.model-tip { margin-top: 4px; color: #909399; font-size: 12px; line-height: 1.5; }
 </style>

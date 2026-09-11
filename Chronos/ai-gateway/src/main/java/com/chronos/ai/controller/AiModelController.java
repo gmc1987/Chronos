@@ -26,7 +26,7 @@ public class AiModelController {
 	}
 
 	@GetMapping("/ai-model/models/list")
-	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:view','ai:model:manage')")
+	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:view','ai:model:manage','education:ai:knowledge:view','education:ai:knowledge:manage')")
 	public ResultData<?> list(
 			@RequestParam(required = false) String modelName,
 			@RequestParam(required = false) String provider,

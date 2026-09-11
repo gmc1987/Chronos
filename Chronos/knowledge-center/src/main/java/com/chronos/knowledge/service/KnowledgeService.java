@@ -12,6 +12,7 @@ import java.util.Set;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ import com.chronos.knowledge.dao.KnowledgeDocumentRepository;
 import com.chronos.knowledge.model.KnowledgeBase;
 import com.chronos.knowledge.model.KnowledgeChunk;
 import com.chronos.knowledge.model.KnowledgeDocument;
+import com.chronos.ai.service.AiModelChatService;
 import com.chronos.service.factory.LLMServiceStrategy;
 import com.chronos.service.iService.IAuditLogService;
 
@@ -38,9 +40,29 @@ public class KnowledgeService {
 	private final KnowledgeDocumentRepository documents;
 	private final KnowledgeChunkRepository chunks;
 	private final KnowledgeDocumentTextExtractor textExtractor;
-	private final LLMServiceStrategy llmService;
+	private final AiModelChatService aiModelChatService;
 	private final IAuditLogService auditLogService;
 
+	@Autowired
+	public KnowledgeService(
+			KnowledgeBaseRepository knowledgeBases,
+			KnowledgeDocumentRepository documents,
+			KnowledgeChunkRepository chunks,
+			KnowledgeDocumentTextExtractor textExtractor,
+			AiModelChatService aiModelChatService,
+			IAuditLogService auditLogService) {
+		this.knowledgeBases = knowledgeBases;
+		this.documents = documents;
+		this.chunks = chunks;
+		this.textExtractor = textExtractor;
+		this.aiModelChatService = aiModelChatService;
+		this.auditLogService = auditLogService;
+	}
+
+	/**
+	 * Kept for module-level tests and callers that only need the document
+	 * pipeline. Production wiring uses the public ai-gateway service above.
+	 */
 	public KnowledgeService(
 			KnowledgeBaseRepository knowledgeBases,
 			KnowledgeDocumentRepository documents,
@@ -48,12 +70,13 @@ public class KnowledgeService {
 			KnowledgeDocumentTextExtractor textExtractor,
 			@Qualifier("deepseekService") LLMServiceStrategy llmService,
 			IAuditLogService auditLogService) {
-		this.knowledgeBases = knowledgeBases;
-		this.documents = documents;
-		this.chunks = chunks;
-		this.textExtractor = textExtractor;
-		this.llmService = llmService;
-		this.auditLogService = auditLogService;
+		this(
+				knowledgeBases,
+				documents,
+				chunks,
+				textExtractor,
+				(modelId, message) -> llmService.chat(message),
+				auditLogService);
 	}
 
 	public List<KnowledgeBase> knowledgeBases() {
@@ -81,6 +104,7 @@ public class KnowledgeService {
 		value.setDescription(trimToNull(command.getDescription()));
 		value.setOrganizationId(trimToNull(command.getOrganizationId()));
 		value.setEnabled(command.getEnabled() == null || command.getEnabled());
+		value.setAnswerModelId(trimToNull(command.getAnswerModelId()));
 		return knowledgeBases.save(value);
 	}
 
@@ -243,7 +267,12 @@ public class KnowledgeService {
 					.append(" 第").append(reference.chunkIndex()).append("段\n")
 					.append(reference.content()).append("\n\n");
 		}
-		String answer = llmService.chat(prompt.toString());
+		KnowledgeBase knowledgeBase = knowledgeBases.findById(knowledgeBaseId)
+				.filter(item -> Boolean.TRUE.equals(item.getEnabled()))
+				.orElseThrow(() -> new IllegalArgumentException("知识库不存在或已停用"));
+		String answer = aiModelChatService.chat(
+				knowledgeBase.getAnswerModelId(),
+				prompt.toString());
 		String username = authentication == null ? "UNKNOWN" : authentication.getName();
 		auditLogService.log(
 				username,

@@ -30,4 +30,11 @@ public class KnowledgeBase extends BaseEntity {
 
 	@Column(name = "enabled", nullable = false)
 	private Boolean enabled = true;
+
+	/**
+	 * Cross-module reference only; model validation and invocation live in
+	 * ai-gateway. Null means use the gateway's default model.
+	 */
+	@Column(name = "answer_model_id", length = 64)
+	private String answerModelId;
 }
