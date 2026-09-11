@@ -1,5 +1,6 @@
 package com.chronos.controller;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.dto.PermissionDTO;
 import com.chronos.model.pojo.Permission;
@@ -7,7 +8,6 @@ import com.chronos.model.vo.PermissionVO;
 import com.chronos.service.iService.IPermissionService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -31,11 +31,18 @@ public class PermissionController {
 
 	@GetMapping({ "/list" })
 	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:permission:view','iam:permission:manage','iam:role:authorize')")
-	public ResultData<Page<Permission>> list(PermissionDTO dto, @RequestParam(defaultValue = "0") int page,
+	public ResultData<PageView<Permission>> list(PermissionDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		PageRequest pageRequest = PageRequest.of(page, size);
-		Page<Permission> items = this.permissionService.pagePermissions(dto, (Pageable) pageRequest);
-		return ResultData.<Page<Permission>>builder().code("200").msg("success").data(items).build();
+		PageRequest pageRequest = PageRequest.of(
+				Math.max(page, 0),
+				Math.min(Math.max(size, 1), 200));
+		PageView<Permission> items = PageView.from(
+				this.permissionService.pagePermissions(dto, (Pageable) pageRequest));
+		return ResultData.<PageView<Permission>>builder()
+				.code("200")
+				.msg("success")
+				.data(items)
+				.build();
 	}
 
 	@GetMapping({ "/{id}" })

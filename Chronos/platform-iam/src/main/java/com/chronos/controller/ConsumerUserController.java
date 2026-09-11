@@ -1,5 +1,6 @@
 package com.chronos.controller;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.dto.ConsumerUserDTO;
 import com.chronos.model.pojo.ConsumerUser;
@@ -8,10 +9,10 @@ import com.chronos.service.iService.IConsumerUserService;
 import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -46,10 +47,18 @@ public class ConsumerUserController {
 	}
 
 	@GetMapping({ "/list" })
-	public ResultData<Page<ConsumerUser>> list(ConsumerUserDTO dto, @RequestParam(defaultValue = "0") int page,
+	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:customer:view','iam:customer:manage')")
+	public ResultData<PageView<ConsumerUser>> list(ConsumerUserDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		PageRequest pageRequest = PageRequest.of(page, size);
-		Page<ConsumerUser> users = this.consumerUserService.pageUsers(dto, (Pageable) pageRequest);
-		return ResultData.<Page<ConsumerUser>>builder().code("200").msg("success").data(users).build();
+		PageRequest pageRequest = PageRequest.of(
+				Math.max(page, 0),
+				Math.min(Math.max(size, 1), 200));
+		PageView<ConsumerUser> users = PageView.from(
+				this.consumerUserService.pageUsers(dto, (Pageable) pageRequest));
+		return ResultData.<PageView<ConsumerUser>>builder()
+				.code("200")
+				.msg("success")
+				.data(users)
+				.build();
 	}
 }

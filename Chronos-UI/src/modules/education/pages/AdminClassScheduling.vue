@@ -150,7 +150,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="教学任务" name="offerings">
-        <div class="toolbar"><el-button type="primary" @click="openOffering()">新增教学任务</el-button></div>
+        <div class="toolbar"><el-button type="primary" @click="openOffering()">新增教学任务</el-button><el-button @click="router.push('/admin/education/teaching-class-members')">教学班成员</el-button></div>
         <el-table :data="offerings">
           <el-table-column prop="offeringCode" label="教学班编码" />
           <el-table-column prop="courseName" label="课程" />
@@ -200,6 +200,22 @@
           @size-change="changeClassroomPageSize"
           @current-change="loadClassroomsPage"
         />
+      </el-tab-pane>
+
+      <el-tab-pane label="教师时间约束" name="constraints">
+        <div class="toolbar"><el-button type="primary" @click="openConstraint()">新增时间约束</el-button></div>
+        <el-table :data="teacherConstraints" border>
+          <el-table-column label="教师" min-width="150"><template #default="s">{{ teacherName(s.row.teacherId) }}</template></el-table-column>
+          <el-table-column label="时间" width="160"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }} 第 {{ s.row.periodNo }} 节</template></el-table-column>
+          <el-table-column label="约束类型" width="110"><template #default="s"><el-tag :type="s.row.constraintType === 'FORBIDDEN' ? 'danger' : 'success'">{{ s.row.constraintType === 'FORBIDDEN' ? '禁止排课' : '优先安排' }}</el-tag></template></el-table-column>
+          <el-table-column prop="weight" label="权重" width="80" /><el-table-column prop="reason" label="原因" min-width="180" />
+          <el-table-column label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeConstraint(s.row)">删除</el-button></template></el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="教室不可用时段" name="room-constraints">
+        <div class="toolbar"><el-button type="primary" @click="openRoomConstraint()">新增不可用时段</el-button></div>
+        <el-table :data="roomConstraints" border><el-table-column label="教室"><template #default="s">{{ classroomName(s.row.classroomId) }}</template></el-table-column><el-table-column label="星期" width="90"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }}</template></el-table-column><el-table-column label="节次" width="120"><template #default="s">第 {{ s.row.startPeriod }}–{{ s.row.endPeriod }} 节</template></el-table-column><el-table-column prop="reason" label="原因" /><el-table-column label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openRoomConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeRoomConstraint(s.row)">删除</el-button></template></el-table-column></el-table>
       </el-tab-pane>
 
 	  <el-tab-pane label="调课回写异常" name="incidents">
@@ -279,11 +295,19 @@
 
     <el-dialog v-model="entryDialog" title="课表安排" width="600px">
       <el-form label-width="90px">
-        <el-form-item label="教学任务"><el-select v-model="entryForm.offeringId" filterable><el-option v-for="item in offeringOptions" :key="item.id" :label="`${item.courseName} / ${item.teachingClassName} / ${item.teacherName}`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="教学任务"><el-select v-model="entryForm.offeringId" filterable @change="selectEntryOffering"><el-option v-for="item in offeringOptions" :key="item.id" :label="`${item.courseName} / ${item.teachingClassName} / ${item.teacherName}`" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="教室"><el-select v-model="entryForm.classroomId" filterable><el-option v-for="item in classroomOptions" :key="item.id" :label="`${item.roomName}（${item.capacity}人）`" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="星期"><el-select v-model="entryForm.dayOfWeek"><el-option v-for="day in 7" :key="day" :label="`星期${dayName(day)}`" :value="day" /></el-select></el-form-item>
-        <el-form-item label="节次"><el-input-number v-model="entryForm.periodNo" :min="1" :max="20" /></el-form-item>
+        <el-form-item label="节次">
+          <el-select v-if="availablePeriods.length" v-model="entryForm.periodNo">
+            <el-option v-for="item in availablePeriods" :key="item.id" :label="`${item.periodName}（${item.startTime}-${item.endTime}）`" :value="item.periodNo" />
+          </el-select>
+          <el-input-number v-else v-model="entryForm.periodNo" :min="1" :max="20" />
+        </el-form-item>
+        <el-form-item label="连堂节数"><el-input-number v-model="entryForm.durationPeriods" :min="1" :max="4" /></el-form-item>
+        <el-form-item label="周模式"><el-select v-model="entryForm.weekPattern"><el-option label="每周" value="ALL" /><el-option label="单周" value="ODD" /><el-option label="双周" value="EVEN" /></el-select></el-form-item>
         <el-form-item label="授课周次"><el-input-number v-model="entryForm.startWeek" :min="1" /><span class="separator">至</span><el-input-number v-model="entryForm.endWeek" :min="1" /></el-form-item>
+        <el-form-item label="锁定课程"><el-switch v-model="entryForm.locked" /><span class="form-tip">锁定后自动排课不会移动该课程</span></el-form-item>
       </el-form>
       <template #footer><el-button @click="entryDialog = false">取消</el-button><el-button type="primary" @click="saveEntry">保存并校验</el-button></template>
     </el-dialog>
@@ -304,6 +328,11 @@
         </el-form-item>
         <el-form-item label="学生人数"><el-input-number v-model="offeringForm.studentCount" :min="1" /></el-form-item>
         <el-form-item label="每周课时"><el-input-number v-model="offeringForm.weeklyLessons" :min="1" /></el-form-item>
+        <el-form-item label="连堂节数"><el-input-number v-model="offeringForm.preferredDurationPeriods" :min="1" :max="4" /></el-form-item>
+        <el-form-item label="授课周模式"><el-select v-model="offeringForm.weekPattern"><el-option label="每周" value="ALL" /><el-option label="单周" value="ODD" /><el-option label="双周" value="EVEN" /></el-select></el-form-item>
+        <el-form-item label="教室类型要求"><el-select v-model="offeringForm.requiredRoomType" clearable><el-option v-for="item in roomTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+        <el-form-item label="设备要求"><el-input v-model="offeringForm.requiredEquipmentCodes" placeholder="多个设备编码使用英文逗号分隔" /></el-form-item>
+        <el-form-item label="所属校区"><el-select v-model="offeringForm.campusId" filterable><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="offeringDialog = false">取消</el-button><el-button type="primary" @click="saveOffering">保存</el-button></template>
     </el-dialog>
@@ -313,7 +342,9 @@
         <el-form-item label="教室编码"><el-input v-model="classroomForm.roomCode" /></el-form-item>
         <el-form-item label="教室名称"><el-input v-model="classroomForm.roomName" /></el-form-item>
         <el-form-item label="教学楼"><el-input v-model="classroomForm.buildingName" /></el-form-item>
+        <el-form-item label="所属校区"><el-select v-model="classroomForm.campusId" filterable><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="教室类型"><el-select v-model="classroomForm.roomType"><el-option v-for="item in roomTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+        <el-form-item label="设备编码"><el-input v-model="classroomForm.equipmentCodes" placeholder="例如 PROJECTOR,COMPUTER" /></el-form-item>
         <el-form-item label="容量"><el-input-number v-model="classroomForm.capacity" :min="1" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="classroomDialog = false">取消</el-button><el-button type="primary" @click="saveClassroom">保存</el-button></template>
@@ -370,6 +401,23 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="constraintDialog" :title="constraintForm.id ? '编辑教师时间约束' : '新增教师时间约束'" width="580px">
+      <el-form label-width="100px">
+        <el-form-item label="教师"><el-select v-model="constraintForm.teacherId" filterable><el-option v-for="item in teachers" :key="item.id" :label="`${item.teacherName}（${item.teacherNo}）`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="星期"><el-select v-model="constraintForm.dayOfWeek"><el-option v-for="day in 7" :key="day" :label="`星期${dayName(day)}`" :value="day" /></el-select></el-form-item>
+        <el-form-item label="节次"><el-select v-if="allBellPeriods.length" v-model="constraintForm.periodNo"><el-option v-for="item in allBellPeriods" :key="item.periodNo" :label="item.periodName" :value="item.periodNo" /></el-select><el-input-number v-else v-model="constraintForm.periodNo" :min="1" :max="20" /></el-form-item>
+        <el-form-item label="约束类型"><el-radio-group v-model="constraintForm.constraintType"><el-radio value="FORBIDDEN">禁止排课</el-radio><el-radio value="PREFERRED">优先安排</el-radio></el-radio-group></el-form-item>
+        <el-form-item label="权重"><el-input-number v-model="constraintForm.weight" :min="1" :max="100" /></el-form-item>
+        <el-form-item label="原因"><el-input v-model="constraintForm.reason" type="textarea" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="constraintDialog = false">取消</el-button><el-button type="primary" @click="saveConstraint">保存</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="roomConstraintDialog" :title="roomConstraintForm.id ? '编辑教室不可用时段' : '新增教室不可用时段'" width="580px">
+      <el-form label-width="100px"><el-form-item label="教室"><el-select v-model="roomConstraintForm.classroomId" filterable><el-option v-for="item in classroomOptions" :key="item.id" :label="item.roomName" :value="item.id" /></el-select></el-form-item><el-form-item label="星期"><el-select v-model="roomConstraintForm.dayOfWeek"><el-option v-for="day in 7" :key="day" :label="`星期${dayName(day)}`" :value="day" /></el-select></el-form-item><el-form-item label="节次范围"><el-input-number v-model="roomConstraintForm.startPeriod" :min="1" /><span class="separator">至</span><el-input-number v-model="roomConstraintForm.endPeriod" :min="1" /></el-form-item><el-form-item label="原因"><el-input v-model="roomConstraintForm.reason" type="textarea" /></el-form-item></el-form>
+      <template #footer><el-button @click="roomConstraintDialog = false">取消</el-button><el-button type="primary" @click="saveRoomConstraint">保存</el-button></template>
+    </el-dialog>
+
     <el-dialog v-model="diffDialog" :title="diffTitle" width="860px">
       <div v-if="currentDiff" class="diff-summary">
         <el-tag type="success">新增 {{ currentDiff.added }}</el-tag>
@@ -396,6 +444,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   applyScheduleCandidate,
@@ -428,9 +477,20 @@ import {
   updateCourseOffering,
   updateScheduleEntry,
   dictionaryOptions,
+  createTeacherTimeConstraint,
+  createClassroomUnavailableSlot,
+  deleteClassroomUnavailableSlot,
+  deleteTeacherTimeConstraint,
+  listBellSchedules,
+  listTeacherTimeConstraints,
+  listClassroomUnavailableSlots,
+  orgList,
+  updateTeacherTimeConstraint,
+  updateClassroomUnavailableSlot,
 } from '../../../api/admin'
 
 const semesterCode = ref('2026-2027-1')
+const router = useRouter()
 const activeTab = ref('schedule')
 const offerings = ref([])
 const classrooms = ref([])
@@ -442,6 +502,10 @@ const teachers = ref([])
 const students = ref([])
 const administrativeClasses = ref([])
 const roomTypes = ref([])
+const campuses = ref([])
+const bellSchedules = ref([])
+const teacherConstraints = ref([])
+const roomConstraints = ref([])
 const schedule = ref([])
 const scheduleDimension = ref('ALL')
 const scheduleTargetId = ref('')
@@ -467,6 +531,8 @@ const offeringDialog = ref(false)
 const classroomDialog = ref(false)
 const candidateDialog = ref(false)
 const candidateGenerating = ref(false)
+const constraintDialog = ref(false)
+const roomConstraintDialog = ref(false)
 const diffDialog = ref(false)
 const diffTitle = ref('方案差异')
 const currentDiff = ref(null)
@@ -474,6 +540,23 @@ const entryForm = reactive({})
 const offeringForm = reactive({})
 const classroomForm = reactive({})
 const candidateForm = reactive({})
+const constraintForm = reactive({})
+const roomConstraintForm = reactive({})
+const orgName = item => item.organizationName || item.orgName || item.name || item.id
+const selectedTerm = computed(() => terms.value.find(item => item.termCode === semesterCode.value))
+const selectedClassroom = computed(() => classroomOptions.value.find(item => item.id === entryForm.classroomId))
+const availablePeriods = computed(() => {
+  const schedule = bellSchedules.value.find(item =>
+    item.schedule.defaultSchedule && item.schedule.campusId === selectedClassroom.value?.campusId)
+  return (schedule?.periods || []).filter(item => item.schedulable)
+})
+const allBellPeriods = computed(() => {
+  const values = new Map()
+  bellSchedules.value.flatMap(item => item.periods || []).filter(item => item.schedulable).forEach(item => values.set(item.periodNo, item))
+  return [...values.values()].sort((left, right) => left.periodNo - right.periodNo)
+})
+const teacherName = id => teachers.value.find(item => item.id === id)?.teacherName || id
+const classroomName = id => classroomOptions.value.find(item => item.id === id)?.roomName || id
 const dayName = (day) => ['一', '二', '三', '四', '五', '六', '日'][day - 1]
 const formatTime = value => value ? new Date(value).toLocaleString() : '-'
 const dimensionOptions = computed(() => {
@@ -496,7 +579,7 @@ const dimensionOptions = computed(() => {
 })
 const reset = (target, value) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, value) }
 const loadAll = async () => {
-  const [termResponse, courseResponse, teacherResponse, studentResponse, classResponse, offeringResponse, classroomResponse, roomTypeResponse, versionResponse, candidateResponse] = await Promise.all([
+  const [termResponse, courseResponse, teacherResponse, studentResponse, classResponse, offeringResponse, classroomResponse, roomTypeResponse, versionResponse, candidateResponse, campusResponse] = await Promise.all([
     listAcademicTerms(),
     listCourseCatalog(),
     listEducationTeachers(),
@@ -507,6 +590,7 @@ const loadAll = async () => {
     dictionaryOptions('EDU_ROOM_TYPE'),
     listScheduleVersions(semesterCode.value),
     listScheduleCandidates(semesterCode.value),
+    orgList({ page: 0, size: 200 }),
   ])
   terms.value = termResponse.data || []
   courses.value = courseResponse.data || []
@@ -518,6 +602,13 @@ const loadAll = async () => {
   roomTypes.value = (roomTypeResponse?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
   versions.value = versionResponse.data || []
   candidates.value = candidateResponse.data || []
+  const organizations = campusResponse.data?.content || campusResponse.data || []
+  campuses.value = organizations.filter(item => ['CAMPUS', 'SCHOOL'].includes(item.organizationType || item.orgType))
+  bellSchedules.value = selectedTerm.value
+    ? (await listBellSchedules(selectedTerm.value.id)).data || []
+    : []
+  teacherConstraints.value = (await listTeacherTimeConstraints(semesterCode.value)).data || []
+  roomConstraints.value = (await listClassroomUnavailableSlots(semesterCode.value)).data || []
   offeringPage.value = 1
   classroomPage.value = 1
   await Promise.all([loadOfferingsPage(), loadClassroomsPage(), loadSchedule()])
@@ -556,10 +647,21 @@ const changeDimension = async () => {
   scheduleTargetId.value = ''
   await loadSchedule()
 }
-const openEntry = (row) => { reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, startWeek: 1, endWeek: 20 }); entryDialog.value = true }
+const openEntry = (row) => { reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, durationPeriods: 1, weekPattern: 'ALL', startWeek: 1, endWeek: selectedTerm.value?.weekCount || 20, locked: false }); entryDialog.value = true }
 const saveEntry = async () => { const payload = { ...entryForm, semesterCode: semesterCode.value }; await (entryForm.id ? updateScheduleEntry(entryForm.id, payload) : createScheduleEntry(payload)); entryDialog.value = false; ElMessage.success('课表已保存'); await loadAll() }
+const selectEntryOffering = id => {
+  const offering = offeringOptions.value.find(item => item.id === id)
+  if (!offering) return
+  entryForm.durationPeriods = offering.preferredDurationPeriods || 1
+  entryForm.weekPattern = offering.weekPattern || 'ALL'
+  const matchingRoom = classroomOptions.value.find(item =>
+    (!offering.campusId || item.campusId === offering.campusId) &&
+    (!offering.requiredRoomType || item.roomType === offering.requiredRoomType) &&
+    item.capacity >= offering.studentCount)
+  if (matchingRoom) entryForm.classroomId = matchingRoom.id
+}
 const removeEntry = async (row) => { await ElMessageBox.confirm('确认删除该课表安排？', '删除'); await deleteScheduleEntry(row.id); await loadAll() }
-const openOffering = (row) => { reset(offeringForm, row ? { ...row } : { studentCount: 30, weeklyLessons: 2, status: 'ACTIVE' }); offeringDialog.value = true }
+const openOffering = (row) => { reset(offeringForm, row ? { ...row } : { studentCount: 30, weeklyLessons: 2, preferredDurationPeriods: 1, weekPattern: 'ALL', status: 'ACTIVE' }); offeringDialog.value = true }
 const selectCourse = code => {
   offeringForm.courseName = courses.value.find(item => item.courseCode === code)?.courseName || ''
 }
@@ -571,6 +673,12 @@ const removeOffering = async (row) => { await ElMessageBox.confirm('确认删除
 const openClassroom = (row) => { reset(classroomForm, row ? { ...row } : { capacity: 40, roomType: roomTypes.value[0]?.value || '', enabled: true }); classroomDialog.value = true }
 const saveClassroom = async () => { await (classroomForm.id ? updateClassroom(classroomForm.id, classroomForm) : createClassroom(classroomForm)); classroomDialog.value = false; ElMessage.success('教室已保存'); await loadAll() }
 const removeClassroom = async (row) => { await ElMessageBox.confirm('确认删除该教室？', '删除'); await deleteClassroom(row.id); await loadAll() }
+const openConstraint = row => { reset(constraintForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, constraintType: 'FORBIDDEN', weight: 10 }); constraintDialog.value = true }
+const saveConstraint = async () => { const payload = { ...constraintForm, semesterCode: semesterCode.value }; await (constraintForm.id ? updateTeacherTimeConstraint(constraintForm.id, payload) : createTeacherTimeConstraint(payload)); constraintDialog.value = false; ElMessage.success('教师时间约束已保存'); await loadAll() }
+const removeConstraint = async row => { await ElMessageBox.confirm('确认删除该教师时间约束？', '删除'); await deleteTeacherTimeConstraint(row.id); await loadAll() }
+const openRoomConstraint = row => { reset(roomConstraintForm, row ? { ...row } : { dayOfWeek: 1, startPeriod: 1, endPeriod: 1, status: 'ACTIVE' }); roomConstraintDialog.value = true }
+const saveRoomConstraint = async () => { const payload = { ...roomConstraintForm, semesterCode: semesterCode.value }; await (roomConstraintForm.id ? updateClassroomUnavailableSlot(roomConstraintForm.id, payload) : createClassroomUnavailableSlot(payload)); roomConstraintDialog.value = false; ElMessage.success('教室不可用时段已保存'); await loadAll() }
+const removeRoomConstraint = async row => { await ElMessageBox.confirm('确认删除该教室不可用时段？', '删除'); await deleteClassroomUnavailableSlot(row.id); await loadAll() }
 const loadIncidents = async () => {
   const response = await listCourseAdjustmentIncidents({
     status: incidentStatus.value,

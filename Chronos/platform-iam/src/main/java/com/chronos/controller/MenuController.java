@@ -1,5 +1,6 @@
  package com.chronos.controller;
 
+ import com.chronos.commons.model.PageView;
  import com.chronos.commons.model.ResultData;
  import com.chronos.model.dto.MenuDTO;
  import com.chronos.model.pojo.Menu;
@@ -8,7 +9,6 @@
  import jakarta.validation.Valid;
  import java.util.List;
  import org.springframework.beans.factory.annotation.Autowired;
- import org.springframework.data.domain.Page;
  import org.springframework.data.domain.PageRequest;
  import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -38,10 +38,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
    
    @GetMapping({"/list"})
    @PreAuthorize("@iamAuthorization.any(authentication, 'iam:menu:view','iam:menu:manage','iam:role:authorize','iam:permission:view')")
-   public ResultData<Page<Menu>> list(MenuDTO dto, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
-     PageRequest pageRequest = PageRequest.of(page, size);
-     Page<Menu> items = this.menuService.pageMenus(dto, (Pageable)pageRequest);
-     return ResultData.<Page<Menu>>builder().code("200").msg("success").data(items).build();
+   public ResultData<PageView<Menu>> list(MenuDTO dto, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
+     PageRequest pageRequest = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 200));
+     PageView<Menu> items = PageView.from(this.menuService.pageMenus(dto, (Pageable)pageRequest));
+     return ResultData.<PageView<Menu>>builder().code("200").msg("success").data(items).build();
    }
    
    @GetMapping({"/{id}"})

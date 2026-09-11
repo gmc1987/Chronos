@@ -13,12 +13,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.education.scheduling.dao.ClassroomRepository;
+import com.chronos.education.scheduling.dao.ClassroomUnavailableSlotRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.Classroom;
+import com.chronos.education.scheduling.model.ClassroomUnavailableSlot;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.ScheduleEntryCommand;
@@ -29,24 +31,30 @@ import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 public class ClassSchedulingService {
 	private final CourseOfferingRepository offerings;
 	private final ClassroomRepository classrooms;
+	private final ClassroomUnavailableSlotRepository unavailableSlots;
 	private final ScheduleEntryRepository entries;
 	private final TeacherTimeConstraintRepository teacherConstraints;
 	private final TeachingClassMemberRepository teachingClassMembers;
 	private final StudentProfileRepository students;
+	private final AcademicCalendarService academicCalendar;
 
 	public ClassSchedulingService(
 			CourseOfferingRepository offerings,
 			ClassroomRepository classrooms,
+			ClassroomUnavailableSlotRepository unavailableSlots,
 			ScheduleEntryRepository entries,
 			TeacherTimeConstraintRepository teacherConstraints,
 			TeachingClassMemberRepository teachingClassMembers,
-			StudentProfileRepository students) {
+			StudentProfileRepository students,
+			AcademicCalendarService academicCalendar) {
 		this.offerings = offerings;
 		this.classrooms = classrooms;
+		this.unavailableSlots = unavailableSlots;
 		this.entries = entries;
 		this.teacherConstraints = teacherConstraints;
 		this.teachingClassMembers = teachingClassMembers;
 		this.students = students;
+		this.academicCalendar = academicCalendar;
 	}
 
 	@Transactional(readOnly = true)
@@ -75,6 +83,12 @@ public class ClassSchedulingService {
 		value.setTeacherName(command.getTeacherName().trim());
 		value.setStudentCount(command.getStudentCount());
 		value.setWeeklyLessons(command.getWeeklyLessons());
+		value.setPreferredDurationPeriods(command.getPreferredDurationPeriods() == null
+				? 1
+				: command.getPreferredDurationPeriods());
+		value.setWeekPattern(command.getWeekPattern() == null ? "ALL" : command.getWeekPattern());
+		value.setRequiredRoomType(command.getRequiredRoomType());
+		value.setRequiredEquipmentCodes(command.getRequiredEquipmentCodes());
 		value.setCampusId(command.getCampusId());
 		value.setStatus(command.getStatus() == null ? "ACTIVE" : command.getStatus());
 		return offerings.save(value);
@@ -109,6 +123,7 @@ public class ClassSchedulingService {
 		value.setBuildingName(command.getBuildingName());
 		value.setCapacity(positive(command.getCapacity(), "教室容量"));
 		value.setRoomType(command.getRoomType() == null ? "STANDARD" : command.getRoomType());
+		value.setEquipmentCodes(command.getEquipmentCodes());
 		value.setEnabled(command.getEnabled() == null || command.getEnabled());
 		return classrooms.save(value);
 	}
@@ -195,7 +210,31 @@ public class ClassSchedulingService {
 		if (classroom.getCapacity() < offering.getStudentCount()) {
 			throw new IllegalStateException("教室容量小于教学班人数");
 		}
+		if (offering.getRequiredRoomType() != null
+				&& !offering.getRequiredRoomType().isBlank()
+				&& !offering.getRequiredRoomType().equals(classroom.getRoomType())) {
+			throw new IllegalStateException("教室类型不满足教学任务要求");
+		}
+		if (!containsAllCodes(classroom.getEquipmentCodes(), offering.getRequiredEquipmentCodes())) {
+			throw new IllegalStateException("教室设备不满足教学任务要求");
+		}
 		int duration = command.durationPeriods() == null ? 1 : command.durationPeriods();
+		academicCalendar.validateSchedulingSlot(
+				command.semesterCode(),
+				offering.getCampusId(),
+				command.periodNo(),
+				duration);
+		boolean roomUnavailable = unavailableSlots
+				.findBySemesterCodeOrderByClassroomIdAscDayOfWeekAscStartPeriodAsc(command.semesterCode())
+				.stream()
+				.filter(item -> "ACTIVE".equals(item.getStatus()))
+				.filter(item -> command.classroomId().equals(item.getClassroomId()))
+				.anyMatch(item -> command.dayOfWeek().equals(item.getDayOfWeek())
+						&& command.periodNo() <= item.getEndPeriod()
+						&& command.periodNo() + duration - 1 >= item.getStartPeriod());
+		if (roomUnavailable) {
+			throw new IllegalStateException("教室在所选时段不可用");
+		}
 		String weekPattern = command.weekPattern() == null ? "ALL" : command.weekPattern();
 		boolean teacherForbidden = teacherConstraints
 				.findBySemesterCodeAndTeacherId(command.semesterCode(), offering.getTeacherId()).stream()
@@ -291,6 +330,42 @@ public class ClassSchedulingService {
 		teacherConstraints.deleteById(id);
 	}
 
+	public List<ClassroomUnavailableSlot> unavailableSlots(String semesterCode) {
+		return unavailableSlots.findBySemesterCodeOrderByClassroomIdAscDayOfWeekAscStartPeriodAsc(
+				required(semesterCode, "学期编码"));
+	}
+
+	@Transactional
+	public ClassroomUnavailableSlot saveUnavailableSlot(String id, ClassroomUnavailableSlot command) {
+		classrooms.findById(command.getClassroomId())
+				.orElseThrow(() -> new IllegalArgumentException("教室不存在"));
+		if (command.getDayOfWeek() == null || command.getDayOfWeek() < 1 || command.getDayOfWeek() > 7) {
+			throw new IllegalArgumentException("星期必须在 1 到 7 之间");
+		}
+		positive(command.getStartPeriod(), "开始节次");
+		positive(command.getEndPeriod(), "结束节次");
+		if (command.getStartPeriod() > command.getEndPeriod()) {
+			throw new IllegalArgumentException("开始节次不能晚于结束节次");
+		}
+		ClassroomUnavailableSlot value = id == null
+				? new ClassroomUnavailableSlot()
+				: unavailableSlots.findById(id)
+						.orElseThrow(() -> new IllegalArgumentException("不可用时段不存在"));
+		value.setSemesterCode(required(command.getSemesterCode(), "学期编码"));
+		value.setClassroomId(command.getClassroomId());
+		value.setDayOfWeek(command.getDayOfWeek());
+		value.setStartPeriod(command.getStartPeriod());
+		value.setEndPeriod(command.getEndPeriod());
+		value.setReason(required(command.getReason(), "不可用原因"));
+		value.setStatus(command.getStatus() == null ? "ACTIVE" : command.getStatus());
+		return unavailableSlots.save(value);
+	}
+
+	@Transactional
+	public void deleteUnavailableSlot(String id) {
+		unavailableSlots.deleteById(id);
+	}
+
 	private ScheduleEntryView view(ScheduleEntry entry) {
 		CourseOffering offering = offerings.findById(entry.getOfferingId()).orElseThrow();
 		Classroom classroom = classrooms.findById(entry.getClassroomId()).orElseThrow();
@@ -367,6 +442,21 @@ public class ClassSchedulingService {
 				&& !offering.getCampusId().equals(classroom.getCampusId());
 	}
 
+	private boolean containsAllCodes(String actual, String requiredCodes) {
+		if (requiredCodes == null || requiredCodes.isBlank()) {
+			return true;
+		}
+		Set<String> actualValues = java.util.Arrays.stream(
+				actual == null ? new String[0] : actual.split(","))
+				.map(String::trim)
+				.filter(value -> !value.isBlank())
+				.collect(Collectors.toSet());
+		return java.util.Arrays.stream(requiredCodes.split(","))
+				.map(String::trim)
+				.filter(value -> !value.isBlank())
+				.allMatch(actualValues::contains);
+	}
+
 	private void validateOffering(CourseOffering value) {
 		required(value.getSemesterCode(), "学期编码");
 		required(value.getOfferingCode(), "教学班编码");
@@ -377,6 +467,11 @@ public class ClassSchedulingService {
 		required(value.getTeacherName(), "教师姓名");
 		positive(value.getStudentCount(), "学生人数");
 		positive(value.getWeeklyLessons(), "周课时");
+		positive(value.getPreferredDurationPeriods() == null ? 1 : value.getPreferredDurationPeriods(), "连堂节数");
+		if (value.getWeekPattern() != null
+				&& !Set.of("ALL", "ODD", "EVEN").contains(value.getWeekPattern())) {
+			throw new IllegalArgumentException("周模式必须为 ALL、ODD 或 EVEN");
+		}
 	}
 
 	private void validateEntry(ScheduleEntryCommand value) {

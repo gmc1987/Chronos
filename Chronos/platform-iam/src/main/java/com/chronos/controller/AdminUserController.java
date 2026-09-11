@@ -1,5 +1,6 @@
 package com.chronos.controller;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.dto.AdminUserDTO;
 import com.chronos.model.pojo.AdminUser;
@@ -7,7 +8,6 @@ import com.chronos.model.vo.AdminUserVO;
 import com.chronos.service.iService.IAdminUserService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -31,11 +31,16 @@ public class AdminUserController {
 
 	@GetMapping({ "/list" })
 	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:user:view','iam:user:manage')")
-	public ResultData<Page<AdminUser>> list(AdminUserDTO dto, @RequestParam(defaultValue = "0") int page,
+	public ResultData<PageView<AdminUser>> list(AdminUserDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		PageRequest pageRequest = PageRequest.of(page, size);
-		Page<AdminUser> users = this.adminUserService.pageUsers(dto, (Pageable) pageRequest);
-		return ResultData.<Page<AdminUser>>builder().code("200").msg("success").data(users).build();
+		PageRequest pageRequest = boundedPage(page, size);
+		PageView<AdminUser> users = PageView.from(
+				this.adminUserService.pageUsers(dto, (Pageable) pageRequest));
+		return ResultData.<PageView<AdminUser>>builder().code("200").msg("success").data(users).build();
+	}
+
+	private PageRequest boundedPage(int page, int size) {
+		return PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 200));
 	}
 
 	@GetMapping({ "/{id}" })

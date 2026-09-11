@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
+import com.chronos.education.scheduling.dao.ClassroomUnavailableSlotRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleCandidatePlanRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
@@ -9,6 +10,7 @@ import com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.Classroom;
+import com.chronos.education.scheduling.model.ClassroomUnavailableSlot;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleCandidateMetrics;
 import com.chronos.education.scheduling.model.ScheduleCandidatePlan;
@@ -56,9 +58,11 @@ public class AutoSchedulingService {
 	private final ScheduleEntryRepository entries;
 	private final CourseOfferingRepository offerings;
 	private final ClassroomRepository classrooms;
+	private final ClassroomUnavailableSlotRepository unavailableSlots;
 	private final TeacherTimeConstraintRepository constraints;
 	private final TeachingClassMemberRepository members;
 	private final AcademicTermRepository terms;
+	private final AcademicCalendarService academicCalendar;
 	private final IAuditLogService audit;
 	private final EntityManager entityManager;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
@@ -68,18 +72,22 @@ public class AutoSchedulingService {
 			ScheduleEntryRepository entries,
 			CourseOfferingRepository offerings,
 			ClassroomRepository classrooms,
+			ClassroomUnavailableSlotRepository unavailableSlots,
 			TeacherTimeConstraintRepository constraints,
 			TeachingClassMemberRepository members,
 			AcademicTermRepository terms,
+			AcademicCalendarService academicCalendar,
 			IAuditLogService audit,
 			EntityManager entityManager) {
 		this.candidates = candidates;
 		this.entries = entries;
 		this.offerings = offerings;
 		this.classrooms = classrooms;
+		this.unavailableSlots = unavailableSlots;
 		this.constraints = constraints;
 		this.members = members;
 		this.terms = terms;
+		this.academicCalendar = academicCalendar;
 		this.audit = audit;
 		this.entityManager = entityManager;
 	}
@@ -243,6 +251,11 @@ public class AutoSchedulingService {
 				.stream()
 				.collect(Collectors.groupingBy(TeacherTimeConstraint::getTeacherId));
 		List<Classroom> availableRooms = classrooms.findByEnabledTrueOrderByRoomCode();
+		List<ClassroomUnavailableSlot> roomUnavailableSlots = unavailableSlots
+				.findBySemesterCodeOrderByClassroomIdAscDayOfWeekAscStartPeriodAsc(request.semesterCode())
+				.stream()
+				.filter(item -> "ACTIVE".equals(item.getStatus()))
+				.toList();
 		List<CourseOffering> targets = semesterOfferings.stream()
 				.filter(offering -> targetIds.contains(offering.getId()))
 				.sorted(Comparator.comparing(CourseOffering::getStudentCount).reversed()
@@ -260,6 +273,7 @@ public class AutoSchedulingService {
 		int unscheduled = 0;
 		int preferredHits = 0;
 		int sameCourseDayPenalty = 0;
+		Map<String, Set<Integer>> periodsByCampus = new HashMap<>();
 		for (CourseOffering offering : targets) {
 			int lockedLessons = result.stream()
 					.filter(entry -> offering.getId().equals(entry.getOfferingId()))
@@ -267,15 +281,29 @@ public class AutoSchedulingService {
 					.mapToInt(entry -> entry.getDurationPeriods() == null ? 1 : entry.getDurationPeriods())
 					.sum();
 			int requiredLessons = Math.max(0, offering.getWeeklyLessons() - lockedLessons);
-			for (int lesson = 0; lesson < requiredLessons; lesson++) {
+			int preferredDuration = Math.max(1, offering.getPreferredDurationPeriods() == null
+					? 1
+					: offering.getPreferredDurationPeriods());
+			Set<Integer> allowedPeriods = periodsByCampus.computeIfAbsent(
+					offering.getCampusId() == null ? "" : offering.getCampusId(),
+					campus -> academicCalendar.schedulablePeriodNumbers(
+							request.semesterCode(),
+							offering.getCampusId(),
+							request.periodsPerDay()));
+			for (int lesson = 0; lesson < requiredLessons;) {
+				int duration = Math.min(preferredDuration, requiredLessons - lesson);
 				Placement placement = bestPlacement(
 						offering,
 						slots,
 						availableRooms,
 						schedulingIndex,
-						teacherConstraints.getOrDefault(offering.getTeacherId(), List.of()));
+						teacherConstraints.getOrDefault(offering.getTeacherId(), List.of()),
+						allowedPeriods,
+						duration,
+						roomUnavailableSlots);
 				if (placement == null) {
-					unscheduled++;
+					unscheduled += duration;
+					lesson += duration;
 					continue;
 				}
 				ScheduleEntry generated = new ScheduleEntry();
@@ -288,15 +316,16 @@ public class AutoSchedulingService {
 				generated.setClassroomId(placement.classroom().getId());
 				generated.setDayOfWeek(placement.slot().day());
 				generated.setPeriodNo(placement.slot().period());
-				generated.setDurationPeriods(1);
-				generated.setWeekPattern("ALL");
+				generated.setDurationPeriods(duration);
+				generated.setWeekPattern(offering.getWeekPattern() == null ? "ALL" : offering.getWeekPattern());
 				generated.setStartWeek(request.startWeek());
 				generated.setEndWeek(request.endWeek());
 				generated.setStatus("SCHEDULED");
 				generated.setLocked(false);
 				result.add(generated);
 				schedulingIndex.add(generated);
-				scheduled++;
+				scheduled += duration;
+				lesson += duration;
 				if (placement.preferred()) {
 					preferredHits++;
 				}
@@ -323,15 +352,20 @@ public class AutoSchedulingService {
 			List<Slot> slots,
 			List<Classroom> availableRooms,
 			SchedulingIndex schedulingIndex,
-			List<TeacherTimeConstraint> teacherConstraints) {
+			List<TeacherTimeConstraint> teacherConstraints,
+			Set<Integer> allowedPeriods,
+			int duration,
+			List<ClassroomUnavailableSlot> roomUnavailableSlots) {
 		Placement best = null;
 		for (Slot slot : slots) {
-			if (forbidden(teacherConstraints, slot)) {
+			if (!consecutivePeriodsAllowed(allowedPeriods, slot.period(), duration)
+					|| forbidden(teacherConstraints, slot, duration)) {
 				continue;
 			}
 			for (Classroom room : availableRooms) {
 				if (!roomSuitable(offering, room)
-						|| schedulingIndex.conflicts(offering, room, slot)) {
+						|| roomUnavailable(roomUnavailableSlots, room, slot, duration)
+						|| schedulingIndex.conflicts(offering, room, slot, duration)) {
 					continue;
 				}
 				int sameDay = schedulingIndex.sameCourseDayCount(offering, slot);
@@ -349,15 +383,55 @@ public class AutoSchedulingService {
 
 	private boolean roomSuitable(CourseOffering offering, Classroom room) {
 		return room.getCapacity() >= offering.getStudentCount()
+				&& containsAllCodes(room.getEquipmentCodes(), offering.getRequiredEquipmentCodes())
+				&& (offering.getRequiredRoomType() == null
+						|| offering.getRequiredRoomType().isBlank()
+						|| offering.getRequiredRoomType().equals(room.getRoomType()))
 				&& (offering.getCampusId() == null
 						|| offering.getCampusId().isBlank()
 						|| offering.getCampusId().equals(room.getCampusId()));
 	}
 
-	private boolean forbidden(List<TeacherTimeConstraint> values, Slot slot) {
+	private boolean roomUnavailable(
+			List<ClassroomUnavailableSlot> values,
+			Classroom room,
+			Slot slot,
+			int duration) {
+		return values.stream().anyMatch(value -> room.getId().equals(value.getClassroomId())
+				&& value.getDayOfWeek() == slot.day()
+				&& slot.period() <= value.getEndPeriod()
+				&& slot.period() + duration - 1 >= value.getStartPeriod());
+	}
+
+	private boolean containsAllCodes(String actual, String requiredCodes) {
+		if (requiredCodes == null || requiredCodes.isBlank()) {
+			return true;
+		}
+		Set<String> actualValues = java.util.Arrays.stream(
+				actual == null ? new String[0] : actual.split(","))
+				.map(String::trim)
+				.filter(value -> !value.isBlank())
+				.collect(Collectors.toSet());
+		return java.util.Arrays.stream(requiredCodes.split(","))
+				.map(String::trim)
+				.filter(value -> !value.isBlank())
+				.allMatch(actualValues::contains);
+	}
+
+	private boolean forbidden(List<TeacherTimeConstraint> values, Slot slot, int duration) {
 		return values.stream().anyMatch(value -> "FORBIDDEN".equals(value.getConstraintType())
 				&& value.getDayOfWeek() == slot.day()
-				&& value.getPeriodNo() == slot.period());
+				&& value.getPeriodNo() >= slot.period()
+				&& value.getPeriodNo() < slot.period() + duration);
+	}
+
+	private boolean consecutivePeriodsAllowed(Set<Integer> values, int start, int duration) {
+		for (int period = start; period < start + duration; period++) {
+			if (!values.contains(period)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private boolean preferred(List<TeacherTimeConstraint> values, Slot slot) {
@@ -757,15 +831,18 @@ public class AutoSchedulingService {
 					Integer::sum);
 		}
 
-		private boolean conflicts(CourseOffering offering, Classroom room, Slot slot) {
-			String slotKey = slot(slot.day(), slot.period());
-			if (roomSlots.contains(slotKey + "|" + room.getId())
-					|| offeringSlots.contains(slotKey + "|" + offering.getId())
-					|| teacherSlots.contains(slotKey + "|" + offering.getTeacherId())) {
-				return true;
+		private boolean conflicts(CourseOffering offering, Classroom room, Slot slot, int duration) {
+			for (int offset = 0; offset < duration; offset++) {
+				String slotKey = slot(slot.day(), slot.period() + offset);
+				if (roomSlots.contains(slotKey + "|" + room.getId())
+						|| offeringSlots.contains(slotKey + "|" + offering.getId())
+						|| teacherSlots.contains(slotKey + "|" + offering.getTeacherId())
+						|| studentIds.getOrDefault(offering.getId(), Set.of()).stream()
+								.anyMatch(studentId -> studentSlots.contains(slotKey + "|" + studentId))) {
+					return true;
+				}
 			}
-			return studentIds.getOrDefault(offering.getId(), Set.of()).stream()
-					.anyMatch(studentId -> studentSlots.contains(slotKey + "|" + studentId));
+			return false;
 		}
 
 		private int sameCourseDayCount(CourseOffering offering, Slot slot) {

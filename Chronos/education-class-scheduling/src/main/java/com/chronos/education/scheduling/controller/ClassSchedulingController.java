@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.Classroom;
+import com.chronos.education.scheduling.model.ClassroomUnavailableSlot;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
@@ -332,6 +333,43 @@ public class ClassSchedulingController {
 				dataScopes.resolve(authentication.getName()),
 				current.getTeacherId());
 		service.deleteTeacherConstraint(id);
+		return ok(null);
+	}
+
+	@GetMapping("/admin/education/classroom-unavailable-slots")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
+	public ResultData<List<ClassroomUnavailableSlot>> classroomUnavailableSlots(
+			@RequestParam String semesterCode) {
+		return ok(service.unavailableSlots(semesterCode));
+	}
+
+	@PostMapping("/admin/education/classroom-unavailable-slots")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:create','education:scheduling:manage')")
+	public ResultData<ClassroomUnavailableSlot> createClassroomUnavailableSlot(
+			@RequestBody ClassroomUnavailableSlot command,
+			Authentication authentication) {
+		dataScopes.assertClassroomAccess(
+				dataScopes.resolve(authentication.getName()),
+				command.getClassroomId());
+		return ok(service.saveUnavailableSlot(null, command));
+	}
+
+	@PutMapping("/admin/education/classroom-unavailable-slots/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:update','education:scheduling:manage')")
+	public ResultData<ClassroomUnavailableSlot> updateClassroomUnavailableSlot(
+			@PathVariable String id,
+			@RequestBody ClassroomUnavailableSlot command,
+			Authentication authentication) {
+		dataScopes.assertClassroomAccess(
+				dataScopes.resolve(authentication.getName()),
+				command.getClassroomId());
+		return ok(service.saveUnavailableSlot(id, command));
+	}
+
+	@DeleteMapping("/admin/education/classroom-unavailable-slots/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:delete','education:scheduling:manage')")
+	public ResultData<Void> deleteClassroomUnavailableSlot(@PathVariable String id) {
+		service.deleteUnavailableSlot(id);
 		return ok(null);
 	}
 

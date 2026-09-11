@@ -48,6 +48,18 @@ public class CourseOffering extends BaseEntity {
 	@Column(name = "weekly_lessons", nullable = false)
 	private Integer weeklyLessons = 2;
 
+	@Column(name = "preferred_duration_periods", nullable = false)
+	private Integer preferredDurationPeriods = 1;
+
+	@Column(name = "week_pattern", length = 16, nullable = false)
+	private String weekPattern = "ALL";
+
+	@Column(name = "required_room_type", length = 32)
+	private String requiredRoomType;
+
+	@Column(name = "required_equipment_codes", length = 1000)
+	private String requiredEquipmentCodes;
+
 	@Column(name = "campus_id", length = 64)
 	private String campusId;
 

@@ -11,6 +11,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 @Entity
 @DynamicUpdate
 @DynamicInsert
@@ -25,6 +27,7 @@ public class ConsumerUser extends BaseEntity {
 	private String username;
 
 	@Column(name = "password", length = 200, nullable = false)
+	@JsonIgnore
 	private String password;
 	@Column(name = "email", length = 200, nullable = true)
 	private String email;

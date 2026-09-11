@@ -9,6 +9,8 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.chronos.Idao.IAdminUserRepository;
@@ -22,6 +24,8 @@ import com.chronos.model.pojo.Permission;
 import com.chronos.model.pojo.RolePermission;
 import com.chronos.model.pojo.RoleMenuPermission;
 import com.chronos.model.pojo.Menu;
+import com.chronos.model.pojo.AdminUser;
+import com.chronos.model.pojo.Role;
 
 @Configuration
 public class IamProductionBootstrapConfig {
@@ -29,20 +33,104 @@ public class IamProductionBootstrapConfig {
     ApplicationRunner iamProductionBootstrap(IAdminUserRepository users, IRoleRepository roles,
             IPermissionRepository permissions, IRolePermissionRepository rolePermissions,
             IRoleMenuPermissionRepository legacyRelations,IPortalApplicationRepository portalApplications,
-            IMenuRepository menus, PlatformTransactionManager transactionManager) {
+            IMenuRepository menus, PlatformTransactionManager transactionManager,
+            PasswordEncoder passwordEncoder,
+            @Value("${CHRONOS_BOOTSTRAP_ADMIN_USERNAME:}") String bootstrapUsername,
+            @Value("${CHRONOS_BOOTSTRAP_ADMIN_PASSWORD:}") String bootstrapPassword,
+            @Value("${CHRONOS_BOOTSTRAP_ADMIN_DISPLAY_NAME:系统管理员}") String bootstrapDisplayName) {
         return args -> {
             // ApplicationRunner 返回的 lambda 不经过当前配置类的事务代理。
             // 显式包裹事务，确保角色的 menus 懒加载集合在整个迁移过程中始终绑定 Session。
             TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-            transactionTemplate.executeWithoutResult(status -> migrate(
-                    users,
-                    roles,
-                    permissions,
-                    rolePermissions,
-                    legacyRelations,
-                    portalApplications,
-                    menus));
+            transactionTemplate.executeWithoutResult(status -> {
+                bootstrapFirstAdministrator(
+                        users,
+                        roles,
+                        passwordEncoder,
+                        bootstrapUsername,
+                        bootstrapPassword,
+                        bootstrapDisplayName);
+                migrate(
+                        users,
+                        roles,
+                        permissions,
+                        rolePermissions,
+                        legacyRelations,
+                        portalApplications,
+                        menus);
+            });
         };
+    }
+
+    /**
+     * 只在完全空的用户表中创建首个管理员。凭据必须由部署环境提供，
+     * 禁止在代码、SQL 或默认配置中保留可登录的固定密码。
+     */
+    void bootstrapFirstAdministrator(
+            IAdminUserRepository users,
+            IRoleRepository roles,
+            PasswordEncoder passwordEncoder,
+            String username,
+            String password,
+            String displayName) {
+        if (users.count() > 0) {
+            return;
+        }
+
+        String normalizedUsername = username == null ? "" : username.trim();
+        if (normalizedUsername.isBlank() || password == null || password.isBlank()) {
+            throw new IllegalStateException(
+                    "IAM 用户表为空，请通过 CHRONOS_BOOTSTRAP_ADMIN_USERNAME 和 "
+                            + "CHRONOS_BOOTSTRAP_ADMIN_PASSWORD 配置首个管理员");
+        }
+        if (!normalizedUsername.matches("[A-Za-z0-9._@-]{3,100}")) {
+            throw new IllegalStateException("首个管理员用户名格式不合法");
+        }
+        validateBootstrapPassword(password);
+
+        LocalDateTime now = LocalDateTime.now();
+        Role superAdmin = roles.findByRoleCode("SUPER_ADMIN");
+        if (superAdmin == null) {
+            superAdmin = new Role();
+            superAdmin.setRoleCode("SUPER_ADMIN");
+            superAdmin.setRoleName("系统管理员");
+            superAdmin.setBuiltIn(true);
+            superAdmin.setStatus(1);
+            superAdmin.setDescription("平台内置超级管理员角色");
+            superAdmin.setCreateBy("bootstrap");
+            superAdmin.setCreateTime(now);
+            superAdmin = roles.saveAndFlush(superAdmin);
+        }
+
+        AdminUser administrator = new AdminUser();
+        administrator.setUsername(normalizedUsername);
+        administrator.setPassword(passwordEncoder.encode(password));
+        administrator.setDisplayName(
+                displayName == null || displayName.isBlank()
+                        ? "系统管理员"
+                        : displayName.trim());
+        administrator.setAccountType("STAFF");
+        administrator.setAccountLocked(false);
+        administrator.setFailedLoginAttempts(0);
+        administrator.setMustChangePassword(true);
+        administrator.setTokenVersion(0);
+        administrator.setStatus(1);
+        administrator.setCreateBy("bootstrap");
+        administrator.setCreateTime(now);
+        administrator.getRoles().add(superAdmin);
+        users.saveAndFlush(administrator);
+    }
+
+    private void validateBootstrapPassword(String password) {
+        boolean valid = password.length() >= 12
+                && password.matches(".*[A-Z].*")
+                && password.matches(".*[a-z].*")
+                && password.matches(".*\\d.*")
+                && password.matches(".*[^A-Za-z0-9].*");
+        if (!valid) {
+            throw new IllegalStateException(
+                    "首个管理员密码至少 12 位，并包含大小写字母、数字和特殊字符");
+        }
     }
 
     void migrate(IAdminUserRepository users, IRoleRepository roles, IPermissionRepository permissions,
@@ -266,6 +354,17 @@ public class IamProductionBootstrapConfig {
             return new RoleMenuPermission(relation.getRoleId(), permission.getMenuId(), relation.getPermissionId());
         }).filter(relation -> !normalizedRelations.contains(relation.getRoleId()+":"+relation.getMenuId()+":"+relation.getPermissionId())).toList());
         rolePermissions.deleteAll(menuBoundRolePermissions);
+
+        // 超级管理员必须能够完成首次部署后的平台初始化。参考菜单和行业权限由
+        // Flyway 在 ApplicationRunner 之前写入，因此这里统一授予全部有效定义，
+        // 避免空库管理员虽然能够登录，却看不到教育菜单或无法执行原子操作。
+        grantSuperAdministratorAccess(
+                roles,
+                menus,
+                classifiedPermissions,
+                rolePermissions,
+                legacyRelations);
+
 		var allIamPermissionIds = permissions.findAll().stream()
 				.filter(permission -> "WORKFLOW".equals(permission.getPermissionType())
 						|| permission.getMenuId() == null
@@ -336,6 +435,62 @@ public class IamProductionBootstrapConfig {
         }
         if(portalApplications!=null)portalApplications.findAll().stream().filter(a->"workflow".equalsIgnoreCase(a.getAppCode())).forEach(a->{a.setRequiredPermission("workflow:instance:view");portalApplications.save(a);});
     }
+
+    private void grantSuperAdministratorAccess(
+            IRoleRepository roles,
+            IMenuRepository menus,
+            Iterable<Permission> permissions,
+            IRolePermissionRepository rolePermissions,
+            IRoleMenuPermissionRepository menuPermissions) {
+        if (menus == null) {
+            return;
+        }
+
+        Role superAdministrator = roles.findByRoleCode("SUPER_ADMIN");
+        if (superAdministrator == null) {
+            return;
+        }
+
+        superAdministrator.getMenus().addAll(menus.findAll());
+        roles.saveAndFlush(superAdministrator);
+
+        Set<String> existingGlobalPermissionIds = rolePermissions
+                .findByRoleId(superAdministrator.getId())
+                .stream()
+                .map(RolePermission::getPermissionId)
+                .collect(Collectors.toSet());
+        Set<String> existingMenuPermissionKeys = menuPermissions
+                .findByRoleId(superAdministrator.getId())
+                .stream()
+                .map(relation -> relation.getMenuId() + ":" + relation.getPermissionId())
+                .collect(Collectors.toSet());
+
+        for (Permission permission : permissions) {
+            if (!Integer.valueOf(1).equals(permission.getStatus())) {
+                continue;
+            }
+
+            if ("MENU_ACTION".equals(permission.getPermissionType())
+                    && permission.getMenuId() != null
+                    && !permission.getMenuId().isBlank()) {
+                String relationKey = permission.getMenuId() + ":" + permission.getId();
+                if (existingMenuPermissionKeys.add(relationKey)) {
+                    menuPermissions.save(new RoleMenuPermission(
+                            superAdministrator.getId(),
+                            permission.getMenuId(),
+                            permission.getId()));
+                }
+                continue;
+            }
+
+            if (existingGlobalPermissionIds.add(permission.getId())) {
+                rolePermissions.save(new RolePermission(
+                        superAdministrator.getId(),
+                        permission.getId()));
+            }
+        }
+    }
+
     private boolean isAdmin(String value){if(value==null)return false;String v=value.toLowerCase();return v.contains("admin")||v.contains("管理员");}
     private String permissionType(String code){return code!=null&&code.startsWith("workflow:")?"WORKFLOW":code!=null&&code.startsWith("data:scope:")?"DATA":"MENU_ACTION";}
     private String permissionType(Permission permission){String current=permission.getPermissionType();return current!=null&&Set.of("MENU_ACTION","WORKFLOW","DATA").contains(current.toUpperCase())?current.toUpperCase():permissionType(permission.getPermissionCode());}

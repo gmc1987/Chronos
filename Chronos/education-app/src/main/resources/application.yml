@@ -29,7 +29,8 @@ spring:
     hibernate:
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
-      ddl-auto: ${CHRONOS_JPA_DDL_AUTO:update}
+      # 生产默认只校验 Flyway 管理的结构，禁止 Hibernate 静默修改数据库。
+      ddl-auto: ${CHRONOS_JPA_DDL_AUTO:validate}
     open-in-view: true
     properties:
       hibernate:
@@ -37,6 +38,8 @@ spring:
   flyway:
     baseline-on-migrate: true
     locations: classpath:db/migration
+    # V0 是新环境基线；已有更高版本历史的实例必须忽略它，不能重复建表。
+    ignore-migration-patterns: "*:ignored"
   data:
     redis:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}
@@ -54,7 +57,8 @@ spring:
           
 
 flowable:
-  database-schema-update: ${CHRONOS_FLOWABLE_SCHEMA_UPDATE:true}
+  # Flowable 表结构同样由 Flyway 基线管理，生产环境禁止引擎在启动时静默改表。
+  database-schema-update: ${CHRONOS_FLOWABLE_SCHEMA_UPDATE:false}
   async-executor-activate: true
   history-level: audit
 

@@ -1,5 +1,6 @@
 package com.chronos.form;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.form.*;
 import java.util.List;
@@ -21,9 +22,12 @@ public class FormController {
 
 	@GetMapping("/admin/forms/list")
 	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:form:manage','workflow:manage')")
-	public ResultData<Page<FormDefinition>> list(@RequestParam(defaultValue = "0") int page,
+	public ResultData<PageView<FormDefinition>> list(@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "100") int size) {
-		return ok(service.list(PageRequest.of(page, Math.min(size, 200), Sort.by("formName"))));
+		return ok(PageView.from(service.list(PageRequest.of(
+				Math.max(page, 0),
+				Math.min(Math.max(size, 1), 200),
+				Sort.by("formName")))));
 	}
 
 	@PostMapping("/admin/forms")

@@ -36,6 +36,9 @@ public class Classroom extends BaseEntity {
 	@Column(name = "room_type", length = 32, nullable = false)
 	private String roomType = "STANDARD";
 
+	@Column(name = "equipment_codes", length = 1000)
+	private String equipmentCodes;
+
 	@Column(name = "enabled", nullable = false)
 	private Boolean enabled = true;
 }

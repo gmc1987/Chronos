@@ -272,6 +272,36 @@ export const discardScheduleCandidate = (id) =>
 export const listAcademicTerms = (params) => http.get(`/admin/education/terms?${qs(params)}`)
 export const createAcademicTerm = (payload) => http.post('/admin/education/terms', payload)
 export const updateAcademicTerm = (id, payload) => http.put(`/admin/education/terms/${id}`, payload)
+export const listAcademicCalendarDays = (termId) =>
+  http.get(`/admin/education/calendar-days?${qs({ termId })}`)
+export const createAcademicCalendarDay = (payload) => http.post('/admin/education/calendar-days', payload)
+export const updateAcademicCalendarDay = (id, payload) => http.put(`/admin/education/calendar-days/${id}`, payload)
+export const deleteAcademicCalendarDay = (id) => http.delete(`/admin/education/calendar-days/${id}`)
+export const listBellSchedules = (termId) => http.get(`/admin/education/bell-schedules?${qs({ termId })}`)
+export const createBellSchedule = (payload) => http.post('/admin/education/bell-schedules', payload)
+export const updateBellSchedule = (id, payload) => http.put(`/admin/education/bell-schedules/${id}`, payload)
+export const deleteBellSchedule = (id) => http.delete(`/admin/education/bell-schedules/${id}`)
+export const createBellPeriod = (payload) => http.post('/admin/education/bell-periods', payload)
+export const updateBellPeriod = (id, payload) => http.put(`/admin/education/bell-periods/${id}`, payload)
+export const deleteBellPeriod = (id) => http.delete(`/admin/education/bell-periods/${id}`)
+export const getAcademicTermProgress = (termCode) =>
+  http.get(`/admin/education/term-progress?${qs({ termCode })}`)
+export const listTeacherTimeConstraints = (semesterCode) =>
+  http.get(`/admin/education/teacher-time-constraints?${qs({ semesterCode })}`)
+export const createTeacherTimeConstraint = (payload) =>
+  http.post('/admin/education/teacher-time-constraints', payload)
+export const updateTeacherTimeConstraint = (id, payload) =>
+  http.put(`/admin/education/teacher-time-constraints/${id}`, payload)
+export const deleteTeacherTimeConstraint = (id) =>
+  http.delete(`/admin/education/teacher-time-constraints/${id}`)
+export const listClassroomUnavailableSlots = (semesterCode) =>
+  http.get(`/admin/education/classroom-unavailable-slots?${qs({ semesterCode })}`)
+export const createClassroomUnavailableSlot = (payload) =>
+  http.post('/admin/education/classroom-unavailable-slots', payload)
+export const updateClassroomUnavailableSlot = (id, payload) =>
+  http.put(`/admin/education/classroom-unavailable-slots/${id}`, payload)
+export const deleteClassroomUnavailableSlot = (id) =>
+  http.delete(`/admin/education/classroom-unavailable-slots/${id}`)
 export const listEducationGrades = (params) => http.get(`/admin/education/grades?${qs(params)}`)
 export const createEducationGrade = (payload) => http.post('/admin/education/grades', payload)
 export const updateEducationGrade = (id, payload) => http.put(`/admin/education/grades/${id}`, payload)

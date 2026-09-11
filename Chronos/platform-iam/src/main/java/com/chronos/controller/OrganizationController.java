@@ -1,6 +1,7 @@
 package com.chronos.controller;
 
 import com.chronos.Idao.IConsumerUserRepository;
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.dto.OrganizationDTO;
 import com.chronos.model.pojo.BaseEntity;
@@ -14,7 +15,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -40,9 +40,11 @@ public class OrganizationController {
 
 	@GetMapping({ "/list" })
 	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:organization:view','iam:organization:manage','iam:role:authorize')")
-	public ResultData<Page<OrganizationVO>> list(OrganizationDTO dto, @RequestParam(defaultValue = "0") int page,
+	public ResultData<PageView<OrganizationVO>> list(OrganizationDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		PageRequest pageRequest = PageRequest.of(page, size);
+		PageRequest pageRequest = PageRequest.of(
+				Math.max(page, 0),
+				Math.min(Math.max(size, 1), 200));
 		Page<Organization> orgs = this.organizationService.pageOrganizations(dto, (Pageable) pageRequest);
 
 		List<String> managerIds = (List<String>) orgs.getContent().stream().map(Organization::getOrganizationManager)
@@ -64,8 +66,19 @@ public class OrganizationController {
 						.industries(org.getIndustries()).registerTime(org.getRegisterTime())
 						.lastUpdateTime(org.getLastUpdateTime()).build())
 				.collect(Collectors.toList());
-		PageImpl<OrganizationVO> pageImpl = new PageImpl<>(vos, pageRequest, orgs.getTotalElements());
-		return ResultData.<Page<OrganizationVO>>builder().code("200").msg("success").data(pageImpl).build();
+		PageView<OrganizationVO> result = new PageView<>(
+				vos,
+				orgs.getTotalElements(),
+				orgs.getTotalPages(),
+				orgs.getNumber(),
+				orgs.getSize(),
+				orgs.isFirst(),
+				orgs.isLast());
+		return ResultData.<PageView<OrganizationVO>>builder()
+				.code("200")
+				.msg("success")
+				.data(result)
+				.build();
 	}
 
 	@GetMapping({ "/{id}" })

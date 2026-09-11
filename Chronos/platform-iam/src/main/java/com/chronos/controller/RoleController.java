@@ -1,5 +1,6 @@
 package com.chronos.controller;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.dto.RoleDTO;
 import com.chronos.model.pojo.Role;
@@ -8,7 +9,6 @@ import com.chronos.model.vo.RoleVO;
 import com.chronos.service.iService.IRoleService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -32,11 +32,18 @@ public class RoleController {
 
 	@GetMapping({ "/list" })
 	@PreAuthorize("@iamAuthorization.any(authentication, 'iam:role:view','iam:role:manage','iam:role:authorize')")
-	public ResultData<Page<Role>> list(RoleDTO dto, @RequestParam(defaultValue = "0") int page,
+	public ResultData<PageView<Role>> list(RoleDTO dto, @RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		PageRequest pageRequest = PageRequest.of(page, size);
-		Page<Role> roles = this.roleService.pageRoles(dto, (Pageable) pageRequest);
-		return ResultData.<Page<Role>>builder().code("200").msg("success").data(roles).build();
+		PageRequest pageRequest = PageRequest.of(
+				Math.max(page, 0),
+				Math.min(Math.max(size, 1), 200));
+		PageView<Role> roles = PageView.from(
+				this.roleService.pageRoles(dto, (Pageable) pageRequest));
+		return ResultData.<PageView<Role>>builder()
+				.code("200")
+				.msg("success")
+				.data(roles)
+				.build();
 	}
 
 	@GetMapping({ "/{id}" })

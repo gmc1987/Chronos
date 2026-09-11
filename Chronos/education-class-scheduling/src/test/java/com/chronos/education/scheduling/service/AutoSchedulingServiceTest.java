@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
+import com.chronos.education.scheduling.dao.ClassroomUnavailableSlotRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleCandidatePlanRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
@@ -49,9 +50,12 @@ class AutoSchedulingServiceTest {
 		TeacherTimeConstraintRepository constraints = mock(TeacherTimeConstraintRepository.class);
 		TeachingClassMemberRepository members = mock(TeachingClassMemberRepository.class);
 		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		AcademicCalendarService academicCalendar = mock(AcademicCalendarService.class);
 		AtomicReference<ScheduleCandidatePlan> savedCandidate = new AtomicReference<>();
 		List<CourseOffering> offeringRows = offerings(2_000);
 		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(academicCalendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(8)))
+				.thenReturn(Set.of(1, 2, 3, 4, 5, 6, 7, 8));
 		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
 				.thenReturn(List.of());
 		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
@@ -72,9 +76,11 @@ class AutoSchedulingServiceTest {
 				entries,
 				offerings,
 				classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
 				constraints,
 				members,
 				terms,
+				academicCalendar,
 				mock(IAuditLogService.class),
 				mock(EntityManager.class));
 		AutoScheduleCommand command = new AutoScheduleCommand(
@@ -117,6 +123,7 @@ class AutoSchedulingServiceTest {
 		TeacherTimeConstraintRepository constraints = mock(TeacherTimeConstraintRepository.class);
 		TeachingClassMemberRepository members = mock(TeachingClassMemberRepository.class);
 		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		AcademicCalendarService academicCalendar = mock(AcademicCalendarService.class);
 		AtomicReference<ScheduleCandidatePlan> savedCandidate = new AtomicReference<>();
 		List<CourseOffering> offeringRows = offerings(3);
 		// 第三个任务与第一个任务教师相同；第二个任务与第一个任务学生相同。
@@ -124,6 +131,8 @@ class AutoSchedulingServiceTest {
 		TeachingClassMember firstMember = member("offering-0", "student-1");
 		TeachingClassMember secondMember = member("offering-1", "student-1");
 		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(academicCalendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(8)))
+				.thenReturn(Set.of(1, 2, 3, 4, 5, 6, 7, 8));
 		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
 				.thenReturn(List.of());
 		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
@@ -144,9 +153,11 @@ class AutoSchedulingServiceTest {
 				entries,
 				offerings,
 				classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
 				constraints,
 				members,
 				terms,
+				academicCalendar,
 				mock(IAuditLogService.class),
 				mock(EntityManager.class));
 		AutoScheduleCommand command = new AutoScheduleCommand(

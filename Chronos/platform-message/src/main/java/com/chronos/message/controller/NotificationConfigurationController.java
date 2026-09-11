@@ -3,7 +3,6 @@ package com.chronos.message.controller;
 import java.security.Principal;
 import java.util.List;
 
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.message.model.NotificationChannelPolicy;
 import com.chronos.message.model.NotificationChannelPreference;
@@ -44,12 +44,12 @@ public class NotificationConfigurationController {
 
 	@GetMapping("/admin/message/deliveries/dead")
 	@PreAuthorize("@iamAuthorization.has(authentication,'message:publication:manage')")
-	public ResultData<Page<PublicationDelivery>> deadDeliveries(
+	public ResultData<PageView<PublicationDelivery>> deadDeliveries(
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
-		return ok(deliveries.findByStatus(
+		return ok(PageView.from(deliveries.findByStatus(
 				"DEAD",
-				PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100))));
+				PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))));
 	}
 
 	@PostMapping("/admin/message/deliveries/{id}/retry")
@@ -74,15 +74,15 @@ public class NotificationConfigurationController {
 
 	@GetMapping("/admin/message/templates")
 	@PreAuthorize("@iamAuthorization.any(authentication,'message:publication:view','message:publication:manage')")
-	public ResultData<Page<NotificationTemplate>> templates(
+	public ResultData<PageView<NotificationTemplate>> templates(
 			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) String channel,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
-		return ok(service.templates(keyword, channel, PageRequest.of(
+		return ok(PageView.from(service.templates(keyword, channel, PageRequest.of(
 				Math.max(page, 0),
 				Math.min(Math.max(size, 1), 100),
-				Sort.by("templateCode"))));
+				Sort.by("templateCode")))));
 	}
 
 	@PostMapping("/admin/message/templates")

@@ -1,16 +1,18 @@
-import AdminClassScheduling from '../../modules/education/pages/AdminClassScheduling.vue'
-import AdminAcademicTerms from '../../modules/education/pages/AdminAcademicTerms.vue'
-import AdminCourses from '../../modules/education/pages/AdminCourses.vue'
-import AdminMajors from '../../modules/education/pages/AdminMajors.vue'
-import AdminAdministrativeClasses from '../../modules/education/pages/AdminAdministrativeClasses.vue'
-import AdminTeachers from '../../modules/education/pages/AdminTeachers.vue'
-import AdminStudents from '../../modules/education/pages/AdminStudents.vue'
-import AdminGrades from '../../modules/education/pages/AdminGrades.vue'
-import AdminSubjects from '../../modules/education/pages/AdminSubjects.vue'
-import AdminParents from '../../modules/education/pages/AdminParents.vue'
-import AdminTeachingAssignments from '../../modules/education/pages/AdminTeachingAssignments.vue'
-import AdminKnowledgeBases from '../../modules/education/pages/AdminKnowledgeBases.vue'
-import AdminEducationAgents from '../../modules/education/pages/AdminEducationAgents.vue'
+// 行业页面也按路由拆包，未启用教育模板时不会进入核心首屏包。
+const AdminClassScheduling = () => import('../../modules/education/pages/AdminClassScheduling.vue')
+const AdminAcademicTerms = () => import('../../modules/education/pages/AdminAcademicTerms.vue')
+const AdminCourses = () => import('../../modules/education/pages/AdminCourses.vue')
+const AdminMajors = () => import('../../modules/education/pages/AdminMajors.vue')
+const AdminAdministrativeClasses = () => import('../../modules/education/pages/AdminAdministrativeClasses.vue')
+const AdminTeachers = () => import('../../modules/education/pages/AdminTeachers.vue')
+const AdminStudents = () => import('../../modules/education/pages/AdminStudents.vue')
+const AdminGrades = () => import('../../modules/education/pages/AdminGrades.vue')
+const AdminSubjects = () => import('../../modules/education/pages/AdminSubjects.vue')
+const AdminParents = () => import('../../modules/education/pages/AdminParents.vue')
+const AdminTeachingAssignments = () => import('../../modules/education/pages/AdminTeachingAssignments.vue')
+const AdminKnowledgeBases = () => import('../../modules/education/pages/AdminKnowledgeBases.vue')
+const AdminEducationAgents = () => import('../../modules/education/pages/AdminEducationAgents.vue')
+const AdminTeachingClassMembers = () => import('../../modules/education/pages/AdminTeachingClassMembers.vue')
 
 export const educationIndustry = {
   code: 'EDUCATION',
@@ -27,6 +29,7 @@ export const educationIndustry = {
     { path: '/admin/education/teaching-assignments', name: 'admin-education-teaching-assignments', component: AdminTeachingAssignments },
     { path: '/admin/education/knowledge', name: 'admin-education-knowledge', component: AdminKnowledgeBases },
     { path: '/admin/education/agents', name: 'admin-education-agents', component: AdminEducationAgents },
+    { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },
     {
       path: '/admin/education/scheduling',
       name: 'admin-education-class-scheduling',

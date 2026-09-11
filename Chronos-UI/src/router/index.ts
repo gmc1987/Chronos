@@ -1,47 +1,49 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import AdminLogin from '../app/pages/AdminLogin.vue'
 import AdminLayout from '../app/layout/AdminLayout.vue'
-import AdminOverview from '../app/pages/AdminOverview.vue'
-import AdminUsers from '../modules/iam/pages/AdminUsers.vue'
-import AdminMenus from '../modules/iam/pages/AdminMenus.vue'
-import AdminRoles from '../modules/iam/pages/AdminRoles.vue'
-import AdminPermissions from '../modules/iam/pages/AdminPermissions.vue'
-import AdminPermissionDefinitions from '../modules/iam/pages/AdminPermissionDefinitions.vue'
-import AdminOrganizations from '../modules/iam/pages/AdminOrganizations.vue'
-import AdminDirectory from '../modules/iam/pages/AdminDirectory.vue'
-import AdminCustomers from '../modules/iam/pages/AdminCustomers.vue'
-import AdminDicts from '../modules/iam/pages/AdminDicts.vue'
-import AdminAuditLogs from '../modules/iam/pages/AdminAuditLogs.vue'
-import AdminAiModels from '../modules/ai/pages/AdminAiModels.vue'
-import AdminAiApis from '../modules/ai/pages/AdminAiApis.vue'
-import AdminWorkflows from '../modules/workflow/pages/AdminWorkflows.vue'
-import AdminAgents from '../modules/ai/pages/AdminAgents.vue'
-import AdminSkills from '../modules/ai/pages/AdminSkills.vue'
-import AdminTools from '../modules/ai/pages/AdminTools.vue'
-import AdminWorkflowNodes from '../modules/workflow/pages/AdminWorkflowNodes.vue'
-import AdminForms from '../modules/workflow/pages/AdminForms.vue'
-import PortalWorkflowStart from '../modules/workflow/pages/PortalWorkflowStart.vue'
-import PortalWorkflowForms from '../modules/workflow/pages/PortalWorkflowForms.vue'
-import PortalWorkflowTasks from '../modules/workflow/pages/PortalWorkflowTasks.vue'
-import PortalWorkflowDelegations from '../modules/workflow/pages/PortalWorkflowDelegations.vue'
-import PortalWorkflowNotifications from '../modules/workflow/pages/PortalWorkflowNotifications.vue'
-import AdminWorkflowOutbox from '../modules/workflow/pages/AdminWorkflowOutbox.vue'
-import AdminWorkflowIncidents from '../modules/workflow/pages/AdminWorkflowIncidents.vue'
-import AdminAgentLogs from '../modules/ai/pages/AdminAgentLogs.vue'
-import AdminStoryboardPromptProfiles from '../modules/ai/pages/AdminStoryboardPromptProfiles.vue'
 import { isAdminAuthed, mustChangeAdminPassword } from '../store/auth'
-import ChangePassword from '../app/pages/ChangePassword.vue'
-import PortalLogin from '../app/pages/PortalLogin.vue'
 import PortalLayout from '../app/layout/PortalLayout.vue'
-import PortalHome from '../modules/portal/pages/PortalHome.vue'
-import PortalApplications from '../modules/portal/pages/PortalApplications.vue'
-import PortalEducationSchedule from '../modules/education/pages/PortalEducationSchedule.vue'
-import AdminPortal from '../modules/portal/pages/AdminPortal.vue'
-import AdminPublications from '../modules/message/pages/AdminPublications.vue'
-import AdminNotificationSettings from '../modules/message/pages/AdminNotificationSettings.vue'
-import PortalPublications from '../modules/message/pages/PortalPublications.vue'
-import PortalPublicationDetail from '../modules/message/pages/PortalPublicationDetail.vue'
 import { packagedIndustryRoutes } from '../industries/core'
+
+// 页面按路由拆包，避免登录页一次下载整个管理后台和行业模块。
+const AdminLogin = () => import('../app/pages/AdminLogin.vue')
+const AdminOverview = () => import('../app/pages/AdminOverview.vue')
+const AdminUsers = () => import('../modules/iam/pages/AdminUsers.vue')
+const AdminMenus = () => import('../modules/iam/pages/AdminMenus.vue')
+const AdminRoles = () => import('../modules/iam/pages/AdminRoles.vue')
+const AdminPermissions = () => import('../modules/iam/pages/AdminPermissions.vue')
+const AdminPermissionDefinitions = () => import('../modules/iam/pages/AdminPermissionDefinitions.vue')
+const AdminOrganizations = () => import('../modules/iam/pages/AdminOrganizations.vue')
+const AdminDirectory = () => import('../modules/iam/pages/AdminDirectory.vue')
+const AdminCustomers = () => import('../modules/iam/pages/AdminCustomers.vue')
+const AdminDicts = () => import('../modules/iam/pages/AdminDicts.vue')
+const AdminAuditLogs = () => import('../modules/iam/pages/AdminAuditLogs.vue')
+const AdminAiModels = () => import('../modules/ai/pages/AdminAiModels.vue')
+const AdminAiApis = () => import('../modules/ai/pages/AdminAiApis.vue')
+const AdminAgents = () => import('../modules/ai/pages/AdminAgents.vue')
+const AdminSkills = () => import('../modules/ai/pages/AdminSkills.vue')
+const AdminTools = () => import('../modules/ai/pages/AdminTools.vue')
+const AdminAgentLogs = () => import('../modules/ai/pages/AdminAgentLogs.vue')
+const AdminStoryboardPromptProfiles = () => import('../modules/ai/pages/AdminStoryboardPromptProfiles.vue')
+const AdminWorkflows = () => import('../modules/workflow/pages/AdminWorkflows.vue')
+const AdminWorkflowNodes = () => import('../modules/workflow/pages/AdminWorkflowNodes.vue')
+const AdminForms = () => import('../modules/workflow/pages/AdminForms.vue')
+const AdminWorkflowOutbox = () => import('../modules/workflow/pages/AdminWorkflowOutbox.vue')
+const AdminWorkflowIncidents = () => import('../modules/workflow/pages/AdminWorkflowIncidents.vue')
+const PortalWorkflowStart = () => import('../modules/workflow/pages/PortalWorkflowStart.vue')
+const PortalWorkflowForms = () => import('../modules/workflow/pages/PortalWorkflowForms.vue')
+const PortalWorkflowTasks = () => import('../modules/workflow/pages/PortalWorkflowTasks.vue')
+const PortalWorkflowDelegations = () => import('../modules/workflow/pages/PortalWorkflowDelegations.vue')
+const PortalWorkflowNotifications = () => import('../modules/workflow/pages/PortalWorkflowNotifications.vue')
+const ChangePassword = () => import('../app/pages/ChangePassword.vue')
+const PortalLogin = () => import('../app/pages/PortalLogin.vue')
+const PortalHome = () => import('../modules/portal/pages/PortalHome.vue')
+const PortalApplications = () => import('../modules/portal/pages/PortalApplications.vue')
+const PortalEducationSchedule = () => import('../modules/education/pages/PortalEducationSchedule.vue')
+const AdminPortal = () => import('../modules/portal/pages/AdminPortal.vue')
+const AdminPublications = () => import('../modules/message/pages/AdminPublications.vue')
+const AdminNotificationSettings = () => import('../modules/message/pages/AdminNotificationSettings.vue')
+const PortalPublications = () => import('../modules/message/pages/PortalPublications.vue')
+const PortalPublicationDetail = () => import('../modules/message/pages/PortalPublicationDetail.vue')
 
 const router = createRouter({
   history: createWebHistory(),

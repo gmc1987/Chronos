@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.chronos.education.scheduling.dao.ClassroomRepository;
+import com.chronos.education.scheduling.dao.ClassroomUnavailableSlotRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
@@ -29,10 +30,12 @@ class ClassSchedulingServiceTest {
 		service = new ClassSchedulingService(
 				offerings,
 				classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
 				mock(ScheduleEntryRepository.class),
 				mock(TeacherTimeConstraintRepository.class),
 				mock(TeachingClassMemberRepository.class),
-				mock(StudentProfileRepository.class));
+				mock(StudentProfileRepository.class),
+				mock(AcademicCalendarService.class));
 	}
 
 	@Test
