@@ -1,5 +1,3 @@
--- Reference migration for PostgreSQL deployments (JPA ddl-auto:update remains
--- compatible with existing installations).
 ALTER TABLE ai_model_config ADD COLUMN IF NOT EXISTS embedding_dimension integer;
 ALTER TABLE ai_model_config ADD COLUMN IF NOT EXISTS embedding_default boolean NOT NULL DEFAULT false;
 ALTER TABLE kb_knowledge_base ADD COLUMN IF NOT EXISTS retrieval_mode varchar(16) NOT NULL DEFAULT 'KEYWORD';

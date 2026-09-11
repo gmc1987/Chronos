@@ -34,6 +34,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    baseline-on-migrate: true
+    locations: classpath:db/migration
   data:
     redis:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}
