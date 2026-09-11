@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <div class="title">AI 模型管理</div>
-        <div class="subtitle">维护模型基础信息、适配配置和启用状态</div>
+        <div class="subtitle">维护模型基础信息、API Key、适配配置和启用状态</div>
       </div>
       <div class="actions">
         <el-input v-model="keyword" placeholder="模型名称" class="search-input" @keyup.enter="search" />
@@ -24,6 +24,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="provider" label="供应商" />
+      <el-table-column label="API Key" min-width="150">
+        <template #default="scope">
+          <span v-if="scope.row.hasApiKey">{{ scope.row.maskedApiKey || '已配置' }}</span>
+          <span v-else class="muted">未配置</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="scope">
           <el-switch
@@ -73,6 +79,15 @@
           <el-select v-model="form.provider" placeholder="请输入或选择供应商" filterable allow-create default-first-option style="width: 100%">
             <el-option v-for="item in providers" :key="item.id || item.dictCode" :label="item.dictName" :value="item.dictValue ?? item.dictCode ?? item.dictName" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="API Key" prop="apiKey">
+          <el-input
+            v-model="form.apiKey"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="form.hasApiKey ? `已配置：${form.maskedApiKey || '****'}，留空保持原值` : '请输入 API Key'"
+          />
         </el-form-item>
         <el-form-item label="签名处理">
           <el-input v-model="form.signatureHandler" />
@@ -126,6 +141,16 @@ const rules = {
   modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
   modelType: [{ required: true, message: '请选择模型类型', trigger: 'change' }],
   provider: [{ required: true, message: '请选择供应商', trigger: 'change' }],
+  apiKey: [{
+    validator: (_rule, value, callback) => {
+      if (dialogMode.value === 'create' && !String(value || '').trim()) {
+        callback(new Error('请输入 API Key'))
+      } else {
+        callback()
+      }
+    },
+    trigger: 'blur',
+  }],
   status: [{ required: true, message: '请选择状态', trigger: 'change' }],
 }
 
@@ -192,21 +217,38 @@ const onSizeChange = (val) => {
 
 const openCreate = () => {
   dialogMode.value = 'create'
-  form.value = { modelName: '', version: '', modelType: '', signatureHandler: '', provider: '', adapterClass: '', status: 1 }
+  form.value = {
+    modelName: '',
+    version: '',
+    modelType: '',
+    signatureHandler: '',
+    provider: '',
+    apiKey: '',
+    maskedApiKey: '',
+    hasApiKey: false,
+    adapterClass: '',
+    status: 1,
+  }
   showDialog.value = true
 }
 
 const openEdit = async (row) => {
   dialogMode.value = 'edit'
   const res = await aiModelDetail(row.id)
-  form.value = { ...res?.data }
+  // The API only returns a masked key. Keep the input empty so it can never
+  // accidentally send the masked placeholder back as a replacement.
+  form.value = { ...res?.data, apiKey: '' }
   showDialog.value = true
 }
 
 const submit = async () => {
   await formRef.value?.validate()
-  if (dialogMode.value === 'create') await createAiModel(form.value)
-  else await updateAiModel(form.value)
+  const payload = { ...form.value }
+  delete payload.maskedApiKey
+  delete payload.hasApiKey
+  if (dialogMode.value === 'edit' && !String(payload.apiKey || '').trim()) delete payload.apiKey
+  if (dialogMode.value === 'create') await createAiModel(payload)
+  else await updateAiModel(payload)
   showDialog.value = false
   ElMessage.success('保存成功')
   await load()
@@ -222,7 +264,18 @@ const remove = async (row) => {
 const toggleStatus = async (row, enabled) => {
   const status = enabled ? 1 : 0
   try {
-    await updateAiModel({ ...row, status })
+    // Do not send response-only maskedApiKey/hasApiKey fields back as an
+    // update command. Omitting apiKey makes the backend retain the secret.
+    await updateAiModel({
+      id: row.id,
+      modelName: row.modelName,
+      version: row.version,
+      modelType: row.modelType,
+      provider: row.provider,
+      signatureHandler: row.signatureHandler,
+      adapterClass: row.adapterClass,
+      status,
+    })
     row.status = status
     ElMessage.success(status === 1 ? '模型已启用' : '模型已禁用')
   } catch {
@@ -258,5 +311,8 @@ load()
 :deep(.dark-dialog .el-dialog__footer) {
   background: #0f1322;
   color: #fff;
+}
+.muted {
+  color: var(--el-text-color-secondary);
 }
 </style>

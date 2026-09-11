@@ -2,6 +2,8 @@ package com.chronos.ai.model;
 
 import com.chronos.model.pojo.BaseEntity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -39,6 +41,15 @@ public class AiModel extends BaseEntity {
 	@Size(max = 64)
 	@Column(name = "provider", length = 64, nullable = false)
 	private String provider;
+
+	/**
+	 * The key is accepted when a command is deserialized, but is never included
+	 * when an entity is serialized as a response.
+	 */
+	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+	@Size(max = 512)
+	@Column(name = "api_key", length = 512)
+	private String apiKey;
 
 	@Size(max = 255)
 	@Column(name = "signature_handler", length = 255)

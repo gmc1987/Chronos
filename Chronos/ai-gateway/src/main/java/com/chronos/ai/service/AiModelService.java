@@ -34,7 +34,7 @@ public class AiModelService {
 
 	@Transactional
 	public AiModel create(AiModel command) {
-		return models.save(normalize(command, new AiModel()));
+		return models.save(normalize(command, new AiModel(), true));
 	}
 
 	@Transactional
@@ -43,7 +43,7 @@ public class AiModelService {
 			throw new IllegalArgumentException("AI 模型 ID 不能为空");
 		}
 		AiModel target = get(command.getId());
-		normalize(command, target);
+		normalize(command, target, false);
 		return models.save(target);
 	}
 
@@ -55,11 +55,20 @@ public class AiModelService {
 		models.deleteById(id);
 	}
 
-	private AiModel normalize(AiModel source, AiModel target) {
+	private AiModel normalize(AiModel source, AiModel target, boolean creating) {
+		if (source == null) {
+			throw new IllegalArgumentException("AI 模型配置不能为空");
+		}
 		target.setModelName(required(source.getModelName(), "模型名称不能为空"));
 		target.setVersion(trimToNull(source.getVersion()));
 		target.setModelType(required(source.getModelType(), "模型类型不能为空"));
 		target.setProvider(required(source.getProvider(), "供应商不能为空"));
+		String apiKey = trimToNull(source.getApiKey());
+		if (creating) {
+			target.setApiKey(requiredApiKey(apiKey));
+		} else if (apiKey != null && !isMaskedApiKey(apiKey)) {
+			target.setApiKey(apiKey);
+		}
 		target.setSignatureHandler(trimToNull(source.getSignatureHandler()));
 		target.setAdapterClass(trimToNull(source.getAdapterClass()));
 		Integer status = source.getStatus() == null ? 1 : source.getStatus();
@@ -68,6 +77,17 @@ public class AiModelService {
 		}
 		target.setStatus(status);
 		return target;
+	}
+
+	private String requiredApiKey(String value) {
+		if (value == null || isMaskedApiKey(value)) {
+			throw new IllegalArgumentException("API Key 不能为空");
+		}
+		return value;
+	}
+
+	private boolean isMaskedApiKey(String value) {
+		return value.indexOf('*') >= 0;
 	}
 
 	private String required(String value, String message) {
