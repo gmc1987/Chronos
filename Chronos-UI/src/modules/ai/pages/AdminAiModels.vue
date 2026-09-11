@@ -56,7 +56,7 @@
       />
     </div>
 
-    <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增模型' : '编辑模型'" class="dark-dialog">
+    <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增模型' : '编辑模型'">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="模型名称" prop="modelName">
           <el-input v-model="form.modelName" />
