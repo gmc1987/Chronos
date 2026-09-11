@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.chronos.ai.model.AiModel;
+import com.chronos.ai.model.AiModelResponse;
 import com.chronos.ai.service.AiModelService;
 import com.chronos.commons.model.ResultData;
 
@@ -32,25 +33,25 @@ public class AiModelController {
 			@RequestParam(required = false) Integer status,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		return ok(service.list(modelName, provider, status, page, size));
+		return ok(service.list(modelName, provider, status, page, size).map(AiModelResponse::from));
 	}
 
 	@GetMapping("/ai-model/models/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:view','ai:model:manage')")
-	public ResultData<AiModel> detail(@PathVariable String id) {
-		return ok(service.get(id));
+	public ResultData<AiModelResponse> detail(@PathVariable String id) {
+		return ok(AiModelResponse.from(service.get(id)));
 	}
 
 	@PostMapping("/ai-model/models")
 	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:create','ai:model:manage')")
-	public ResultData<AiModel> create(@Valid @RequestBody AiModel command) {
-		return ok(service.create(command));
+	public ResultData<AiModelResponse> create(@Valid @RequestBody AiModel command) {
+		return ok(AiModelResponse.from(service.create(command)));
 	}
 
 	@PutMapping("/ai-model/models")
 	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:update','ai:model:manage')")
-	public ResultData<AiModel> update(@Valid @RequestBody AiModel command) {
-		return ok(service.update(command));
+	public ResultData<AiModelResponse> update(@Valid @RequestBody AiModel command) {
+		return ok(AiModelResponse.from(service.update(command)));
 	}
 
 	@DeleteMapping("/ai-model/models/{id}")
