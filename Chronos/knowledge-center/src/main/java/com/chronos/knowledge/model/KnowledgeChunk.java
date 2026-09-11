@@ -29,4 +29,7 @@ public class KnowledgeChunk extends BaseEntity {
 
 	@Column(name = "content", columnDefinition = "text", nullable = false)
 	private String content;
+
+	@Column(name = "embedding_indexed", nullable = false)
+	private Boolean embeddingIndexed = false;
 }

@@ -17,6 +17,14 @@ public interface AiModelRepository extends JpaRepository<AiModel, String> {
 			""")
 	java.util.Optional<AiModel> findFirstDefault();
 
+	@Query("""
+			select model from AiModel model
+			where upper(model.modelType) = 'EMBEDDING' and model.status = 1
+			  and model.embeddingDefault = true
+			order by model.createTime desc
+			""")
+	java.util.Optional<AiModel> findFirstDefaultEmbedding();
+
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("update AiModel model set model.isDefault = false")
 	int clearDefaults();
@@ -24,6 +32,10 @@ public interface AiModelRepository extends JpaRepository<AiModel, String> {
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("update AiModel model set model.isDefault = false where model.id <> :id")
 	int clearDefaultsExcept(@Param("id") String id);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("update AiModel model set model.embeddingDefault = false where upper(model.modelType) = 'EMBEDDING'")
+	int clearEmbeddingDefaults();
 
 	@Query("""
 			select model from AiModel model

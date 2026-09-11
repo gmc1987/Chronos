@@ -37,4 +37,19 @@ public class KnowledgeBase extends BaseEntity {
 	 */
 	@Column(name = "answer_model_id", length = 64)
 	private String answerModelId;
+
+	@Column(name = "retrieval_mode", length = 16, nullable = false)
+	private String retrievalMode = "KEYWORD";
+
+	@Column(name = "embedding_model_id", length = 64)
+	private String embeddingModelId;
+
+	@Column(name = "allow_keyword_fallback", nullable = false)
+	private Boolean allowKeywordFallback = true;
+
+	@Column(name = "index_status", length = 24, nullable = false)
+	private String indexStatus = "NOT_INDEXED";
+
+	@Column(name = "index_error", columnDefinition = "text")
+	private String indexError;
 }

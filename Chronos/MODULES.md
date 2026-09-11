@@ -13,7 +13,7 @@ Chronos 采用模块化单体结构。模块之间只能通过公开的应用服
 | `platform-file` | 对象存储、文档解析、预览、版本与权限 | 原文档解析工具 |
 | `platform-message` | 站内信、WebSocket、短信、邮件、企业微信 | 新模块骨架 |
 | `hospital-oa` | 请假、出差、用车、用印、公文等医院业务 | 新模块骨架 |
-| `ai-gateway` | 模型配置、默认模型、适配、路由、Prompt、Token 与成本 | 模型管理及 DeepSeek/Spring AI 适配 |
+| `ai-gateway` | 模型配置、默认模型、适配、路由、Prompt、Token 与成本 | Chat 与 OpenAI-compatible Embedding 统一网关 |
 | `agent-runtime` | Agent、Tool、Trace、Checkpoint、Memory | 新模块骨架 |
 | `policy-engine` | AI 风险、权限、金额限制、人工确认 | 新模块骨架 |
 | `knowledge-center` | 文档解析、切片、向量检索、RAG | 新模块骨架 |
@@ -28,7 +28,7 @@ Chronos 采用模块化单体结构。模块之间只能通过公开的应用服
 
 组织边界：`platform-iam` 是组织、组织单元和人员档案的唯一数据源。其他模块保存其 ID，并通过 IAM 公开应用服务获取详情，禁止复制组织实体或跨模块访问 IAM Repository。
 
-`knowledge-center` 只保存知识库到 AI 模型的 ID 引用，通过 `ai-gateway` 的公开模型调用服务解析“知识库指定模型 -> 默认模型 -> 旧 DeepSeek 环境配置”；不得直接依赖 `AiModel` 实体或 `AiModelRepository`。第一阶段模型路由仅支持 DeepSeek。
+`knowledge-center` 只保存知识库到 AI 模型的 ID 引用，通过 `ai-gateway` 的公开 Chat/Embedding 服务解析模型；不得直接依赖 `AiModel` 实体或 `AiModelRepository`。检索默认 KEYWORD，知识库可选 VECTOR；向量索引按知识库隔离，缺少 Embedding/Milvus 时默认允许 KEYWORD fallback，并在知识库记录状态和错误。
 
 第二阶段运行时仍只支持 DeepSeek：`ai-gateway` 按数据库模型配置创建并线程安全缓存
 `ChatModel`，模型更新、删除或运行参数变化会使对应缓存失效。数据库模型支持 Base URL、

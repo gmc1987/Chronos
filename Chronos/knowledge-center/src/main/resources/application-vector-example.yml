@@ -1,0 +1,5 @@
+chronos:
+  milvus:
+    # Do not put credentials in source control.
+    # 9091 is the Milvus REST endpoint; 19530 is the gRPC endpoint.
+    endpoint: http://localhost:9091

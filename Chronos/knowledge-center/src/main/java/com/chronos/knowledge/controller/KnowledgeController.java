@@ -117,6 +117,15 @@ public class KnowledgeController {
 		return ok(service.search(knowledgeBaseId, keyword, limit));
 	}
 
+	@PostMapping("/admin/knowledge-bases/{id}/rebuild-index")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
+	public ResultData<KnowledgeBase> rebuildIndex(@PathVariable String id) {
+		KnowledgeBase base = service.knowledgeBases().stream().filter(item -> id.equals(item.getId())).findFirst()
+				.orElseThrow(() -> new IllegalArgumentException("知识库不存在"));
+		service.documents(id).forEach(document -> service.rebuildDocument(document.getId(), "INDEX_REBUILD"));
+		return ok(base);
+	}
+
 	@PostMapping("/education/ai/assistant/ask")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:assistant:use')")
 	public ResultData<AssistantAnswer> ask(

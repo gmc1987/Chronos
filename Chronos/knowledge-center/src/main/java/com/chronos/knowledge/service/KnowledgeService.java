@@ -25,6 +25,7 @@ import com.chronos.knowledge.model.KnowledgeBase;
 import com.chronos.knowledge.model.KnowledgeChunk;
 import com.chronos.knowledge.model.KnowledgeDocument;
 import com.chronos.ai.service.AiModelChatService;
+import com.chronos.ai.service.EmbeddingService;
 import com.chronos.service.factory.LLMServiceStrategy;
 import com.chronos.service.iService.IAuditLogService;
 
@@ -42,6 +43,8 @@ public class KnowledgeService {
 	private final KnowledgeDocumentTextExtractor textExtractor;
 	private final AiModelChatService aiModelChatService;
 	private final IAuditLogService auditLogService;
+	private final EmbeddingService embeddingService;
+	private final MilvusVectorStore vectorStore;
 
 	@Autowired
 	public KnowledgeService(
@@ -50,13 +53,23 @@ public class KnowledgeService {
 			KnowledgeChunkRepository chunks,
 			KnowledgeDocumentTextExtractor textExtractor,
 			AiModelChatService aiModelChatService,
-			IAuditLogService auditLogService) {
+			IAuditLogService auditLogService,
+			EmbeddingService embeddingService,
+			MilvusVectorStore vectorStore) {
 		this.knowledgeBases = knowledgeBases;
 		this.documents = documents;
 		this.chunks = chunks;
 		this.textExtractor = textExtractor;
 		this.aiModelChatService = aiModelChatService;
 		this.auditLogService = auditLogService;
+		this.embeddingService = embeddingService;
+		this.vectorStore = vectorStore;
+	}
+
+	public KnowledgeService(KnowledgeBaseRepository knowledgeBases, KnowledgeDocumentRepository documents,
+			KnowledgeChunkRepository chunks, KnowledgeDocumentTextExtractor textExtractor,
+			AiModelChatService aiModelChatService, IAuditLogService auditLogService) {
+		this(knowledgeBases, documents, chunks, textExtractor, aiModelChatService, auditLogService, null, null);
 	}
 
 	/**
@@ -76,7 +89,7 @@ public class KnowledgeService {
 				chunks,
 				textExtractor,
 				(modelId, message) -> llmService.chat(message),
-				auditLogService);
+				auditLogService, null, null);
 	}
 
 	public List<KnowledgeBase> knowledgeBases() {
@@ -105,6 +118,12 @@ public class KnowledgeService {
 		value.setOrganizationId(trimToNull(command.getOrganizationId()));
 		value.setEnabled(command.getEnabled() == null || command.getEnabled());
 		value.setAnswerModelId(trimToNull(command.getAnswerModelId()));
+		value.setRetrievalMode(command.getRetrievalMode() == null ? "KEYWORD" : command.getRetrievalMode().trim().toUpperCase());
+		if (!"KEYWORD".equals(value.getRetrievalMode()) && !"VECTOR".equals(value.getRetrievalMode())) {
+			throw new IllegalArgumentException("检索模式只能是 KEYWORD 或 VECTOR");
+		}
+		value.setEmbeddingModelId(trimToNull(command.getEmbeddingModelId()));
+		value.setAllowKeywordFallback(command.getAllowKeywordFallback() == null || command.getAllowKeywordFallback());
 		return knowledgeBases.save(value);
 	}
 
@@ -201,6 +220,7 @@ public class KnowledgeService {
 			chunk.setChunkIndex(index + 1);
 			chunk.setContent(segments.get(index));
 			chunks.save(chunk);
+			indexChunk(document.getKnowledgeBaseId(), chunk);
 		}
 		document.setChunkCount(segments.size());
 		document.setStatus("READY");
@@ -215,16 +235,13 @@ public class KnowledgeService {
 	@Transactional(readOnly = true)
 	public List<SearchResult> search(String knowledgeBaseId, String keyword, Integer limit) {
 		requireText(keyword, "检索关键词不能为空");
-		knowledgeBases.findById(knowledgeBaseId)
+		KnowledgeBase base = knowledgeBases.findById(knowledgeBaseId)
 				.filter(item -> Boolean.TRUE.equals(item.getEnabled()))
 				.orElseThrow(() -> new IllegalArgumentException("知识库不存在或已停用"));
 		int safeLimit = limit == null
 				? DEFAULT_SEARCH_LIMIT
 				: Math.max(1, Math.min(limit, MAX_SEARCH_LIMIT));
-		List<KnowledgeChunk> matches = chunks.search(
-				knowledgeBaseId,
-				keyword.trim(),
-				PageRequest.of(0, safeLimit));
+		List<KnowledgeChunk> matches = retrieveChunks(base, keyword, safeLimit);
 		Map<String, KnowledgeDocument> documentMap = new HashMap<>();
 		for (KnowledgeDocument document : documents.findByKnowledgeBaseIdOrderByCreateTimeDesc(knowledgeBaseId)) {
 			documentMap.put(document.getId(), document);
@@ -288,27 +305,13 @@ public class KnowledgeService {
 		knowledgeBases.findById(knowledgeBaseId)
 				.filter(item -> Boolean.TRUE.equals(item.getEnabled()))
 				.orElseThrow(() -> new IllegalArgumentException("知识库不存在或已停用"));
-		Set<String> terms = retrievalTerms(question);
-		Map<String, KnowledgeChunk> matches = new LinkedHashMap<>();
-		for (String term : terms) {
-			for (KnowledgeChunk chunk : chunks.search(
-					knowledgeBaseId,
-					term,
-					PageRequest.of(0, limit))) {
-				matches.putIfAbsent(chunk.getId(), chunk);
-				if (matches.size() >= limit) {
-					break;
-				}
-			}
-			if (matches.size() >= limit) {
-				break;
-			}
-		}
+		KnowledgeBase base = knowledgeBases.findById(knowledgeBaseId).orElseThrow();
+		List<KnowledgeChunk> matches = retrieveChunks(base, question, limit);
 		Map<String, KnowledgeDocument> documentMap = new HashMap<>();
 		for (KnowledgeDocument document : documents.findByKnowledgeBaseIdOrderByCreateTimeDesc(knowledgeBaseId)) {
 			documentMap.put(document.getId(), document);
 		}
-		return matches.values().stream().map(chunk -> {
+		return matches.stream().map(chunk -> {
 			KnowledgeDocument document = documentMap.get(chunk.getDocumentId());
 			return new SearchResult(
 					chunk.getDocumentId(),
@@ -317,6 +320,49 @@ public class KnowledgeService {
 					chunk.getChunkIndex(),
 					chunk.getContent());
 		}).toList();
+	}
+
+	private List<KnowledgeChunk> retrieveChunks(KnowledgeBase base, String query, int limit) {
+		if (!"VECTOR".equalsIgnoreCase(base.getRetrievalMode())) {
+		return keywordChunks(base.getId(), query, limit);
+		}
+		try {
+		if (embeddingService == null || vectorStore == null || !vectorStore.available()) {
+			throw new IllegalStateException("Milvus/Embedding 未配置");
+		}
+		List<String> ids = vectorStore.search(
+				base.getId(),
+				embeddingService.embed(query, base.getEmbeddingModelId()),
+				limit);
+		if (!ids.isEmpty()) {
+			Map<String, KnowledgeChunk> byId = new HashMap<>();
+			chunks.findAllById(ids).forEach(chunk -> byId.put(chunk.getId(), chunk));
+			return ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+		}
+		throw new IllegalStateException("向量检索未命中结果");
+		} catch (RuntimeException ex) {
+		if (!Boolean.TRUE.equals(base.getAllowKeywordFallback())) {
+			throw ex;
+		}
+		return keywordChunks(base.getId(), query, limit);
+		}
+	}
+
+	private List<KnowledgeChunk> keywordChunks(String knowledgeBaseId, String query, int limit) {
+		Set<String> terms = retrievalTerms(query);
+		Map<String, KnowledgeChunk> matches = new LinkedHashMap<>();
+		for (String term : terms) {
+		for (KnowledgeChunk chunk : chunks.search(
+				knowledgeBaseId,
+				term,
+				PageRequest.of(0, limit))) {
+			matches.putIfAbsent(chunk.getId(), chunk);
+			if (matches.size() >= limit) {
+				return new ArrayList<>(matches.values());
+			}
+		}
+		}
+		return new ArrayList<>(matches.values());
 	}
 
 	/** 中文问句没有天然空格，使用原问句、分词和连续双字词逐级召回。 */
@@ -362,8 +408,28 @@ public class KnowledgeService {
 			chunk.setChunkIndex(index + 1);
 			chunk.setContent(segments.get(index));
 			chunks.save(chunk);
+			indexChunk(knowledgeBaseId, chunk);
 		}
 		return document;
+	}
+
+	private void indexChunk(String baseId, KnowledgeChunk chunk) {
+		KnowledgeBase base = knowledgeBases.findById(baseId).orElse(null);
+		if (base == null || !"VECTOR".equalsIgnoreCase(base.getRetrievalMode())) return;
+		try {
+			if (embeddingService == null || vectorStore == null || !vectorStore.available()) throw new IllegalStateException("Milvus/Embedding 未配置");
+			vectorStore.upsert(baseId, chunk.getId(), embeddingService.embed(chunk.getContent(), base.getEmbeddingModelId()));
+			chunk.setEmbeddingIndexed(true);
+			chunks.save(chunk);
+			base.setIndexStatus("READY");
+			base.setIndexError(null);
+			knowledgeBases.save(base);
+		} catch (RuntimeException ex) {
+			base.setIndexStatus(Boolean.TRUE.equals(base.getAllowKeywordFallback()) ? "FALLBACK" : "FAILED");
+			base.setIndexError(ex.getMessage());
+			knowledgeBases.save(base);
+			if (!Boolean.TRUE.equals(base.getAllowKeywordFallback())) throw ex;
+		}
 	}
 
 	private List<String> split(String source) {

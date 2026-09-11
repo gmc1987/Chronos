@@ -37,6 +37,8 @@ public class AiModelResponse {
 	private final Double topP;
 	private final String maskedApiKey;
 	private final boolean hasApiKey;
+	private final Integer embeddingDimension;
+	private final Boolean embeddingDefault;
 
 	private AiModelResponse(AiModel model) {
 		this.id = model.getId();
@@ -61,6 +63,8 @@ public class AiModelResponse {
 		this.topP = model.getTopP();
 		this.maskedApiKey = mask(model.getApiKey());
 		this.hasApiKey = model.getApiKey() != null && !model.getApiKey().isBlank();
+		this.embeddingDimension = model.getEmbeddingDimension();
+		this.embeddingDefault = Boolean.TRUE.equals(model.getEmbeddingDefault());
 	}
 
 	public static AiModelResponse from(AiModel model) {

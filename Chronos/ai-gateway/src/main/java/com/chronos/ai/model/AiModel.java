@@ -109,6 +109,14 @@ public class AiModel extends BaseEntity {
 	@Column(name = "top_p")
 	private Double topP;
 
+	@Min(1)
+	@Max(32768)
+	@Column(name = "embedding_dimension")
+	private Integer embeddingDimension;
+
+	@Column(name = "embedding_default", nullable = false)
+	private Boolean embeddingDefault = false;
+
 	@PrePersist
 	void applyRuntimeDefaults() {
 		if (baseUrl == null || baseUrl.isBlank()) {

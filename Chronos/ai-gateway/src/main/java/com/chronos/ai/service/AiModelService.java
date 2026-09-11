@@ -53,6 +53,7 @@ public class AiModelService {
 	public AiModel create(AiModel command) {
 		AiModel target = normalize(command, new AiModel(), true);
 		applyDefault(target, Boolean.TRUE.equals(target.getIsDefault()), null);
+		if (Boolean.TRUE.equals(target.getEmbeddingDefault())) models.clearEmbeddingDefaults();
 		AiModel saved = models.save(target);
 		invalidate(saved.getId());
 		return saved;
@@ -76,6 +77,7 @@ public class AiModelService {
 			requestedDefault = false;
 		}
 		applyDefault(target, requestedDefault, target.getId());
+		if (Boolean.TRUE.equals(target.getEmbeddingDefault())) models.clearEmbeddingDefaults();
 		AiModel saved = models.save(target);
 		invalidate(saved.getId());
 		return saved;
@@ -98,9 +100,7 @@ public class AiModelService {
 		target.setVersion(trimToNull(source.getVersion()));
 		target.setModelType(required(source.getModelType(), "模型类型不能为空"));
 		target.setProvider(required(source.getProvider(), "供应商不能为空").toLowerCase(Locale.ROOT));
-		if (!"deepseek".equals(target.getProvider())) {
-			throw new AiModelConfigurationException("当前仅支持 DeepSeek 供应商");
-		}
+		target.setModelType(target.getModelType().toUpperCase(Locale.ROOT));
 		String apiKey = trimToNull(source.getApiKey());
 		if (creating) {
 			target.setApiKey(requiredApiKey(apiKey));
@@ -128,6 +128,12 @@ public class AiModelService {
 		}
 		if (creating || source.getTopP() != null) {
 			target.setTopP(source.getTopP());
+		}
+		if (creating || source.getEmbeddingDimension() != null) {
+			target.setEmbeddingDimension(source.getEmbeddingDimension());
+		}
+		if (creating || source.getEmbeddingDefault() != null) {
+			target.setEmbeddingDefault(Boolean.TRUE.equals(source.getEmbeddingDefault()));
 		}
 		validateOptions(target);
 		Integer status = source.getStatus() == null ? 1 : source.getStatus();

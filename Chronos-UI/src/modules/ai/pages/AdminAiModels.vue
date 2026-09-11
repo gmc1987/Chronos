@@ -123,6 +123,10 @@
         <el-form-item label="Top P" prop="topP">
           <el-input-number v-model="form.topP" :min="0" :max="1" :step="0.1" :precision="2" controls-position="right" />
         </el-form-item>
+        <el-form-item label="Embedding维度" prop="embeddingDimension">
+          <el-input-number v-model="form.embeddingDimension" :min="1" :max="32768" :step="1" controls-position="right" />
+          <span class="form-tip">仅 EMBEDDING 模型需要填写</span>
+        </el-form-item>
         <el-form-item label="签名处理">
           <el-input v-model="form.signatureHandler" />
         </el-form-item>
@@ -138,6 +142,10 @@
         <el-form-item label="默认模型">
           <el-switch v-model="form.isDefault" active-text="是" inactive-text="否" />
           <span class="form-tip">仅启用且已配置 API Key 的模型可以设为默认</span>
+        </el-form-item>
+        <el-form-item label="默认Embedding">
+          <el-switch v-model="form.embeddingDefault" active-text="是" inactive-text="否" />
+          <span class="form-tip">仅 EMBEDDING 模型可以设为默认 Embedding</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -272,6 +280,8 @@ const openCreate = () => {
     temperature: null,
     maxTokens: null,
     topP: null,
+    embeddingDimension: null,
+    embeddingDefault: false,
     status: 1,
     isDefault: false,
   }
@@ -327,6 +337,8 @@ const toggleStatus = async (row, enabled) => {
       temperature: row.temperature,
       maxTokens: row.maxTokens,
       topP: row.topP,
+      embeddingDimension: row.embeddingDimension,
+      embeddingDefault: row.embeddingDefault,
       status,
       isDefault: enabled && row.isDefault === true,
     })
@@ -355,6 +367,8 @@ const toggleDefault = async (row, isDefault) => {
       temperature: row.temperature,
       maxTokens: row.maxTokens,
       topP: row.topP,
+      embeddingDimension: row.embeddingDimension,
+      embeddingDefault: row.embeddingDefault,
       status: row.status,
       isDefault: Boolean(isDefault),
     })

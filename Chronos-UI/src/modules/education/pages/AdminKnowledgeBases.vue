@@ -34,6 +34,7 @@ const assistantLoading = ref(false)
 const assistantAnswer = ref(null)
 const modelStatus = ref({ available: false, message: '正在检查 AI 模型配置' })
 const answerModels = ref([])
+const embeddingModels = ref([])
 const basePage = ref(1)
 const basePageSize = ref(10)
 const baseTotal = ref(0)
@@ -54,11 +55,14 @@ const resetObject = (target, value) => {
 const loadAnswerModels = async () => {
   try {
     const response = await aiModels({ status: 1, page: 0, size: 100 })
-    answerModels.value = (response.data?.content || response.data || [])
+    const models = (response.data?.content || response.data || [])
       .filter(item => Number(item.status) === 1 && item.hasApiKey)
+    answerModels.value = models.filter(item => String(item.modelType).toUpperCase() !== 'EMBEDDING')
+    embeddingModels.value = models.filter(item => String(item.modelType).toUpperCase() === 'EMBEDDING')
   } catch {
     // A knowledge user may not have model-view permission.
     answerModels.value = []
+    embeddingModels.value = []
   }
 }
 
@@ -88,7 +92,7 @@ const loadDocuments = async () => {
 const changeDocumentPageSize = () => { documentPage.value = 1; loadDocuments() }
 
 const openCreateBase = () => {
-  resetObject(baseForm, { enabled: true })
+  resetObject(baseForm, { enabled: true, retrievalMode: 'KEYWORD', allowKeywordFallback: true })
   baseDialog.value = true
 }
 
@@ -359,6 +363,30 @@ onMounted(async () => {
             />
           </el-select>
           <div class="model-tip">仅展示已启用且已配置 API Key 的模型</div>
+        </el-form-item>
+        <el-form-item label="检索模式">
+          <el-select v-model="baseForm.retrievalMode" style="width: 100%">
+            <el-option label="关键词（默认）" value="KEYWORD" />
+            <el-option label="向量（Milvus）" value="VECTOR" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Embedding 模型">
+          <el-select v-model="baseForm.embeddingModelId" clearable placeholder="继承默认 Embedding 模型" style="width: 100%">
+            <el-option label="继承默认 Embedding 模型" value="" />
+            <el-option
+              v-for="model in embeddingModels"
+              :key="model.id"
+              :label="`${model.modelName}（${model.provider}）`"
+              :value="model.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关键词降级">
+          <el-switch v-model="baseForm.allowKeywordFallback" />
+        </el-form-item>
+        <el-form-item label="索引状态">
+          <el-tag>{{ baseForm.indexStatus || 'NOT_INDEXED' }}</el-tag>
+          <span v-if="baseForm.indexError" class="index-error">{{ baseForm.indexError }}</span>
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="baseDialog = false">取消</el-button><el-button type="primary" @click="saveBase">保存</el-button></template>
