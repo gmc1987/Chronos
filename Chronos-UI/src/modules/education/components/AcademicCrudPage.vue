@@ -51,6 +51,7 @@
           >
             编辑
           </el-button>
+          <el-button v-for="action in rowActions" :key="action.label" link :type="action.type || 'primary'" @click="action.run(scope.row)">{{ action.label }}</el-button>
           <el-button v-if="deleter" link type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
       </el-table-column>
@@ -86,7 +87,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
 
-const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, permissionPrefix: String, lookups: { type: Array, default: () => [] } })
+const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, rowActions: { type: Array, default: () => [] }, permissionPrefix: String, lookups: { type: Array, default: () => [] } })
 const rows = ref([]); const dialog = ref(false); const form = reactive({}); const lookupData = reactive({}); const dictionaryData = reactive({})
 const page = ref(1); const pageSize = ref(10); const total = ref(0)
 const createPermissions = computed(() => [`${props.permissionPrefix}:create`, `${props.permissionPrefix}:manage`])

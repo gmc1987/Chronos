@@ -89,7 +89,25 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 						term.getTermCode(),
 						term.getTermName(),
 						data));
+		loadTeacherSummary(username, data);
 		return new PortalContribution(providerCode(), true, "ok", data);
+	}
+
+	private void loadTeacherSummary(String username, Map<String, Object> data) {
+		var account = users.findByUsername(username);
+		if (account == null || account.getEmployeeId() == null) {
+			return;
+		}
+		teachers.findByEmployeeId(account.getEmployeeId()).ifPresent(teacher -> {
+			long courseCount = offerings.findByTeacherIdOrderByOfferingCode(teacher.getId()).size();
+			data.put("teacherSummary", Map.of(
+					"teacherName", teacher.getTeacherName(),
+					"maxWeeklyLessons", teacher.getMaxWeeklyLessons() == null ? 0 : teacher.getMaxWeeklyLessons(),
+					"teachingCourseCount", courseCount,
+					"leaveStatus", "暂无待处理请假流程",
+					"notificationStatus", "暂无未读通知",
+					"aiDescription", "基于个人课表和任教关系生成教务分析"));
+		});
 	}
 
 	private void loadPersonalSchedule(

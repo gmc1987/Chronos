@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.security.SecureRandom;
 
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,15 +20,17 @@ import com.chronos.Idao.IRoleRepository;
 import com.chronos.Idao.IEmployeeRepository;
 import com.chronos.commons.utils.BeanCopyUtil;
 import com.chronos.model.dto.AdminUserDTO;
+import com.chronos.model.dto.TeacherAccountProvisioning;
 import com.chronos.model.pojo.AdminUser;
 import com.chronos.model.pojo.Role;
 import com.chronos.model.vo.AdminUserVO;
 import com.chronos.model.vo.RoleVO;
 import com.chronos.service.iService.IAdminUserService;
+import com.chronos.service.iService.ITeacherAccountProvisioningService;
 import com.chronos.service.iService.IRefreshTokenService;
 
 @Service("adminUserService")
-public class AdminUserServiceImpl implements IAdminUserService {
+public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountProvisioningService {
 	@Autowired
 	private IAdminUserRepository adminUserRepository;
 	@Autowired
@@ -101,6 +104,55 @@ public class AdminUserServiceImpl implements IAdminUserService {
 			user.setRoles(roles);
 		}
 		this.adminUserRepository.save(user);
+	}
+
+	@Override
+	@Transactional
+	public TeacherAccountProvisioning provision(String employeeId, String displayName) {
+		if (employeeId == null || employeeId.isBlank()) throw new IllegalArgumentException("employeeId required");
+		var employee = employeeRepository.findById(employeeId)
+				.orElseGet(() -> employeeRepository.findByEmployeeCode(employeeId)
+						.orElseThrow(() -> new IllegalArgumentException("IAM employee not found: " + employeeId)));
+		String stableEmployeeId = employee.getId();
+		AdminUser existing = adminUserRepository.findByEmployeeId(stableEmployeeId).orElse(null);
+		if (existing == null && !stableEmployeeId.equals(employeeId)) existing = adminUserRepository.findByEmployeeId(employeeId).orElse(null);
+		if (existing != null) return new TeacherAccountProvisioning(existing.getUsername(), stableEmployeeId, false);
+		String username = employee.getEmployeeCode();
+		ensureUsernameAvailable(username, null);
+		AdminUser user = new AdminUser();
+		user.setUsername(username); user.setEmployeeId(stableEmployeeId);
+		user.setDisplayName(displayName == null || displayName.isBlank() ? employee.getEmployeeName() : displayName);
+		user.setAccountType("STAFF"); user.setAccountLocked(false); user.setFailedLoginAttempts(0);
+		user.setMustChangePassword(true); user.setStatus(1); user.setCreateTime(LocalDateTime.now());
+		user.setPassword(passwordEncoder.encode(generateTemporaryPassword()));
+		Role teacherRole = roleRepository.findByRoleCode("TEACHER");
+		if (teacherRole == null) teacherRole = roleRepository.findByRoleCode("EDU_TEACHER");
+		if (teacherRole != null) user.setRoles(new HashSet<>(Set.of(teacherRole)));
+		adminUserRepository.save(user);
+		return new TeacherAccountProvisioning(username, stableEmployeeId, true);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public TeacherAccountProvisioning find(String employeeId) {
+		if (employeeId == null || employeeId.isBlank()) return null;
+		return employeeRepository.findById(employeeId).or(() -> employeeRepository.findByEmployeeCode(employeeId))
+				.flatMap(employee -> adminUserRepository.findByEmployeeId(employee.getId())
+						.map(user -> new TeacherAccountProvisioning(user.getUsername(), employee.getId(), false)))
+				.orElse(null);
+	}
+
+	private String generateTemporaryPassword() {
+		char[] upper = "ABCDEFGHJKLMNPQRSTUVWXYZ".toCharArray();
+		char[] lower = "abcdefghijkmnopqrstuvwxyz".toCharArray();
+		char[] digits = "23456789".toCharArray();
+		SecureRandom random = new SecureRandom();
+		StringBuilder value = new StringBuilder(12);
+		value.append(upper[random.nextInt(upper.length)]).append(lower[random.nextInt(lower.length)])
+				.append(digits[random.nextInt(digits.length)]);
+		String all = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+		while (value.length() < 12) value.append(all.charAt(random.nextInt(all.length())));
+		return value.toString();
 	}
 
 	@Transactional

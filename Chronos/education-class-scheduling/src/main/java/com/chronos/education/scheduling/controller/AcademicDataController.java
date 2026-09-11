@@ -354,6 +354,26 @@ public class AcademicDataController {
 		return ok(service.saveTeacher(id, command));
 	}
 
+	@PostMapping("/admin/education/teachers/{id}/account")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:update','education:teacher:business:manage')")
+	public ResultData<TeacherAcademicProfile> bindTeacherAccount(@PathVariable String id) {
+		return ok(service.bindTeacherAccount(id));
+	}
+
+	@DeleteMapping("/admin/education/teachers/{id}/account")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:update','education:teacher:business:manage')")
+	public ResultData<Void> unbindTeacherAccount(@PathVariable String id) {
+		service.unbindTeacherAccount(id);
+		return ok(null);
+	}
+
+	@DeleteMapping("/admin/education/teachers/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:delete','education:teacher:business:manage')")
+	public ResultData<Void> deleteTeacher(@PathVariable String id) {
+		service.deleteTeacher(id);
+		return ok(null);
+	}
+
 	@GetMapping("/admin/education/parents")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:home-school:parent:view','education:home-school:parent:manage')")
 	public ResultData<?> parents(

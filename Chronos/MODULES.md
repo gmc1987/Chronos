@@ -19,6 +19,7 @@ Chronos 采用模块化单体结构。模块之间只能通过公开的应用服
 | `knowledge-center` | 文档解析、切片、向量检索、RAG | 新模块骨架 |
 | `integration-center` | HIS、HR、财务、统一认证和第三方接口 | 新模块骨架 |
 | `hospital-app` | Spring Boot 组合根、跨模块门户聚合、配置和部署产物 | 启动类、门户聚合接口、配置、资源和集成测试 |
+| `education-class-scheduling` | 教师档案、课程、已发布课表和教务门户数据 | 教师开户只调用 IAM 公开账号服务；教师门户通过统一 Widget/Provider 组合 |
 
 ## 依赖方向
 
@@ -27,6 +28,11 @@ Chronos 采用模块化单体结构。模块之间只能通过公开的应用服
 `chronos-scheduling` 不等同于 `platform-workflow`：前者负责资源与时间安排，后者负责业务审批状态和人工任务。
 
 组织边界：`platform-iam` 是组织、组织单元和人员档案的唯一数据源。其他模块保存其 ID，并通过 IAM 公开应用服务获取详情，禁止复制组织实体或跨模块访问 IAM Repository。
+
+教师档案创建会在同一事务内校验 IAM Employee、复用或创建带首次改密标记的账号并维护
+`edu_user_profile_binding`；临时密码只以哈希落库，不进入接口或日志。解除绑定不会删除 IAM
+账号，仍有活动绑定时禁止删除教师。教师工作台使用门户 Widget 的角色受众（`TEACHER`）和
+教育 Provider，课表仅消费已发布版本并按当前账号隔离。
 
 `knowledge-center` 只保存知识库到 AI 模型的 ID 引用，通过 `ai-gateway` 的公开 Chat/Embedding 服务解析模型；不得直接依赖 `AiModel` 实体或 `AiModelRepository`。检索默认 KEYWORD，知识库可选 VECTOR；向量索引按知识库隔离，缺少 Embedding/Milvus 时默认允许 KEYWORD fallback，并在知识库记录状态和错误。
 

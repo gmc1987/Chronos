@@ -95,6 +95,35 @@
               </button>
             </div>
           </template>
+          <template v-else-if="widget.code === 'teacher-schedule' && contribution(widget).available">
+            <div v-if="contribution(widget).data.mySchedule?.length" class="education-schedule">
+              <button v-for="course in contribution(widget).data.mySchedule.slice(0, 5)" :key="course.id" @click="router.push('/portal/education/schedule')">
+                <span>{{ weekday(course.dayOfWeek) }} 第 {{ course.periodNo }} 节</span>
+                <strong>{{ course.courseName }}</strong>
+                <small>{{ course.classroomName || course.teachingClassName || '未安排地点' }}</small>
+              </button>
+            </div>
+            <div v-else class="workflow-empty">暂无已发布课表</div>
+          </template>
+          <template v-else-if="['teacher-workload', 'teacher-leave', 'teacher-notifications', 'teacher-ai-analysis'].includes(widget.code) && contribution(widget).available">
+            <div v-if="contribution(widget).data.teacherSummary" class="teacher-summary">
+              <template v-if="widget.code === 'teacher-workload'">
+                <strong>{{ contribution(widget).data.teacherSummary.teachingCourseCount }}</strong><span>门任教课程</span>
+                <small>周课时上限 {{ contribution(widget).data.teacherSummary.maxWeeklyLessons }}</small>
+              </template>
+              <template v-else-if="widget.code === 'teacher-leave'">
+                <strong>请假流程</strong><span>{{ contribution(widget).data.teacherSummary.leaveStatus }}</span>
+              </template>
+              <template v-else-if="widget.code === 'teacher-notifications'">
+                <strong>通知</strong><span>{{ contribution(widget).data.teacherSummary.notificationStatus }}</span>
+              </template>
+              <template v-else>
+                <strong>AI 教务分析</strong><span>{{ contribution(widget).data.teacherSummary.aiDescription }}</span>
+                <button class="education-ai__open" @click="router.push('/portal/education/schedule')">查看个人教学数据</button>
+              </template>
+            </div>
+            <div v-else class="portal-widget-empty"><b>暂无教师档案</b><p>完成教师账号绑定后即可查看个人工作台数据。</p></div>
+          </template>
           <template v-else-if="widget.code === 'ai-assistant' && contribution(widget).available">
             <div class="education-ai">
               <strong>{{ contribution(widget).data.title }}</strong>
@@ -183,4 +212,9 @@ onMounted(load)
 .education-ai > p { margin:0; color:#7a898f; font-size:12px; line-height:1.7; }
 .education-ai > button { border:1px solid #e3e9e9; border-radius:9px; padding:9px 11px; background:#fafcfc; color:#46616a; text-align:left; cursor:pointer; }
 .education-ai > button.education-ai__open { border:0; background:#eaf6f3; color:#147765; text-align:center; }
+.teacher-summary { display:grid; gap:8px; padding:14px 0; color:#71808a; }
+.teacher-summary strong { color:#173b43; font-size:24px; }
+.teacher-summary span { line-height:1.6; }
+.teacher-summary small { color:#8b979f; }
+.teacher-summary button { margin-top:6px; border:0; border-radius:9px; padding:9px 11px; background:#eaf6f3; color:#147765; cursor:pointer; }
 </style>

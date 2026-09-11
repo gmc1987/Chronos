@@ -25,6 +25,7 @@ import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.SubjectRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeacherTeachingAssignmentRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.AdministrativeClass;
@@ -40,7 +41,10 @@ import com.chronos.education.scheduling.model.Subject;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.chronos.education.scheduling.model.TeacherTeachingAssignment;
 import com.chronos.education.scheduling.model.TeachingClassMember;
+import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.model.pojo.BaseEntity;
+import com.chronos.model.dto.TeacherAccountProvisioning;
+import com.chronos.service.iService.ITeacherAccountProvisioningService;
 
 /** 教务主数据与走班成员服务，删除操作均先校验业务引用。 */
 @Service
@@ -59,6 +63,8 @@ public class AcademicDataService {
 	private final TeachingClassMemberRepository members;
 	private final CourseOfferingRepository offerings;
 	private final ScheduleEntryRepository scheduleEntries;
+	private final EducationUserBindingRepository bindings;
+	private final ITeacherAccountProvisioningService teacherAccounts;
 
 	public AcademicDataService(
 			AcademicTermRepository terms,
@@ -74,7 +80,9 @@ public class AcademicDataService {
 			TeacherTeachingAssignmentRepository teachingAssignments,
 			TeachingClassMemberRepository members,
 			CourseOfferingRepository offerings,
-			ScheduleEntryRepository scheduleEntries) {
+			ScheduleEntryRepository scheduleEntries,
+			EducationUserBindingRepository bindings,
+			ITeacherAccountProvisioningService teacherAccounts) {
 		this.terms = terms;
 		this.grades = grades;
 		this.subjects = subjects;
@@ -89,6 +97,8 @@ public class AcademicDataService {
 		this.members = members;
 		this.offerings = offerings;
 		this.scheduleEntries = scheduleEntries;
+		this.bindings = bindings;
+		this.teacherAccounts = teacherAccounts;
 	}
 
 	public List<AcademicTerm> terms() {
@@ -303,17 +313,35 @@ public class AcademicDataService {
 	}
 
 	public List<TeacherAcademicProfile> teachers() {
-		return teachers.findAllByOrderByTeacherNo();
+		return withAccountStatus(teachers.findAllByOrderByTeacherNo());
 	}
 
 	public Page<TeacherAcademicProfile> teachers(int page, int size) {
-		return teachers.findAllByOrderByTeacherNo(pageable(page, size));
+		return withAccountStatus(teachers.findAllByOrderByTeacherNo(pageable(page, size)));
 	}
 
 	public List<TeacherAcademicProfile> teachers(EducationDataScope scope) {
 		return scope.fullAccess()
 				? teachers()
-				: teachers.findByIdInOrderByTeacherNo(nonEmpty(scope.teacherIds()));
+				: withAccountStatus(teachers.findByIdInOrderByTeacherNo(nonEmpty(scope.teacherIds())));
+	}
+
+	private List<TeacherAcademicProfile> withAccountStatus(List<TeacherAcademicProfile> values) {
+		values.forEach(this::setAccountStatus);
+		return values;
+	}
+
+	private Page<TeacherAcademicProfile> withAccountStatus(Page<TeacherAcademicProfile> values) {
+		values.forEach(this::setAccountStatus);
+		return values;
+	}
+
+	private void setAccountStatus(TeacherAcademicProfile teacher) {
+		TeacherAccountProvisioning account = teacherAccounts.find(teacher.getEmployeeId());
+		var binding = bindings.findByProfileTypeAndProfileId("TEACHER", teacher.getId());
+		teacher.setAccountUsername(account == null ? null : account.username());
+		teacher.setAccountStatus(binding.filter(item -> "ACTIVE".equals(item.getStatus())).isPresent()
+				? "ACTIVE" : account == null ? "UNBOUND" : "ACCOUNT_EXISTS");
 	}
 
 	public Page<TeacherAcademicProfile> teachers(
@@ -322,14 +350,72 @@ public class AcademicDataService {
 			int size) {
 		return scope.fullAccess()
 				? teachers(page, size)
-				: teachers.findByIdInOrderByTeacherNo(
+				: withAccountStatus(teachers.findByIdInOrderByTeacherNo(
 						nonEmpty(scope.teacherIds()),
-						pageable(page, size));
+						pageable(page, size)));
 	}
 
 	@Transactional
 	public TeacherAcademicProfile saveTeacher(String id, TeacherAcademicProfile command) {
-		return teachers.save(entity(id, command, teachers));
+		if (command == null || command.getEmployeeId() == null || command.getEmployeeId().isBlank()) {
+			throw new IllegalArgumentException("教师档案必须绑定 IAM 员工");
+		}
+		TeacherAccountProvisioning account = teacherAccounts.provision(command.getEmployeeId(), command.getTeacherName());
+		TeacherAcademicProfile value = entity(id, command, teachers);
+		if (id != null && !id.equals(value.getId())) {
+			throw new IllegalArgumentException("教师档案不存在");
+		}
+		value = teachers.save(value);
+		EducationUserBinding binding = bindings.findByProfileTypeAndProfileId("TEACHER", value.getId())
+				.orElseGet(EducationUserBinding::new);
+		String profileId = value.getId();
+		bindings.findByUsernameAndProfileType(account.username(), "TEACHER")
+				.filter(existing -> !profileId.equals(existing.getProfileId()))
+				.ifPresent(existing -> { throw new IllegalArgumentException("IAM 账号已绑定其他教师"); });
+		binding.setUsername(account.username());
+		binding.setProfileType("TEACHER");
+		binding.setProfileId(value.getId());
+		binding.setStatus("ACTIVE");
+		bindings.save(binding);
+		value.setAccountUsername(account.username());
+		value.setAccountStatus("ACTIVE");
+		return value;
+	}
+
+	@Transactional
+	public TeacherAcademicProfile bindTeacherAccount(String id) {
+		TeacherAcademicProfile value = teachers.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("教师档案不存在"));
+		TeacherAccountProvisioning account = teacherAccounts.provision(value.getEmployeeId(), value.getTeacherName());
+		bindings.findByUsernameAndProfileType(account.username(), "TEACHER")
+				.filter(existing -> !id.equals(existing.getProfileId()))
+				.ifPresent(existing -> { throw new IllegalArgumentException("IAM 账号已绑定其他教师"); });
+		EducationUserBinding binding = bindings.findByProfileTypeAndProfileId("TEACHER", id)
+				.orElseGet(EducationUserBinding::new);
+		binding.setUsername(account.username()); binding.setProfileType("TEACHER");
+		binding.setProfileId(id); binding.setStatus("ACTIVE"); bindings.save(binding);
+		value.setAccountUsername(account.username()); value.setAccountStatus("ACTIVE");
+		return value;
+	}
+
+	@Transactional
+	public void unbindTeacherAccount(String id) {
+		bindings.findByProfileTypeAndProfileId("TEACHER", id).ifPresent(binding -> {
+			binding.setStatus("INACTIVE");
+			bindings.save(binding);
+		});
+	}
+
+	@Transactional
+	public void deleteTeacher(String id) {
+		if (bindings.findByProfileTypeAndProfileId("TEACHER", id)
+				.filter(binding -> "ACTIVE".equals(binding.getStatus())).isPresent()) {
+			throw new IllegalStateException("教师仍绑定登录账号，解除绑定后才能删除");
+		}
+		if (teachingAssignments.countByTeacherId(id) > 0 || offerings.existsByTeacherId(id)) {
+			throw new IllegalStateException("教师已被教学任务引用，不能删除");
+		}
+		teachers.deleteById(id);
 	}
 
 	public List<ParentProfile> parents() {

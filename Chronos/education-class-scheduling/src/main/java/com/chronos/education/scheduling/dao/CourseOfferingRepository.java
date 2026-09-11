@@ -10,6 +10,8 @@ import com.chronos.education.scheduling.model.CourseOffering;
 
 public interface CourseOfferingRepository extends JpaRepository<CourseOffering, String> {
 	List<CourseOffering> findBySemesterCodeOrderByOfferingCode(String semesterCode);
+	List<CourseOffering> findByTeacherIdOrderByOfferingCode(String teacherId);
 	Page<CourseOffering> findBySemesterCodeOrderByOfferingCode(String semesterCode, Pageable pageable);
 	boolean existsByTeacherIdAndCampusIdIn(String teacherId, List<String> campusIds);
+	boolean existsByTeacherId(String teacherId);
 }

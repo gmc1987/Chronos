@@ -37,6 +37,12 @@ public class PortalSeedConfig {
                     widget("data-card", "数据概览", "DataCardWidget", "DATA", "LARGE", 80)
                 ));
             }
+			// Education widgets are upserted so existing installations receive them too.
+			teacherWidget(widgets, "teacher-schedule", "我的课表", "TeacherScheduleWidget", "DATA", "LARGE", 15);
+			teacherWidget(widgets, "teacher-workload", "我的工作量", "TeacherWorkloadWidget", "DATA", "MEDIUM", 25);
+			teacherWidget(widgets, "teacher-leave", "我的请假/流程", "TeacherLeaveWidget", "DATA", "MEDIUM", 35);
+			teacherWidget(widgets, "teacher-notifications", "通知摘要", "TeacherNotificationWidget", "DATA", "MEDIUM", 45);
+			teacherWidget(widgets, "teacher-ai-analysis", "AI 教务分析", "TeacherAiAnalysisWidget", "DATA", "MEDIUM", 75);
 
 			// 流程卡片只向具备流程实例查看权限的用户展示，兼容既有数据库中的种子记录。
 			widgets.findByWidgetCode("todo").ifPresent(widget -> {
@@ -57,6 +63,15 @@ public class PortalSeedConfig {
 			});
         };
     }
+
+	private void teacherWidget(IPortalWidgetRepository widgets, String code, String name, String component,
+			String provider, String size, int order) {
+		PortalWidget value = widgets.findByWidgetCode(code).orElseGet(PortalWidget::new);
+		value.setWidgetCode(code); value.setWidgetName(name); value.setComponentName(component);
+		value.setProviderCode(provider); value.setDefaultSize(size); value.setSortOrder(order);
+		value.setEnabled(true); value.setAudienceRoleCodes("TEACHER");
+		widgets.save(value);
+	}
 
     private PortalApplication app(String code, String name, String description, String icon, String path, int order) {
         PortalApplication app = new PortalApplication(); app.setAppCode(code); app.setAppName(name);
