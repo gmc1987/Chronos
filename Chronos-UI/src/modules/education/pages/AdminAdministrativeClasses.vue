@@ -9,7 +9,7 @@ const columns = [
   { prop: 'className', label: '班级名称' },
   { prop: 'gradeId', label: '所属年级', lookup: 'grades' },
   { prop: 'majorId', label: '所属专业', lookup: 'majors' },
-  { prop: 'headTeacherId', label: '班主任', lookup: 'teachers' },
+  { prop: 'headTeacherName', label: '班主任' },
 ]
 const fields = [
   { prop: 'classCode', label: '班级编码' },

@@ -14,7 +14,7 @@ import {
 
 const columns = [
   { prop: 'academicTermId', label: '学期', lookup: 'terms' },
-  { prop: 'teacherId', label: '教师', lookup: 'teachers' },
+  { prop: 'teacherName', label: '教师' },
   { prop: 'subjectId', label: '学科', lookup: 'subjects' },
   { prop: 'gradeId', label: '年级', lookup: 'grades' },
   { prop: 'administrativeClassId', label: '行政班', lookup: 'classes' },

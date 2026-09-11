@@ -13,7 +13,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         "com.chronos.file.model",
         "com.chronos.industry.model",
         "com.chronos.education.scheduling.model",
-        "com.chronos.knowledge.model"
+        "com.chronos.knowledge.model",
+        "com.chronos.ai.model"
 })
 @EnableJpaRepositories(basePackages = {
         "com.chronos.Idao",
@@ -21,7 +22,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         "com.chronos.file.dao",
         "com.chronos.industry.dao",
         "com.chronos.education.scheduling.dao",
-        "com.chronos.knowledge.dao"
+        "com.chronos.knowledge.dao",
+        "com.chronos.ai.dao"
 })
 public class ChronosEducationApplication {
 

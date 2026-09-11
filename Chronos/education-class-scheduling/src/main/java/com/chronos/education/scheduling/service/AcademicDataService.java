@@ -1,7 +1,10 @@
 package com.chronos.education.scheduling.service;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Map;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -206,11 +209,17 @@ public class AcademicDataService {
 	}
 
 	public List<AdministrativeClass> administrativeClasses() {
-		return administrativeClasses.findAllByOrderByGradeYearDescClassCodeAsc();
+		return withHeadTeacherNames(administrativeClasses.findAllByOrderByGradeYearDescClassCodeAsc());
 	}
 
 	public Page<AdministrativeClass> administrativeClasses(int page, int size) {
-		return administrativeClasses.findAllByOrderByGradeYearDescClassCodeAsc(pageable(page, size));
+		Page<AdministrativeClass> result = administrativeClasses
+				.findAllByOrderByGradeYearDescClassCodeAsc(pageable(page, size));
+		Map<String, String> names = teacherNames(result.getContent().stream()
+				.map(AdministrativeClass::getHeadTeacherId)
+				.toList());
+		result.forEach(item -> item.setHeadTeacherName(names.get(item.getHeadTeacherId())));
+		return result;
 	}
 
 	public List<AdministrativeClass> administrativeClasses(EducationDataScope scope) {
@@ -376,11 +385,17 @@ public class AcademicDataService {
 	}
 
 	public List<TeacherTeachingAssignment> teachingAssignments() {
-		return teachingAssignments.findAllByOrderByCreateTimeDesc();
+		return withTeacherNames(teachingAssignments.findAllByOrderByCreateTimeDesc());
 	}
 
 	public Page<TeacherTeachingAssignment> teachingAssignments(int page, int size) {
-		return teachingAssignments.findAllByOrderByCreateTimeDesc(pageable(page, size));
+		Page<TeacherTeachingAssignment> result = teachingAssignments
+				.findAllByOrderByCreateTimeDesc(pageable(page, size));
+		Map<String, String> names = teacherNames(result.getContent().stream()
+				.map(TeacherTeachingAssignment::getTeacherId)
+				.toList());
+		result.forEach(item -> item.setTeacherName(names.get(item.getTeacherId())));
+		return result;
 	}
 
 	public List<TeacherTeachingAssignment> teachingAssignments(EducationDataScope scope) {
@@ -494,6 +509,37 @@ public class AcademicDataService {
 
 	private int value(Integer number) {
 		return number == null ? 0 : number;
+	}
+
+	private List<AdministrativeClass> withHeadTeacherNames(List<AdministrativeClass> rows) {
+		Map<String, String> names = teacherNames(rows.stream()
+				.map(AdministrativeClass::getHeadTeacherId)
+				.toList());
+		rows.forEach(item -> item.setHeadTeacherName(names.get(item.getHeadTeacherId())));
+		return rows;
+	}
+
+	private List<TeacherTeachingAssignment> withTeacherNames(List<TeacherTeachingAssignment> rows) {
+		Map<String, String> names = teacherNames(rows.stream()
+				.map(TeacherTeachingAssignment::getTeacherId)
+				.toList());
+		rows.forEach(item -> item.setTeacherName(names.get(item.getTeacherId())));
+		return rows;
+	}
+
+	private Map<String, String> teacherNames(Collection<String> ids) {
+		List<String> validIds = ids.stream()
+				.filter(id -> id != null && !id.isBlank())
+				.distinct()
+				.toList();
+		if (validIds.isEmpty()) {
+			return Map.of();
+		}
+		return teachers.findAllById(validIds).stream()
+				.collect(Collectors.toMap(
+						TeacherAcademicProfile::getId,
+						TeacherAcademicProfile::getTeacherName,
+						(first, second) -> first));
 	}
 
 	private Pageable pageable(int page, int size) {

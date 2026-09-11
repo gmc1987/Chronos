@@ -5,6 +5,7 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -21,6 +22,9 @@ public class TeacherTeachingAssignment extends BaseEntity {
 
 	@Column(name = "teacher_id", length = 64, nullable = false)
 	private String teacherId;
+
+	@Transient
+	private String teacherName;
 
 	@Column(name = "subject_id", length = 64, nullable = false)
 	private String subjectId;

@@ -3,13 +3,13 @@
     <div class="header">
       <div>
         <div class="title">AI 模型管理</div>
-        <div class="subtitle">模型基础信息与账号配置</div>
+        <div class="subtitle">维护模型基础信息、适配配置和启用状态</div>
       </div>
       <div class="actions">
         <el-input v-model="keyword" placeholder="模型名称" class="search-input" @keyup.enter="search" />
-        <el-select v-model="provider" placeholder="提供方" @change="search" style="width: 140px">
+        <el-select v-model="provider" placeholder="提供方" filterable allow-create default-first-option @change="search" style="width: 180px">
           <el-option label="全部" value="" />
-          <el-option v-for="item in providers" :key="item.dictCode" :label="item.dictName" :value="item.dictName" />
+          <el-option v-for="item in providers" :key="item.id || item.dictCode" :label="item.dictName" :value="item.dictValue ?? item.dictCode ?? item.dictName" />
         </el-select>
         <el-button type="primary" @click="openCreate">新增模型</el-button>
       </div>
@@ -26,13 +26,18 @@
       <el-table-column prop="provider" label="供应商" />
       <el-table-column prop="status" label="状态" width="100">
         <template #default="scope">
-          <span class="status-tag">{{ displayStatus(scope.row.status) }}</span>
+          <el-switch
+            :model-value="Number(scope.row.status) === 1"
+            inline-prompt
+            active-text="启用"
+            inactive-text="禁用"
+            @change="toggleStatus(scope.row, $event)"
+          />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="240">
+      <el-table-column label="操作" width="100">
         <template #default="scope">
           <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
-          <el-button size="small" @click="openAccounts(scope.row)">账号配置</el-button>
           <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
       </el-table-column>
@@ -51,20 +56,20 @@
     </div>
 
     <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增模型' : '编辑模型'" class="dark-dialog">
-      <el-form label-width="100px">
-        <el-form-item label="模型名称">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="模型名称" prop="modelName">
           <el-input v-model="form.modelName" />
         </el-form-item>
         <el-form-item label="版本">
           <el-input v-model="form.version" />
         </el-form-item>
-        <el-form-item label="模型类型">
-          <el-select v-model="form.modelType" placeholder="请选择" style="width: 100%">
+        <el-form-item label="模型类型" prop="modelType">
+          <el-select v-model="form.modelType" placeholder="请输入或选择模型类型" filterable allow-create default-first-option style="width: 100%">
             <el-option v-for="item in modelTypes" :key="item.id || item.dictCode" :label="item.dictName" :value="item.dictValue ?? item.dictCode ?? item.dictName" />
           </el-select>
         </el-form-item>
-        <el-form-item label="供应商">
-          <el-select v-model="form.provider" placeholder="请选择" style="width: 100%">
+        <el-form-item label="供应商" prop="provider">
+          <el-select v-model="form.provider" placeholder="请输入或选择供应商" filterable allow-create default-first-option style="width: 100%">
             <el-option v-for="item in providers" :key="item.id || item.dictCode" :label="item.dictName" :value="item.dictValue ?? item.dictCode ?? item.dictName" />
           </el-select>
         </el-form-item>
@@ -74,7 +79,7 @@
         <el-form-item label="适配类">
           <el-input v-model="form.adapterClass" />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item label="状态" prop="status">
           <el-select v-model="form.status">
             <el-option :value="1" label="启用" />
             <el-option :value="0" label="禁用" />
@@ -87,62 +92,18 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showAccounts" title="模型账号" width="720px" class="dark-dialog">
-      <div class="dialog-header">
-        <div class="dialog-title">{{ currentModel?.modelName }}</div>
-        <el-button size="small" type="primary" @click="openAccountForm">新增账号</el-button>
-      </div>
-      <el-table :data="accounts" border size="small">
-        <el-table-column prop="accountName" label="账号" />
-        <el-table-column prop="accessKeyId" label="AccessKey" />
-        <el-table-column prop="status" label="状态" width="100" />
-        <el-table-column label="操作" width="160">
-          <template #default="scope">
-            <el-button size="small" @click="editAccount(scope.row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="removeAccount(scope.row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
-
-    <el-dialog v-model="showAccountForm" :title="accountMode === 'create' ? '新增账号' : '编辑账号'" class="dark-dialog">
-      <el-form label-width="100px">
-        <el-form-item label="账号名称">
-          <el-input v-model="accountForm.accountName" />
-        </el-form-item>
-        <el-form-item label="AccessKey">
-          <el-input v-model="accountForm.accessKeyId" />
-        </el-form-item>
-        <el-form-item label="SecretKey">
-          <el-input v-model="accountForm.secretAccessKey" type="password" show-password />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="accountForm.status">
-            <el-option value="1" label="启用" />
-            <el-option value="0" label="禁用" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showAccountForm = false">取消</el-button>
-        <el-button type="primary" @click="saveAccount">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   aiModels,
   aiModelDetail,
   createAiModel,
   updateAiModel,
   deleteAiModel,
-  aiAccounts,
-  createAiAccount,
-  updateAiAccount,
-  deleteAiAccount,
   dictTree,
 } from '../api'
 
@@ -155,19 +116,17 @@ const provider = ref('')
 const providers = ref([])
 const modelTypes = ref([])
 const modelTypeMap = ref({})
-const statusMap = ref({})
 
 const showDialog = ref(false)
 const dialogMode = ref('create')
 const form = ref({})
-
-const showAccounts = ref(false)
-const currentModel = ref(null)
-const accounts = ref([])
-
-const showAccountForm = ref(false)
-const accountMode = ref('create')
-const accountForm = ref({ modelId: '', accountName: '', accessKeyId: '', secretAccessKey: '', status: '1' })
+const formRef = ref()
+const rules = {
+  modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
+  modelType: [{ required: true, message: '请选择模型类型', trigger: 'change' }],
+  provider: [{ required: true, message: '请选择供应商', trigger: 'change' }],
+  status: [{ required: true, message: '请选择状态', trigger: 'change' }],
+}
 
 const findNodeByCode = (nodes, code) => {
   for (const n of nodes || []) {
@@ -195,24 +154,14 @@ const loadDicts = async () => {
   const tree = res?.data || []
   const providerNode = findNodeByCode(tree, 'DICT_MODEL_PROVIDER')
   const modelTypeNode = findNodeByCode(tree, 'DICT_MODEL_TYPE')
-  const statusNode = findNodeByCode(tree, 'DICT_MODEL_STATUS')
   providers.value = providerNode?.children || []
   modelTypes.value = modelTypeNode?.children || []
   modelTypeMap.value = buildMap(modelTypeNode)
-  statusMap.value = buildMap(statusNode)
 }
 
 const displayModelType = (val) => {
   const key = val === undefined || val === null ? '' : String(val)
   return modelTypeMap.value?.[key] || val || '-'
-}
-
-const displayStatus = (val) => {
-  const key = val === undefined || val === null ? '' : String(val)
-  if (statusMap.value?.[key]) return statusMap.value[key]
-  if (key === '1' || val === 1) return '启用'
-  if (key === '0' || val === 0) return '禁用'
-  return val || '-'
 }
 
 const load = async () => {
@@ -254,59 +203,33 @@ const openEdit = async (row) => {
 }
 
 const submit = async () => {
-  if (dialogMode.value === 'create') {
-    await createAiModel(form.value)
-  } else {
-    await updateAiModel(form.value)
-  }
+  await formRef.value?.validate()
+  if (dialogMode.value === 'create') await createAiModel(form.value)
+  else await updateAiModel(form.value)
   showDialog.value = false
-  load()
+  ElMessage.success('保存成功')
+  await load()
 }
 
 const remove = async (row) => {
+  await ElMessageBox.confirm(`确认删除模型“${row.modelName}”吗？`, '删除确认', { type: 'warning' })
   await deleteAiModel(row.id)
-  load()
+  ElMessage.success('删除成功')
+  await load()
 }
 
-const openAccounts = async (row) => {
-  currentModel.value = row
-  showAccounts.value = true
-  await loadAccounts()
-}
-
-const loadAccounts = async () => {
-  const res = await aiAccounts({ modelId: currentModel.value?.id })
-  accounts.value = res?.data || []
-}
-
-const openAccountForm = () => {
-  accountMode.value = 'create'
-  accountForm.value = { modelId: currentModel.value?.id, accountName: '', accessKeyId: '', secretAccessKey: '', status: '1' }
-  showAccountForm.value = true
-}
-
-const editAccount = (row) => {
-  accountMode.value = 'edit'
-  accountForm.value = { ...row }
-  showAccountForm.value = true
-}
-
-const saveAccount = async () => {
-  if (accountMode.value === 'create') {
-    await createAiAccount(accountForm.value)
-  } else {
-    await updateAiAccount(accountForm.value)
+const toggleStatus = async (row, enabled) => {
+  const status = enabled ? 1 : 0
+  try {
+    await updateAiModel({ ...row, status })
+    row.status = status
+    ElMessage.success(status === 1 ? '模型已启用' : '模型已禁用')
+  } catch {
+    await load()
   }
-  showAccountForm.value = false
-  loadAccounts()
 }
 
-const removeAccount = async (row) => {
-  await deleteAiAccount(row.id)
-  loadAccounts()
-}
-
-loadDicts()
+loadDicts().catch(() => {})
 load()
 </script>
 
@@ -328,26 +251,6 @@ load()
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
-}
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.dialog-title {
-  font-weight: 600;
-}
-.status-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 3px;
-  background: #ffffff;
-  color: #22c55e;
-  font-size: 12px;
-  border: 1px solid rgba(34, 197, 94, 0.35);
-  line-height: 1.2;
 }
 :deep(.dark-dialog .el-dialog__header),
 :deep(.dark-dialog .el-dialog__body),

@@ -5,6 +5,7 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -32,6 +33,9 @@ public class AdministrativeClass extends BaseEntity {
 
 	@Column(name = "head_teacher_id", length = 64)
 	private String headTeacherId;
+
+	@Transient
+	private String headTeacherName;
 
 	@Column(name = "campus_id", length = 64)
 	private String campusId;
