@@ -29,3 +29,10 @@ Chronos 采用模块化单体结构。模块之间只能通过公开的应用服
 组织边界：`platform-iam` 是组织、组织单元和人员档案的唯一数据源。其他模块保存其 ID，并通过 IAM 公开应用服务获取详情，禁止复制组织实体或跨模块访问 IAM Repository。
 
 `knowledge-center` 只保存知识库到 AI 模型的 ID 引用，通过 `ai-gateway` 的公开模型调用服务解析“知识库指定模型 -> 默认模型 -> 旧 DeepSeek 环境配置”；不得直接依赖 `AiModel` 实体或 `AiModelRepository`。第一阶段模型路由仅支持 DeepSeek。
+
+第二阶段运行时仍只支持 DeepSeek：`ai-gateway` 按数据库模型配置创建并线程安全缓存
+`ChatModel`，模型更新、删除或运行参数变化会使对应缓存失效。数据库模型支持 Base URL、
+连接/读取/调用超时和常用生成参数，API Key 只可写入、响应中仅返回脱敏状态。只有数据库
+完全没有模型配置时才使用旧 Spring AI/环境变量模型；存在但禁用、缺 key、未配置默认模型或
+供应商不支持时会返回明确业务错误。生产部署仍须通过环境变量注入数据库凭据/旧版 DeepSeek
+凭据，并避免在日志中输出 API Key 或 prompt。

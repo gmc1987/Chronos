@@ -28,6 +28,13 @@ public class AiModelResponse {
 	private final Integer status;
 	@JsonProperty("isDefault")
 	private final Boolean isDefault;
+	private final String baseUrl;
+	private final Integer connectTimeoutMs;
+	private final Integer readTimeoutMs;
+	private final Integer callTimeoutMs;
+	private final Double temperature;
+	private final Integer maxTokens;
+	private final Double topP;
 	private final String maskedApiKey;
 	private final boolean hasApiKey;
 
@@ -45,6 +52,13 @@ public class AiModelResponse {
 		this.adapterClass = model.getAdapterClass();
 		this.status = model.getStatus();
 		this.isDefault = Boolean.TRUE.equals(model.getIsDefault());
+		this.baseUrl = model.getBaseUrl() == null ? "https://api.deepseek.com" : model.getBaseUrl();
+		this.connectTimeoutMs = model.getConnectTimeoutMs() == null ? 10_000 : model.getConnectTimeoutMs();
+		this.readTimeoutMs = model.getReadTimeoutMs() == null ? 60_000 : model.getReadTimeoutMs();
+		this.callTimeoutMs = model.getCallTimeoutMs() == null ? 120_000 : model.getCallTimeoutMs();
+		this.temperature = model.getTemperature();
+		this.maxTokens = model.getMaxTokens();
+		this.topP = model.getTopP();
 		this.maskedApiKey = mask(model.getApiKey());
 		this.hasApiKey = model.getApiKey() != null && !model.getApiKey().isBlank();
 	}

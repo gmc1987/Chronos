@@ -6,12 +6,15 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -71,4 +74,54 @@ public class AiModel extends BaseEntity {
 	 */
 	@Column(name = "is_default")
 	private Boolean isDefault = false;
+
+	@Size(max = 512)
+	@Column(name = "base_url", length = 512)
+	private String baseUrl;
+
+	@Min(100)
+	@Max(120_000)
+	@Column(name = "connect_timeout_ms")
+	private Integer connectTimeoutMs;
+
+	@Min(100)
+	@Max(600_000)
+	@Column(name = "read_timeout_ms")
+	private Integer readTimeoutMs;
+
+	@Min(100)
+	@Max(600_000)
+	@Column(name = "call_timeout_ms")
+	private Integer callTimeoutMs;
+
+	@DecimalMin("0.0")
+	@DecimalMax("2.0")
+	@Column(name = "temperature")
+	private Double temperature;
+
+	@Min(1)
+	@Max(100_000)
+	@Column(name = "max_tokens")
+	private Integer maxTokens;
+
+	@DecimalMin("0.0")
+	@DecimalMax("1.0")
+	@Column(name = "top_p")
+	private Double topP;
+
+	@PrePersist
+	void applyRuntimeDefaults() {
+		if (baseUrl == null || baseUrl.isBlank()) {
+			baseUrl = "https://api.deepseek.com";
+		}
+		if (connectTimeoutMs == null) {
+			connectTimeoutMs = 10_000;
+		}
+		if (readTimeoutMs == null) {
+			readTimeoutMs = 60_000;
+		}
+		if (callTimeoutMs == null) {
+			callTimeoutMs = 120_000;
+		}
+	}
 }

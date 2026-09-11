@@ -7,4 +7,9 @@ package com.chronos.ai.service;
  */
 public interface AiModelChatService {
 	String chat(String modelId, String message);
+
+	/** Evicts a model after an administrative configuration change. */
+	default void invalidate(String modelId) {
+		// Implementations that cache provider clients override this hook.
+	}
 }

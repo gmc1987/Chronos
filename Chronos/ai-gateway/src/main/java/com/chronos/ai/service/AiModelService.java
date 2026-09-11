@@ -1,7 +1,11 @@
 package com.chronos.ai.service;
 
+import java.net.URI;
+import java.util.Locale;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,18 +16,31 @@ import com.chronos.ai.model.AiModel;
 @Service
 public class AiModelService {
 	private final AiModelRepository models;
+	private final AiModelChatService runtime;
 
 	public AiModelService(AiModelRepository models) {
+		this(models, null);
+	}
+
+	@Autowired
+	public AiModelService(AiModelRepository models, AiModelChatService runtime) {
 		this.models = models;
+		this.runtime = runtime;
 	}
 
 	@Transactional(readOnly = true)
 	public Page<AiModel> list(String modelName, String provider, Integer status, int page, int size) {
+		if (page < 0 || page > 100_000) {
+			throw new IllegalArgumentException("页码超出范围");
+		}
+		if (size < 1 || size > 100) {
+			throw new IllegalArgumentException("每页数量必须在 1 到 100 之间");
+		}
 		return models.search(
 				normalize(modelName),
 				normalize(provider),
 				status,
-				PageRequest.of(Math.max(0, page), safeSize(size)));
+				PageRequest.of(page, size));
 	}
 
 	@Transactional(readOnly = true)
@@ -36,7 +53,9 @@ public class AiModelService {
 	public AiModel create(AiModel command) {
 		AiModel target = normalize(command, new AiModel(), true);
 		applyDefault(target, Boolean.TRUE.equals(target.getIsDefault()), null);
-		return models.save(target);
+		AiModel saved = models.save(target);
+		invalidate(saved.getId());
+		return saved;
 	}
 
 	@Transactional
@@ -57,7 +76,9 @@ public class AiModelService {
 			requestedDefault = false;
 		}
 		applyDefault(target, requestedDefault, target.getId());
-		return models.save(target);
+		AiModel saved = models.save(target);
+		invalidate(saved.getId());
+		return saved;
 	}
 
 	@Transactional
@@ -66,6 +87,7 @@ public class AiModelService {
 			throw new IllegalArgumentException("AI 模型不存在");
 		}
 		models.deleteById(id);
+		invalidate(id);
 	}
 
 	private AiModel normalize(AiModel source, AiModel target, boolean creating) {
@@ -75,7 +97,10 @@ public class AiModelService {
 		target.setModelName(required(source.getModelName(), "模型名称不能为空"));
 		target.setVersion(trimToNull(source.getVersion()));
 		target.setModelType(required(source.getModelType(), "模型类型不能为空"));
-		target.setProvider(required(source.getProvider(), "供应商不能为空"));
+		target.setProvider(required(source.getProvider(), "供应商不能为空").toLowerCase(Locale.ROOT));
+		if (!"deepseek".equals(target.getProvider())) {
+			throw new AiModelConfigurationException("当前仅支持 DeepSeek 供应商");
+		}
 		String apiKey = trimToNull(source.getApiKey());
 		if (creating) {
 			target.setApiKey(requiredApiKey(apiKey));
@@ -84,6 +109,27 @@ public class AiModelService {
 		}
 		target.setSignatureHandler(trimToNull(source.getSignatureHandler()));
 		target.setAdapterClass(trimToNull(source.getAdapterClass()));
+		if (creating || source.getBaseUrl() != null) {
+			target.setBaseUrl(normalizeBaseUrl(source.getBaseUrl()));
+		} else if (target.getBaseUrl() == null || target.getBaseUrl().isBlank()) {
+			target.setBaseUrl("https://api.deepseek.com");
+		}
+		target.setConnectTimeoutMs(normalizeTimeout(
+				source.getConnectTimeoutMs(), creating ? Integer.valueOf(10_000) : target.getConnectTimeoutMs(), "连接超时"));
+		target.setReadTimeoutMs(normalizeTimeout(
+				source.getReadTimeoutMs(), creating ? Integer.valueOf(60_000) : target.getReadTimeoutMs(), "读取超时"));
+		target.setCallTimeoutMs(normalizeTimeout(
+				source.getCallTimeoutMs(), creating ? Integer.valueOf(120_000) : target.getCallTimeoutMs(), "调用超时"));
+		if (creating || source.getTemperature() != null) {
+			target.setTemperature(source.getTemperature());
+		}
+		if (creating || source.getMaxTokens() != null) {
+			target.setMaxTokens(source.getMaxTokens());
+		}
+		if (creating || source.getTopP() != null) {
+			target.setTopP(source.getTopP());
+		}
+		validateOptions(target);
 		Integer status = source.getStatus() == null ? 1 : source.getStatus();
 		if (status != 0 && status != 1) {
 			throw new IllegalArgumentException("模型状态只能是启用或禁用");
@@ -141,7 +187,52 @@ public class AiModelService {
 		return value == null ? "" : value.trim();
 	}
 
-	private int safeSize(int size) {
-		return Math.min(Math.max(1, size), 100);
+	private String normalizeBaseUrl(String value) {
+		String baseUrl = value == null || value.isBlank()
+				? "https://api.deepseek.com"
+				: value.trim();
+		try {
+			URI uri = URI.create(baseUrl);
+			if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())
+					|| uri.getHost() == null) {
+				throw new IllegalArgumentException();
+			}
+		} catch (IllegalArgumentException exception) {
+			throw new AiModelConfigurationException("Base URL 必须是有效的 HTTP(S) 地址");
+		}
+		return baseUrl;
+	}
+
+	private Integer normalizeTimeout(Integer value, Integer current, String label) {
+		int result = value == null ? (current == null ? defaultTimeout(label) : current) : value;
+		int max = "连接超时".equals(label) ? 120_000 : 600_000;
+		if (result < 100 || result > max) {
+			throw new AiModelConfigurationException(label + "必须在 100 到 " + max + " 毫秒之间");
+		}
+		return result;
+	}
+
+	private int defaultTimeout(String label) {
+		return "连接超时".equals(label) ? 10_000 : "读取超时".equals(label) ? 60_000 : 120_000;
+	}
+
+	private void validateOptions(AiModel target) {
+		if (target.getTemperature() != null
+				&& (target.getTemperature() < 0 || target.getTemperature() > 2)) {
+			throw new AiModelConfigurationException("temperature 必须在 0 到 2 之间");
+		}
+		if (target.getTopP() != null && (target.getTopP() < 0 || target.getTopP() > 1)) {
+			throw new AiModelConfigurationException("topP 必须在 0 到 1 之间");
+		}
+		if (target.getMaxTokens() != null
+				&& (target.getMaxTokens() < 1 || target.getMaxTokens() > 100_000)) {
+			throw new AiModelConfigurationException("maxTokens 必须在 1 到 100000 之间");
+		}
+	}
+
+	private void invalidate(String id) {
+		if (runtime != null) {
+			runtime.invalidate(id);
+		}
 	}
 }

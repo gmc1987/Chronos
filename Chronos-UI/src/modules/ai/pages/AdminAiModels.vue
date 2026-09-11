@@ -3,7 +3,7 @@
     <div class="header">
       <div>
         <div class="title">AI 模型管理</div>
-        <div class="subtitle">维护模型基础信息、API Key、适配配置和启用状态</div>
+        <div class="subtitle">维护 DeepSeek 模型、连接参数、API Key、适配配置和启用状态</div>
       </div>
       <div class="actions">
         <el-input v-model="keyword" placeholder="模型名称" class="search-input" @keyup.enter="search" />
@@ -24,6 +24,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="provider" label="供应商" />
+      <el-table-column prop="baseUrl" label="Base URL" min-width="190" show-overflow-tooltip />
       <el-table-column label="API Key" min-width="150">
         <template #default="scope">
           <span v-if="scope.row.hasApiKey">{{ scope.row.maskedApiKey || '已配置' }}</span>
@@ -100,6 +101,27 @@
             autocomplete="new-password"
             :placeholder="form.hasApiKey ? `已配置：${form.maskedApiKey || '****'}，留空保持原值` : '请输入 API Key'"
           />
+        </el-form-item>
+        <el-form-item label="Base URL" prop="baseUrl">
+          <el-input v-model="form.baseUrl" placeholder="https://api.deepseek.com" />
+        </el-form-item>
+        <el-form-item label="连接超时(ms)" prop="connectTimeoutMs">
+          <el-input-number v-model="form.connectTimeoutMs" :min="100" :max="120000" :step="1000" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="读取超时(ms)" prop="readTimeoutMs">
+          <el-input-number v-model="form.readTimeoutMs" :min="100" :max="600000" :step="1000" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="调用超时(ms)" prop="callTimeoutMs">
+          <el-input-number v-model="form.callTimeoutMs" :min="100" :max="600000" :step="1000" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="Temperature" prop="temperature">
+          <el-input-number v-model="form.temperature" :min="0" :max="2" :step="0.1" :precision="2" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="Max tokens" prop="maxTokens">
+          <el-input-number v-model="form.maxTokens" :min="1" :max="100000" :step="100" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="Top P" prop="topP">
+          <el-input-number v-model="form.topP" :min="0" :max="1" :step="0.1" :precision="2" controls-position="right" />
         </el-form-item>
         <el-form-item label="签名处理">
           <el-input v-model="form.signatureHandler" />
@@ -243,6 +265,13 @@ const openCreate = () => {
     maskedApiKey: '',
     hasApiKey: false,
     adapterClass: '',
+    baseUrl: 'https://api.deepseek.com',
+    connectTimeoutMs: 10000,
+    readTimeoutMs: 60000,
+    callTimeoutMs: 120000,
+    temperature: null,
+    maxTokens: null,
+    topP: null,
     status: 1,
     isDefault: false,
   }
@@ -291,6 +320,13 @@ const toggleStatus = async (row, enabled) => {
       provider: row.provider,
       signatureHandler: row.signatureHandler,
       adapterClass: row.adapterClass,
+      baseUrl: row.baseUrl,
+      connectTimeoutMs: row.connectTimeoutMs,
+      readTimeoutMs: row.readTimeoutMs,
+      callTimeoutMs: row.callTimeoutMs,
+      temperature: row.temperature,
+      maxTokens: row.maxTokens,
+      topP: row.topP,
       status,
       isDefault: enabled && row.isDefault === true,
     })
@@ -312,6 +348,13 @@ const toggleDefault = async (row, isDefault) => {
       provider: row.provider,
       signatureHandler: row.signatureHandler,
       adapterClass: row.adapterClass,
+      baseUrl: row.baseUrl,
+      connectTimeoutMs: row.connectTimeoutMs,
+      readTimeoutMs: row.readTimeoutMs,
+      callTimeoutMs: row.callTimeoutMs,
+      temperature: row.temperature,
+      maxTokens: row.maxTokens,
+      topP: row.topP,
       status: row.status,
       isDefault: Boolean(isDefault),
     })
