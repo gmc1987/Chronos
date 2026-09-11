@@ -25,6 +25,11 @@ public class DeepseekServiceImpl implements LLMServiceStrategy {
 	}
 
 	@Override
+	public boolean available() {
+		return chatModel != null;
+	}
+
+	@Override
 	public String chat(String message) {
 		if (message == null || message.isBlank()) {
 			throw new IllegalArgumentException("AI 输入内容不能为空");

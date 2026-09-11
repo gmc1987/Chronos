@@ -666,16 +666,23 @@ public class WorkflowService {
 		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
 		WorkflowNode node = nodes.findByFlowIdAndNodeKey(definition.getId(), instance.getCurrentNodeKey())
 				.orElseThrow(() -> new IllegalArgumentException("当前节点不存在"));
-		Map<String, String> permissions = permissionMap(node, "permissions");
+		List<WorkflowTask> history = tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId);
+		WorkflowTask currentTask = history.stream()
+				.filter(t -> "PENDING".equals(t.getStatus()) && actor.equals(t.getAssignee()))
+				.findFirst()
+				.orElse(null);
+		boolean starterRework = currentTask != null && "STARTER_REWORK".equals(currentTask.getTaskKind());
+		Map<String, String> permissions = starterRework
+				? starterReworkPermissions(definition, node)
+				: permissionMap(node, "permissions");
 		Set<String> required = permissionSet(node, "required");
 		List<Map<String, Object>> forms = new ArrayList<>();
 		if (definition.getMainFormId() != null && !definition.getMainFormId().isBlank())
 			forms.add(runtimeForm(instance, definition.getMainFormId(), "_MAIN", "MAIN", permissions, required));
-		for (String id : additionalForms(node))
-			forms.add(runtimeForm(instance, id, node.getNodeKey(), "ADDITIONAL", permissions, required));
-		List<WorkflowTask> history = tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId);
-		WorkflowTask currentTask = history.stream()
-				.filter(t -> "PENDING".equals(t.getStatus()) && actor.equals(t.getAssignee())).findFirst().orElse(null);
+		if (!starterRework) {
+			for (String id : additionalForms(node))
+				forms.add(runtimeForm(instance, id, node.getNodeKey(), "ADDITIONAL", permissions, required));
+		}
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("instance", instanceView(instance, definition));
 		result.put("flow", definitionView(definition));
@@ -686,7 +693,7 @@ public class WorkflowService {
 		result.put("history", history.stream().map(this::historyView).toList());
 		result.put("currentTask", currentTask == null ? null : taskView(currentTask));
 		result.put("canEdit", currentTask != null);
-		result.put("operations", operationView(node, currentTask != null));
+		result.put("operations", taskOperationView(node, currentTask));
 		return result;
 	}
 
@@ -699,8 +706,13 @@ public class WorkflowService {
 		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
 		WorkflowNode node = nodes.findByFlowIdAndNodeKey(definition.getId(), instance.getCurrentNodeKey())
 				.orElseThrow(() -> new IllegalArgumentException("当前节点不存在"));
+		WorkflowTask currentTask = currentPendingTask(instanceId, actor);
+		boolean starterRework = "STARTER_REWORK".equals(currentTask.getTaskKind());
 		boolean main = Objects.equals(definition.getMainFormId(), formId);
-		if (!main && !additionalForms(node).contains(formId))
+		if (starterRework && !main) {
+			throw new IllegalArgumentException("发起人修改任务只能编辑主表单");
+		}
+		if (!starterRework && !main && !additionalForms(node).contains(formId))
 			throw new IllegalArgumentException("当前节点未绑定该表单");
 		Map<String, Object> runtimeData = data == null ? Map.of() : data;
 		List<FormField> fields = formService.fields(formId);
@@ -708,8 +720,11 @@ public class WorkflowService {
 				attachmentIds(runtimeData, fields),
 				"WORKFLOW_FORM",
 				instanceId);
+		Map<String, String> permissions = starterRework
+				? starterReworkPermissions(definition, node)
+				: permissionMap(node, "permissions");
 		return formService.saveRuntime(instanceId, formId, main ? "_MAIN" : node.getNodeKey(),
-				main ? "MAIN" : "ADDITIONAL", actor, runtimeData, permissionMap(node, "permissions"),
+				main ? "MAIN" : "ADDITIONAL", actor, runtimeData, permissions,
 				permissionSet(node, "required"), draft);
 	}
 
@@ -924,6 +939,7 @@ public class WorkflowService {
 		WorkflowTask task = requirePendingTask(taskId, actor);
 		WorkflowNode node = nodes.findByFlowIdAndNodeKey(i.getDefinitionId(), task.getNodeKey()).orElseThrow();
 		requireOperation(node, "approve");
+		validateCurrentNodeRequiredForms(i, node);
 		if (flowableRuntime.isFlowable(i)) {
 			WorkflowInstance result = flowableRuntime.approve(i, task, actor, comment);
 			audit.log(actor, "WORKFLOW_TASK_APPROVE", "taskId=" + taskId + ", engine=FLOWABLE");
@@ -957,6 +973,29 @@ public class WorkflowService {
 		WorkflowInstance result = instances.save(i);
 		publishCompletion(result, actor);
 		return result;
+	}
+
+	/** 快捷审批和 API 直调同样必须满足当前节点主表单、附加表单的必填约束。 */
+	private void validateCurrentNodeRequiredForms(WorkflowInstance instance, WorkflowNode node) {
+		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+		Map<String, String> permissions = permissionMap(node, "permissions");
+		Set<String> required = permissionSet(node, "required");
+		if (definition.getMainFormId() != null && !definition.getMainFormId().isBlank()) {
+			formService.validateRuntimeRequiredFields(
+					instance.getId(),
+					definition.getMainFormId(),
+					"_MAIN",
+					permissions,
+					required);
+		}
+		for (String formId : additionalForms(node)) {
+			formService.validateRuntimeRequiredFields(
+					instance.getId(),
+					formId,
+					node.getNodeKey(),
+					permissions,
+					required);
+		}
 	}
 
 	/**
@@ -996,6 +1035,8 @@ public class WorkflowService {
 				cancelPending(instance.getId(), operationComment("审批拒绝", comment));
 				result.setStatus("REJECTED");
 				result.setFinishedAt(LocalDateTime.now());
+			} else if ("STARTER".equals(policy)) {
+				result = flowableRuntime.moveToStarter(instance, task, comment);
 			} else {
 				String target = resolveReturnTarget(instance, task, policy, targetNodeKey);
 				result = flowableRuntime.moveTo(instance, task, target, comment);
@@ -1024,17 +1065,37 @@ public class WorkflowService {
 		WorkflowTask task = requirePendingTask(taskId, actor);
 		if (!"STARTER_REWORK".equals(task.getTaskKind()))
 			throw new IllegalArgumentException("当前任务不是发起人修改任务");
+		WorkflowNode resume = nodes.findByFlowIdAndNodeKey(instance.getDefinitionId(), task.getResumeNodeKey())
+				.orElseThrow(() -> new IllegalArgumentException("原审批节点不存在"));
+		validateStarterReworkForm(instance, resume);
+		if (flowableRuntime.isFlowable(instance)) {
+			WorkflowInstance result = flowableRuntime.resubmit(instance, task, actor, comment);
+			audit.log(actor, "WORKFLOW_STARTER_RESUBMIT", "taskId=" + taskId
+					+ ", resume=" + resume.getNodeKey() + ", engine=FLOWABLE");
+			return result;
+		}
 		task.setStatus("APPROVED");
 		task.setComment(operationComment("发起人重新提交", comment));
 		task.setCompletedAt(LocalDateTime.now());
 		tasks.saveAndFlush(task);
-		WorkflowNode resume = nodes.findByFlowIdAndNodeKey(instance.getDefinitionId(), task.getResumeNodeKey())
-				.orElseThrow(() -> new IllegalArgumentException("原审批节点不存在"));
 		instance.setCurrentNodeKey(resume.getNodeKey());
 		instances.save(instance);
 		createTask(instance, resume, actor);
 		audit.log(actor, "WORKFLOW_STARTER_RESUBMIT", "taskId=" + taskId + ", resume=" + resume.getNodeKey());
 		return instance;
+	}
+
+	private void validateStarterReworkForm(WorkflowInstance instance, WorkflowNode resumeNode) {
+		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+		if (definition.getMainFormId() == null || definition.getMainFormId().isBlank()) {
+			return;
+		}
+		formService.validateRuntimeRequiredFields(
+				instance.getId(),
+				definition.getMainFormId(),
+				"_MAIN",
+				starterReworkPermissions(definition, resumeNode),
+				permissionSet(resumeNode, "required"));
 	}
 
 	@Transactional(readOnly = true)
@@ -1062,6 +1123,21 @@ public class WorkflowService {
 	public List<Map<String, String>> directoryUsers(String actor) {
 		return assigneeResolver.directory().stream()
 				.filter(u -> security.canViewDirectoryUser(actor, u.get("username"))).toList();
+	}
+
+	/**
+	 * 人工选择的任务目标必须来自操作者有权查看的有效账号目录。前端下拉不是安全边界，
+	 * 服务端再次校验可以阻止伪造用户名、停用账号以及跨数据范围转办。
+	 */
+	private String requireDirectoryTarget(String actor, String username, String emptyMessage) {
+		String target = required(username, emptyMessage);
+		boolean visibleActiveUser = assigneeResolver.directory().stream()
+				.anyMatch(user -> target.equals(user.get("username"))
+						&& security.canViewDirectoryUser(actor, target));
+		if (!visibleActiveUser) {
+			throw new AccessDeniedException("目标用户不存在、已停用或不在可选范围内");
+		}
+		return target;
 	}
 
 	public Map<String, Object> monitor(String actor) {
@@ -1127,7 +1203,7 @@ public class WorkflowService {
 	public WorkflowTask transferTask(String taskId, String assignee, String comment, String actor) {
 		WorkflowTask task = requirePendingTask(taskId, actor);
 		requireOperation(task, "transfer");
-		String target = required(assignee, "转办人不能为空");
+		String target = requireDirectoryTarget(actor, assignee, "转办人不能为空");
 		task.setComment(operationComment("转办给 " + target, comment));
 		WorkflowInstance instance = requireInstance(task.getInstanceId());
 		if (flowableRuntime.isFlowable(instance)) {
@@ -1151,7 +1227,7 @@ public class WorkflowService {
 		WorkflowTask source = requirePendingTask(taskId, actor);
 		requireOperation(source, "addSign");
 		WorkflowInstance instance = requireInstance(source.getInstanceId());
-		String target = required(assignee, "加签人不能为空");
+		String target = requireDirectoryTarget(actor, assignee, "加签人不能为空");
 		if (flowableRuntime.isFlowable(instance)) {
 			WorkflowTask task = flowableRuntime.addSign(
 					instance,
@@ -1191,7 +1267,7 @@ public class WorkflowService {
 		task.setInstanceId(source.getInstanceId());
 		task.setNodeKey(source.getNodeKey());
 		task.setNodeName(source.getNodeName() + "（抄送）");
-		task.setAssignee(required(assignee, "抄送人不能为空"));
+		task.setAssignee(requireDirectoryTarget(actor, assignee, "抄送人不能为空"));
 		task.setStatus("CC");
 		task.setComment(operationComment("由 " + actor + " 抄送", comment));
 		task.setCompletedAt(LocalDateTime.now());
@@ -1209,8 +1285,13 @@ public class WorkflowService {
 		requireOperation(task, "return");
 		String policy = nodeProperty(task, "returnPolicy", "PREVIOUS");
 		if (flowableRuntime.isFlowable(instance)) {
-			String target = resolveReturnTarget(instance, task, policy, targetNodeKey);
-			WorkflowInstance result = flowableRuntime.moveTo(instance, task, target, comment);
+			WorkflowInstance result;
+			if ("STARTER".equals(policy)) {
+				result = flowableRuntime.moveToStarter(instance, task, comment);
+			} else {
+				String target = resolveReturnTarget(instance, task, policy, targetNodeKey);
+				result = flowableRuntime.moveTo(instance, task, target, comment);
+			}
 			audit.log(actor, "WORKFLOW_TASK_RETURN", "taskId=" + taskId + ", policy=" + policy + ", engine=FLOWABLE");
 			return result;
 		}
@@ -1541,6 +1622,23 @@ public class WorkflowService {
 		return value;
 	}
 
+	/**
+	 * 发起人修改任务不是审批任务，只允许重新提交。这里从接口层明确关闭审批类操作，
+	 * 避免门户仅靠 taskKind 猜测能力，也防止后续其他客户端错误展示审批按钮。
+	 */
+	Map<String, Boolean> taskOperationView(WorkflowNode node, WorkflowTask task) {
+		if (task == null) {
+			return operationView(node, false);
+		}
+		if (!"STARTER_REWORK".equals(task.getTaskKind())) {
+			return operationView(node, true);
+		}
+
+		Map<String, Boolean> value = operationView(node, false);
+		value.put("resubmit", true);
+		return value;
+	}
+
 	private void addParticipant(String instanceId, String username, String type, String taskId) {
 		if (username == null || username.isBlank() || participants
 				.existsByInstanceIdAndUsernameAndParticipantTypeAndActiveTrue(instanceId, username, type))
@@ -1818,7 +1916,8 @@ public class WorkflowService {
 				? null
 				: nodes.findByFlowIdAndNodeKey(i.getDefinitionId(), t.getNodeKey()).orElse(null);
 		if (node != null) {
-			v.put("operations", operationView(node, true));
+			v.put("operations", taskOperationView(node, t));
+			v.put("requiresFormInput", requiresFormInput(d, node));
 			v.put("returnPolicy", nodeStringProperty(node, "returnPolicy", "PREVIOUS"));
 			v.put("rejectPolicy", nodeStringProperty(node, "rejectPolicy", "TERMINATE"));
 			v.put("returnTargets", returnTargetKeys(i.getId(), t.getNodeKey()).stream().map(key -> {
@@ -1830,6 +1929,19 @@ public class WorkflowService {
 			}).toList());
 		}
 		return v;
+	}
+
+	private boolean requiresFormInput(WorkflowDefinition definition, WorkflowNode node) {
+		if (definition == null) {
+			return false;
+		}
+		Set<String> formIds = new HashSet<>(additionalForms(node));
+		if (definition.getMainFormId() != null && !definition.getMainFormId().isBlank()) {
+			formIds.add(definition.getMainFormId());
+		}
+		return permissionMap(node, "permissions").entrySet().stream()
+				.anyMatch(entry -> "EDIT".equals(entry.getValue())
+						&& formIds.stream().anyMatch(formId -> entry.getKey().startsWith(formId + ".")));
 	}
 
 	private Map<String, Object> historyView(WorkflowTask t) {
@@ -1854,6 +1966,31 @@ public class WorkflowService {
 		} catch (Exception e) {
 			return List.of();
 		}
+	}
+
+	private WorkflowTask currentPendingTask(String instanceId, String actor) {
+		return tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId).stream()
+				.filter(task -> "PENDING".equals(task.getStatus()) && actor.equals(task.getAssignee()))
+				.findFirst()
+				.orElseThrow(() -> new AccessDeniedException("仅当前任务处理人可修改表单"));
+	}
+
+	/**
+	 * 发起人修改任务只开放主表单；审批节点显式隐藏的系统字段继续保持隐藏，其他主表单字段恢复可编辑。
+	 */
+	private Map<String, String> starterReworkPermissions(
+			WorkflowDefinition definition,
+			WorkflowNode resumeNode) {
+		Map<String, String> nodePermissions = permissionMap(resumeNode, "permissions");
+		Map<String, String> permissions = new HashMap<>();
+		if (definition.getMainFormId() == null || definition.getMainFormId().isBlank()) {
+			return permissions;
+		}
+		for (FormField field : formService.fields(definition.getMainFormId())) {
+			String key = definition.getMainFormId() + "." + field.getFieldKey();
+			permissions.put(key, "HIDDEN".equals(nodePermissions.get(key)) ? "HIDDEN" : "EDIT");
+		}
+		return permissions;
 	}
 
 	private Map<String, String> permissionMap(WorkflowNode node, String field) {
@@ -1890,10 +2027,11 @@ public class WorkflowService {
 			String permission = permissions.getOrDefault(key, "READ");
 			if (!"HIDDEN".equals(permission))
 				schema.add(Map.of("fieldKey", field.getFieldKey(), "fieldLabel", field.getFieldLabel(), "fieldType",
-						field.getFieldType(), "required", required.contains(key), "permission", permission,
+						field.getFieldType(), "required", isRuntimeFieldRequired(field, key, permission, required),
+						"permission", permission,
 						"optionsJson", field.getOptionsJson() == null ? "[]" : field.getOptionsJson()));
 		}
-		Map<String, Object> data = formService.instance(instance.getId(), formId, nodeKey).map(x -> {
+		Map<String, Object> storedData = formService.instance(instance.getId(), formId, nodeKey).map(x -> {
 			try {
 				return json.readValue(x.getDataJson(),
 						new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
@@ -1902,8 +2040,40 @@ public class WorkflowService {
 				return Map.<String, Object>of();
 			}
 		}).orElse(Map.of());
+		// HIDDEN 不只是前端隐藏控件：服务端也必须移除对应值，防止调用者直接读取响应 JSON。
+		Map<String, Object> data = visibleRuntimeData(
+				formId,
+				formService.fields(formId),
+				permissions,
+				storedData);
 		return Map.of("formId", formId, "formName", definition.getFormName(), "role", role, "fields", schema, "data",
 				data);
+	}
+
+	Map<String, Object> visibleRuntimeData(
+			String formId,
+			List<FormField> fields,
+			Map<String, String> permissions,
+			Map<String, Object> storedData) {
+		Map<String, Object> visible = new LinkedHashMap<>();
+		for (FormField field : fields) {
+			String permissionKey = formId + "." + field.getFieldKey();
+			String permission = permissions.getOrDefault(permissionKey, "READ");
+			if (!"HIDDEN".equals(permission)
+					&& storedData.containsKey(field.getFieldKey())) {
+				visible.put(field.getFieldKey(), storedData.get(field.getFieldKey()));
+			}
+		}
+		return visible;
+	}
+
+	boolean isRuntimeFieldRequired(
+			FormField field,
+			String permissionKey,
+			String permission,
+			Set<String> nodeRequiredFields) {
+		return nodeRequiredFields.contains(permissionKey)
+				|| (Boolean.TRUE.equals(field.getRequired()) && "EDIT".equals(permission));
 	}
 
 	private void ensureDraft(WorkflowDefinition d) {

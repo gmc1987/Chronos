@@ -7,6 +7,7 @@ import {
   createKnowledgeTextDocument,
   deleteKnowledgeBase,
   deleteKnowledgeDocument,
+  getAiModelStatus,
   importKnowledgeDocument,
   listKnowledgeBases,
   listKnowledgeDocuments,
@@ -30,6 +31,7 @@ const importTitle = ref('')
 const assistantQuestion = ref('')
 const assistantLoading = ref(false)
 const assistantAnswer = ref(null)
+const modelStatus = ref({ available: false, message: '正在检查 AI 模型配置' })
 const basePage = ref(1)
 const basePageSize = ref(10)
 const baseTotal = ref(0)
@@ -155,6 +157,10 @@ const search = async () => {
 }
 
 const askAssistant = async () => {
+  if (!modelStatus.value.available) {
+    ElMessage.warning(modelStatus.value.message)
+    return
+  }
   if (!assistantQuestion.value.trim()) {
     ElMessage.warning('请输入需要咨询的问题')
     return
@@ -171,7 +177,14 @@ const askAssistant = async () => {
   }
 }
 
-onMounted(loadBases)
+onMounted(async () => {
+  await Promise.all([
+    loadBases(),
+    getAiModelStatus().then(response => {
+      modelStatus.value = response.data || modelStatus.value
+    }),
+  ])
+})
 </script>
 
 <template>
@@ -273,6 +286,13 @@ onMounted(loadBases)
                 :closable="false"
                 show-icon
               />
+              <el-alert
+                v-if="!modelStatus.available"
+                :title="modelStatus.message"
+                type="warning"
+                :closable="false"
+                show-icon
+              />
               <div class="search-bar assistant-bar">
                 <el-input
                   v-model="assistantQuestion"
@@ -280,7 +300,12 @@ onMounted(loadBases)
                   :rows="3"
                   placeholder="例如：学生因病不能上课时，应当如何请假？"
                 />
-                <el-button type="primary" :loading="assistantLoading" @click="askAssistant">提问</el-button>
+                <el-button
+                  type="primary"
+                  :loading="assistantLoading"
+                  :disabled="!modelStatus.available"
+                  @click="askAssistant"
+                >提问</el-button>
               </div>
               <el-card v-if="assistantAnswer" shadow="never">
                 <div class="answer">{{ assistantAnswer.answer }}</div>

@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.util.List;
 
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ContentDisposition;
@@ -23,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.chronos.commons.model.ResultData;
+import com.chronos.commons.model.PageView;
 import com.chronos.message.model.PublicationCommand;
 import com.chronos.message.model.PublicationView;
 import com.chronos.message.model.PublicationStatistics;
@@ -39,12 +39,19 @@ public class PublicationController {
 
 	@GetMapping("/admin/publications")
 	@PreAuthorize("@iamAuthorization.any(authentication,'message:publication:view','message:publication:manage')")
-	public ResultData<Page<PublicationView>> list(@RequestParam(required = false) String type,
+	public ResultData<PageView<PublicationView>> list(@RequestParam(required = false) String type,
 			@RequestParam(required = false) String status, @RequestParam(required = false) String keyword,
 			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size,
 			Principal principal) {
-		return ok(service.adminList(type, status, keyword, principal.getName(), PageRequest.of(Math.max(page, 0),
-				Math.min(Math.max(size, 1), 100), Sort.by(Sort.Direction.DESC, "createTime"))));
+		return ok(PageView.from(service.adminList(
+				type,
+				status,
+				keyword,
+				principal.getName(),
+				PageRequest.of(
+						Math.max(page, 0),
+						Math.min(Math.max(size, 1), 100),
+						Sort.by(Sort.Direction.DESC, "createTime")))));
 	}
 
 	@GetMapping("/admin/publications/{id}")
@@ -139,7 +146,7 @@ public class PublicationController {
 
 	@GetMapping("/publications")
 	@PreAuthorize("@iamAuthorization.has(authentication,'message:publication:read')")
-	public ResultData<Page<PublicationView>> visible(
+	public ResultData<PageView<PublicationView>> visible(
 			@RequestParam(required = false) String type,
 			@RequestParam(required = false) String keyword,
 			@RequestParam(defaultValue = "false") boolean unreadOnly,
@@ -153,7 +160,12 @@ public class PublicationController {
 						Sort.Order.desc("pinned"),
 						Sort.Order.asc("sortOrder"),
 						Sort.Order.desc("publishedAt")));
-		return ok(service.visible(principal.getName(), type, keyword, unreadOnly, pageable));
+		return ok(PageView.from(service.visible(
+				principal.getName(),
+				type,
+				keyword,
+				unreadOnly,
+				pageable)));
 	}
 
 	@PostMapping("/admin/publications/{id}/versions/{versionNo}/restore")

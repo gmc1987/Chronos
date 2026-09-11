@@ -40,6 +40,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class FlowableRuntimeCoordinator {
+	private static final String REWORK_PREFIX = "chronos_rework__";
+
 	private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
 	};
 
@@ -159,7 +161,7 @@ public class FlowableRuntimeCoordinator {
 				instance.setFinishedAt(LocalDateTime.now());
 			}
 		} else if (!engineTasks.isEmpty()) {
-			instance.setCurrentNodeKey(engineTasks.getFirst().getTaskDefinitionKey());
+			instance.setCurrentNodeKey(originalNodeKey(engineTasks.getFirst().getTaskDefinitionKey()));
 		}
 		return instances.save(instance);
 	}
@@ -346,6 +348,39 @@ public class FlowableRuntimeCoordinator {
 		return synchronize(instance);
 	}
 
+	/** 将当前人工节点完整收拢到该节点对应的发起人修改任务。 */
+	public WorkflowInstance moveToStarter(
+			WorkflowInstance instance,
+			WorkflowTask projection,
+			String comment) {
+		return moveTo(instance, projection, reworkKey(projection.getNodeKey()), comment);
+	}
+
+	/** 完成发起人修改任务，其 BPMN 唯一出口会重新进入原审批节点。 */
+	public WorkflowInstance resubmit(
+			WorkflowInstance instance,
+			WorkflowTask projection,
+			String actor,
+			String comment) {
+		org.flowable.task.api.Task engineTask = requireEngineTask(projection);
+		requireAssignee(engineTask, actor);
+		if (!isReworkKey(engineTask.getTaskDefinitionKey())) {
+			throw new IllegalArgumentException("当前 Flowable 任务不是发起人修改任务");
+		}
+		if (comment != null && !comment.isBlank()) {
+			taskService.addComment(
+					engineTask.getId(),
+					instance.getEngineInstanceId(),
+					comment.trim());
+		}
+		taskService.complete(engineTask.getId());
+		projection.setStatus("APPROVED");
+		projection.setComment(comment);
+		projection.setCompletedAt(LocalDateTime.now());
+		tasks.saveAndFlush(projection);
+		return synchronize(instance);
+	}
+
 	public void terminate(WorkflowInstance instance, String reason) {
 		if (runtimeService.createProcessInstanceQuery()
 				.processInstanceId(instance.getEngineInstanceId())
@@ -383,10 +418,17 @@ public class FlowableRuntimeCoordinator {
 
 	private void synchronizeTask(WorkflowInstance instance, org.flowable.task.api.Task engineTask) {
 		WorkflowTask projection = tasks.findByEngineTaskId(engineTask.getId()).orElseGet(WorkflowTask::new);
+		String engineNodeKey = engineTask.getTaskDefinitionKey();
+		boolean starterRework = isReworkKey(engineNodeKey);
+		String nodeKey = originalNodeKey(engineNodeKey);
 		projection.setInstanceId(instance.getId());
 		projection.setEngineTaskId(engineTask.getId());
-		projection.setNodeKey(engineTask.getTaskDefinitionKey());
+		projection.setNodeKey(nodeKey);
 		projection.setNodeName(engineTask.getName() == null ? engineTask.getTaskDefinitionKey() : engineTask.getName());
+		// task_kind 在生产库中为非空字段。普通任务也必须显式写入 NORMAL，
+		// 避免同步候选任务触发 Hibernate flush 时覆盖实体默认值。
+		projection.setTaskKind(starterRework ? "STARTER_REWORK" : "NORMAL");
+		projection.setResumeNodeKey(starterRework ? nodeKey : null);
 		projection.setAssignee(engineTask.getAssignee());
 		projection.setStatus(engineTask.getAssignee() == null ? "CLAIMABLE" : "PENDING");
 		if (engineTask.getDueDate() != null) {
@@ -395,12 +437,43 @@ public class FlowableRuntimeCoordinator {
 					ZoneId.systemDefault()));
 		}
 		projection = tasks.save(projection);
+		restoreCandidateUsers(instance, engineTask, nodeKey);
 		for (org.flowable.identitylink.api.IdentityLink link : taskService.getIdentityLinksForTask(engineTask.getId())) {
 			if ("candidate".equals(link.getType()) && link.getUserId() != null) {
 				addCandidate(projection.getId(), link.getUserId());
 			}
 		}
 		addAssigneeParticipant(instance, projection);
+	}
+
+	/**
+	 * 动态退回或重新提交会创建新的 Flowable Task，原任务上的候选 IdentityLink 不会自动复制。
+	 * 启动时已经固化的候选人变量是这次运行实例的权威快照，可用于安全恢复认领范围。
+	 */
+	private void restoreCandidateUsers(
+			WorkflowInstance instance,
+			org.flowable.task.api.Task engineTask,
+			String nodeKey) {
+		if (engineTask.getAssignee() != null || isReworkKey(engineTask.getTaskDefinitionKey())) {
+			return;
+		}
+		Object raw = runtimeService.getVariable(
+				instance.getEngineInstanceId(),
+				"chronosAssignees_" + safe(nodeKey));
+		if (!(raw instanceof Iterable<?> values)) {
+			return;
+		}
+		Set<String> existing = taskService.getIdentityLinksForTask(engineTask.getId()).stream()
+				.filter(link -> "candidate".equals(link.getType()))
+				.map(org.flowable.identitylink.api.IdentityLink::getUserId)
+				.filter(java.util.Objects::nonNull)
+				.collect(java.util.stream.Collectors.toSet());
+		for (Object value : values) {
+			String username = value == null ? "" : String.valueOf(value).trim();
+			if (!username.isBlank() && existing.add(username)) {
+				taskService.addCandidateUser(engineTask.getId(), username);
+			}
+		}
 	}
 
 	private void configureCandidateTasks(
@@ -527,5 +600,17 @@ public class FlowableRuntimeCoordinator {
 
 	private String safe(String value) {
 		return value.replaceAll("[^A-Za-z0-9_]", "_");
+	}
+
+	private String reworkKey(String nodeKey) {
+		return REWORK_PREFIX + nodeKey;
+	}
+
+	private boolean isReworkKey(String nodeKey) {
+		return nodeKey != null && nodeKey.startsWith(REWORK_PREFIX);
+	}
+
+	private String originalNodeKey(String nodeKey) {
+		return isReworkKey(nodeKey) ? nodeKey.substring(REWORK_PREFIX.length()) : nodeKey;
 	}
 }

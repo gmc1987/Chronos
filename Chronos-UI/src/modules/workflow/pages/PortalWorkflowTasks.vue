@@ -28,21 +28,29 @@
             <template #default="{ row }">
               <el-button v-if="row.claimable && canClaim" link type="primary" @click="claim(row)">认领</el-button>
               <template v-else>
-                <el-button link type="primary" @click="openForm(row)">办理</el-button>
-                <el-button v-if="canApprove && row.operations?.approve !== false" link type="success" @click="approve(row)">通过</el-button>
-                <el-button v-if="canReject && row.operations?.reject !== false" link type="danger" @click="reject(row)">拒绝</el-button>
-                <el-dropdown @command="command => operate(row, command)">
-                  <el-button link>更多</el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item v-if="canClaim" command="unclaim">取消认领</el-dropdown-item>
-                      <el-dropdown-item v-if="canReturn && row.operations?.return !== false" command="return">退回</el-dropdown-item>
-                      <el-dropdown-item v-if="canTransfer && row.operations?.transfer !== false" command="transfer">转办</el-dropdown-item>
-                      <el-dropdown-item v-if="canAddSign && row.operations?.addSign !== false" command="add-sign">加签</el-dropdown-item>
-                      <el-dropdown-item v-if="canCc && row.operations?.cc !== false" command="cc">抄送</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+                <el-button
+                  v-if="row.taskKind === 'STARTER_REWORK'"
+                  link
+                  type="primary"
+                  @click="openForm(row)"
+                >修改并重新提交</el-button>
+                <template v-else>
+                  <el-button link type="primary" @click="openForm(row)">办理</el-button>
+                  <el-button v-if="canApprove && row.operations?.approve !== false" link type="success" @click="approve(row)">通过</el-button>
+                  <el-button v-if="canReject && row.operations?.reject !== false" link type="danger" @click="reject(row)">拒绝</el-button>
+                  <el-dropdown @command="command => operate(row, command)">
+                    <el-button link>更多</el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item v-if="canClaim" command="unclaim">取消认领</el-dropdown-item>
+                        <el-dropdown-item v-if="canReturn && row.operations?.return !== false" command="return">退回</el-dropdown-item>
+                        <el-dropdown-item v-if="canTransfer && row.operations?.transfer !== false" command="transfer">转办</el-dropdown-item>
+                        <el-dropdown-item v-if="canAddSign && row.operations?.addSign !== false" command="add-sign">加签</el-dropdown-item>
+                        <el-dropdown-item v-if="canCc && row.operations?.cc !== false" command="cc">抄送</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </template>
               </template>
             </template>
           </el-table-column>
@@ -190,7 +198,18 @@ const slaText = status => ({ NORMAL: '正常', DUE_SOON: '即将到期', OVERDUE
 const slaType = status => ({ DUE_SOON: 'warning', OVERDUE: 'danger', ESCALATED: 'danger' }[status] || 'success')
 
 const claim = async row => { await claimWorkflowTask(row.id); ElMessage.success('任务认领成功'); await load() }
-const approve = async row => { await completeWorkflowTask(row.id, { approved: true, comment: await comment('审批通过') }); ElMessage.success('审批已通过'); await load() }
+const approve = async row => {
+  if (row.requiresFormInput) {
+    ElMessage.info('当前节点需要填写表单，请进入办理页面完成审批')
+    return openForm(row)
+  }
+  await completeWorkflowTask(row.id, {
+    approved: true,
+    comment: await comment('审批通过')
+  })
+  ElMessage.success('审批已通过')
+  await load()
+}
 const reject = async row => {
   if (row.rejectPolicy === 'SELECTABLE') {
     operationTask.value = row

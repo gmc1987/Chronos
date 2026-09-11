@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class FlowableDeploymentService {
+	private static final String REWORK_PREFIX = "chronos_rework__";
+
 	private final RepositoryService repositoryService;
 	private final ObjectMapper json = new ObjectMapper();
 
@@ -32,6 +34,21 @@ public class FlowableDeploymentService {
 			element.setName(node.getNodeName());
 			process.addFlowElement(element);
 			elements.put(node.getNodeKey(), element);
+		}
+		// 为每个人工节点生成一个正常路径不可达的发起人修改任务。退回时通过 Flowable
+		// ChangeActivityState 动态进入，提交后沿唯一出口回到原人工节点。
+		for (WorkflowNode node : nodes) {
+			if (!Set.of("APPROVAL", "TASK").contains(node.getNodeType())) {
+				continue;
+			}
+			UserTask rework = new UserTask();
+			rework.setId(reworkKey(node.getNodeKey()));
+			rework.setName("发起人修改后重新提交");
+			rework.setAssignee("${chronosInitiator}");
+			process.addFlowElement(rework);
+			SequenceFlow resume = new SequenceFlow(rework.getId(), node.getNodeKey());
+			resume.setId("sequence_rework_" + safe(node.getNodeKey()));
+			process.addFlowElement(resume);
 		}
 		int index = 0;
 		for (WorkflowEdge edge : edges) {
@@ -155,6 +172,10 @@ public class FlowableDeploymentService {
 
 	private String safe(String value) {
 		return value.replaceAll("[^A-Za-z0-9_]", "_");
+	}
+
+	private String reworkKey(String nodeKey) {
+		return REWORK_PREFIX + nodeKey;
 	}
 
 	public record DeploymentResult(String deploymentId, String processKey) {

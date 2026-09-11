@@ -331,6 +331,7 @@ export const searchKnowledge = (knowledgeBaseId, keyword, limit = 20) => (
   http.get(`/admin/knowledge-search?${qs({ knowledgeBaseId, keyword, limit })}`)
 )
 export const askEducationAssistant = (payload) => http.post('/education/ai/assistant/ask', payload)
+export const getAiModelStatus = () => http.get('/ai/model/status')
 export const listSchedulingAgentProposals = (semesterCode, params) => (
   http.get(`/education/agents/scheduling/proposals?${qs({ semesterCode, ...params })}`)
 )

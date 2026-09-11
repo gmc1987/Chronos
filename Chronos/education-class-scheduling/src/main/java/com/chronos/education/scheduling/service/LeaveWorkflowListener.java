@@ -19,14 +19,17 @@ public class LeaveWorkflowListener {
 	private final LeaveRequestRecordRepository records;
 	private final WorkflowNotificationService notifications;
 	private final IAuditLogService audit;
+	private final EducationApplicantResolver applicants;
 
 	public LeaveWorkflowListener(
 			LeaveRequestRecordRepository records,
 			WorkflowNotificationService notifications,
-			IAuditLogService audit) {
+			IAuditLogService audit,
+			EducationApplicantResolver applicants) {
 		this.records = records;
 		this.notifications = notifications;
 		this.audit = audit;
+		this.applicants = applicants;
 	}
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -41,7 +44,8 @@ public class LeaveWorkflowListener {
 		record.setWorkflowInstanceId(event.instanceId());
 		record.setBusinessKey(event.businessKey());
 		record.setApplicantType(applicantType);
-		record.setApplicantId(required(form, "STUDENT".equals(applicantType) ? "studentId" : "teacherId"));
+		// 申请人必须由认证账号映射，不能依赖可被客户端篡改、也可能未配置的隐藏表单字段。
+		record.setApplicantId(applicants.resolve(event.initiatedBy(), applicantType));
 		record.setLeaveType(required(form, "leaveType"));
 		record.setStartDate(LocalDate.parse(required(form, "startDate")));
 		record.setEndDate(LocalDate.parse(required(form, "endDate")));

@@ -140,6 +140,41 @@ public class FormService {
 		return instances.findByWorkflowInstanceIdAndFormIdAndNodeKey(workflowInstanceId, formId, nodeKey);
 	}
 
+	/**
+	 * 审批动作必须在服务端复核节点必填字段，避免调用快捷审批或直接请求接口绕过动态表单。
+	 */
+	@Transactional(readOnly = true)
+	public void validateRuntimeRequiredFields(
+			String workflowInstanceId,
+			String formId,
+			String nodeKey,
+			Map<String, String> permissions,
+			Set<String> required) {
+		List<FormField> schema = fields(formId);
+		List<FormField> requiredFields = schema.stream()
+				.filter(field -> {
+					String key = formId + "." + field.getFieldKey();
+					return required.contains(key)
+							|| (Boolean.TRUE.equals(field.getRequired())
+									&& "EDIT".equals(permissions.getOrDefault(key, "READ")));
+				})
+				.toList();
+		if (requiredFields.isEmpty()) {
+			return;
+		}
+		FormInstance value = instance(workflowInstanceId, formId, nodeKey)
+				.orElseThrow(() -> new IllegalArgumentException("请先填写并提交节点表单"));
+		if (!"SUBMITTED".equals(value.getStatus())) {
+			throw new IllegalArgumentException("请先提交节点表单");
+		}
+		Map<String, Object> data = readMap(value.getDataJson());
+		for (FormField field : requiredFields) {
+			if (empty(data.get(field.getFieldKey()))) {
+				throw new IllegalArgumentException("字段必填：" + field.getFieldLabel());
+			}
+		}
+	}
+
 	@Transactional
 	public FormInstance saveRuntime(String workflowInstanceId, String formId, String nodeKey, String role, String owner,
 			Map<String, Object> input, Map<String, String> permissions, Set<String> required, boolean draft) {

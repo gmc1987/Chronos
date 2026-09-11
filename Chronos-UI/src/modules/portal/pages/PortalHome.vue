@@ -46,7 +46,7 @@
               v-for="item in contribution(widget).data.items || []"
               :key="item.taskId"
               class="workflow-item"
-              @click="router.push(item.route)"
+              @click="openTodo(item)"
             >
               <span><b>{{ item.flowName }}</b><small>{{ item.nodeName }} · {{ item.businessKey || '无业务编号' }}</small></span>
               <i :class="{ overdue: ['OVERDUE', 'ESCALATED'].includes(item.slaStatus) }">{{ item.claimable ? '待认领' : item.slaStatus === 'NORMAL' ? '待处理' : item.slaStatus }}</i>
@@ -143,6 +143,10 @@ const openApp = async (app) => { await visitApplication(app.id); if (app.openMod
 const openContribution = widget => {
   const route = contribution(widget).data?.allRoute
   if (route) router.push(route)
+}
+// 候选任务在认领前不能查看业务表单，首页必须先引导到待办页完成认领。
+const openTodo = item => {
+  router.push(item.claimable ? '/portal/tasks?tab=pending' : item.route)
 }
 const remind = async item => {
   await remindWorkflowInstance(item.instanceId)
