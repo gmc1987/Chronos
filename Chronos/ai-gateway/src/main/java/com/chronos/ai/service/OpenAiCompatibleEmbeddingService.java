@@ -10,17 +10,14 @@ import org.springframework.web.client.RestClient;
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** OpenAI-compatible /v1/embeddings client; works with most cloud providers. */
 @Service
 public class OpenAiCompatibleEmbeddingService implements EmbeddingService {
 	private final AiModelRepository models;
-	private final ObjectMapper mapper;
 
-	public OpenAiCompatibleEmbeddingService(AiModelRepository models, ObjectMapper mapper) {
+	public OpenAiCompatibleEmbeddingService(AiModelRepository models) {
 		this.models = models;
-		this.mapper = mapper;
 	}
 
 	@Override
