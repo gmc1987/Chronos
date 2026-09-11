@@ -2,9 +2,9 @@ package com.chronos.education.scheduling.service;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -225,10 +225,10 @@ public class AcademicDataService {
 	public List<AdministrativeClass> administrativeClasses(EducationDataScope scope) {
 		return scope.fullAccess()
 				? administrativeClasses()
-				: administrativeClasses.findVisible(
+				: withHeadTeacherNames(administrativeClasses.findVisible(
 						nonEmpty(scope.administrativeClassIds()),
 						nonEmpty(scope.gradeIds()),
-						nonEmpty(scope.campusIds()));
+						nonEmpty(scope.campusIds())));
 	}
 
 	public Page<AdministrativeClass> administrativeClasses(
@@ -237,11 +237,11 @@ public class AcademicDataService {
 			int size) {
 		return scope.fullAccess()
 				? administrativeClasses(page, size)
-				: administrativeClasses.findVisible(
+				: withHeadTeacherNames(administrativeClasses.findVisible(
 						nonEmpty(scope.administrativeClassIds()),
 						nonEmpty(scope.gradeIds()),
 						nonEmpty(scope.campusIds()),
-						pageable(page, size));
+						pageable(page, size)));
 	}
 
 	@Transactional
@@ -401,10 +401,10 @@ public class AcademicDataService {
 	public List<TeacherTeachingAssignment> teachingAssignments(EducationDataScope scope) {
 		return scope.fullAccess()
 				? teachingAssignments()
-				: teachingAssignments.findVisible(
+				: withTeacherNames(teachingAssignments.findVisible(
 						nonEmpty(scope.teacherIds()),
 						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds()));
+						nonEmpty(scope.gradeIds())));
 	}
 
 	public Page<TeacherTeachingAssignment> teachingAssignments(
@@ -413,11 +413,11 @@ public class AcademicDataService {
 			int size) {
 		return scope.fullAccess()
 				? teachingAssignments(page, size)
-				: teachingAssignments.findVisible(
+				: withTeacherNames(teachingAssignments.findVisible(
 						nonEmpty(scope.teacherIds()),
 						nonEmpty(scope.administrativeClassIds()),
 						nonEmpty(scope.gradeIds()),
-						pageable(page, size));
+						pageable(page, size)));
 	}
 
 	@Transactional
@@ -519,8 +519,24 @@ public class AcademicDataService {
 		return rows;
 	}
 
+	private Page<AdministrativeClass> withHeadTeacherNames(Page<AdministrativeClass> rows) {
+		Map<String, String> names = teacherNames(rows.getContent().stream()
+				.map(AdministrativeClass::getHeadTeacherId)
+				.toList());
+		rows.forEach(item -> item.setHeadTeacherName(names.get(item.getHeadTeacherId())));
+		return rows;
+	}
+
 	private List<TeacherTeachingAssignment> withTeacherNames(List<TeacherTeachingAssignment> rows) {
 		Map<String, String> names = teacherNames(rows.stream()
+				.map(TeacherTeachingAssignment::getTeacherId)
+				.toList());
+		rows.forEach(item -> item.setTeacherName(names.get(item.getTeacherId())));
+		return rows;
+	}
+
+	private Page<TeacherTeachingAssignment> withTeacherNames(Page<TeacherTeachingAssignment> rows) {
+		Map<String, String> names = teacherNames(rows.getContent().stream()
 				.map(TeacherTeachingAssignment::getTeacherId)
 				.toList());
 		rows.forEach(item -> item.setTeacherName(names.get(item.getTeacherId())));
@@ -535,11 +551,22 @@ public class AcademicDataService {
 		if (validIds.isEmpty()) {
 			return Map.of();
 		}
-		return teachers.findAllById(validIds).stream()
-				.collect(Collectors.toMap(
-						TeacherAcademicProfile::getId,
-						TeacherAcademicProfile::getTeacherName,
-						(first, second) -> first));
+		// 业务关系历史上同时使用过教师档案 ID 和 IAM employeeId，批量按两种键查询，
+		// 避免列表渲染时逐行查询，也兼容旧数据。
+		Map<String, String> result = new HashMap<>();
+		teachers.findByIdInOrEmployeeIdIn(validIds).forEach(profile -> {
+			String name = profile.getTeacherName();
+			if (name == null || name.isBlank()) {
+				return;
+			}
+			if (profile.getId() != null) {
+				result.put(profile.getId(), name);
+			}
+			if (profile.getEmployeeId() != null) {
+				result.put(profile.getEmployeeId(), name);
+			}
+		});
+		return result;
 	}
 
 	private Pageable pageable(int page, int size) {

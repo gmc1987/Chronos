@@ -118,7 +118,7 @@ const displayValue = (column, value) => {
     return lookupData[column.lookup]?.find(option => option.id === value)?.[lookup?.labelProp] || value || '-'
   }
   if (column.type === 'boolean') return value ? '是' : '否'
-  return value ?? '-'
+  return value === null || value === undefined || value === '' ? '-' : value
 }
 const remove = async row => {
   await ElMessageBox.confirm(`确认删除${props.entityLabel}“${row[props.columns[0]?.prop] || ''}”？`, '删除确认', { type: 'warning' })

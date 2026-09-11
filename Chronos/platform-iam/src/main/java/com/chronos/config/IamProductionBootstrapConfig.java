@@ -124,6 +124,7 @@ public class IamProductionBootstrapConfig {
 		required.put("message:publication:read", "阅读通知公告");
 		required.put("message:publication:review", "审核通知公告");
 		required.put("message:publication:statistics", "查看通知公告阅读统计");
+		required.put("ai:model:manage", "AI模型管理");
         Map<String,String> dataScopes = new LinkedHashMap<>();
         dataScopes.put("ALL","全部数据"); dataScopes.put("ORGANIZATION","本机构"); dataScopes.put("DEPARTMENT","本部门");
         dataScopes.put("DEPARTMENT_AND_CHILDREN","本部门及下级"); dataScopes.put("SELF","仅本人");
@@ -142,6 +143,11 @@ public class IamProductionBootstrapConfig {
         addAtomic(required,"iam:dictionary","字典",Map.of("view","查看","create","新增","update","修改","delete","删除"));
         addAtomic(required,"iam:permission","权限定义",Map.of("view","查看","create","新增","update","修改","delete","删除","disable","停用"));
         addAtomic(required,"portal:admin","门户配置",Map.of("view","查看","create","新增","update","修改","delete","删除"));
+		addAtomic(required, "ai:model", "AI模型", Map.of(
+				"view", "查看",
+				"create", "新增",
+				"update", "编辑",
+				"delete", "删除"));
         required.forEach((code,name)->{
             Permission permission = permissions.findByPermissionCode(code);
             if(permission==null){permission=new Permission();permission.setPermissionCode(code);permission.setPermissionName(name);permission.setPermissionType(permissionType(code));permission.setStatus(1);}
@@ -189,6 +195,28 @@ public class IamProductionBootstrapConfig {
 					.filter(role -> "SUPER_ADMIN".equalsIgnoreCase(role.getRoleCode()))
 					.forEach(role -> {
 						role.getMenus().add(publicationMenu);
+						roles.save(role);
+					});
+		}
+		if (menus != null) {
+			Menu aiModelMenu = menus.findAll().stream()
+					.filter(menu -> "/admin/ai-models".equals(menu.getPath())
+							|| "/admin/ai-model/models".equals(menu.getPath()))
+					.findFirst()
+					.orElse(null);
+			if (aiModelMenu == null) {
+				aiModelMenu = new Menu();
+				aiModelMenu.setCreateTime(LocalDateTime.now());
+			}
+			aiModelMenu.setMenuName("AI模型管理");
+			aiModelMenu.setPath("/admin/ai-models");
+			aiModelMenu.setOrderNum(80);
+			menus.saveAndFlush(aiModelMenu);
+			Menu finalAiModelMenu = aiModelMenu;
+			roles.findAll().stream()
+					.filter(role -> "SUPER_ADMIN".equalsIgnoreCase(role.getRoleCode()))
+					.forEach(role -> {
+						role.getMenus().add(finalAiModelMenu);
 						roles.save(role);
 					});
 		}
@@ -245,7 +273,8 @@ public class IamProductionBootstrapConfig {
 				.filter(permission -> permission.getPermissionCode().startsWith("iam:")
 						|| "portal:manage".equals(permission.getPermissionCode())
 						|| permission.getPermissionCode().startsWith("workflow:")
-						|| permission.getPermissionCode().startsWith("message:"))
+						|| permission.getPermissionCode().startsWith("message:")
+						|| permission.getPermissionCode().startsWith("ai:model:"))
                 .map(p->p.getId()).toList();
         roles.findAll().stream().filter(r->Boolean.TRUE.equals(r.getBuiltIn())&&"SUPER_ADMIN".equalsIgnoreCase(r.getRoleCode())).forEach(role->{
             Set<String> existing=rolePermissions.findByRoleId(role.getId()).stream().map(RolePermission::getPermissionId).collect(Collectors.toSet());
@@ -293,7 +322,8 @@ public class IamProductionBootstrapConfig {
             "iam:directory:manage",Set.of("iam:directory:view","iam:directory:create","iam:directory:update","iam:directory:delete","iam:directory:import","iam:directory:template"),
             "iam:dictionary:manage",Set.of("iam:dictionary:view","iam:dictionary:create","iam:dictionary:update","iam:dictionary:delete"),
             "iam:permission:manage",Set.of("iam:permission:view","iam:permission:create","iam:permission:update","iam:permission:delete","iam:permission:disable"),
-            "portal:manage",Set.of("portal:admin:view","portal:admin:create","portal:admin:update","portal:admin:delete")
+            "portal:manage",Set.of("portal:admin:view","portal:admin:create","portal:admin:update","portal:admin:delete"),
+            "ai:model:manage",Set.of("ai:model:view","ai:model:create","ai:model:update","ai:model:delete")
         );
         roles.findAll().forEach(role->{Set<String> existing=rolePermissions.findByRoleId(role.getId()).stream().map(RolePermission::getPermissionId).collect(Collectors.toSet());existing.addAll(legacyRelations.findByRoleId(role.getId()).stream().map(RoleMenuPermission::getPermissionId).collect(Collectors.toSet()));Set<String> grant=new java.util.HashSet<>();legacyBundles.forEach((legacy,bundle)->{String legacyId=permissionIds.get(legacy);if(legacyId!=null&&existing.contains(legacyId))grant.addAll(bundle);});rolePermissions.saveAll(grant.stream().map(permissionIds::get).filter(java.util.Objects::nonNull).filter(id->!existing.contains(id)).map(id->new RolePermission(role.getId(),id)).toList());});
         if (menus != null) {
@@ -326,6 +356,7 @@ public class IamProductionBootstrapConfig {
 		if (code.startsWith("iam:audit:")) return "/admin/audit-logs";
         if(code.startsWith("portal:admin:"))return "/admin/portal";
 		if (code.startsWith("message:publication:")) return "/admin/publications";
+		if (code.startsWith("ai:model:")) return "/admin/ai-models";
         return switch(code){
             case "iam:user:manage" -> "/system/users";
             case "iam:role:manage" -> "/system/roles";

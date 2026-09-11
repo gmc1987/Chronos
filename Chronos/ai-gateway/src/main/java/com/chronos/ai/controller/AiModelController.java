@@ -42,19 +42,19 @@ public class AiModelController {
 	}
 
 	@PostMapping("/ai-model/models")
-	@PreAuthorize("@iamAuthorization.has(authentication,'ai:model:manage')")
+	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:create','ai:model:manage')")
 	public ResultData<AiModel> create(@Valid @RequestBody AiModel command) {
 		return ok(service.create(command));
 	}
 
 	@PutMapping("/ai-model/models")
-	@PreAuthorize("@iamAuthorization.has(authentication,'ai:model:manage')")
+	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:update','ai:model:manage')")
 	public ResultData<AiModel> update(@Valid @RequestBody AiModel command) {
 		return ok(service.update(command));
 	}
 
 	@DeleteMapping("/ai-model/models/{id}")
-	@PreAuthorize("@iamAuthorization.has(authentication,'ai:model:manage')")
+	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:delete','ai:model:manage')")
 	public ResultData<Void> delete(@PathVariable String id) {
 		service.delete(id);
 		return ok(null);

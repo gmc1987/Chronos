@@ -11,7 +11,7 @@
           <el-option label="全部" value="" />
           <el-option v-for="item in providers" :key="item.id || item.dictCode" :label="item.dictName" :value="item.dictValue ?? item.dictCode ?? item.dictName" />
         </el-select>
-        <el-button type="primary" @click="openCreate">新增模型</el-button>
+        <el-button v-permission="['ai:model:create', 'ai:model:manage']" type="primary" @click="openCreate">新增模型</el-button>
       </div>
     </div>
 
@@ -27,6 +27,7 @@
       <el-table-column prop="status" label="状态" width="100">
         <template #default="scope">
           <el-switch
+            v-permission="['ai:model:update', 'ai:model:manage']"
             :model-value="Number(scope.row.status) === 1"
             inline-prompt
             active-text="启用"
@@ -37,8 +38,8 @@
       </el-table-column>
       <el-table-column label="操作" width="100">
         <template #default="scope">
-          <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
+          <el-button v-permission="['ai:model:update', 'ai:model:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
+          <el-button v-permission="['ai:model:delete', 'ai:model:manage']" size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
