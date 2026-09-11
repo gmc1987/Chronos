@@ -74,7 +74,12 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 	}
 
 	public AdminUserVO getUserByEmployeeId(String employeeId) {
-		return adminUserRepository.findByEmployeeId(employeeId).map(user -> getUserById(user.getId())).orElse(null);
+		Optional<AdminUser> user = adminUserRepository.findByEmployeeId(employeeId);
+		if (user.isEmpty()) {
+			user = employeeRepository.findByEmployeeCode(employeeId)
+					.flatMap(employee -> adminUserRepository.findByEmployeeId(employee.getId()));
+		}
+		return user.map(value -> getUserById(value.getId())).orElse(null);
 	}
 
 	@Transactional
