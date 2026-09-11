@@ -27,32 +27,36 @@
         :key="column.prop"
         :label="column.label"
         :prop="column.prop"
+        :width="column.width"
+        :min-width="column.minWidth"
       >
         <template #default="scope">
           {{ displayValue(column, scope.row[column.prop]) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="150">
+      <el-table-column label="操作" :width="actionColumnWidth" class-name="crud-actions">
         <template #default="scope">
-          <el-button
-            v-if="!permissionPrefix"
-            link
-            type="primary"
-            @click="openEdit(scope.row)"
-          >
-            编辑
-          </el-button>
-          <el-button
-            v-else
-            v-permission="updatePermissions"
-            link
-            type="primary"
-            @click="openEdit(scope.row)"
-          >
-            编辑
-          </el-button>
-          <el-button v-for="action in rowActions" :key="action.label" link :type="action.type || 'primary'" @click="action.run(scope.row)">{{ action.label }}</el-button>
-          <el-button v-if="deleter" link type="danger" @click="remove(scope.row)">删除</el-button>
+          <div class="row-actions">
+            <el-button
+              v-if="!permissionPrefix"
+              link
+              type="primary"
+              @click="openEdit(scope.row)"
+            >
+              编辑
+            </el-button>
+            <el-button
+              v-else
+              v-permission="updatePermissions"
+              link
+              type="primary"
+              @click="openEdit(scope.row)"
+            >
+              编辑
+            </el-button>
+            <el-button v-for="action in rowActions" :key="action.label" link :type="action.type || 'primary'" @click="runRowAction(action, scope.row)">{{ action.label }}</el-button>
+            <el-button v-if="deleter" link type="danger" @click="remove(scope.row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -92,6 +96,7 @@ const rows = ref([]); const dialog = ref(false); const form = reactive({}); cons
 const page = ref(1); const pageSize = ref(10); const total = ref(0)
 const createPermissions = computed(() => [`${props.permissionPrefix}:create`, `${props.permissionPrefix}:manage`])
 const updatePermissions = computed(() => [`${props.permissionPrefix}:update`, `${props.permissionPrefix}:manage`])
+const actionColumnWidth = computed(() => 72 + props.rowActions.length * 92 + (props.deleter ? 62 : 0))
 const reset = value => { Object.keys(form).forEach(key => delete form[key]); Object.assign(form, value) }
 const load = async () => {
   const response = await props.loader({ page: page.value - 1, size: pageSize.value })
@@ -110,6 +115,11 @@ const loadDictionaries = async () => {
 const openCreate = () => { reset({ ...(props.defaults || {}) }); dialog.value = true }
 const openEdit = row => { reset({ ...row }); dialog.value = true }
 const save = async () => { await (form.id ? props.updater(form.id, form) : props.creator(form)); dialog.value = false; ElMessage.success('保存成功'); await load(); await loadLookups() }
+const runRowAction = async (action, row) => {
+  await action.run(row)
+  ElMessage.success(`${action.label}成功`)
+  await load()
+}
 const displayValue = (column, value) => {
   if (column.dictCode) {
     return dictionaryData[column.dictCode]?.find(option => option.value === value)?.label || value || '-'
@@ -133,5 +143,7 @@ onMounted(async () => { await Promise.all([loadLookups(), loadDictionaries()]); 
 
 <style scoped>
 .page { padding: 24px; } header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; } .header-actions { display: flex; gap: 10px; } .el-pagination { justify-content: flex-end; margin-top: 16px; }
+.row-actions { display: flex; align-items: center; flex-wrap: nowrap; white-space: nowrap; }
+.row-actions .el-button { flex: none; margin-left: 8px; }
 h2 { margin: 0 0 6px; } p { margin: 0; color: #84909a; }
 </style>
