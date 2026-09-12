@@ -6,6 +6,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -21,6 +22,10 @@ import lombok.Setter;
 				name = "uk_edu_schedule_offering_slot",
 				columnNames = { "offering_id", "day_of_week", "period_no", "start_week", "end_week" }))
 public class ScheduleEntry extends BaseEntity {
+	@Version
+	@Column(name = "record_version", nullable = false)
+	private Long recordVersion = 0L;
+
 	@Column(name = "semester_code", length = 32, nullable = false)
 	private String semesterCode;
 

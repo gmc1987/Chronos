@@ -6,5 +6,9 @@ public record ScheduleCandidateMetrics(
 		int unscheduledLessons,
 		int preferredSlotHits,
 		int sameCourseDayPenalty,
+		int teacherLoadPenalty,
+		int consecutivePenalty,
+		int campusSwitchPenalty,
+		int teacherGapPenalty,
 		int totalScore) {
 }

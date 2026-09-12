@@ -25,6 +25,8 @@ public class SchedulePlanVersionService {
 	private final IAuditLogService audit;
 	private final EntityManager entityManager;
 	private final SchedulePublicationNotificationService publicationNotifications;
+	private final ScheduleQualityAnalysisService qualityAnalysis;
+	private final ScheduleQualityRiskNotificationService qualityNotifications;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
 	public SchedulePlanVersionService(
@@ -33,13 +35,17 @@ public class SchedulePlanVersionService {
 			AcademicTermRepository terms,
 			IAuditLogService audit,
 			EntityManager entityManager,
-			SchedulePublicationNotificationService publicationNotifications) {
+			SchedulePublicationNotificationService publicationNotifications,
+			ScheduleQualityAnalysisService qualityAnalysis,
+			ScheduleQualityRiskNotificationService qualityNotifications) {
 		this.entries = entries;
 		this.versions = versions;
 		this.terms = terms;
 		this.audit = audit;
 		this.entityManager = entityManager;
 		this.publicationNotifications = publicationNotifications;
+		this.qualityAnalysis = qualityAnalysis;
+		this.qualityNotifications = qualityNotifications;
 	}
 
 	@Transactional(readOnly = true)
@@ -56,6 +62,12 @@ public class SchedulePlanVersionService {
 		List<ScheduleEntry> current = entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(semester);
 		if (current.isEmpty()) {
 			throw new IllegalStateException("当前学期没有可发布的课表");
+		}
+		List<String> blockers = qualityAnalysis.publishBlockers(semester);
+		if (!blockers.isEmpty()) {
+			qualityNotifications.notifyBlocked(actor, semester, blockers);
+			throw new IllegalStateException(
+					"课表存在发布级硬风险：" + String.join("；", blockers));
 		}
 		SchedulePlanVersion version = createVersion(
 				semester,

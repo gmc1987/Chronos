@@ -54,6 +54,24 @@ public class ScheduleCandidatePlan extends BaseEntity {
 	@Column(name = "status", length = 24, nullable = false)
 	private String status = "CANDIDATE";
 
+	@Column(name = "review_status", length = 24, nullable = false)
+	private String reviewStatus = "DRAFT";
+
+	@Column(name = "owner_username", length = 128, nullable = false)
+	private String ownerUsername;
+
+	@Column(name = "collaboration_remark", length = 1000)
+	private String collaborationRemark;
+
+	@Column(name = "reviewed_by", length = 128)
+	private String reviewedBy;
+
+	@Column(name = "reviewed_at")
+	private LocalDateTime reviewedAt;
+
+	@Column(name = "review_comment", length = 1000)
+	private String reviewComment;
+
 	@Column(name = "generated_by", length = 128, nullable = false)
 	private String generatedBy;
 

@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDate;
 import java.util.stream.Collectors;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
@@ -42,6 +43,7 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	private final EducationUserBindingRepository bindings;
 	private final TeachingClassMemberRepository teachingClassMembers;
 	private final StudentGuardianRepository guardians;
+	private final ScheduleOccurrenceService occurrences;
 
 	public EducationPortalContributionProvider(
 			IAdminUserRepository users,
@@ -54,7 +56,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 			SchedulePlanVersionService planVersions,
 			EducationUserBindingRepository bindings,
 			TeachingClassMemberRepository teachingClassMembers,
-			StudentGuardianRepository guardians) {
+			StudentGuardianRepository guardians,
+			ScheduleOccurrenceService occurrences) {
 		this.users = users;
 		this.teachers = teachers;
 		this.students = students;
@@ -66,6 +69,7 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 		this.bindings = bindings;
 		this.teachingClassMembers = teachingClassMembers;
 		this.guardians = guardians;
+		this.occurrences = occurrences;
 	}
 
 	@Override
@@ -181,7 +185,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	@Transactional(readOnly = true)
 	public Map<String, Object> personalSchedule(
 			String username,
-			String requestedStudentId) {
+			String requestedStudentId,
+			LocalDate date) {
 		Map<String, StudentContext> contexts = resolveStudentContexts(username);
 		String selectedStudentId = selectStudentId(contexts, requestedStudentId);
 		Map<String, Object> data = new LinkedHashMap<>();
@@ -190,6 +195,7 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 
 		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
 				.ifPresentOrElse(term -> {
+					LocalDate selectedDate = date == null ? LocalDate.now() : date;
 					Map<String, CourseOffering> byId = offerings
 							.findBySemesterCodeOrderByOfferingCode(term.getTermCode())
 							.stream()
@@ -200,7 +206,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 							? resolvePersonalOfferingIds(username, byId)
 							: studentOfferingIds(selectedStudentId);
 					data.put("termName", term.getTermName());
-					data.put("schedule", planVersions.latestPublishedEntries(term.getTermCode()).stream()
+					List<ScheduleEntry> published = planVersions.latestPublishedEntries(term.getTermCode());
+					data.put("schedule", published.stream()
 							.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
 							.filter(entry -> allowedOfferingIds.contains(entry.getOfferingId()))
 							.map(entry -> scheduleItem(
@@ -208,9 +215,17 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 									byId.get(entry.getOfferingId()),
 									classroomById.get(entry.getClassroomId())))
 							.toList());
+					data.put("selectedDate", selectedDate);
+					data.put("occurrences", occurrences
+							.publishedOccurrences(term.getTermCode(), selectedDate, published)
+							.stream()
+							.filter(item -> allowedOfferingIds.contains(item.entry().offeringId()))
+							.toList());
 				}, () -> {
 					data.put("termName", "");
 					data.put("schedule", List.of());
+					data.put("selectedDate", date == null ? LocalDate.now() : date);
+					data.put("occurrences", List.of());
 				});
 		return data;
 	}

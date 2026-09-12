@@ -26,6 +26,7 @@ import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleCandidatePlanRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository;
+import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.AutoScheduleCommand;
@@ -33,6 +34,7 @@ import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleCandidatePlan;
 import com.chronos.education.scheduling.model.ScheduleEntry;
+import com.chronos.education.scheduling.model.SchedulePolicy;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -78,9 +80,12 @@ class AutoSchedulingServiceTest {
 				classrooms,
 				mock(ClassroomUnavailableSlotRepository.class),
 				constraints,
+				mock(TeacherAcademicProfileRepository.class),
 				members,
 				terms,
 				academicCalendar,
+				policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
 				mock(EntityManager.class));
 		AutoScheduleCommand command = new AutoScheduleCommand(
@@ -155,9 +160,12 @@ class AutoSchedulingServiceTest {
 				classrooms,
 				mock(ClassroomUnavailableSlotRepository.class),
 				constraints,
+				mock(TeacherAcademicProfileRepository.class),
 				members,
 				terms,
 				academicCalendar,
+				policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
 				mock(EntityManager.class));
 		AutoScheduleCommand command = new AutoScheduleCommand(
@@ -178,6 +186,14 @@ class AutoSchedulingServiceTest {
 		assertThat(readEntries(savedCandidate.get().getSnapshotJson()))
 				.extracting(ScheduleEntry::getOfferingId)
 				.containsExactly("offering-0");
+	}
+
+	private static SchedulePolicyService policyService() {
+		SchedulePolicyService service = mock(SchedulePolicyService.class);
+		SchedulePolicy policy = new SchedulePolicy();
+		policy.setSemesterCode("2026-2027-1");
+		when(service.resolve(any())).thenReturn(policy);
+		return service;
 	}
 
 	private List<CourseOffering> offerings(int count) {

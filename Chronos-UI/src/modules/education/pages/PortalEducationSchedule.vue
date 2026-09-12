@@ -13,6 +13,29 @@
       title="仅展示教务处最近发布的课表版本；未发布的调整草稿不会出现在这里。"
       type="info"
       :closable="false" />
+    <el-card shadow="never">
+      <div class="date-toolbar">
+        <strong>日期课表</strong>
+        <el-date-picker
+          v-model="selectedDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          :clearable="false"
+          @change="loadSchedule(selectedStudentId, selectedDate)" />
+      </div>
+      <el-empty v-if="!occurrences.length" description="当天没有课程" />
+      <el-table v-else :data="occurrences">
+        <el-table-column prop="effectivePeriodNo" label="节次" width="80" />
+        <el-table-column prop="entry.courseName" label="课程" min-width="130" />
+        <el-table-column prop="entry.teachingClassName" label="教学班" min-width="150" />
+        <el-table-column prop="entry.teacherName" label="教师" width="110" />
+        <el-table-column prop="entry.classroomName" label="教室" width="120" />
+        <el-table-column label="状态" width="100">
+          <template #default="scope">{{ occurrenceStatusName(scope.row.occurrenceStatus) }}</template>
+        </el-table-column>
+        <el-table-column prop="reason" label="调整原因" min-width="160" show-overflow-tooltip />
+      </el-table>
+    </el-card>
     <el-card v-if="studentContexts.length" shadow="never" class="student-context">
       <div>
         <small>当前学生</small>
@@ -38,44 +61,42 @@
     </el-card>
     <el-skeleton v-if="loading" :rows="7" animated />
     <el-empty v-else-if="!schedule.length" description="当前账号没有已发布的课表" />
-    <el-table v-else :data="schedule" stripe>
-      <el-table-column label="上课时间" width="190">
-        <template #default="scope">
-          星期{{ dayName(scope.row.dayOfWeek) }} 第 {{ scope.row.periodNo }} 节
-          <span v-if="scope.row.durationPeriods > 1">（连堂 {{ scope.row.durationPeriods }} 节）</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="courseName" label="课程" min-width="170" />
-      <el-table-column prop="teachingClassName" label="教学班" min-width="210" />
-      <el-table-column prop="classroomName" label="教室" min-width="150" />
-      <el-table-column label="状态" width="100">
-        <template #default><el-tag type="success">正常</el-tag></template>
-      </el-table-column>
-    </el-table>
+    <ScheduleGrid v-else :entries="schedule" :periods="periods" readonly />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { portalEducationSchedule } from '../../../api/portal'
+import ScheduleGrid from '../components/ScheduleGrid.vue'
 
 const loading = ref(true)
 const scheduleData = ref({})
 const selectedStudentId = ref('')
 const schedule = computed(() => scheduleData.value?.schedule || [])
+const occurrences = computed(() => scheduleData.value?.occurrences || [])
+const selectedDate = ref(new Date().toISOString().slice(0, 10))
+const periods = computed(() => {
+  const maximum = Math.max(8, ...schedule.value.map(
+    item => item.periodNo + (item.durationPeriods || 1) - 1,
+  ))
+  return Array.from(
+    { length: maximum },
+    (_, index) => ({ periodNo: index + 1, periodName: `第 ${index + 1} 节` }),
+  )
+})
 const termName = computed(() => scheduleData.value?.termName || '')
 const studentContexts = computed(() => scheduleData.value?.studentContexts || [])
 const selectedStudent = computed(() => studentContexts.value.find(
   student => student.studentId === selectedStudentId.value,
 ))
-const dayName = day => ['一', '二', '三', '四', '五', '六', '日'][Number(day) - 1] || '-'
-
-const loadSchedule = async studentId => {
+const loadSchedule = async (studentId, date = selectedDate.value) => {
   loading.value = true
   try {
-    const response = await portalEducationSchedule(studentId)
+    const response = await portalEducationSchedule(studentId, date)
     scheduleData.value = response.data || {}
     selectedStudentId.value = scheduleData.value.selectedStudentId || ''
+    selectedDate.value = scheduleData.value.selectedDate || date
   } finally {
     loading.value = false
   }
@@ -83,8 +104,17 @@ const loadSchedule = async studentId => {
 
 const changeStudent = async studentId => {
   localStorage.setItem('chronos.portal.education.studentId', studentId)
-  await loadSchedule(studentId)
+  await loadSchedule(studentId, selectedDate.value)
 }
+
+const occurrenceStatusName = status => ({
+  SCHEDULED: '正常',
+  CANCELLED: '停课',
+  MOVED_OUT: '已调出',
+  MOVED_IN: '调入',
+  SUBSTITUTED: '代课',
+  MAKEUP: '补课',
+}[status] || status)
 
 onMounted(async () => {
   await loadSchedule()
@@ -106,4 +136,5 @@ onMounted(async () => {
 .student-context small { color: #819097; }
 .student-context .el-select { width: 280px; }
 .student-no { float: right; margin-left: 24px; }
+.date-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 </style>

@@ -10,5 +10,6 @@ public record ScheduleEntryCommand(
 		String weekPattern,
 		Integer startWeek,
 		Integer endWeek,
-		Boolean locked) {
+		Boolean locked,
+		Long recordVersion) {
 }

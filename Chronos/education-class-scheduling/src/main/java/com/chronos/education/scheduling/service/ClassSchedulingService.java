@@ -271,6 +271,11 @@ public class ClassSchedulingService {
 		ScheduleEntry value = id == null
 				? new ScheduleEntry()
 				: entries.findById(id).orElseThrow(() -> new IllegalArgumentException("课表项不存在"));
+		if (id != null
+				&& command.recordVersion() != null
+				&& !command.recordVersion().equals(value.getRecordVersion())) {
+			throw new IllegalStateException("课表已被其他用户修改，请刷新后重试");
+		}
 		value.setSemesterCode(command.semesterCode().trim());
 		value.setOfferingId(command.offeringId());
 		value.setClassroomId(command.classroomId());
@@ -398,7 +403,8 @@ public class ClassSchedulingService {
 				entry.getStartWeek(),
 				entry.getEndWeek(),
 				entry.getStatus(),
-				entry.getLocked());
+				entry.getLocked(),
+				entry.getRecordVersion());
 	}
 
 	private Set<String> resolveOfferingIds(

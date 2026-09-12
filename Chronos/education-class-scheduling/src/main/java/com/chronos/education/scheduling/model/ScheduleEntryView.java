@@ -17,5 +17,6 @@ public record ScheduleEntryView(
 		Integer startWeek,
 		Integer endWeek,
 		String status,
-		Boolean locked) {
+		Boolean locked,
+		Long recordVersion) {
 }

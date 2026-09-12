@@ -7,20 +7,25 @@ import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleCandidatePlanRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository;
+import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.ClassroomUnavailableSlot;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleCandidateMetrics;
+import com.chronos.education.scheduling.model.ScheduleCandidateGovernanceCommand;
 import com.chronos.education.scheduling.model.ScheduleCandidatePlan;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
 import com.chronos.education.scheduling.model.ScheduleDiffItem;
 import com.chronos.education.scheduling.model.ScheduleDiffView;
 import com.chronos.education.scheduling.model.ScheduleEntry;
+import com.chronos.education.scheduling.model.SchedulePolicy;
 import com.chronos.education.scheduling.model.TeacherTimeConstraint;
+import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.Idao.IAdminUserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,6 +45,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
+import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,9 +67,12 @@ public class AutoSchedulingService {
 	private final ClassroomRepository classrooms;
 	private final ClassroomUnavailableSlotRepository unavailableSlots;
 	private final TeacherTimeConstraintRepository constraints;
+	private final TeacherAcademicProfileRepository teacherProfiles;
 	private final TeachingClassMemberRepository members;
 	private final AcademicTermRepository terms;
 	private final AcademicCalendarService academicCalendar;
+	private final SchedulePolicyService policyService;
+	private final IAdminUserRepository users;
 	private final IAuditLogService audit;
 	private final EntityManager entityManager;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
@@ -74,9 +84,12 @@ public class AutoSchedulingService {
 			ClassroomRepository classrooms,
 			ClassroomUnavailableSlotRepository unavailableSlots,
 			TeacherTimeConstraintRepository constraints,
+			TeacherAcademicProfileRepository teacherProfiles,
 			TeachingClassMemberRepository members,
 			AcademicTermRepository terms,
 			AcademicCalendarService academicCalendar,
+			SchedulePolicyService policyService,
+			IAdminUserRepository users,
 			IAuditLogService audit,
 			EntityManager entityManager) {
 		this.candidates = candidates;
@@ -85,9 +98,12 @@ public class AutoSchedulingService {
 		this.classrooms = classrooms;
 		this.unavailableSlots = unavailableSlots;
 		this.constraints = constraints;
+		this.teacherProfiles = teacherProfiles;
 		this.members = members;
 		this.terms = terms;
 		this.academicCalendar = academicCalendar;
+		this.policyService = policyService;
+		this.users = users;
 		this.audit = audit;
 		this.entityManager = entityManager;
 	}
@@ -96,7 +112,25 @@ public class AutoSchedulingService {
 	public List<ScheduleCandidateView> generate(
 			AutoScheduleCommand command,
 			String actor) {
+		return generate(command, actor, () -> false, progress -> { });
+	}
+
+	@Transactional
+	public List<ScheduleCandidateView> generate(
+			AutoScheduleCommand command,
+			String actor,
+			BooleanSupplier cancelled) {
+		return generate(command, actor, cancelled, progress -> { });
+	}
+
+	@Transactional
+	public List<ScheduleCandidateView> generate(
+			AutoScheduleCommand command,
+			String actor,
+			BooleanSupplier cancelled,
+			IntConsumer progress) {
 		GenerationRequest request = validate(command);
+		SchedulePolicy policy = policyService.resolve(request.semesterCode());
 		terms.findByTermCode(request.semesterCode())
 				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
 		List<ScheduleEntry> baseline = current(request.semesterCode());
@@ -108,11 +142,14 @@ public class AutoSchedulingService {
 		Set<String> targetIds = targetOfferingIds(request, semesterOfferings);
 		List<ScheduleCandidateView> result = new ArrayList<>();
 		for (int index = 0; index < request.candidateCount(); index++) {
+			checkCancelled(cancelled);
 			GeneratedPlan generated = buildCandidate(
 					request,
 					baseline,
 					semesterOfferings,
 					targetIds,
+					policy,
+					cancelled,
 					index);
 			ScheduleCandidatePlan candidate = new ScheduleCandidatePlan();
 			candidate.setSemesterCode(request.semesterCode());
@@ -131,8 +168,11 @@ public class AutoSchedulingService {
 			candidate.setUnscheduledLessons(generated.metrics().unscheduledLessons());
 			candidate.setTotalScore(generated.metrics().totalScore());
 			candidate.setGeneratedBy(actor);
+			candidate.setOwnerUsername(actor);
+			candidate.setReviewStatus("DRAFT");
 			candidate.setGeneratedAt(LocalDateTime.now());
 			result.add(view(candidates.save(candidate)));
+			progress.accept((index + 1) * 100 / request.candidateCount());
 		}
 		audit.log(
 				actor,
@@ -151,6 +191,24 @@ public class AutoSchedulingService {
 		return candidates.findBySemesterCodeOrderByGeneratedAtDesc(required(semesterCode, "学期编码"))
 				.stream()
 				.map(this::view)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<ScheduleCandidateView> compare(List<String> candidateIds) {
+		if (candidateIds == null || candidateIds.size() < 2 || candidateIds.size() > 5) {
+			throw new IllegalArgumentException("请选择 2 到 5 个候选方案进行对比");
+		}
+		List<ScheduleCandidatePlan> values = candidates.findAllById(candidateIds);
+		if (values.size() != new HashSet<>(candidateIds).size()) {
+			throw new IllegalArgumentException("部分候选方案不存在");
+		}
+		if (values.stream().map(ScheduleCandidatePlan::getSemesterCode).distinct().count() != 1) {
+			throw new IllegalArgumentException("只能比较同一学期的候选方案");
+		}
+		return values.stream()
+				.map(this::view)
+				.sorted(Comparator.comparing(ScheduleCandidateView::totalScore).reversed())
 				.toList();
 	}
 
@@ -176,6 +234,9 @@ public class AutoSchedulingService {
 		ScheduleCandidatePlan candidate = candidate(candidateId);
 		if (!"CANDIDATE".equals(candidate.getStatus())) {
 			throw new IllegalStateException("只有候选状态的方案可以应用");
+		}
+		if (!"APPROVED".equals(candidate.getReviewStatus())) {
+			throw new IllegalStateException("候选方案审核通过后才能应用");
 		}
 		if (candidate.getUnscheduledLessons() > 0) {
 			throw new IllegalStateException("候选方案仍有未排课课时，不能应用");
@@ -218,11 +279,101 @@ public class AutoSchedulingService {
 		return view(candidate);
 	}
 
+	@Transactional
+	public ScheduleCandidateView updateGovernance(
+			String candidateId,
+			ScheduleCandidateGovernanceCommand command,
+			String actor) {
+		ScheduleCandidatePlan candidate = editableCandidate(candidateId);
+		assertOwner(candidate, actor);
+		if (!"DRAFT".equals(candidate.getReviewStatus())
+				&& !"REJECTED".equals(candidate.getReviewStatus())) {
+			throw new IllegalStateException("只有草稿或已驳回方案可以编辑协作信息");
+		}
+		String owner = required(command.ownerUsername(), "负责人");
+		var ownerAccount = users.findByUsername(owner);
+		if (ownerAccount == null
+				|| !Integer.valueOf(1).equals(ownerAccount.getStatus())
+				|| Boolean.TRUE.equals(ownerAccount.getAccountLocked())) {
+			throw new IllegalArgumentException("负责人账号不存在、已停用或已锁定");
+		}
+		candidate.setOwnerUsername(owner);
+		candidate.setCollaborationRemark(trim(command.remark(), 1000));
+		audit.log(actor, "EDUCATION_SCHEDULE_CANDIDATE_UPDATE", "candidate=" + candidateId);
+		return view(candidates.save(candidate));
+	}
+
+	@Transactional
+	public ScheduleCandidateView submitReview(String candidateId, String actor) {
+		ScheduleCandidatePlan candidate = editableCandidate(candidateId);
+		assertOwner(candidate, actor);
+		if (!List.of("DRAFT", "REJECTED").contains(candidate.getReviewStatus())) {
+			throw new IllegalStateException("当前方案状态不能提交审核");
+		}
+		candidate.setReviewStatus("SUBMITTED");
+		candidate.setReviewComment(null);
+		candidate.setReviewedBy(null);
+		candidate.setReviewedAt(null);
+		audit.log(actor, "EDUCATION_SCHEDULE_CANDIDATE_SUBMIT", "candidate=" + candidateId);
+		return view(candidates.save(candidate));
+	}
+
+	@Transactional
+	public ScheduleCandidateView review(
+			String candidateId,
+			boolean approved,
+			String comment,
+			String actor) {
+		ScheduleCandidatePlan candidate = editableCandidate(candidateId);
+		if (!"SUBMITTED".equals(candidate.getReviewStatus())) {
+			throw new IllegalStateException("只有待审核方案可以审批");
+		}
+		if (actor.equals(candidate.getOwnerUsername())) {
+			throw new IllegalStateException("方案负责人不能审核自己的方案");
+		}
+		if (!approved && (comment == null || comment.isBlank())) {
+			throw new IllegalArgumentException("驳回时必须填写原因");
+		}
+		candidate.setReviewStatus(approved ? "APPROVED" : "REJECTED");
+		candidate.setReviewedBy(actor);
+		candidate.setReviewedAt(LocalDateTime.now());
+		candidate.setReviewComment(trim(comment, 1000));
+		audit.log(
+				actor,
+				approved ? "EDUCATION_SCHEDULE_CANDIDATE_APPROVE" : "EDUCATION_SCHEDULE_CANDIDATE_REJECT",
+				"candidate=" + candidateId);
+		return view(candidates.save(candidate));
+	}
+
+	private ScheduleCandidatePlan editableCandidate(String candidateId) {
+		ScheduleCandidatePlan candidate = candidate(candidateId);
+		if (!"CANDIDATE".equals(candidate.getStatus())) {
+			throw new IllegalStateException("只有未应用的候选方案可以操作");
+		}
+		return candidate;
+	}
+
+	private void assertOwner(ScheduleCandidatePlan candidate, String actor) {
+		if (!actor.equals(candidate.getOwnerUsername())) {
+			throw new IllegalStateException("只有方案负责人可以执行该操作");
+		}
+	}
+
+	private String trim(String value, int maximum) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		String trimmed = value.trim();
+		return trimmed.substring(0, Math.min(trimmed.length(), maximum));
+	}
+
 	private GeneratedPlan buildCandidate(
 			GenerationRequest request,
 			List<ScheduleEntry> baseline,
 			List<CourseOffering> semesterOfferings,
 			Set<String> targetIds,
+			SchedulePolicy policy,
+			BooleanSupplier cancelled,
 			int variation) {
 		Map<String, CourseOffering> offeringById = semesterOfferings.stream()
 				.collect(Collectors.toMap(CourseOffering::getId, value -> value));
@@ -250,6 +401,8 @@ public class AutoSchedulingService {
 				.findBySemesterCodeOrderByTeacherIdAscDayOfWeekAscPeriodNoAsc(request.semesterCode())
 				.stream()
 				.collect(Collectors.groupingBy(TeacherTimeConstraint::getTeacherId));
+		Map<String, TeacherAcademicProfile> teacherById = teacherProfiles.findAll().stream()
+				.collect(Collectors.toMap(TeacherAcademicProfile::getId, item -> item));
 		List<Classroom> availableRooms = classrooms.findByEnabledTrueOrderByRoomCode();
 		List<ClassroomUnavailableSlot> roomUnavailableSlots = unavailableSlots
 				.findBySemesterCodeOrderByClassroomIdAscDayOfWeekAscStartPeriodAsc(request.semesterCode())
@@ -273,8 +426,13 @@ public class AutoSchedulingService {
 		int unscheduled = 0;
 		int preferredHits = 0;
 		int sameCourseDayPenalty = 0;
+		int teacherLoadPenalty = 0;
+		int consecutivePenalty = 0;
+		int campusSwitchPenalty = 0;
+		int teacherGapPenalty = 0;
 		Map<String, Set<Integer>> periodsByCampus = new HashMap<>();
 		for (CourseOffering offering : targets) {
+			checkCancelled(cancelled);
 			int lockedLessons = result.stream()
 					.filter(entry -> offering.getId().equals(entry.getOfferingId()))
 					.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
@@ -291,6 +449,7 @@ public class AutoSchedulingService {
 							offering.getCampusId(),
 							request.periodsPerDay()));
 			for (int lesson = 0; lesson < requiredLessons;) {
+				checkCancelled(cancelled);
 				int duration = Math.min(preferredDuration, requiredLessons - lesson);
 				Placement placement = bestPlacement(
 						offering,
@@ -300,7 +459,9 @@ public class AutoSchedulingService {
 						teacherConstraints.getOrDefault(offering.getTeacherId(), List.of()),
 						allowedPeriods,
 						duration,
-						roomUnavailableSlots);
+						roomUnavailableSlots,
+						teacherById.get(offering.getTeacherId()),
+						policy);
 				if (placement == null) {
 					unscheduled += duration;
 					lesson += duration;
@@ -330,13 +491,21 @@ public class AutoSchedulingService {
 					preferredHits++;
 				}
 				sameCourseDayPenalty += placement.sameCourseDayCount();
+				teacherLoadPenalty += placement.teacherDayLoad();
+				consecutivePenalty += placement.consecutiveLoad();
+				campusSwitchPenalty += placement.campusSwitches();
+				teacherGapPenalty += placement.teacherGaps();
 			}
 		}
 		result.sort(entryComparator());
-		int score = scheduled * 100
-				+ preferredHits * 10
-				- sameCourseDayPenalty * 5
-				- unscheduled * 1_000;
+		int score = scheduled * policy.getScheduledLessonReward()
+				+ preferredHits * policy.getPreferredSlotReward()
+				- sameCourseDayPenalty * policy.getSameCourseDayPenalty()
+				- teacherLoadPenalty * policy.getTeacherLoadPenalty()
+				- consecutivePenalty * policy.getConsecutivePenalty()
+				- campusSwitchPenalty * policy.getCampusSwitchPenalty()
+				- teacherGapPenalty * policy.getTeacherGapPenalty()
+				- unscheduled * policy.getUnscheduledLessonPenalty();
 		return new GeneratedPlan(
 				result,
 				new ScheduleCandidateMetrics(
@@ -344,7 +513,17 @@ public class AutoSchedulingService {
 						unscheduled,
 						preferredHits,
 						sameCourseDayPenalty,
+						teacherLoadPenalty,
+						consecutivePenalty,
+						campusSwitchPenalty,
+						teacherGapPenalty,
 						score));
+	}
+
+	private void checkCancelled(BooleanSupplier cancelled) {
+		if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+			throw new java.util.concurrent.CancellationException("自动排课任务已取消");
+		}
 	}
 
 	private Placement bestPlacement(
@@ -355,9 +534,29 @@ public class AutoSchedulingService {
 			List<TeacherTimeConstraint> teacherConstraints,
 			Set<Integer> allowedPeriods,
 			int duration,
-			List<ClassroomUnavailableSlot> roomUnavailableSlots) {
+			List<ClassroomUnavailableSlot> roomUnavailableSlots,
+			TeacherAcademicProfile teacher,
+			SchedulePolicy policy) {
 		Placement best = null;
 		for (Slot slot : slots) {
+			int maxDaily = teacher == null || teacher.getMaxDailyLessons() == null
+					? policy.getDefaultMaxDailyLessons() : teacher.getMaxDailyLessons();
+			int maxConsecutive = teacher == null || teacher.getMaxConsecutiveLessons() == null
+					? policy.getDefaultMaxConsecutiveLessons() : teacher.getMaxConsecutiveLessons();
+			if (schedulingIndex.teacherDayLoad(offering, slot) + duration > maxDaily
+					|| schedulingIndex.teacherWeeklyLoad(offering) + duration
+							> (teacher == null || teacher.getMaxWeeklyLessons() == null
+									? policy.getDefaultMaxWeeklyLessons() : teacher.getMaxWeeklyLessons())
+					|| schedulingIndex.consecutiveLoad(offering, slot, duration) > maxConsecutive) {
+				continue;
+			}
+			if (schedulingIndex.violatesCampusTravelGap(
+					offering,
+					slot,
+					duration,
+					policy.getMinimumCampusTravelPeriods())) {
+				continue;
+			}
 			if (!consecutivePeriodsAllowed(allowedPeriods, slot.period(), duration)
 					|| forbidden(teacherConstraints, slot, duration)) {
 				continue;
@@ -370,9 +569,19 @@ public class AutoSchedulingService {
 				}
 				int sameDay = schedulingIndex.sameCourseDayCount(offering, slot);
 				int teacherDayLoad = schedulingIndex.teacherDayLoad(offering, slot);
+				int consecutiveLoad = schedulingIndex.consecutiveLoad(offering, slot, duration);
+				int campusSwitches = schedulingIndex.campusSwitches(offering, slot);
+				int teacherGaps = schedulingIndex.teacherGapIncrease(offering, slot, duration);
 				boolean preferred = preferred(teacherConstraints, slot);
-				int penalty = sameDay * 20 + teacherDayLoad * 2 - (preferred ? 10 : 0);
-				Placement candidate = new Placement(slot, room, penalty, preferred, sameDay);
+				int penalty = sameDay * policy.getSameCourseDayPenalty()
+						+ teacherDayLoad * policy.getTeacherLoadPenalty()
+						+ consecutiveLoad * policy.getConsecutivePenalty()
+						+ campusSwitches * policy.getCampusSwitchPenalty()
+						+ teacherGaps * policy.getTeacherGapPenalty()
+						- (preferred ? policy.getPreferredSlotReward() : 0);
+				Placement candidate = new Placement(
+						slot, room, penalty, preferred, sameDay,
+						teacherDayLoad, consecutiveLoad, campusSwitches, teacherGaps);
 				if (best == null || candidate.penalty() < best.penalty()) {
 					best = candidate;
 				}
@@ -689,6 +898,12 @@ public class AutoSchedulingService {
 				candidate.getUnscheduledLessons(),
 				candidate.getTotalScore(),
 				candidate.getStatus(),
+				candidate.getReviewStatus(),
+				candidate.getOwnerUsername(),
+				candidate.getCollaborationRemark(),
+				candidate.getReviewedBy(),
+				candidate.getReviewedAt(),
+				candidate.getReviewComment(),
 				candidate.getGeneratedBy(),
 				candidate.getGeneratedAt(),
 				candidate.getAppliedBy(),
@@ -775,7 +990,11 @@ public class AutoSchedulingService {
 			Classroom classroom,
 			int penalty,
 			boolean preferred,
-			int sameCourseDayCount) {
+			int sameCourseDayCount,
+			int teacherDayLoad,
+			int consecutiveLoad,
+			int campusSwitches,
+			int teacherGaps) {
 	}
 
 	private record GeneratedPlan(
@@ -793,6 +1012,10 @@ public class AutoSchedulingService {
 		private final Set<String> studentSlots = new HashSet<>();
 		private final Map<String, Integer> offeringDayCounts = new HashMap<>();
 		private final Map<String, Integer> teacherDayCounts = new HashMap<>();
+		private final Map<String, Integer> teacherWeeklyCounts = new HashMap<>();
+		private final Map<String, Set<Integer>> teacherDayPeriods = new HashMap<>();
+		private final Map<String, Set<String>> teacherDayCampuses = new HashMap<>();
+		private final Map<String, Map<Integer, String>> teacherDayPeriodCampuses = new HashMap<>();
 
 		private SchedulingIndex(
 				List<ScheduleEntry> scheduled,
@@ -827,8 +1050,21 @@ public class AutoSchedulingService {
 					Integer::sum);
 			teacherDayCounts.merge(
 					offering.getTeacherId() + "|" + entry.getDayOfWeek(),
-					1,
+					duration,
 					Integer::sum);
+			teacherWeeklyCounts.merge(offering.getTeacherId(), duration, Integer::sum);
+			String teacherDay = offering.getTeacherId() + "|" + entry.getDayOfWeek();
+			Set<Integer> periods = teacherDayPeriods.computeIfAbsent(teacherDay, key -> new HashSet<>());
+			for (int offset = 0; offset < duration; offset++) {
+				periods.add(entry.getPeriodNo() + offset);
+				teacherDayPeriodCampuses
+						.computeIfAbsent(teacherDay, key -> new HashMap<>())
+						.put(
+								entry.getPeriodNo() + offset,
+								offering.getCampusId() == null ? "" : offering.getCampusId());
+			}
+			teacherDayCampuses.computeIfAbsent(teacherDay, key -> new HashSet<>())
+					.add(offering.getCampusId() == null ? "" : offering.getCampusId());
 		}
 
 		private boolean conflicts(CourseOffering offering, Classroom room, Slot slot, int duration) {
@@ -855,6 +1091,82 @@ public class AutoSchedulingService {
 			return teacherDayCounts.getOrDefault(
 					offering.getTeacherId() + "|" + slot.day(),
 					0);
+		}
+
+		private int teacherWeeklyLoad(CourseOffering offering) {
+			return teacherWeeklyCounts.getOrDefault(offering.getTeacherId(), 0);
+		}
+
+		private int consecutiveLoad(CourseOffering offering, Slot slot, int duration) {
+			Set<Integer> periods = new HashSet<>(teacherDayPeriods.getOrDefault(
+					offering.getTeacherId() + "|" + slot.day(), Set.of()));
+			for (int offset = 0; offset < duration; offset++) {
+				periods.add(slot.period() + offset);
+			}
+			int run = 0;
+			int maximum = 0;
+			for (int period = 1; period <= 20; period++) {
+				run = periods.contains(period) ? run + 1 : 0;
+				maximum = Math.max(maximum, run);
+			}
+			return maximum;
+		}
+
+		private int campusSwitches(CourseOffering offering, Slot slot) {
+			Set<String> campuses = teacherDayCampuses.getOrDefault(
+					offering.getTeacherId() + "|" + slot.day(), Set.of());
+			String campus = offering.getCampusId() == null ? "" : offering.getCampusId();
+			return campuses.isEmpty() || campuses.contains(campus) ? 0 : 1;
+		}
+
+		private boolean violatesCampusTravelGap(
+				CourseOffering offering,
+				Slot slot,
+				int duration,
+				int minimumGap) {
+			if (minimumGap <= 0) {
+				return false;
+			}
+			String teacherDay = offering.getTeacherId() + "|" + slot.day();
+			String targetCampus = offering.getCampusId() == null ? "" : offering.getCampusId();
+			Map<Integer, String> occupied = teacherDayPeriodCampuses.getOrDefault(teacherDay, Map.of());
+			int start = slot.period();
+			int end = slot.period() + duration - 1;
+			return occupied.entrySet().stream().anyMatch(item -> {
+				if (targetCampus.equals(item.getValue())) {
+					return false;
+				}
+				int distance = item.getKey() < start
+						? start - item.getKey() - 1
+						: item.getKey() - end - 1;
+				return distance < minimumGap;
+			});
+		}
+
+		private int teacherGapIncrease(CourseOffering offering, Slot slot, int duration) {
+			Set<Integer> before = teacherDayPeriods.getOrDefault(
+					offering.getTeacherId() + "|" + slot.day(), Set.of());
+			int previous = gapCount(before);
+			Set<Integer> after = new HashSet<>(before);
+			for (int offset = 0; offset < duration; offset++) {
+				after.add(slot.period() + offset);
+			}
+			return Math.max(0, gapCount(after) - previous);
+		}
+
+		private int gapCount(Set<Integer> periods) {
+			if (periods.size() < 2) {
+				return 0;
+			}
+			int minimum = periods.stream().mapToInt(Integer::intValue).min().orElse(0);
+			int maximum = periods.stream().mapToInt(Integer::intValue).max().orElse(0);
+			int gaps = 0;
+			for (int period = minimum; period <= maximum; period++) {
+				if (!periods.contains(period)) {
+					gaps++;
+				}
+			}
+			return gaps;
 		}
 
 		private String slot(int day, int period) {

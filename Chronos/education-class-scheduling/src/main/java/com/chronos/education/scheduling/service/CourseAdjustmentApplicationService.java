@@ -5,6 +5,8 @@ import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.model.CourseAdjustmentRecord;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.ScheduleEntryCommand;
+import com.chronos.education.scheduling.model.ScheduleDateException;
+import com.chronos.education.scheduling.dao.ScheduleDateExceptionRepository;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.workflow.event.WorkflowCompletedEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -12,6 +14,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -29,6 +32,8 @@ public class CourseAdjustmentApplicationService {
 	private final CourseAdjustmentStartValidator startValidator;
 	private final CourseAdjustmentIncidentNotificationService incidentNotifications;
 	private final IAuditLogService audit;
+	private final ScheduleOccurrenceService occurrences;
+	private final ScheduleDateExceptionRepository dateExceptions;
 	private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
 	public CourseAdjustmentApplicationService(
@@ -37,13 +42,17 @@ public class CourseAdjustmentApplicationService {
 			ClassSchedulingService scheduling,
 			CourseAdjustmentStartValidator startValidator,
 			CourseAdjustmentIncidentNotificationService incidentNotifications,
-			IAuditLogService audit) {
+			IAuditLogService audit,
+			ScheduleOccurrenceService occurrences,
+			ScheduleDateExceptionRepository dateExceptions) {
 		this.entries = entries;
 		this.records = records;
 		this.scheduling = scheduling;
 		this.startValidator = startValidator;
 		this.incidentNotifications = incidentNotifications;
 		this.audit = audit;
+		this.occurrences = occurrences;
+		this.dateExceptions = dateExceptions;
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -168,13 +177,9 @@ public class CourseAdjustmentApplicationService {
 		record.setMessage(null);
 		records.saveAndFlush(record);
 
-		String resultEntryId = switch (type) {
-			case "MOVE" -> move(source, form, record.getWorkflowInstanceId());
-			case "CANCEL" -> cancel(source, record.getWorkflowInstanceId());
-			case "SUBSTITUTE" -> substitute(source, form, record.getWorkflowInstanceId());
-			case "MAKEUP" -> makeup(source, form, record.getWorkflowInstanceId());
-			default -> throw new IllegalArgumentException("不支持的调整类型：" + type);
-		};
+		String resultEntryId = hasText(text(form.get("sourceDate"), null))
+				? applyDateException(source, type, form, record.getWorkflowInstanceId())
+				: applyLegacyRecurringAdjustment(source, type, form, record.getWorkflowInstanceId());
 		record.setResultEntryId(resultEntryId);
 		record.setStatus("APPLIED");
 		record.setMessage("审批完成后已自动回写课表");
@@ -182,6 +187,49 @@ public class CourseAdjustmentApplicationService {
 		audit.log(actor, "EDUCATION_COURSE_ADJUSTMENT_APPLY",
 				"workflowInstanceId=" + record.getWorkflowInstanceId()
 						+ ", type=" + type + ", entryId=" + resultEntryId);
+	}
+
+	/**
+	 * 新版调课表单按具体日期生成例外，不再修改整学期周期课表。
+	 * workflowInstanceId 唯一索引保证工作流完成事件和事故重放幂等。
+	 */
+	private String applyDateException(
+			ScheduleEntry source,
+			String type,
+			Map<String, Object> form,
+			String instanceId) {
+		ScheduleDateException existing = dateExceptions
+				.findByWorkflowInstanceId(instanceId)
+				.orElse(null);
+		if (existing != null) {
+			return existing.getId();
+		}
+		ScheduleDateException command = new ScheduleDateException();
+		command.setSemesterCode(source.getSemesterCode());
+		command.setSourceEntryId(source.getId());
+		command.setSourceDate(date(form, "sourceDate", "原上课日期不能为空"));
+		command.setExceptionType(type);
+		command.setTargetDate(optionalDate(form.get("targetDate")));
+		command.setTargetPeriodNo(number(form.get("targetPeriodNo"), null));
+		command.setTargetClassroomId(text(form.get("targetClassroomId"), null));
+		command.setSubstituteTeacherId(text(form.get("substituteTeacherId"), null));
+		command.setReason(required(form, "reason", "调整原因不能为空"));
+		command.setWorkflowInstanceId(instanceId);
+		return occurrences.saveException(null, command).getId();
+	}
+
+	private String applyLegacyRecurringAdjustment(
+			ScheduleEntry source,
+			String type,
+			Map<String, Object> form,
+			String instanceId) {
+		return switch (type) {
+			case "MOVE" -> move(source, form, instanceId);
+			case "CANCEL" -> cancel(source, instanceId);
+			case "SUBSTITUTE" -> substitute(source, form, instanceId);
+			case "MAKEUP" -> makeup(source, form, instanceId);
+			default -> throw new IllegalArgumentException("不支持的调整类型：" + type);
+		};
 	}
 
 	private String move(ScheduleEntry source, Map<String, Object> form, String instanceId) {
@@ -223,7 +271,8 @@ public class CourseAdjustmentApplicationService {
 				source.getWeekPattern(),
 				source.getStartWeek(),
 				source.getEndWeek(),
-				source.getLocked());
+				source.getLocked(),
+				source.getRecordVersion());
 	}
 
 	private String writePayload(Map<String, Object> payload) {
@@ -260,6 +309,20 @@ public class CourseAdjustmentApplicationService {
 		return value == null || String.valueOf(value).isBlank()
 				? fallback
 				: Integer.valueOf(String.valueOf(value));
+	}
+
+	private LocalDate date(Map<String, Object> form, String key, String message) {
+		String value = required(form, key, message);
+		try {
+			return LocalDate.parse(value);
+		} catch (RuntimeException exception) {
+			throw new IllegalArgumentException(message + "，格式应为 yyyy-MM-dd");
+		}
+	}
+
+	private LocalDate optionalDate(Object value) {
+		String text = text(value, null);
+		return text == null ? null : LocalDate.parse(text);
 	}
 
 	private String limit(String value, int maximum) {

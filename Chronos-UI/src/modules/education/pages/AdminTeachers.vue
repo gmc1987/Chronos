@@ -9,10 +9,12 @@ const columns = [
   { prop: 'specialty', label: '专业方向', minWidth: 150 },
   { prop: 'accountUsername', label: '绑定账号', width: 150 },
   { prop: 'accountStatus', label: '账号状态', width: 110 },
-  { prop: 'maxWeeklyLessons', label: '周课时上限', width: 120 }
+  { prop: 'maxWeeklyLessons', label: '周课时上限', width: 120 },
+  { prop: 'maxDailyLessons', label: '日课时上限', width: 120 },
+  { prop: 'maxConsecutiveLessons', label: '连续课时上限', width: 130 }
 ]
-const fields = [{ prop: 'employeeId', label: 'IAM 员工 ID' }, { prop: 'teacherNo', label: '教师编号' }, { prop: 'teacherName', label: '教师姓名' }, { prop: 'departmentId', label: '所属单位 ID' }, { prop: 'specialty', label: '专业方向' }, { prop: 'maxWeeklyLessons', label: '周课时上限', type: 'number', min: 1 }]
-const defaults = { maxWeeklyLessons: 20, enabled: true }
+const fields = [{ prop: 'employeeId', label: 'IAM 员工 ID' }, { prop: 'teacherNo', label: '教师编号' }, { prop: 'teacherName', label: '教师姓名' }, { prop: 'departmentId', label: '所属单位 ID' }, { prop: 'specialty', label: '专业方向' }, { prop: 'maxWeeklyLessons', label: '周课时上限', type: 'number', min: 1 }, { prop: 'maxDailyLessons', label: '日课时上限', type: 'number', min: 1, max: 20 }, { prop: 'maxConsecutiveLessons', label: '连续课时上限', type: 'number', min: 1, max: 10 }]
+const defaults = { maxWeeklyLessons: 20, maxDailyLessons: 6, maxConsecutiveLessons: 4, enabled: true }
 const resetTeacherPassword = async row => {
   const account = await userByEmployee(row.employeeId)
   if (!account?.data?.id) {

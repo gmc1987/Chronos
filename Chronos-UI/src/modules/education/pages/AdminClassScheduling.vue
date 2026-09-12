@@ -38,14 +38,20 @@
             </el-select>
           </div>
           <div>
+            <el-radio-group v-model="scheduleView" class="view-switch"><el-radio-button value="grid">网格</el-radio-button><el-radio-button value="list">列表</el-radio-button></el-radio-group>
+            <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" @click="downloadImportTemplate">下载导入模板</el-button>
+            <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" type="warning" @click="chooseImportFile">导入课表</el-button>
+            <el-button v-permission="['education:scheduling:view', 'education:scheduling:manage']" @click="exportSchedule">导出当前课表</el-button>
             <el-button type="success" @click="publishVersion">发布当前课表</el-button>
             <el-button type="primary" @click="openEntry()">新增排课</el-button>
+            <input ref="scheduleFileInput" type="file" accept=".xlsx" hidden @change="importSchedule" />
           </div>
         </div>
         <el-empty
           v-if="scheduleDimension !== 'ALL' && !scheduleTargetId"
           description="选择教师、班级、学生或教室后查看课表" />
-        <el-table :data="schedule">
+        <ScheduleGrid v-if="scheduleView === 'grid'" :entries="schedule" :periods="schedulePeriods" @edit="openEntry" @move="moveEntry" />
+        <el-table v-else :data="schedule">
           <el-table-column label="时间" width="160">
             <template #default="scope">周{{ dayName(scope.row.dayOfWeek) }} 第 {{ scope.row.periodNo }} 节</template>
           </el-table-column>
@@ -60,6 +66,26 @@
             <template #default="scope">
               <el-button link @click="openEntry(scope.row)">编辑</el-button>
               <el-button link type="danger" @click="removeEntry(scope.row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="日期课表" name="date-schedule">
+        <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button></div>
+        <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><el-table-column label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></el-table-column></el-table>
+        <h3>日期调整历史</h3>
+        <el-table :data="dateExceptionHistory" border>
+          <el-table-column prop="sourceDate" label="原日期" width="120" />
+          <el-table-column prop="exceptionType" label="类型" width="100" />
+          <el-table-column prop="targetDate" label="目标日期" width="120" />
+          <el-table-column prop="targetPeriodNo" label="目标节次" width="100" />
+          <el-table-column prop="reason" label="原因" />
+          <el-table-column prop="status" label="状态" width="100" />
+          <el-table-column label="操作" width="100">
+            <template #default="scope">
+              <el-button v-if="scope.row.status === 'ACTIVE'" link type="danger" @click="cancelDateException(scope.row)">撤销</el-button>
+              <el-button v-else link type="primary" @click="restoreDateException(scope.row)">恢复</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -85,6 +111,71 @@
         </el-table>
       </el-tab-pane>
 
+      <el-tab-pane label="质量分析" name="quality">
+        <div class="toolbar"><el-button @click="loadQualityAnalysis">重新分析</el-button></div>
+        <div class="quality-summary">
+          <el-statistic title="排课项" :value="quality.summary?.entryCount || 0" />
+          <el-statistic title="已排课时" :value="quality.summary?.scheduledLessons || 0" />
+          <el-statistic title="教师数" :value="quality.summary?.teacherCount || 0" />
+          <el-statistic title="教室数" :value="quality.summary?.classroomCount || 0" />
+          <el-statistic title="风险项" :value="quality.summary?.riskCount || 0" />
+        </div>
+        <h3>教师负载</h3>
+        <el-table :data="quality.teacherLoads || []" border>
+          <el-table-column prop="teacherName" label="教师" />
+          <el-table-column label="周课时"><template #default="s">{{ s.row.weeklyLessons }} / {{ s.row.weeklyLimit }}</template></el-table-column>
+          <el-table-column label="日峰值"><template #default="s">{{ s.row.peakDailyLessons }} / {{ s.row.dailyLimit }}</template></el-table-column>
+          <el-table-column label="最长连堂"><template #default="s">{{ s.row.longestConsecutive }} / {{ s.row.consecutiveLimit }}</template></el-table-column>
+          <el-table-column prop="campusSwitchDays" label="跨校区天数" />
+          <el-table-column prop="loadRate" label="负载率"><template #default="s">{{ s.row.loadRate }}%</template></el-table-column>
+          <el-table-column label="状态"><template #default="s"><el-tag :type="s.row.overloaded ? 'danger' : 'success'">{{ s.row.overloaded ? '超限' : '正常' }}</el-tag></template></el-table-column>
+        </el-table>
+        <h3>教室利用率</h3>
+        <el-table :data="quality.roomUtilization || []" border>
+          <el-table-column prop="classroomName" label="教室" />
+          <el-table-column prop="occupiedLessons" label="学期占用课时" />
+          <el-table-column prop="availableLessons" label="学期可用课时" />
+          <el-table-column prop="utilizationRate" label="利用率"><template #default="s">{{ s.row.utilizationRate }}%</template></el-table-column>
+        </el-table>
+        <h3>风险清单</h3>
+        <el-empty v-if="!quality.risks?.length" description="当前课表未发现质量风险" />
+        <el-table v-else :data="quality.risks" border>
+          <el-table-column prop="level" label="等级" width="100" />
+          <el-table-column prop="type" label="类型" width="180" />
+          <el-table-column prop="message" label="说明" />
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="规则配置" name="policy">
+        <el-alert
+          title="规则按学期生效。教师档案设置了个人上限时优先使用个人值，未设置时使用本页默认值。"
+          type="info"
+          :closable="false"
+          show-icon />
+        <el-form class="policy-form" label-width="180px">
+          <h3>教师默认硬约束</h3>
+          <el-form-item label="每周课时上限"><el-input-number v-model="policy.defaultMaxWeeklyLessons" :min="1" :max="100" /></el-form-item>
+          <el-form-item label="每日课时上限"><el-input-number v-model="policy.defaultMaxDailyLessons" :min="1" :max="20" /></el-form-item>
+          <el-form-item label="连续授课上限"><el-input-number v-model="policy.defaultMaxConsecutiveLessons" :min="1" :max="10" /></el-form-item>
+          <el-form-item label="同课程单日集中阈值"><el-input-number v-model="policy.courseConcentrationThreshold" :min="1" :max="20" /></el-form-item>
+          <h3>候选方案评分权重</h3>
+          <el-form-item label="已排课时奖励"><el-input-number v-model="policy.scheduledLessonReward" :min="0" :max="100000" /></el-form-item>
+          <el-form-item label="偏好时段奖励"><el-input-number v-model="policy.preferredSlotReward" :min="0" :max="100000" /></el-form-item>
+          <el-form-item label="同课程同日惩罚"><el-input-number v-model="policy.sameCourseDayPenalty" :min="0" :max="100000" /></el-form-item>
+          <el-form-item label="教师日负载惩罚"><el-input-number v-model="policy.teacherLoadPenalty" :min="0" :max="100000" /></el-form-item>
+          <el-form-item label="连续授课惩罚"><el-input-number v-model="policy.consecutivePenalty" :min="0" :max="100000" /></el-form-item>
+          <el-form-item label="跨校区切换惩罚"><el-input-number v-model="policy.campusSwitchPenalty" :min="0" :max="100000" /></el-form-item>
+          <el-form-item label="教师空档惩罚"><el-input-number v-model="policy.teacherGapPenalty" :min="0" :max="100000" /></el-form-item>
+          <el-form-item label="跨校区最少间隔节次"><el-input-number v-model="policy.minimumCampusTravelPeriods" :min="0" :max="10" /></el-form-item>
+          <el-form-item label="未排课时惩罚"><el-input-number v-model="policy.unscheduledLessonPenalty" :min="0" :max="100000" /></el-form-item>
+          <h3>发布门禁</h3>
+          <el-form-item label="阻止时间硬冲突发布"><el-switch v-model="policy.blockHardConflicts" /></el-form-item>
+          <el-form-item label="阻止教学任务未排满发布"><el-switch v-model="policy.blockIncompleteOfferings" /></el-form-item>
+          <el-form-item label="阻止教师课时超限发布"><el-switch v-model="policy.blockTeacherOverload" /></el-form-item>
+          <el-form-item><el-button v-permission="['education:scheduling:manage']" type="primary" @click="savePolicy">保存本学期规则</el-button></el-form-item>
+        </el-form>
+      </el-tab-pane>
+
       <el-tab-pane label="自动排课候选" name="candidates">
         <div class="toolbar">
           <el-button @click="loadCandidates">刷新</el-button>
@@ -94,6 +185,9 @@
             @click="openCandidateDialog">
             生成候选方案
           </el-button>
+          <el-button :disabled="candidateSelection.length < 2" @click="compareCandidates">
+            对比方案（{{ candidateSelection.length }}）
+          </el-button>
         </div>
         <el-alert
           title="候选方案生成不会直接修改当前课表。预览差异并确认应用后，才会替换当前草稿。"
@@ -101,15 +195,44 @@
           :closable="false"
           show-icon
         />
+        <h3>后台生成任务</h3>
+        <el-table :data="generationJobs" size="small" border>
+          <el-table-column prop="requestedBy" label="提交人" width="130" />
+          <el-table-column label="状态" width="110"><template #default="s"><el-tag :type="jobStatusType(s.row.status)">{{ jobStatusName(s.row.status) }}</el-tag></template></el-table-column>
+          <el-table-column label="进度" min-width="180"><template #default="s"><el-progress :percentage="s.row.progress || 0" /></template></el-table-column>
+          <el-table-column prop="errorMessage" label="失败/取消原因" min-width="220" show-overflow-tooltip />
+          <el-table-column label="操作" width="90"><template #default="s"><el-button v-if="['QUEUED', 'RUNNING'].includes(s.row.status)" link type="danger" @click="cancelGenerationJob(s.row)">取消</el-button></template></el-table-column>
+        </el-table>
+        <h3>候选方案</h3>
         <el-empty v-if="!candidates.length" description="暂无自动排课候选方案" />
-        <el-table v-else :data="candidates" class="candidate-table">
+        <el-table v-else :data="candidates" class="candidate-table" @selection-change="candidateSelection = $event">
+          <el-table-column
+            type="selection"
+            width="46"
+            :selectable="row => candidateSelection.some(item => item.id === row.id) || candidateSelection.length < 5" />
           <el-table-column prop="planName" label="方案名称" min-width="180" />
           <el-table-column label="模式" width="100">
             <template #default="scope">
               {{ scope.row.generationMode === 'LOCAL' ? '局部重排' : '全量排课' }}
             </template>
           </el-table-column>
-          <el-table-column prop="totalScore" label="评分" width="90" />
+          <el-table-column label="评分" width="150">
+            <template #default="scope">
+              <el-popover placement="right" width="300" trigger="hover">
+                <template #reference><el-button link type="primary">{{ scope.row.totalScore }} 分</el-button></template>
+                <div class="score-detail">
+                  <span>已排课时：{{ scope.row.metrics?.scheduledLessons || 0 }}</span>
+                  <span>教师偏好命中：{{ scope.row.metrics?.preferredSlotHits || 0 }}</span>
+                  <span>同课程同日惩罚：{{ scope.row.metrics?.sameCourseDayPenalty || 0 }}</span>
+                  <span>教师日负载惩罚：{{ scope.row.metrics?.teacherLoadPenalty || 0 }}</span>
+                  <span>连续授课惩罚：{{ scope.row.metrics?.consecutivePenalty || 0 }}</span>
+                  <span>跨校区切换惩罚：{{ scope.row.metrics?.campusSwitchPenalty || 0 }}</span>
+                  <span>教师空档惩罚：{{ scope.row.metrics?.teacherGapPenalty || 0 }}</span>
+                  <span>未排课时：{{ scope.row.metrics?.unscheduledLessons || 0 }}</span>
+                </div>
+              </el-popover>
+            </template>
+          </el-table-column>
           <el-table-column prop="entryCount" label="课表项" width="90" />
           <el-table-column prop="unscheduledLessons" label="未排课时" width="100">
             <template #default="scope">
@@ -118,21 +241,26 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="100">
-            <template #default="scope">{{ candidateStatus(scope.row.status) }}</template>
+          <el-table-column label="协作状态" width="120">
+            <template #default="scope"><el-tag>{{ reviewStatusName(scope.row.reviewStatus) }}</el-tag></template>
           </el-table-column>
+          <el-table-column prop="ownerUsername" label="负责人" width="130" />
           <el-table-column label="生成时间" min-width="170">
             <template #default="scope">{{ formatTime(scope.row.generatedAt) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="220" fixed="right">
+          <el-table-column label="操作" width="420" fixed="right">
             <template #default="scope">
               <el-button link @click="showCandidateDiff(scope.row)">预览差异</el-button>
               <template v-if="scope.row.status === 'CANDIDATE'">
+                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" link @click="editCandidateGovernance(scope.row)">协作信息</el-button>
+                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" link type="warning" @click="submitCandidateReview(scope.row)">提交审核</el-button>
+                <el-button v-if="scope.row.reviewStatus === 'SUBMITTED'" link type="success" @click="reviewCandidate(scope.row, true)">通过</el-button>
+                <el-button v-if="scope.row.reviewStatus === 'SUBMITTED'" link type="danger" @click="reviewCandidate(scope.row, false)">驳回</el-button>
                 <el-button
                   v-permission="['education:scheduling:manage']"
                   link
                   type="primary"
-                  :disabled="scope.row.unscheduledLessons > 0"
+                  :disabled="scope.row.unscheduledLessons > 0 || scope.row.reviewStatus !== 'APPROVED'"
                   @click="applyCandidate(scope.row)">
                   应用
                 </el-button>
@@ -418,6 +546,11 @@
       <template #footer><el-button @click="roomConstraintDialog = false">取消</el-button><el-button type="primary" @click="saveRoomConstraint">保存</el-button></template>
     </el-dialog>
 
+    <el-dialog v-model="dateExceptionDialog" title="课程日期调整" width="620px">
+      <el-form label-width="100px"><el-form-item label="调整类型"><el-radio-group v-model="dateExceptionForm.exceptionType"><el-radio value="MOVE">调课</el-radio><el-radio value="CANCEL">停课</el-radio><el-radio value="SUBSTITUTE">代课</el-radio><el-radio value="MAKEUP">补课</el-radio></el-radio-group></el-form-item><template v-if="['MOVE', 'MAKEUP'].includes(dateExceptionForm.exceptionType)"><el-form-item label="目标日期"><el-date-picker v-model="dateExceptionForm.targetDate" value-format="YYYY-MM-DD" /></el-form-item><el-form-item label="目标节次"><el-input-number v-model="dateExceptionForm.targetPeriodNo" :min="1" /></el-form-item><el-form-item label="目标教室"><el-select v-model="dateExceptionForm.targetClassroomId" clearable filterable><el-option v-for="item in classroomOptions" :key="item.id" :label="item.roomName" :value="item.id" /></el-select></el-form-item></template><el-form-item v-if="dateExceptionForm.exceptionType === 'SUBSTITUTE'" label="代课教师"><el-select v-model="dateExceptionForm.substituteTeacherId" filterable><el-option v-for="item in teachers" :key="item.id" :label="item.teacherName" :value="item.id" /></el-select></el-form-item><el-form-item label="变更原因"><el-input v-model="dateExceptionForm.reason" type="textarea" /></el-form-item></el-form>
+      <template #footer><el-button @click="dateExceptionDialog = false">取消</el-button><el-button type="primary" @click="saveDateException">保存</el-button></template>
+    </el-dialog>
+
     <el-dialog v-model="diffDialog" :title="diffTitle" width="860px">
       <div v-if="currentDiff" class="diff-summary">
         <el-tag type="success">新增 {{ currentDiff.added }}</el-tag>
@@ -439,12 +572,27 @@
         <el-button @click="diffDialog = false">关闭</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="candidateCompareDialog" title="候选方案横向对比" width="1080px">
+      <el-table :data="candidateComparison" border>
+        <el-table-column prop="planName" label="方案" min-width="180" fixed />
+        <el-table-column prop="totalScore" label="总分" width="90" />
+        <el-table-column prop="metrics.scheduledLessons" label="已排课时" width="100" />
+        <el-table-column prop="metrics.unscheduledLessons" label="未排课时" width="100" />
+        <el-table-column prop="metrics.preferredSlotHits" label="偏好命中" width="100" />
+        <el-table-column prop="metrics.sameCourseDayPenalty" label="课程集中" width="100" />
+        <el-table-column prop="metrics.teacherLoadPenalty" label="教师负载" width="100" />
+        <el-table-column prop="metrics.consecutivePenalty" label="连续授课" width="100" />
+        <el-table-column prop="metrics.campusSwitchPenalty" label="跨校区" width="100" />
+        <el-table-column prop="metrics.teacherGapPenalty" label="教师空档" width="100" />
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import ScheduleGrid from '../components/ScheduleGrid.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   applyScheduleCandidate,
@@ -455,8 +603,19 @@ import {
   deleteClassroom,
   deleteCourseOffering,
   deleteScheduleEntry,
+  downloadScheduleImportTemplate,
+  importClassSchedule,
+  exportClassSchedule,
+  getScheduleQualityAnalysis,
+  getSchedulePolicy,
+  compareScheduleCandidates,
   discardScheduleCandidate,
-  generateScheduleCandidates,
+  submitScheduleGenerationJob,
+  listScheduleGenerationJobs,
+  cancelScheduleGenerationJob,
+  updateScheduleCandidateGovernance,
+  submitScheduleCandidateReview,
+  reviewScheduleCandidate,
   listClassrooms,
   listClassSchedule,
   listAcademicTerms,
@@ -471,6 +630,7 @@ import {
   previewScheduleCandidate,
   previewSchedulePublication,
   publishScheduleVersion,
+  saveSchedulePolicy,
   retryCourseAdjustmentIncident,
   rollbackScheduleVersion,
   updateClassroom,
@@ -479,19 +639,26 @@ import {
   dictionaryOptions,
   createTeacherTimeConstraint,
   createClassroomUnavailableSlot,
+  createScheduleDateException,
   deleteClassroomUnavailableSlot,
   deleteTeacherTimeConstraint,
   listBellSchedules,
   listTeacherTimeConstraints,
   listClassroomUnavailableSlots,
+  listScheduleOccurrences,
+  listScheduleDateExceptionHistory,
+  cancelScheduleDateException,
+  restoreScheduleDateException,
   orgList,
   updateTeacherTimeConstraint,
   updateClassroomUnavailableSlot,
 } from '../../../api/admin'
 
 const semesterCode = ref('2026-2027-1')
+const scheduleFileInput = ref(null)
 const router = useRouter()
 const activeTab = ref('schedule')
+const scheduleView = ref('grid')
 const offerings = ref([])
 const classrooms = ref([])
 const offeringOptions = ref([])
@@ -506,7 +673,12 @@ const campuses = ref([])
 const bellSchedules = ref([])
 const teacherConstraints = ref([])
 const roomConstraints = ref([])
+const occurrences = ref([])
+const dateExceptionHistory = ref([])
+const occurrenceDate = ref(new Date().toISOString().slice(0, 10))
 const schedule = ref([])
+const quality = ref({})
+const policy = reactive({})
 const scheduleDimension = ref('ALL')
 const scheduleTargetId = ref('')
 const incidents = ref([])
@@ -520,6 +692,11 @@ const incidentTotal = ref(0)
 const incidentBatchRetrying = ref(false)
 const versions = ref([])
 const candidates = ref([])
+const generationJobs = ref([])
+let generationJobTimer
+const candidateSelection = ref([])
+const candidateComparison = ref([])
+const candidateCompareDialog = ref(false)
 const offeringPage = ref(1)
 const offeringPageSize = ref(10)
 const offeringTotal = ref(0)
@@ -533,6 +710,7 @@ const candidateDialog = ref(false)
 const candidateGenerating = ref(false)
 const constraintDialog = ref(false)
 const roomConstraintDialog = ref(false)
+const dateExceptionDialog = ref(false)
 const diffDialog = ref(false)
 const diffTitle = ref('方案差异')
 const currentDiff = ref(null)
@@ -542,6 +720,7 @@ const classroomForm = reactive({})
 const candidateForm = reactive({})
 const constraintForm = reactive({})
 const roomConstraintForm = reactive({})
+const dateExceptionForm = reactive({})
 const orgName = item => item.organizationName || item.orgName || item.name || item.id
 const selectedTerm = computed(() => terms.value.find(item => item.termCode === semesterCode.value))
 const selectedClassroom = computed(() => classroomOptions.value.find(item => item.id === entryForm.classroomId))
@@ -555,8 +734,15 @@ const allBellPeriods = computed(() => {
   bellSchedules.value.flatMap(item => item.periods || []).filter(item => item.schedulable).forEach(item => values.set(item.periodNo, item))
   return [...values.values()].sort((left, right) => left.periodNo - right.periodNo)
 })
+const schedulePeriods = computed(() => {
+  if (allBellPeriods.value.length) return allBellPeriods.value
+  const maximum = Math.max(8, ...schedule.value.map(item => item.periodNo + (item.durationPeriods || 1) - 1))
+  return Array.from({ length: maximum }, (_, index) => ({ periodNo: index + 1, periodName: `第 ${index + 1} 节` }))
+})
 const teacherName = id => teachers.value.find(item => item.id === id)?.teacherName || id
 const classroomName = id => classroomOptions.value.find(item => item.id === id)?.roomName || id
+const occurrenceStatusName = status => ({ SCHEDULED: '正常', CANCELLED: '停课', MOVED_OUT: '已调出', MOVED_IN: '已调入', SUBSTITUTED: '代课', MAKEUP: '补课' }[status] || status)
+const occurrenceStatusType = status => ({ CANCELLED: 'danger', MOVED_OUT: 'warning', MOVED_IN: 'success', SUBSTITUTED: 'warning', MAKEUP: 'success' }[status] || 'primary')
 const dayName = (day) => ['一', '二', '三', '四', '五', '六', '日'][day - 1]
 const formatTime = value => value ? new Date(value).toLocaleString() : '-'
 const dimensionOptions = computed(() => {
@@ -611,7 +797,7 @@ const loadAll = async () => {
   roomConstraints.value = (await listClassroomUnavailableSlots(semesterCode.value)).data || []
   offeringPage.value = 1
   classroomPage.value = 1
-  await Promise.all([loadOfferingsPage(), loadClassroomsPage(), loadSchedule()])
+  await Promise.all([loadOfferingsPage(), loadClassroomsPage(), loadSchedule(), loadDateSchedule(), loadQualityAnalysis(), loadPolicy()])
 }
 const loadOfferingsPage = async () => {
   const response = await listCourseOfferings(semesterCode.value, {
@@ -643,12 +829,39 @@ const loadSchedule = async () => {
   )
   schedule.value = response.data || []
 }
+const loadQualityAnalysis = async () => {
+  quality.value = (await getScheduleQualityAnalysis(semesterCode.value)).data || {}
+}
+const loadPolicy = async () => {
+  reset(policy, (await getSchedulePolicy(semesterCode.value)).data || {})
+}
+const savePolicy = async () => {
+  const response = await saveSchedulePolicy({ ...policy, semesterCode: semesterCode.value })
+  reset(policy, response.data || {})
+  ElMessage.success('本学期排课规则已保存')
+  await loadQualityAnalysis()
+}
+const loadOccurrences = async () => {
+  occurrences.value = occurrenceDate.value
+    ? (await listScheduleOccurrences(semesterCode.value, occurrenceDate.value)).data || []
+    : []
+}
+const loadDateExceptionHistory = async () => {
+  dateExceptionHistory.value = (await listScheduleDateExceptionHistory(semesterCode.value)).data || []
+}
+const loadDateSchedule = async () => Promise.all([loadOccurrences(), loadDateExceptionHistory()])
 const changeDimension = async () => {
   scheduleTargetId.value = ''
   await loadSchedule()
 }
 const openEntry = (row) => { reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, durationPeriods: 1, weekPattern: 'ALL', startWeek: 1, endWeek: selectedTerm.value?.weekCount || 20, locked: false }); entryDialog.value = true }
 const saveEntry = async () => { const payload = { ...entryForm, semesterCode: semesterCode.value }; await (entryForm.id ? updateScheduleEntry(entryForm.id, payload) : createScheduleEntry(payload)); entryDialog.value = false; ElMessage.success('课表已保存'); await loadAll() }
+const moveEntry = async (entry, target) => {
+  if (entry.dayOfWeek === target.dayOfWeek && entry.periodNo === target.periodNo) return
+  await updateScheduleEntry(entry.id, { ...entry, ...target, semesterCode: semesterCode.value })
+  ElMessage.success('课程已移动并通过冲突校验')
+  await loadSchedule()
+}
 const selectEntryOffering = id => {
   const offering = offeringOptions.value.find(item => item.id === id)
   if (!offering) return
@@ -661,6 +874,44 @@ const selectEntryOffering = id => {
   if (matchingRoom) entryForm.classroomId = matchingRoom.id
 }
 const removeEntry = async (row) => { await ElMessageBox.confirm('确认删除该课表安排？', '删除'); await deleteScheduleEntry(row.id); await loadAll() }
+const saveBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+const downloadImportTemplate = async () => saveBlob(
+  await downloadScheduleImportTemplate(),
+  '课表导入模板.xlsx',
+)
+const chooseImportFile = () => scheduleFileInput.value?.click()
+const importSchedule = async event => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  const check = (await importClassSchedule(semesterCode.value, file, true)).data || {}
+  if (!check.valid) {
+    await ElMessageBox.alert((check.errors || []).join('\n'), '课表校验失败')
+    return
+  }
+  await ElMessageBox.confirm(
+    `校验通过，共 ${check.successCount} 条课表。确认正式导入？`,
+    '导入课表',
+  )
+  await importClassSchedule(semesterCode.value, file, false)
+  ElMessage.success('课表导入成功')
+  await loadAll()
+}
+const exportSchedule = async () => saveBlob(
+  await exportClassSchedule(
+    semesterCode.value,
+    scheduleDimension.value,
+    scheduleTargetId.value || undefined,
+  ),
+  `课表-${semesterCode.value}.xlsx`,
+)
 const openOffering = (row) => { reset(offeringForm, row ? { ...row } : { studentCount: 30, weeklyLessons: 2, preferredDurationPeriods: 1, weekPattern: 'ALL', status: 'ACTIVE' }); offeringDialog.value = true }
 const selectCourse = code => {
   offeringForm.courseName = courses.value.find(item => item.courseCode === code)?.courseName || ''
@@ -679,6 +930,36 @@ const removeConstraint = async row => { await ElMessageBox.confirm('确认删除
 const openRoomConstraint = row => { reset(roomConstraintForm, row ? { ...row } : { dayOfWeek: 1, startPeriod: 1, endPeriod: 1, status: 'ACTIVE' }); roomConstraintDialog.value = true }
 const saveRoomConstraint = async () => { const payload = { ...roomConstraintForm, semesterCode: semesterCode.value }; await (roomConstraintForm.id ? updateClassroomUnavailableSlot(roomConstraintForm.id, payload) : createClassroomUnavailableSlot(payload)); roomConstraintDialog.value = false; ElMessage.success('教室不可用时段已保存'); await loadAll() }
 const removeRoomConstraint = async row => { await ElMessageBox.confirm('确认删除该教室不可用时段？', '删除'); await deleteClassroomUnavailableSlot(row.id); await loadAll() }
+const openDateException = occurrence => {
+  reset(dateExceptionForm, {
+    semesterCode: semesterCode.value,
+    sourceEntryId: occurrence.entry.id,
+    sourceDate: occurrence.date,
+    exceptionType: 'MOVE',
+    targetDate: occurrence.date,
+    targetPeriodNo: occurrence.effectivePeriodNo,
+    targetClassroomId: occurrence.effectiveClassroomId,
+    reason: '',
+  })
+  dateExceptionDialog.value = true
+}
+const saveDateException = async () => {
+  await createScheduleDateException(dateExceptionForm)
+  dateExceptionDialog.value = false
+  ElMessage.success('日期课表调整已保存')
+  await loadDateSchedule()
+}
+const cancelDateException = async row => {
+  await ElMessageBox.confirm('撤销后将恢复原日期课表，是否继续？', '撤销日期调整')
+  await cancelScheduleDateException(row.id)
+  ElMessage.success('日期调整已撤销')
+  await loadDateSchedule()
+}
+const restoreDateException = async row => {
+  await restoreScheduleDateException(row.id)
+  ElMessage.success('日期调整已恢复')
+  await loadDateSchedule()
+}
 const loadIncidents = async () => {
   const response = await listCourseAdjustmentIncidents({
     status: incidentStatus.value,
@@ -729,7 +1010,18 @@ const loadVersions = async () => {
   versions.value = (await listScheduleVersions(semesterCode.value)).data || []
 }
 const loadCandidates = async () => {
-  candidates.value = (await listScheduleCandidates(semesterCode.value)).data || []
+  const [candidateResponse, jobResponse] = await Promise.all([
+    listScheduleCandidates(semesterCode.value),
+    listScheduleGenerationJobs(semesterCode.value),
+  ])
+  candidates.value = candidateResponse.data || []
+  generationJobs.value = jobResponse.data || []
+}
+const compareCandidates = async () => {
+  candidateComparison.value = (await compareScheduleCandidates(
+    candidateSelection.value.map(item => item.id),
+  )).data || []
+  candidateCompareDialog.value = true
 }
 const openCandidateDialog = () => {
   reset(candidateForm, {
@@ -751,16 +1043,60 @@ const generateCandidates = async () => {
   }
   candidateGenerating.value = true
   try {
-    await generateScheduleCandidates({
+    await submitScheduleGenerationJob({
       ...candidateForm,
       semesterCode: semesterCode.value,
     })
     candidateDialog.value = false
-    ElMessage.success('候选方案已生成，请先预览差异再应用')
+    ElMessage.success('排课任务已提交，可在后台任务列表查看进度')
     await loadCandidates()
   } finally {
     candidateGenerating.value = false
   }
+}
+const cancelGenerationJob = async row => {
+  await ElMessageBox.confirm('确认取消该自动排课任务？', '取消任务')
+  await cancelScheduleGenerationJob(row.id)
+  await loadCandidates()
+}
+const jobStatusName = status => ({ QUEUED: '排队中', RUNNING: '执行中', SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消' }[status] || status)
+const jobStatusType = status => ({ SUCCEEDED: 'success', FAILED: 'danger', CANCELLED: 'info', RUNNING: 'warning' }[status] || 'primary')
+const reviewStatusName = status => ({ DRAFT: '草稿', SUBMITTED: '待审核', APPROVED: '审核通过', REJECTED: '已驳回' }[status] || status)
+const editCandidateGovernance = async row => {
+  const owner = await ElMessageBox.prompt(
+    '请输入方案负责人账号',
+    '协作信息',
+    { inputValue: row.ownerUsername },
+  ).then(value => value.value)
+  const remark = await ElMessageBox.prompt(
+    '请输入协作备注',
+    '协作信息',
+    { inputValue: row.collaborationRemark || '', inputType: 'textarea' },
+  ).then(value => value.value)
+  await updateScheduleCandidateGovernance(row.id, { ownerUsername: owner, remark })
+  ElMessage.success('协作信息已更新')
+  await loadCandidates()
+}
+const submitCandidateReview = async row => {
+  await ElMessageBox.confirm(
+    '提交后需要由另一名排课管理员审核，是否继续？',
+    '提交审核',
+  )
+  await submitScheduleCandidateReview(row.id)
+  await loadCandidates()
+}
+const reviewCandidate = async (row, approved) => {
+  let comment
+  if (!approved) {
+    comment = await ElMessageBox.prompt(
+      '请输入驳回原因',
+      '驳回方案',
+      { inputType: 'textarea' },
+    ).then(value => value.value)
+  }
+  await reviewScheduleCandidate(row.id, approved, comment)
+  ElMessage.success(approved ? '方案审核通过' : '方案已驳回')
+  await loadCandidates()
 }
 const showCandidateDiff = async (row) => {
   currentDiff.value = (await previewScheduleCandidate(row.id)).data
@@ -813,7 +1149,14 @@ const rollbackVersion = async row => {
 }
 onMounted(async () => {
   await Promise.all([loadAll(), loadIncidents()])
+  generationJobTimer = window.setInterval(() => {
+    if (activeTab.value === 'candidates'
+      && generationJobs.value.some(job => ['QUEUED', 'RUNNING'].includes(job.status))) {
+      loadCandidates()
+    }
+  }, 3000)
 })
+onUnmounted(() => window.clearInterval(generationJobTimer))
 </script>
 
 <style scoped>
@@ -896,5 +1239,20 @@ header .el-input {
   display: flex;
   gap: 10px;
   margin-bottom: 14px;
+}
+.score-detail {
+  display: grid;
+  gap: 8px;
+}
+.quality-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.quality-summary :deep(.el-statistic) {
+  padding: 16px;
+  background: #f6f9fa;
+  border-radius: 8px;
 }
 </style>

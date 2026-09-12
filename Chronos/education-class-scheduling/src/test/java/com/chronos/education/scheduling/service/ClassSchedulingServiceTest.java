@@ -61,7 +61,8 @@ class ClassSchedulingServiceTest {
 				"ALL",
 				1,
 				20,
-				false);
+				false,
+				null);
 
 		assertThatThrownBy(() -> service.saveEntry(null, command))
 				.isInstanceOf(IllegalArgumentException.class)

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import com.chronos.education.scheduling.dao.CourseAdjustmentRecordRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
+import com.chronos.education.scheduling.dao.ScheduleDateExceptionRepository;
 import com.chronos.education.scheduling.model.CourseAdjustmentRecord;
 import com.chronos.service.iService.IAuditLogService;
 
@@ -31,7 +32,9 @@ class CourseAdjustmentApplicationServiceTest {
 				mock(ClassSchedulingService.class),
 				mock(CourseAdjustmentStartValidator.class),
 				mock(CourseAdjustmentIncidentNotificationService.class),
-				audit);
+				audit,
+				mock(ScheduleOccurrenceService.class),
+				mock(ScheduleDateExceptionRepository.class));
 
 		CourseAdjustmentRecord result = service.recordRetryFailure(
 				"incident-1",

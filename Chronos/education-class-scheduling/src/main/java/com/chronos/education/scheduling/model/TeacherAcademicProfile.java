@@ -34,6 +34,12 @@ public class TeacherAcademicProfile extends BaseEntity {
 	@Column(name = "max_weekly_lessons", nullable = false)
 	private Integer maxWeeklyLessons = 20;
 
+	@Column(name = "max_daily_lessons", nullable = false)
+	private Integer maxDailyLessons = 6;
+
+	@Column(name = "max_consecutive_lessons", nullable = false)
+	private Integer maxConsecutiveLessons = 4;
+
 	@Column(name = "enabled", nullable = false)
 	private Boolean enabled = true;
 

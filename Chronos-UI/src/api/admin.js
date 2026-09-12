@@ -249,6 +249,17 @@ export const listClassSchedule = (semesterCode, dimension = 'ALL', targetId) =>
 export const createScheduleEntry = (payload) => http.post('/admin/education/schedules', payload)
 export const updateScheduleEntry = (id, payload) => http.put(`/admin/education/schedules/${id}`, payload)
 export const deleteScheduleEntry = (id) => http.delete(`/admin/education/schedules/${id}`)
+export const downloadScheduleImportTemplate = () =>
+  http.download('/admin/education/schedules/import-template')
+export const importClassSchedule = (semesterCode, file, dryRun = false) => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload(`/admin/education/schedules/import?${qs({ semesterCode, dryRun })}`, data)
+}
+export const exportClassSchedule = (semesterCode, dimension = 'ALL', targetId) =>
+  http.download(`/admin/education/schedules/export?${qs({ semesterCode, dimension, targetId })}`)
+export const getScheduleQualityAnalysis = semesterCode =>
+  http.get(`/admin/education/schedules/quality-analysis?${qs({ semesterCode })}`)
 export const listCourseAdjustmentIncidents = (params) =>
   http.get(`/admin/education/course-adjustment-incidents?${qs(params)}`)
 export const retryCourseAdjustmentIncident = (id) => http.post(`/admin/education/course-adjustment-incidents/${id}/retry`)
@@ -261,6 +272,8 @@ export const previewSchedulePublication = (semesterCode) =>
   http.get(`/admin/education/schedule-versions/publication-preview?${qs({ semesterCode })}`)
 export const listScheduleCandidates = (semesterCode) =>
   http.get(`/admin/education/schedule-candidates?${qs({ semesterCode })}`)
+export const compareScheduleCandidates = ids =>
+  http.get(`/admin/education/schedule-candidates/compare?${qs({ ids })}`)
 export const generateScheduleCandidates = (payload) =>
   http.post('/admin/education/schedule-candidates/generate', payload)
 export const previewScheduleCandidate = (id) =>
@@ -302,6 +315,20 @@ export const updateClassroomUnavailableSlot = (id, payload) =>
   http.put(`/admin/education/classroom-unavailable-slots/${id}`, payload)
 export const deleteClassroomUnavailableSlot = (id) =>
   http.delete(`/admin/education/classroom-unavailable-slots/${id}`)
+export const listScheduleOccurrences = (semesterCode, date) =>
+  http.get(`/admin/education/schedule-occurrences?${qs({ semesterCode, date })}`)
+export const listScheduleDateExceptions = (semesterCode, startDate, endDate) =>
+  http.get(`/admin/education/schedule-date-exceptions?${qs({ semesterCode, startDate, endDate })}`)
+export const createScheduleDateException = (payload) =>
+  http.post('/admin/education/schedule-date-exceptions', payload)
+export const updateScheduleDateException = (id, payload) =>
+  http.put(`/admin/education/schedule-date-exceptions/${id}`, payload)
+export const cancelScheduleDateException = (id) =>
+  http.delete(`/admin/education/schedule-date-exceptions/${id}`)
+export const listScheduleDateExceptionHistory = semesterCode =>
+  http.get(`/admin/education/schedule-date-exceptions/history?${qs({ semesterCode })}`)
+export const restoreScheduleDateException = id =>
+  http.post(`/admin/education/schedule-date-exceptions/${id}/restore`)
 export const listEducationGrades = (params) => http.get(`/admin/education/grades?${qs(params)}`)
 export const createEducationGrade = (payload) => http.post('/admin/education/grades', payload)
 export const updateEducationGrade = (id, payload) => http.put(`/admin/education/grades/${id}`, payload)
@@ -365,6 +392,28 @@ export const searchKnowledge = (knowledgeBaseId, keyword, limit = 20) => (
 )
 export const askEducationAssistant = (payload) => http.post('/education/ai/assistant/ask', payload)
 export const getAiModelStatus = () => http.get('/ai/model/status')
+export const getSchedulePolicy = (semesterCode) => (
+  http.get(`/admin/education/schedule-policy?${qs({ semesterCode })}`)
+)
+export const saveSchedulePolicy = (payload) => http.put('/admin/education/schedule-policy', payload)
+export const submitScheduleGenerationJob = (payload) => (
+  http.post('/admin/education/schedule-generation-jobs', payload)
+)
+export const listScheduleGenerationJobs = (semesterCode) => (
+  http.get(`/admin/education/schedule-generation-jobs?${qs({ semesterCode })}`)
+)
+export const cancelScheduleGenerationJob = (id) => (
+  http.post(`/admin/education/schedule-generation-jobs/${id}/cancel`)
+)
+export const updateScheduleCandidateGovernance = (id, payload) => (
+  http.put(`/admin/education/schedule-candidates/${id}/governance`, payload)
+)
+export const submitScheduleCandidateReview = (id) => (
+  http.post(`/admin/education/schedule-candidates/${id}/submit-review`)
+)
+export const reviewScheduleCandidate = (id, approved, comment) => (
+  http.post(`/admin/education/schedule-candidates/${id}/review?${qs({ approved, comment })}`)
+)
 export const listSchedulingAgentProposals = (semesterCode, params) => (
   http.get(`/education/agents/scheduling/proposals?${qs({ semesterCode, ...params })}`)
 )
