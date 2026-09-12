@@ -10,6 +10,7 @@ import com.chronos.service.iService.IAuditLogService;
 import com.chronos.workflow.ai.WorkflowAiProvider;
 import com.chronos.workflow.executor.WorkflowExecutorRegistry;
 import com.chronos.workflow.event.WorkflowCompletedEvent;
+import com.chronos.workflow.event.WorkflowRejectedEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
@@ -598,6 +599,7 @@ public class WorkflowService {
 				// 行业资源授权必须先于实例落库和附件绑定，失败时不产生半成品流程。
 				validator.validate(actor, submittedForm);
 			}
+
 		}
 		WorkflowInstance i = new WorkflowInstance();
 		i.setDefinitionId(d.getId());
@@ -629,6 +631,15 @@ public class WorkflowService {
 		i = flowableRuntime.start(d, i, actor);
 		audit.log(actor, "WORKFLOW_START", "flowId=" + flowId + ", instanceId=" + i.getId());
 		return i;
+	}
+
+	/** Business modules use the published, latest definition without duplicating workflow state machines. */
+	@Transactional
+	public WorkflowInstance startByCode(String flowCode, String businessKey, Map<String, Object> formData,
+			String actor) {
+		WorkflowDefinition definition = definitions.findByFlowCodeAndStatusOrderByCreateTimeDesc(flowCode, "PUBLISHED")
+				.stream().findFirst().orElseThrow(() -> new IllegalStateException("教学审核流程未发布"));
+		return start(definition.getId(), businessKey, "{}", formData, actor);
 	}
 
 	private List<String> attachmentIds(
@@ -1042,7 +1053,9 @@ public class WorkflowService {
 				result = flowableRuntime.moveTo(instance, task, target, comment);
 			}
 			audit.log(actor, "WORKFLOW_TASK_REJECT", "taskId=" + taskId + ", policy=" + policy + ", engine=FLOWABLE");
-			return instances.save(result);
+			WorkflowInstance saved = instances.save(result);
+			if ("REJECTED".equals(saved.getStatus())) publishRejection(saved, comment, actor);
+			return saved;
 		}
 		task.setStatus("REJECTED");
 		task.setComment(comment);
@@ -1055,7 +1068,18 @@ public class WorkflowService {
 		} else
 			moveBack(instance, task, policy, targetNodeKey, comment, actor);
 		audit.log(actor, "WORKFLOW_TASK_REJECT", "taskId=" + taskId + ", policy=" + policy);
-		return instances.save(instance);
+		WorkflowInstance saved = instances.save(instance);
+		if ("REJECTED".equals(saved.getStatus())) publishRejection(saved, comment, actor);
+		return saved;
+	}
+
+	private void publishRejection(WorkflowInstance instance, String comment, String actor) {
+		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+		Map<String, Object> form = formService.instance(instance.getId(), definition.getMainFormId(), "_MAIN")
+				.map(FormInstance::getDataJson).map(this::readMap).orElseGet(Map::of);
+		eventPublisher.publishEvent(new WorkflowRejectedEvent(instance.getId(), definition.getId(),
+				definition.getFlowCode(), instance.getBusinessKey(), instance.getInitiator(), actor,
+				comment == null ? "" : comment, Map.copyOf(form)));
 	}
 
 	@Transactional

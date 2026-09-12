@@ -39,3 +39,7 @@ export const updateTeachingChild = (type, id, body) =>
   http.put(`/education/teaching-center/children/${encodeURIComponent(type)}/${id}`, body)
 export const deleteTeachingChild = (type, id) =>
   http.delete(`/education/teaching-center/children/${encodeURIComponent(type)}/${id}`)
+export const submitTeachingReview = (type, id, body) =>
+  http.post(`/education/teaching-center/domain/${encodeURIComponent(type)}/${id}/submit-review`, body)
+export const teachingReviewStatus = (type, id) =>
+  http.get(`/education/teaching-center/domain/${encodeURIComponent(type)}/${id}/review-status`)

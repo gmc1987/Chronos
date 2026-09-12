@@ -76,6 +76,13 @@ public class TeachingDomainService {
 		return entityManager.merge(value);
 	}
 
+	@Transactional(readOnly = true)
+	public Object get(String type, String id, Authentication authentication) {
+		Object value = find(entity(type), id);
+		authorizeExisting(type, value, scopes.resolve(authentication.getName()));
+		return value;
+	}
+
 	public Object archive(String type, String id, Authentication authentication) {
 		Class<?> clazz = entity(type);
 		Object value = find(clazz, id);
@@ -95,10 +102,10 @@ public class TeachingDomainService {
 		authorizeExisting(type, value, scopes.resolve(authentication.getName()));
 		String current = Objects.toString(read(value, "status"), "DRAFT");
 		String target = status.trim().toUpperCase(Locale.ROOT);
+		if ("PUBLISHED".equals(target))
+			throw new IllegalStateException("教学资源必须通过审核流程发布");
 		if (!allowedTransition(type, current, target))
 			throw new IllegalStateException("不允许从 " + current + " 流转到 " + target);
-		if ("PUBLISHED".equals(target) && !publishable(value))
-			throw new IllegalStateException("发布前必须填写标题/名称或题干等必要内容");
 		try { set(value, "status", status.trim().toUpperCase(Locale.ROOT)); }
 		catch (IllegalArgumentException ex) {
 			throw new IllegalArgumentException("该实体不支持状态字段");
@@ -233,6 +240,10 @@ public class TeachingDomainService {
 	private String offering(Object value) {
 		try { return (String) value.getClass().getMethod("getOfferingId").invoke(value); }
 		catch (ReflectiveOperationException e) { return null; }
+	}
+
+	public String offeringId(Object value) {
+		return offering(value);
 	}
 	private Object read(Object value, String property) {
 		try { return value.getClass().getMethod("is" + Character.toUpperCase(property.charAt(0)) + property.substring(1)).invoke(value); }

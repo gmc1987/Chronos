@@ -80,6 +80,7 @@ public class TeachingCenterService {
 		if (value.isArchived()) {
 			throw new IllegalStateException("已归档资源不可修改");
 		}
+
 		if (command.offeringId() != null && !command.offeringId().isBlank()) {
 			scopes.assertOfferingAccess(scope, command.offeringId());
 		}
@@ -87,6 +88,15 @@ public class TeachingCenterService {
 		copy(value, command);
 		value.setVersionNo(value.getVersionNo() + 1);
 		return resources.save(value);
+	}
+
+	@Transactional(readOnly = true)
+	public TeachingCenterResource get(String id, Authentication authentication) {
+		TeachingCenterResource value = resources.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("教学中心资源不存在"));
+		EducationDataScope scope = scopes.resolve(authentication.getName());
+		if (value.getOfferingId() != null) scopes.assertOfferingAccess(scope, value.getOfferingId());
+		return value;
 	}
 
 	public TeachingCenterResource transition(

@@ -5,6 +5,8 @@ import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.TeachingCenterResource;
 import com.chronos.education.scheduling.model.TeachingCenterResourceCommand;
 import com.chronos.education.scheduling.service.TeachingCenterService;
+import com.chronos.education.scheduling.service.TeachingReviewService;
+import java.util.Map;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,9 +16,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/education/teaching-center")
 public class TeachingCenterController {
 	private final TeachingCenterService service;
+	private final TeachingReviewService reviews;
 
-	public TeachingCenterController(TeachingCenterService service) {
-		this.service = service;
+	public TeachingCenterController(TeachingCenterService service, TeachingReviewService reviews) {
+		this.service = service; this.reviews = reviews;
 	}
 
 	@GetMapping("/resources")
@@ -50,6 +53,21 @@ public class TeachingCenterController {
 			@PathVariable String id, @RequestParam String status,
 			Authentication authentication) {
 		return ok(service.transition(id, status, authentication));
+	}
+
+	@PostMapping("/resources/{id}/submit-review")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:create','education:teaching:update','education:teaching:manage')")
+	public ResultData<?> submitReview(@PathVariable String id, @RequestBody(required=false) Map<String,Object> body,
+			Authentication authentication) {
+		TeachingCenterResource resource = service.get(id, authentication);
+		return ok(reviews.submit(resource.getResourceType(), id, resource.getOfferingId(), body, authentication));
+	}
+
+	@GetMapping("/resources/{id}/review-status")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
+	public ResultData<?> reviewStatus(@PathVariable String id, Authentication authentication) {
+		TeachingCenterResource resource = service.get(id, authentication);
+		return ok(reviews.status(resource.getResourceType(), id, authentication));
 	}
 
 	private <T> ResultData<T> ok(T value) {

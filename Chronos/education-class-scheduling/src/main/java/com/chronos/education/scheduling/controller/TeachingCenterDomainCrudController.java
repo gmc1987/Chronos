@@ -8,13 +8,29 @@ import java.util.Map;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.chronos.education.scheduling.service.TeachingReviewService;
 
 /** 九类教学领域的统一、稳定 CRUD 契约；type 只接受服务白名单。 */
 @RestController
 @RequestMapping("/education/teaching-center/domain")
 public class TeachingCenterDomainCrudController {
 	private final TeachingDomainService service;
-	public TeachingCenterDomainCrudController(TeachingDomainService service) { this.service = service; }
+	private final TeachingReviewService reviews;
+	public TeachingCenterDomainCrudController(TeachingDomainService service, TeachingReviewService reviews) { this.service = service; this.reviews = reviews; }
+
+	@PostMapping("/{type}/{id}/submit-review")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:create','education:teaching:update','education:teaching:manage')")
+	public ResultData<?> submitReview(@PathVariable String type, @PathVariable String id,
+			@RequestBody(required=false) Map<String,Object> body, Authentication authentication) {
+		Object resource = service.get(type, id, authentication);
+		return ok(reviews.submit(type, id, service.offeringId(resource), body, authentication));
+	}
+
+	@GetMapping("/{type}/{id}/review-status")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
+	public ResultData<?> reviewStatus(@PathVariable String type, @PathVariable String id, Authentication authentication) {
+		return ok(reviews.status(type, id, authentication));
+	}
 
 	@GetMapping("/{type}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")

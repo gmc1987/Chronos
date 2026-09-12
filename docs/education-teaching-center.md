@@ -23,3 +23,14 @@
 不伪造 Workflow 审批成功，`SUBMITTED`/`REVIEWING` 只是状态。全局资源在不填
 `offeringId` 时按 `EducationDataScopeService` 的全局权限查询。文件只保存 fileId，未引入
 作业提交、评分或统计，也不改动知识中心/RAG。
+# Workflow 审核接入
+
+教学中心现在使用平台 `WorkflowService` 的 `EDU_TEACHING_CONTENT_REVIEW` 流程和
+`EDU_TEACHING_CONTENT` 主表单。提交接口为
+`POST /education/teaching-center/domain/{type}/{id}/submit-review`，查询为
+`GET .../{type}/{id}/review-status`；业务键稳定为 `EDU_TEACHING:{type}:{id}`。
+流程完成/拒绝由 `TeachingReviewService` 幂等回写资源状态（PUBLISHED/DRAFT），不会通过
+直接修改按钮状态绕过审批。迁移 `V20260916` 提供幂等记录表和流程/表单种子。
+
+剩余限制：审批节点和候选人配置仍由工作流管理端按学校组织授权维护；全局知识点没有
+状态字段，仍执行全校数据范围校验但只记录审核记录。
