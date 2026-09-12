@@ -1,0 +1,32 @@
+package com.chronos.education.scheduling.model;
+
+import com.chronos.model.pojo.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+/** 知识点树支持全局学科/课程关联，保存时由服务校验 parentId 不形成环。 */
+@Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@Table(name = "edu_knowledge_point")
+public class KnowledgePoint extends BaseEntity {
+	@Column(name = "parent_id", length = 64)
+	private String parentId;
+	@Column(name = "subject_id", length = 64)
+	private String subjectId;
+	@Column(name = "course_id", length = 64)
+	private String courseId;
+	@Column(nullable = false, length = 200)
+	private String name;
+	@Column(name = "sort_order", nullable = false)
+	private Integer sortOrder = 0;
+	@Column(nullable = false)
+	private boolean enabled = true;
+	@Column(nullable = false)
+	private boolean archived;
+}
