@@ -39,6 +39,7 @@ const PortalLogin = () => import('../app/pages/PortalLogin.vue')
 const PortalHome = () => import('../modules/portal/pages/PortalHome.vue')
 const PortalApplications = () => import('../modules/portal/pages/PortalApplications.vue')
 const PortalEducationSchedule = () => import('../modules/education/pages/PortalEducationSchedule.vue')
+const PortalTeachingCenter = () => import('../modules/education/pages/PortalTeachingCenter.vue')
 const AdminPortal = () => import('../modules/portal/pages/AdminPortal.vue')
 const AdminPublications = () => import('../modules/message/pages/AdminPublications.vue')
 const AdminNotificationSettings = () => import('../modules/message/pages/AdminNotificationSettings.vue')
@@ -57,6 +58,7 @@ const router = createRouter({
         { path: '', name: 'portal-home', component: PortalHome },
         { path: 'apps', name: 'portal-apps', component: PortalApplications },
         { path: 'education/schedule', name: 'portal-education-schedule', component: PortalEducationSchedule },
+        { path: 'education/teaching-center', name: 'portal-teaching-center', component: PortalTeachingCenter },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
         { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
         { path: 'workflow-notifications', name: 'portal-workflow-notifications', component: PortalWorkflowNotifications },

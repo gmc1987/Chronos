@@ -8,6 +8,7 @@ import java.util.List;
 public interface IWorkflowDefinitionRepository extends JpaRepository<WorkflowDefinition, String> {
 	boolean existsByFlowCodeAndVersion(String flowCode, String version);
 	List<WorkflowDefinition> findByStatusOrderByFlowNameAsc(String status);
+	List<WorkflowDefinition> findByFlowCodeAndStatusOrderByCreateTimeDesc(String flowCode, String status);
 
 	/** 只投影 ID，避免事务外读取 PostgreSQL OID 类型的配置字段。 */
 	@Query("""
