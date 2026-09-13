@@ -9,6 +9,12 @@
         <el-option v-for="item in offerings" :key="item.id" :value="item.id" :label="`${item.semesterCode} · ${item.courseName} · ${item.teachingClassName}`" />
       </el-select></el-form-item>
       <el-form-item label="关键词"><el-input v-model="filters.keyword" clearable placeholder="名称或主题" style="width:200px" /></el-form-item>
+      <el-form-item v-for="field in filterFields" :key="field.prop" :label="field.label">
+        <el-input v-if="field.type !== 'select'" v-model="filters[field.prop]" clearable :placeholder="field.placeholder || `输入${field.label}`" />
+        <el-select v-else v-model="filters[field.prop]" clearable :placeholder="`选择${field.label}`" style="width:150px">
+          <el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+      </el-form-item>
       <el-button @click="load">查询</el-button>
     </el-form>
     <el-table v-loading="loading" :data="rows" stripe border>
@@ -41,10 +47,12 @@ import { archiveTeachingDomain, createTeachingDomain, teachingCenterOfferings, t
 const props = defineProps({
   title: String, description: String, entityLabel: String, resourceType: String,
   columns: { type: Array, default: () => [] }, fields: { type: Array, default: () => [] },
+  filterFields: { type: Array, default: () => [] },
   defaults: { type: Object, default: () => ({}) },
 })
 const offerings = ref([]); const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20); const loading = ref(false)
 const dialog = ref(false); const editing = ref(''); const form = reactive({}); const filters = reactive({ offeringId: '', keyword: '' })
+props.filterFields.forEach(field => { filters[field.prop] = '' })
 const load = async () => {
   loading.value = true
   try {
