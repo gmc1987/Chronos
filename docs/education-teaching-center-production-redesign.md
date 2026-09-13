@@ -87,7 +87,34 @@
 
 按资源类别配置审批策略，不要求所有对象一刀切。必须审核发布：教学计划、教案、对学生/学校共享的课件材料、公共题库中的题目、教研成果；仅内部协作的备课讨论/教研活动可走组长确认而非教务审批，策略由后端配置表/字典控制并留审计。所有规则有明确状态机：`DRAFT → SUBMITTED → REVIEWING → PUBLISHED`；拒绝为 `REJECTED`，作者创建**新草稿修订版**后再提交；可撤回仅在首审批节点未处理时，归档为 `ARCHIVED`。前端不传 `status` 到普通保存接口；服务端单独命令接口转换状态。发布态不可直接修改当前版本；“修订”创建新草稿版本，旧发布版本继续可读，审核通过后原子切换 `published_version_no`。
 
-迁移 `edu_teaching_review_record`：保留历史行，新增 `submission_no integer, version_id varchar(64), submitter_id varchar(64), submitted_at timestamptz, completed_at timestamptz, snapshot_hash varchar(64)`；将当前 `(resource_type,resource_id)` 唯一约束替换为 `(resource_type,resource_id,submission_no)`，`workflow_instance_id` 仍唯一，`business_key` 改为 `EDU_TEACHING:{type}:{id}:{submissionNo}`（旧三段式仍可解析只读）。提交使用事务与唯一键防重，记录必须锚定快照版本而不是可变主表。Flowable 事件按 `workflow_instance_id` 查记录并比较预期状态/版本，幂等回写；事件丢失需有定时对账任务。审批人来自 IAM/组织范围，不能固定到某个 admin 用户；审批记录显示处理人、意见、节点、时间、退回原因。流程定义升级须发布新版本，**不原位覆盖已有运行实例**。平台通知使用 outbox，发送失败不回滚已经完成的业务审核。
+迁移 `edu_teaching_review_record` 必须按“先检查、再放约束”的顺序执行，不能直接删除唯一约束：
+
+1. 备份并统计现有 `(resource_type, resource_id)` 重复情况，异常行先人工确认；
+2. 为每个资源按历史提交时间生成连续的 `submission_no`，历史记录没有真实提交次数时统一记为 `1`，并在迁移报告中标记；
+3. 增加 `version_id, submitter_id, submitted_at, completed_at, snapshot_hash, submission_no`；
+4. 为 `(resource_type, resource_id, submission_no)` 建立唯一约束；
+5. 校验 `workflow_instance_id`、`business_key` 不重复后，才删除旧的 `(resource_type, resource_id)` 唯一约束；
+6. 新提交使用 `EDU_TEACHING:{type}:{id}:{submissionNo}`，旧三段式业务键只保留只读解析能力；
+7. 迁移失败必须停止，不能用 `ON CONFLICT` 静默覆盖审核历史。
+
+提交命令与创建审核记录使用同一事务和唯一键防重；工作流启动失败时事务回滚，已创建的快照和审核记录不得留下“无流程实例”的假记录。Flowable 事件按
+`workflow_instance_id` 查记录并比较预期状态/版本，幂等回写；事件丢失由定时对账任务发现并重试。
+审批人来自 IAM/组织范围，不能固定到某个 admin 用户；审批记录显示处理人、意见、节点、时间、退回原因。
+流程定义升级须发布新版本，**不原位覆盖已有运行实例**。平台通知使用 outbox，发送失败不回滚已经完成的业务审核。
+
+发布版与修订草稿必须分开读取：
+
+| 使用场景 | 读取规则 |
+|---|---|
+| 学生、其他教师、作业/考试中心和公开资源列表 | 只读 `published_version_no` 指向的审核通过版本 |
+| 资源详情的公开/只读视图 | 只读当前发布版本；没有发布版本则返回“尚未发布” |
+| 作者的编辑工作台 | 读取本人最新未归档草稿；同时展示当前发布版本用于对比 |
+| 审核人待办 | 读取审核记录锚定的 `version_id` 和不可变快照，不读取可变主表 |
+| 管理员历史/审计 | 可读取全部版本和审核记录，但不能因此绕过数据范围 |
+
+修订草稿提交审核期间，旧发布版本继续对外可见；审核通过后在一个事务中切换
+`published_version_no`。驳回只改变草稿和对应审核记录，不影响旧发布版本。归档资源不再出现在
+默认列表，但历史发布版本和审核记录仍可按权限查询。
 
 ## 5. 页面与交互规格
 
@@ -144,6 +171,139 @@ IAM 原子权限按领域细分，如 `education:teaching:plan:view/create/updat
 6. **兼容收口**：前端旧通用入口下线、旧写 API 关闭、历史映射、文档和迁移校验；按实际数据观察后再删除兼容代码/表。
 
 每片提交须给出：涉及文件、DDL、请求/响应样例、权限定义、旧数据迁移结果、未实现依赖和可人工复现的操作步骤。**不得将前端可点击或构建通过等同于业务可用。**
+
+### 7.1 第一切片最终字段与 DTO 契约
+
+第一切片只实现教学计划和教案，字段以服务端 DTO 为准，前端不得通过通用 `Map` 扩展未知字段。
+
+#### 教学计划字段
+
+| 字段 | 类型 | 规则 |
+|---|---|---|
+| `id` | `string` | 服务端生成 |
+| `offeringId` | `string` | 必填，必须属于当前用户可见的 `CourseOffering` |
+| `academicTermId` | `string` | 必填，必须与教学班学期一致 |
+| `courseId` | `string` | 服务端从教学班解析并校验 |
+| `name` | `string` | 必填，1–200 字 |
+| `planType` | `string` | 必填，字典值 `SEMESTER/UNIT/PRACTICAL` |
+| `totalHours` | `integer` | 必须大于 0 |
+| `objective` | `string` | 必填，提交审核前不可为空 |
+| `assessmentMethod` | `string` | 提交审核前必填 |
+| `remarks` | `string` | 可选 |
+| `status` | `string` | 只读，由服务端状态机产生 |
+| `rowVersion` | `integer` | 更新时必填，用于乐观锁 |
+| `currentVersionNo` | `integer` | 只读，服务端生成 |
+| `items` | `array` | 创建时可选，使用计划项 DTO |
+
+计划项字段：
+
+```text
+chapterNo, chapterName, weekStart, weekEnd, lessonHours,
+trainingHours, objectives, keyPoints, difficultPoints,
+assessmentMethod, linkedKnowledgePointId, sortOrder
+```
+
+计划创建请求：
+
+```json
+{
+  "offeringId": "offering-01",
+  "academicTermId": "term-2026-autumn",
+  "name": "2026 秋季数学教学计划",
+  "planType": "SEMESTER",
+  "totalHours": 72,
+  "objective": "完成函数基础与应用教学",
+  "assessmentMethod": "阶段测验与单元作业",
+  "remarks": "按教学周动态调整",
+  "items": [
+    {
+      "chapterNo": 1,
+      "chapterName": "函数基础",
+      "weekStart": 1,
+      "weekEnd": 2,
+      "lessonHours": 8,
+      "trainingHours": 2,
+      "objectives": "理解函数概念",
+      "keyPoints": "定义域和值域",
+      "difficultPoints": "函数表示方法",
+      "assessmentMethod": "课堂练习",
+      "linkedKnowledgePointId": "kp-01",
+      "sortOrder": 1
+    }
+  ]
+}
+```
+
+#### 教案字段
+
+| 字段 | 类型 | 规则 |
+|---|---|---|
+| `id` | `string` | 服务端生成 |
+| `offeringId` | `string` | 必填，必须与计划一致 |
+| `scheduleEntryId` | `string` | 可选，只能选择已发布且同教学班课次 |
+| `teachingPlanId` | `string` | 可选，但填写后必须属于同一教学班 |
+| `planItemId` | `string` | 可选，必须属于 `teachingPlanId` |
+| `title` | `string` | 必填，1–200 字 |
+| `lessonNo` | `integer` | 必填，大于 0 |
+| `teachingWeek` | `integer` | 必填，范围 1–60 |
+| `lessonHours` | `integer` | 必填，大于 0 |
+| `lessonType` | `string` | 必填，字典值 `REGULAR/PRACTICAL/REVIEW` |
+| `objectives` | `string` | 必填 |
+| `keyPoints` | `string` | 必填 |
+| `difficultPoints` | `string` | 必填 |
+| `teachingMethod` | `string` | 可选 |
+| `classroomActivity` | `string` | 可选 |
+| `assessmentDesign` | `string` | 可选 |
+| `afterClassReflection` | `string` | 发布前可为空，发布后通过修订补充 |
+| `safetyNotes` | `string` | `lessonType=PRACTICAL` 时必填 |
+| `equipmentRequirements` | `string` | `lessonType=PRACTICAL` 时必填 |
+| `rowVersion` | `integer` | 更新时必填 |
+| `status` | `string` | 只读，由服务端状态机产生 |
+
+教案创建请求：
+
+```json
+{
+  "offeringId": "offering-01",
+  "scheduleEntryId": "schedule-2026-01-01",
+  "teachingPlanId": "plan-01",
+  "planItemId": "plan-item-01",
+  "title": "函数基础第一课时",
+  "lessonNo": 1,
+  "teachingWeek": 1,
+  "lessonHours": 2,
+  "lessonType": "REGULAR",
+  "objectives": "理解函数定义并能判断对应关系",
+  "keyPoints": "函数定义",
+  "difficultPoints": "定义域和值域的判断",
+  "teachingMethod": "问题导入与分组讨论",
+  "classroomActivity": "小组完成关系判断练习",
+  "assessmentDesign": "课堂练习与即时反馈"
+}
+```
+
+#### 第一切片权限码
+
+权限码必须通过现有 IAM 权限表和幂等初始化脚本创建：
+
+| 权限码 | 含义 |
+|---|---|
+| `education:teaching:plan:view` | 查看授权范围内教学计划 |
+| `education:teaching:plan:create` | 创建教学计划 |
+| `education:teaching:plan:update` | 修改本人可编辑草稿 |
+| `education:teaching:plan:submit` | 提交教学计划审核 |
+| `education:teaching:plan:archive` | 归档教学计划 |
+| `education:teaching:lesson:view` | 查看授权范围内教案 |
+| `education:teaching:lesson:create` | 创建教案 |
+| `education:teaching:lesson:update` | 修改本人可编辑草稿 |
+| `education:teaching:lesson:submit` | 提交教案审核 |
+| `education:teaching:lesson:archive` | 归档教案 |
+| `education:teaching:review` | 处理授权范围内审核待办 |
+| `education:teaching:plan:export` | 导出授权范围内教学计划 |
+| `education:teaching:lesson:export` | 导出授权范围内教案 |
+
+权限码只控制动作，数据范围仍由 `EducationDataScopeService` 和服务层行级校验决定。
+平台管理员拥有配置和故障处理权限，不因拥有平台管理员角色自动成为教学内容审核人。
 
 ## 8. 生产验收清单
 
@@ -270,11 +430,14 @@ Workflow 回调 -> 按 workflow_instance_id 幂等更新审核记录
 
 文件上传与业务保存采用两阶段：
 
-1. 用户通过 platform-file 上传并完成扫描，得到短期有效的 `fileId`；
+1. 用户通过 platform-file 上传并完成扫描，得到短期有效的 `fileId`，文件记录状态为 `PENDING_BIND`；
 2. 领域写接口校验文件所有权、扫描状态、类型、大小和引用权限；
-3. 事务成功后绑定到领域版本；
-4. 业务保存失败时释放未绑定文件；
-5. 已发布版本的文件引用不可直接替换，只能创建新版本。
+3. 领域事务成功后绑定到领域版本，并把文件状态改为 `BOUND`；
+4. 领域事务失败时只记录可重试的补偿任务，不依赖一次同步调用同时回滚数据库和 MinIO；
+5. 定时清理任务扫描超过保留时间仍为 `PENDING_BIND` 的文件，先确认没有业务引用，再幂等删除
+   文件记录和 MinIO 对象；删除失败进入重试队列并告警；
+6. 业务绑定成功但文件状态回写失败时，由对账任务依据领域引用反向补偿为 `BOUND`；
+7. 已发布版本的文件引用不可直接替换，只能创建新版本。
 
 教学中心页面不允许输入 `fileId`、MinIO URL 或对象路径。下载必须由后端生成短期授权响应。
 
