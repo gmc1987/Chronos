@@ -79,7 +79,8 @@ const types = [
   { value: 'RESEARCH', label: '教研' },
 ]
 const route = useRoute()
-const initialType = route.meta.teachingType || 'PLAN'
+const routeType = route.meta.teachingType || 'PLAN'
+const initialType = routeType === 'HOMEWORK' ? 'PREPARATION' : routeType
 const filters = reactive({ type: initialType, offeringId: '' })
 const offerings = ref([])
 const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20)

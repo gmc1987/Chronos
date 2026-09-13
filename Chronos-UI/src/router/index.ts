@@ -40,6 +40,7 @@ const PortalHome = () => import('../modules/portal/pages/PortalHome.vue')
 const PortalApplications = () => import('../modules/portal/pages/PortalApplications.vue')
 const PortalEducationSchedule = () => import('../modules/education/pages/PortalEducationSchedule.vue')
 const PortalTeachingCenter = () => import('../modules/education/pages/PortalTeachingCenter.vue')
+const AdminTeachingCenter = () => import('../modules/education/pages/AdminTeachingCenter.vue')
 const AdminPortal = () => import('../modules/portal/pages/AdminPortal.vue')
 const AdminPublications = () => import('../modules/message/pages/AdminPublications.vue')
 const AdminNotificationSettings = () => import('../modules/message/pages/AdminNotificationSettings.vue')
@@ -102,16 +103,16 @@ const router = createRouter({
         { path: 'workflow/incidents', name: 'admin-workflow-incidents', component: AdminWorkflowIncidents },
         { path: 'publications', name: 'admin-publications', component: AdminPublications },
         { path: 'message-settings', name: 'admin-message-settings', component: AdminNotificationSettings },
-        { path: 'education/teaching-center/plan', name: 'admin-education-teaching-plan', component: PortalTeachingCenter, meta: { teachingType: 'PLAN' } },
-        { path: 'education/teaching-center/lesson-plan', name: 'admin-education-lesson-plan', component: PortalTeachingCenter, meta: { teachingType: 'LESSON_PLAN' } },
-        { path: 'education/teaching-center/preparation', name: 'admin-education-preparation', component: PortalTeachingCenter, meta: { teachingType: 'PREPARATION' } },
-        { path: 'education/teaching-center/courseware', name: 'admin-education-courseware', component: PortalTeachingCenter, meta: { teachingType: 'COURSEWARE' } },
-        { path: 'education/teaching-center/material', name: 'admin-education-material', component: PortalTeachingCenter, meta: { teachingType: 'MATERIAL' } },
-        { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: PortalTeachingCenter, meta: { teachingType: 'PREPARATION' } },
-        { path: 'education/teaching-center/question-bank', name: 'admin-education-question-bank', component: PortalTeachingCenter, meta: { teachingType: 'QUESTION_BANK' } },
-        { path: 'education/teaching-center/knowledge-point', name: 'admin-education-knowledge-point', component: PortalTeachingCenter, meta: { teachingType: 'KNOWLEDGE_POINT' } },
-        { path: 'education/teaching-center/error-book', name: 'admin-education-error-book', component: PortalTeachingCenter, meta: { teachingType: 'MISTAKE' } },
-        { path: 'education/teaching-center/research', name: 'admin-education-research', component: PortalTeachingCenter, meta: { teachingType: 'RESEARCH' } },
+        { path: 'education/teaching-center/plan', name: 'admin-education-teaching-plan', component: AdminTeachingCenter, meta: { teachingType: 'PLAN' } },
+        { path: 'education/teaching-center/lesson-plan', name: 'admin-education-lesson-plan', component: AdminTeachingCenter, meta: { teachingType: 'LESSON_PLAN' } },
+        { path: 'education/teaching-center/preparation', name: 'admin-education-preparation', component: AdminTeachingCenter, meta: { teachingType: 'PREPARATION' } },
+        { path: 'education/teaching-center/courseware', name: 'admin-education-courseware', component: AdminTeachingCenter, meta: { teachingType: 'COURSEWARE' } },
+        { path: 'education/teaching-center/material', name: 'admin-education-material', component: AdminTeachingCenter, meta: { teachingType: 'MATERIAL' } },
+        { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminTeachingCenter, meta: { teachingType: 'HOMEWORK' } },
+        { path: 'education/teaching-center/question-bank', name: 'admin-education-question-bank', component: AdminTeachingCenter, meta: { teachingType: 'QUESTION_BANK' } },
+        { path: 'education/teaching-center/knowledge-point', name: 'admin-education-knowledge-point', component: AdminTeachingCenter, meta: { teachingType: 'KNOWLEDGE_POINT' } },
+        { path: 'education/teaching-center/error-book', name: 'admin-education-error-book', component: AdminTeachingCenter, meta: { teachingType: 'MISTAKE' } },
+        { path: 'education/teaching-center/research', name: 'admin-education-research', component: AdminTeachingCenter, meta: { teachingType: 'RESEARCH' } },
         ...packagedIndustryRoutes(),
       ],
     },
