@@ -1,6 +1,26 @@
 import { http } from '../../../api/http'
 
 export const teachingCenterOfferings = () => http.get('/education/teaching-center/offerings')
+export const teachingDomainPageApi = (domain, params = {}) => {
+  const query = queryString(params)
+  return http.get(`/education/teaching-center/api/${domain}?${query}`)
+}
+export const teachingDomainDetailApi = (domain, id) =>
+  http.get(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}`)
+export const createTeachingDomainApi = (domain, body) =>
+  http.post(`/education/teaching-center/api/${domain}`, body)
+export const updateTeachingDomainApi = (domain, id, body) =>
+  http.put(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}`, body)
+export const archiveTeachingDomainApi = (domain, id) =>
+  http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/archive`)
+export const transitionTeachingDomainApi = (domain, id, status) =>
+  http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
+export const teachingDomainChildrenApi = (domain, id, child, params = {}) => {
+  const query = queryString(params)
+  return http.get(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/${child}?${query}`)
+}
+export const publishedScheduleEntries = (offeringId) =>
+  http.get(`/admin/education/schedules?dimension=OFFERING&targetId=${encodeURIComponent(offeringId)}&published=true`)
 
 const queryString = (params = {}) => new URLSearchParams(
   Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')

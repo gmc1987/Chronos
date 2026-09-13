@@ -112,6 +112,8 @@ const router = createRouter({
         { path: 'message-settings', name: 'admin-message-settings', component: AdminNotificationSettings },
         { path: 'education/teaching-center/plan', name: 'admin-education-teaching-plan', component: AdminTeachingPlan },
         { path: 'education/teaching-center/lesson-plan', name: 'admin-education-lesson-plan', component: AdminLessonPlans },
+        { path: 'teaching/plans', name: 'teaching-plans', component: AdminTeachingPlan },
+        { path: 'teaching/lessons', name: 'teaching-lessons', component: AdminLessonPlans },
         { path: 'education/teaching-center/preparation', name: 'admin-education-preparation', component: AdminPreparation },
         { path: 'education/teaching-center/courseware', name: 'admin-education-courseware', component: AdminCourseware },
         { path: 'education/teaching-center/material', name: 'admin-education-material', component: AdminMaterials },
