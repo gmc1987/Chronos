@@ -8,7 +8,9 @@
       <el-form-item label="类型"><el-select v-model="filters.type" style="width:150px">
         <el-option v-for="item in types" :key="item.value" :label="item.label" :value="item.value" />
       </el-select></el-form-item>
-      <el-form-item label="教学班"><el-input v-model="filters.offeringId" placeholder="Offering ID" /></el-form-item>
+      <el-form-item label="教学班"><el-select v-model="filters.offeringId" clearable filterable placeholder="选择教学班" style="width:260px">
+        <el-option v-for="item in offerings" :key="item.id" :value="item.id" :label="`${item.semesterCode} · ${item.courseName} · ${item.teachingClassName}`" />
+      </el-select></el-form-item>
       <el-button @click="load">查询</el-button><el-button @click="exportCsv">导出 CSV</el-button>
       <el-upload :show-file-list="false" accept=".csv" :before-upload="importCsv"><el-button>导入 CSV</el-button></el-upload>
     </el-form>
@@ -29,12 +31,14 @@
       layout="total, sizes, prev, pager, next" @change="load" />
     <el-dialog v-model="dialog" title="教学中心资源" width="650px">
       <el-form ref="formRef" :model="form" label-width="100px">
-        <el-form-item label="资源类型" required><el-select v-model="form.resourceType">
+        <el-form-item label="资源类型" required><el-select v-model="form.resourceType" :disabled="!!editing">
           <el-option v-for="item in types" :key="item.value" :label="item.label" :value="item.value" />
         </el-select></el-form-item>
-        <el-form-item label="教学班" required><el-input v-model="form.offeringId" /></el-form-item>
+        <el-form-item label="教学班" required><el-select v-model="form.offeringId" filterable placeholder="选择教学班" style="width:100%">
+          <el-option v-for="item in offerings" :key="item.id" :value="item.id" :label="`${item.semesterCode} · ${item.courseName} · ${item.teachingClassName}`" />
+        </el-select></el-form-item>
         <el-form-item label="课表项"><el-input v-model="form.scheduleEntryId" placeholder="可选，只读关联" /></el-form-item>
-        <el-form-item v-for="field in (mainFields[filters.type] || ['title'])" :key="field" :label="field" required>
+        <el-form-item v-for="field in (mainFields[form.resourceType] || ['title'])" :key="field" :label="field" required>
           <el-input v-if="!['content','stem'].includes(field)" v-model="form[field]" />
           <el-input v-else v-model="form[field]" type="textarea" :rows="5" />
         </el-form-item>
@@ -62,7 +66,7 @@
 <script setup>
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createTeachingDomain, teachingDomainPage, archiveTeachingDomain, updateTeachingDomain, exportTeachingDomainCsv, importTeachingDomainCsv, teachingChildPage, createTeachingChild, updateTeachingChild, deleteTeachingChild, submitTeachingReview } from '../api/teachingCenter'
+import { createTeachingDomain, teachingDomainPage, archiveTeachingDomain, updateTeachingDomain, exportTeachingDomainCsv, importTeachingDomainCsv, teachingChildPage, createTeachingChild, updateTeachingChild, deleteTeachingChild, submitTeachingReview, teachingCenterOfferings } from '../api/teachingCenter'
 const types = [
   { value: 'PLAN', label: '教学计划' }, { value: 'LESSON_PLAN', label: '教案' },
   { value: 'PREPARATION', label: '备课' }, { value: 'COURSEWARE', label: '课件' },
@@ -71,6 +75,7 @@ const types = [
   { value: 'RESEARCH', label: '教研' },
 ]
 const filters = reactive({ type: 'PLAN', offeringId: '' })
+const offerings = ref([])
 const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20)
 const loading = ref(false); const dialog = ref(false); const editing = ref(null)
 const childDialog = ref(false); const childFormDialog = ref(false); const childType = ref('PLAN_ITEM'); const childParent = ref(''); const childEditing = ref(null); const children = ref([])
@@ -96,7 +101,20 @@ const payload = () => {
   delete value.resourceType
   return value
 }
-const save = async () => { try { editing.value ? await updateTeachingDomain(filters.type, editing.value, payload()) : await createTeachingDomain(filters.type, payload()); dialog.value = false; ElMessage.success('已保存'); await load() } catch (error) { ElMessage.error(error.message) } }
+const save = async () => {
+  try {
+    const type = form.resourceType
+    if (editing.value) await updateTeachingDomain(type, editing.value, payload())
+    else await createTeachingDomain(type, payload())
+    filters.type = type
+    filters.offeringId = form.offeringId
+    dialog.value = false
+    ElMessage.success('已保存')
+    await load()
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
+}
 const submitReview = async (row) => { try { await submitTeachingReview(filters.type, row.id, { offeringId: row.offeringId, resourceType: filters.type }); ElMessage.success('已提交审核'); await load() } catch (error) { ElMessage.error(error.message) } }
 const archive = async (row) => { try { await archiveTeachingDomain(filters.type, row.id); ElMessage.success('已归档'); await load() } catch (error) { ElMessage.error(error.message) } }
 const exportCsv = async () => {
@@ -129,7 +147,18 @@ const editChild = (row) => { childEditing.value = row.id; Object.keys(childForm)
 const childSummary = (row) => Object.entries(row).filter(([k]) => !['id', 'createTime', 'lastUpdateTime'].includes(k)).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join('；')
 const saveChild = async () => { try { const value = { ...childForm }; if (childEditing.value) await updateTeachingChild(childType.value, childEditing.value, value); else { const parentFields = { PLAN_ITEM: 'planId', PLAN_VERSION: 'planId', LESSON_VERSION: 'lessonPlanId', LESSON_REVIEW: 'lessonPlanVersionId', PREPARATION_MEMBER: 'preparationId', PREPARATION_MATERIAL: 'preparationId', PREPARATION_COMMENT: 'preparationId', QUESTION_OPTION: 'questionId', QUESTION_KNOWLEDGE_POINT: 'questionId', RESEARCH_GROUP_MEMBER: 'groupId', RESEARCH_ACTIVITY_MEMBER: 'activityId', RESEARCH_MATERIAL: 'activityId', RESEARCH_RESULT: 'activityId' }; value[parentFields[childType.value]] = childParent.value; await createTeachingChild(childType.value, value) } childFormDialog.value = false; await loadChildren(); ElMessage.success('已保存') } catch (error) { ElMessage.error(error.message) } }
 const removeChild = async (row) => { try { await deleteTeachingChild(childType.value, row.id); await loadChildren() } catch (error) { ElMessage.error(error.message) } }
-onMounted(load)
+onMounted(async () => {
+  try {
+    const response = await teachingCenterOfferings()
+    offerings.value = response.data || []
+    if (offerings.value.length > 0) {
+      filters.offeringId = offerings.value[0].id
+    }
+    await load()
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
+})
 </script>
 
 <style scoped>

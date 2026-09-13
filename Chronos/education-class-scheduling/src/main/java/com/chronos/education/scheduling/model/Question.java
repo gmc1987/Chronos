@@ -29,4 +29,6 @@ public class Question extends BaseEntity {
 	private String answer;
 	@Column(columnDefinition = "text")
 	private String analysis;
+	@Column(nullable = false)
+	private boolean archived;
 }

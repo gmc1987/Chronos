@@ -46,14 +46,17 @@ public class TeachingCenterService {
 		if (!TYPES.contains(type)) {
 			throw new IllegalArgumentException("不支持的教学中心资源类型");
 		}
+		if (offeringId == null || offeringId.isBlank()) {
+			// 无教学班筛选时，仓储分页会覆盖全校资源；普通教师不能使用该入口。
+			scopes.assertFullAccess(scope);
+		} else {
+			scopes.assertOfferingAccess(scope, offeringId);
+		}
 		PageRequest request = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),
 				Sort.by(Sort.Direction.DESC, "lastUpdateTime"));
 		var result = offeringId == null || offeringId.isBlank()
 				? resources.findByResourceTypeAndArchivedFalse(type, request)
 				: resources.findByResourceTypeAndOfferingIdAndArchivedFalse(type, offeringId, request);
-		if (offeringId != null && !offeringId.isBlank()) {
-			scopes.assertOfferingAccess(scope, offeringId);
-		}
 		return PageView.from(result);
 	}
 
@@ -63,6 +66,8 @@ public class TeachingCenterService {
 		EducationDataScope scope = scopes.resolve(authentication.getName());
 		if (command.offeringId() != null && !command.offeringId().isBlank()) {
 			scopes.assertOfferingAccess(scope, command.offeringId());
+		} else {
+			scopes.assertFullAccess(scope);
 		}
 		validateSchedule(scope, command.offeringId(), command.scheduleEntryId());
 		TeachingCenterResource value = new TeachingCenterResource();
@@ -76,13 +81,16 @@ public class TeachingCenterService {
 		TeachingCenterResource value = resources.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("教学中心资源不存在"));
 		EducationDataScope scope = scopes.resolve(authentication.getName());
-		scopes.assertOfferingAccess(scope, value.getOfferingId());
+		if (value.getOfferingId() != null) scopes.assertOfferingAccess(scope, value.getOfferingId());
+		else scopes.assertFullAccess(scope);
 		if (value.isArchived()) {
 			throw new IllegalStateException("已归档资源不可修改");
 		}
 
 		if (command.offeringId() != null && !command.offeringId().isBlank()) {
 			scopes.assertOfferingAccess(scope, command.offeringId());
+		} else {
+			scopes.assertFullAccess(scope);
 		}
 		validateSchedule(scope, command.offeringId(), command.scheduleEntryId());
 		copy(value, command);
@@ -96,6 +104,7 @@ public class TeachingCenterService {
 				.orElseThrow(() -> new IllegalArgumentException("教学中心资源不存在"));
 		EducationDataScope scope = scopes.resolve(authentication.getName());
 		if (value.getOfferingId() != null) scopes.assertOfferingAccess(scope, value.getOfferingId());
+		else scopes.assertFullAccess(scope);
 		return value;
 	}
 
@@ -107,7 +116,11 @@ public class TeachingCenterService {
 		TeachingCenterResource value = resources.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("教学中心资源不存在"));
 		EducationDataScope scope = scopes.resolve(authentication.getName());
-		scopes.assertOfferingAccess(scope, value.getOfferingId());
+		if (value.getOfferingId() != null) scopes.assertOfferingAccess(scope, value.getOfferingId());
+		else scopes.assertFullAccess(scope);
+		if ("PUBLISHED".equals(status)) {
+			throw new IllegalStateException("教学资源必须通过审核流程发布");
+		}
 		if (!"ARCHIVED".equals(status) && !isAllowedTransition(value.getStatus(), status)) {
 			throw new IllegalStateException("不允许从 " + value.getStatus() + " 流转到 " + status);
 		}

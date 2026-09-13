@@ -125,6 +125,11 @@ export const createHttp = (config = {}) => {
   return {
     get: (url) => request(url),
     post: (url, body) => request(url, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
+    postText: (url, body, contentType = 'text/plain') => request(url, {
+      method: 'POST',
+      body,
+      headers: { 'Content-Type': contentType },
+    }),
     put: (url, body) => request(url, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
     delete: (url) => request(url, { method: 'DELETE' }),
     upload: (url, formData) => request(url, { method: 'POST', body: formData, headers: { 'Content-Type': '' } }),

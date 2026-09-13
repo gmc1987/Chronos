@@ -13,6 +13,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service @Transactional
@@ -31,6 +32,7 @@ public class TeachingReviewService {
 				|| "REVIEWING".equals(r.getStatus())).isPresent())
 			throw new IllegalStateException("该资源已在审核中");
 		if (offeringId != null && !offeringId.isBlank()) scopes.assertOfferingAccess(scopes.resolve(auth.getName()), offeringId);
+		else scopes.assertFullAccess(scopes.resolve(auth.getName()));
 		String key = "EDU_TEACHING:" + type + ":" + id;
 		Map<String,Object> data = form == null ? Map.of() : new java.util.HashMap<>(form);
 		data.put("resourceType", type); data.put("resourceId", id); data.put("offeringId", offeringId == null ? "" : offeringId);
@@ -39,7 +41,24 @@ public class TeachingReviewService {
 		record.setResourceType(type); record.setResourceId(id); record.setOfferingId(offeringId);
 		record.setBusinessKey(key); record.setWorkflowInstanceId(instance.getId()); record.setStatus("SUBMITTED");
 		record.setDecision(null); record.setComment(null);
-		return records.save(record);
+		TeachingReviewRecord saved = records.save(record);
+		// 审核提交和资源状态在同一事务落库，防止门户继续展示为可编辑草稿。
+		Object resource = entity(type, id);
+		if (resource == null) {
+			resource = em.find(com.chronos.education.scheduling.model.TeachingCenterResource.class, id);
+		}
+		if (resource instanceof com.chronos.education.scheduling.model.TeachingCenterResource centerResource) {
+			centerResource.setStatus("SUBMITTED");
+		} else if (resource != null) {
+			try {
+				resource.getClass().getMethod("setStatus", String.class).invoke(resource, "SUBMITTED");
+			} catch (NoSuchMethodException ignored) {
+				// 知识点等没有状态列的资源由审核记录承载审核状态。
+			} catch (ReflectiveOperationException exception) {
+				throw new IllegalStateException("教学资源提交状态回写失败", exception);
+			}
+		}
+		return saved;
 	}
 
 	@Transactional(readOnly=true)
@@ -48,14 +67,20 @@ public class TeachingReviewService {
 				.orElseThrow(() -> new IllegalArgumentException("尚未提交审核"));
 		if (record.getOfferingId()!=null && !record.getOfferingId().isBlank())
 			scopes.assertOfferingAccess(scopes.resolve(auth.getName()), record.getOfferingId());
+		else scopes.assertFullAccess(scopes.resolve(auth.getName()));
 		return record;
 	}
 
-	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT) public void completed(WorkflowCompletedEvent event) {
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	public void completed(WorkflowCompletedEvent event) {
 		if (!FLOW.equals(event.flowCode())) return;
 		writeBack(event.businessKey(), "PUBLISHED", "APPROVED", "");
 	}
-	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT) public void rejected(WorkflowRejectedEvent event) {
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	public void rejected(WorkflowRejectedEvent event) {
 		if (!FLOW.equals(event.flowCode())) return;
 		writeBack(event.businessKey(), "DRAFT", "REJECTED", event.comment());
 	}
@@ -66,6 +91,9 @@ public class TeachingReviewService {
 			String[] parts=key.split(":",3);
 			if (parts.length==3) {
 				Object entity = entity(parts[1], parts[2]);
+				if (entity == null) {
+					entity = em.find(com.chronos.education.scheduling.model.TeachingCenterResource.class, parts[2]);
+				}
 				if (entity != null) {
 					try {
 						var m = entity.getClass().getMethod("setStatus", String.class);

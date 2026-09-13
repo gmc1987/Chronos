@@ -1,7 +1,13 @@
 import { http } from '../../../api/http'
 
+export const teachingCenterOfferings = () => http.get('/education/teaching-center/offerings')
+
+const queryString = (params = {}) => new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+).toString()
+
 export const teachingCenterResources = (params) => {
-  const query = new URLSearchParams(params).toString()
+  const query = queryString(params)
   return http.get(`/education/teaching-center/resources?${query}`)
 }
 export const createTeachingResource = (body) => http.post('/education/teaching-center/resources', body)
@@ -10,7 +16,7 @@ export const transitionTeachingResource = (id, status) =>
   http.post(`/education/teaching-center/resources/${id}/status?status=${encodeURIComponent(status)}`)
 
 export const teachingDomainPage = (type, params = {}) => {
-  const query = new URLSearchParams(params).toString()
+  const query = queryString(params)
   return http.get(`/education/teaching-center/domain/${encodeURIComponent(type)}?${query}`)
 }
 export const createTeachingDomain = (type, body) =>
@@ -22,13 +28,11 @@ export const archiveTeachingDomain = (type, id) =>
 export const statusTeachingDomain = (type, id, status) =>
   http.post(`/education/teaching-center/domain/${encodeURIComponent(type)}/${id}/status?status=${encodeURIComponent(status)}`)
 export const exportTeachingDomainCsv = (type, params = {}) => {
-  const query = new URLSearchParams(params).toString()
-  return http.get(`/education/teaching-center/domain/${encodeURIComponent(type)}/export.csv?${query}`, { responseType: 'blob' })
+  const query = queryString(params)
+  return http.download(`/education/teaching-center/domain/${encodeURIComponent(type)}/export.csv?${query}`)
 }
 export const importTeachingDomainCsv = (type, body) =>
-  http.post(`/education/teaching-center/domain/${encodeURIComponent(type)}/import.csv`, body, {
-    headers: { 'Content-Type': 'text/csv' }
-  })
+  http.postText(`/education/teaching-center/domain/${encodeURIComponent(type)}/import.csv`, body, 'text/csv')
 export const teachingChildPage = (type, parentId, params = {}) => {
   const query = new URLSearchParams({ parentId, ...params }).toString()
   return http.get(`/education/teaching-center/children/${encodeURIComponent(type)}?${query}`)

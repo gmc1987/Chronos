@@ -27,11 +27,14 @@ public class TeachingDomainService {
 	@PersistenceContext private EntityManager entityManager;
 	private final EducationDataScopeService scopes;
 	private final com.chronos.education.scheduling.dao.ScheduleEntryRepository scheduleEntries;
+	private final com.chronos.education.scheduling.dao.CourseOfferingRepository offerings;
 
 	public TeachingDomainService(EducationDataScopeService scopes,
-			com.chronos.education.scheduling.dao.ScheduleEntryRepository scheduleEntries) {
+			com.chronos.education.scheduling.dao.ScheduleEntryRepository scheduleEntries,
+			com.chronos.education.scheduling.dao.CourseOfferingRepository offerings) {
 		this.scopes = scopes;
 		this.scheduleEntries = scheduleEntries;
+		this.offerings = offerings;
 	}
 
 	@Transactional(readOnly = true)
@@ -40,13 +43,27 @@ public class TeachingDomainService {
 		Class<?> entity = entity(type);
 		EducationDataScope scope = scopes.resolve(authentication.getName());
 		checkOffering(scope, offeringId, type, false);
-		if (offeringId == null && requiresGlobalScope(type)) scopes.assertFullAccess(scope);
+		if (!hasOffering(type) && offeringId == null) {
+			// 没有教学班字段的领域表不能套用班级过滤，必须先确认全校数据权限。
+			scopes.assertFullAccess(scope);
+		}
+		List<String> visibleOfferingIds = null;
+		if (hasOffering(type) && offeringId == null && !scope.fullAccess()) {
+			visibleOfferingIds = scopes.visibleOfferings(scope, offerings.findAll()).stream()
+					.map(CourseOffering::getId)
+					.toList();
+			if (visibleOfferingIds.isEmpty()) {
+				return PageView.from(List.of(), page, size);
+			}
+		}
 		String archivedProperty = "archived";
 		String jpql = "select e from " + entity.getSimpleName() + " e where e." + archivedProperty
 				+ " = false" + (hasOffering(type) && offeringId != null ? " and e.offeringId = :offeringId" : "")
+				+ (visibleOfferingIds != null ? " and e.offeringId in :visibleOfferingIds" : "")
 				+ " order by e.id desc";
 		var query = entityManager.createQuery(jpql, entity);
 		if (hasOffering(type) && offeringId != null) query.setParameter("offeringId", offeringId);
+		if (visibleOfferingIds != null) query.setParameter("visibleOfferingIds", visibleOfferingIds);
 		List<?> values = query.getResultList();
 		return PageView.from(values, page, size);
 	}
@@ -54,6 +71,7 @@ public class TeachingDomainService {
 	public Object create(String type, Map<String, Object> body, Authentication authentication) {
 		Class<?> clazz = entity(type);
 		EducationDataScope scope = scopes.resolve(authentication.getName());
+		assertDraftPayload(body);
 		validateAndAuthorize(type, body, scope);
 		Object value;
 		try { value = clazz.getDeclaredConstructor().newInstance(); }
@@ -69,6 +87,11 @@ public class TeachingDomainService {
 		EducationDataScope scope = scopes.resolve(authentication.getName());
 		Object value = find(clazz, id);
 		authorizeExisting(type, value, scope);
+		assertDraftPayload(body);
+		String currentStatus = textValue(value, "status");
+		if (currentStatus != null && !"DRAFT".equals(currentStatus)) {
+			throw new IllegalStateException("仅草稿状态允许编辑教学资源");
+		}
 		validateAndAuthorize(type, body, scope);
 		if ("KNOWLEDGE_POINT".equals(type) && Objects.equals(id, text(body, "parentId")))
 			throw new IllegalArgumentException("知识点不能以自身为父级");
@@ -175,6 +198,14 @@ public class TeachingDomainService {
 				KnowledgePoint node = entityManager.find(KnowledgePoint.class, parent);
 				parent = node == null ? null : node.getParentId();
 			}
+		}
+	}
+
+	/** 状态只能由审核流程或专用状态接口推进，不能通过通用 CRUD 绕过审核。 */
+	private void assertDraftPayload(Map<String, Object> body) {
+		String status = text(body, "status");
+		if (status != null && !status.isBlank() && !"DRAFT".equals(status)) {
+			throw new IllegalArgumentException("通用保存接口只接受草稿状态");
 		}
 	}
 

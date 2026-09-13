@@ -136,7 +136,7 @@ class AutoSchedulingServiceTest {
 		TeachingClassMember firstMember = member("offering-0", "student-1");
 		TeachingClassMember secondMember = member("offering-1", "student-1");
 		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
-		when(academicCalendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(8)))
+		when(academicCalendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(1)))
 				.thenReturn(Set.of(1, 2, 3, 4, 5, 6, 7, 8));
 		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
 				.thenReturn(List.of());

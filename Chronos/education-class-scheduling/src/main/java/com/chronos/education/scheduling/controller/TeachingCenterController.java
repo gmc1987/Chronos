@@ -4,8 +4,12 @@ import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.TeachingCenterResource;
 import com.chronos.education.scheduling.model.TeachingCenterResourceCommand;
+import com.chronos.education.scheduling.model.CourseOffering;
+import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.TeachingCenterService;
 import com.chronos.education.scheduling.service.TeachingReviewService;
+import java.util.List;
 import java.util.Map;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
@@ -17,9 +21,27 @@ import org.springframework.web.bind.annotation.*;
 public class TeachingCenterController {
 	private final TeachingCenterService service;
 	private final TeachingReviewService reviews;
+	private final CourseOfferingRepository offerings;
+	private final EducationDataScopeService scopes;
 
-	public TeachingCenterController(TeachingCenterService service, TeachingReviewService reviews) {
-		this.service = service; this.reviews = reviews;
+	public TeachingCenterController(
+			TeachingCenterService service,
+			TeachingReviewService reviews,
+			CourseOfferingRepository offerings,
+			EducationDataScopeService scopes) {
+		this.service = service;
+		this.reviews = reviews;
+		this.offerings = offerings;
+		this.scopes = scopes;
+	}
+
+	/** 门户只返回当前用户数据范围内的教学班，避免让教师手填内部 ID。 */
+	@GetMapping("/offerings")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
+	public ResultData<List<CourseOffering>> visibleOfferings(Authentication authentication) {
+		return ok(scopes.visibleOfferings(
+				scopes.resolve(authentication.getName()),
+				offerings.findAll()));
 	}
 
 	@GetMapping("/resources")
