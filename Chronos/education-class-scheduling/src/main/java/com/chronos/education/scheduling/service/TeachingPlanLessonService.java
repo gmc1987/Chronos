@@ -106,7 +106,6 @@ public class TeachingPlanLessonService {
 				|| plan.getAssessmentMethod() == null || plan.getAssessmentMethod().isBlank())
 			throw new IllegalArgumentException("提交前必须填写目标和考核方式");
 		TeachingPlanVersion version = new TeachingPlanVersion();
-		version.setId(UUID.randomUUID().toString());
 		version.setPlanId(id); version.setVersionNo(plan.getCurrentVersionNo() + 1);
 		version.setSnapshotJson(snapshot(plan, items.findByPlanIdOrderBySortOrderAsc(id)));
 		version.setSnapshotHash(hash(version.getSnapshotJson()));
@@ -145,7 +144,7 @@ public class TeachingPlanLessonService {
 				request.equipmentRequirements()); lesson.setCreateBy(auth.getName());
 		LessonPlan saved = lessons.save(lesson);
 		if (request.fileId() != null && !request.fileId().isBlank()) {
-			LessonPlanVersion draft = new LessonPlanVersion(); draft.setId(UUID.randomUUID().toString());
+			LessonPlanVersion draft = new LessonPlanVersion();
 			draft.setLessonPlanId(saved.getId()); draft.setVersionNo(1); draft.setFileId(request.fileId());
 			draft.setStatus("DRAFT"); draft.setCreateBy(auth.getName()); draft.setCreateTime(Instant.now());
 			lessonVersions.save(draft);
@@ -170,7 +169,7 @@ public class TeachingPlanLessonService {
 		if (request.fileId() != null && !request.fileId().isBlank()) {
 			int next = lessonVersions.findByLessonPlanIdOrderByVersionNoDesc(id).stream()
 					.findFirst().map(v -> v.getVersionNo() + 1).orElse(1);
-			LessonPlanVersion draft = new LessonPlanVersion(); draft.setId(UUID.randomUUID().toString());
+			LessonPlanVersion draft = new LessonPlanVersion();
 			draft.setLessonPlanId(id); draft.setVersionNo(next); draft.setFileId(request.fileId());
 			draft.setStatus("DRAFT"); draft.setCreateBy(auth.getName()); draft.setCreateTime(Instant.now());
 			lessonVersions.save(draft);
@@ -193,7 +192,6 @@ public class TeachingPlanLessonService {
 		LessonPlan lesson = getLesson(id, auth); assertDraft(lesson.getStatus());
 		TeachingReviewRecord existing = null;
 		LessonPlanVersion version = new LessonPlanVersion();
-		version.setId(UUID.randomUUID().toString());
 		version.setLessonPlanId(id); version.setVersionNo(lessonVersions.findByLessonPlanIdOrderByVersionNoDesc(id)
 				.stream().findFirst().map(v -> v.getVersionNo() + 1).orElse(1));
 		version.setSnapshotJson(snapshot(lesson)); version.setSnapshotHash(hash(version.getSnapshotJson()));

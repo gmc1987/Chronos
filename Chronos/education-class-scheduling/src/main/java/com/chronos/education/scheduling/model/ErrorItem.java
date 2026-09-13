@@ -17,7 +17,7 @@ public class ErrorItem {
 	@Column(name = "source_item_id", length = 64) private String sourceItemId;
 	@Column(columnDefinition = "text") private String analysis;
 	@Column(nullable = false, length = 24) private String status = "OPEN";
-	@Column(nullable = false) private int wrongCount = 1;
+	@Column(name = "wrong_count", nullable = false) private int wrongCount = 1;
 	@Column(name = "last_wrong_at") private java.time.LocalDateTime lastWrongAt;
 	@Column(name = "mastery_status", nullable = false, length = 24) private String masteryStatus = "NEEDS_PRACTICE";
 	@Column(name = "student_note", columnDefinition = "text") private String studentNote;

@@ -54,7 +54,7 @@ public class ResearchErrorService {
 			throw new IllegalArgumentException("文件不可绑定");
 	}
 	public ResearchGroup createGroup(GroupRequest r, Authentication a) {
-		teacher(a,r.leaderTeacherId()); ResearchGroup g=new ResearchGroup(); g.setId(UUID.randomUUID().toString());
+		teacher(a,r.leaderTeacherId()); ResearchGroup g=new ResearchGroup();
 		g.setName(r.name()); g.setSubjectId(r.subjectId()); g.setCampusId(r.campusId());
 		g.setLeaderTeacherId(r.leaderTeacherId()); g.setCourseScopeJson(r.courseScopeJson()); g.setDescription(r.description());
 		g.setSchoolId("CURRENT"); g.setCreateBy(a.getName()); return groups.save(g);
@@ -68,7 +68,7 @@ public class ResearchErrorService {
 	public ResearchActivity createActivity(String groupId, ActivityRequest r, Authentication a) {
 		group(groupId,a); if (r.endTime()!=null && r.activityTime()!=null && r.endTime().isBefore(r.activityTime()))
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
-		ResearchActivity x=new ResearchActivity(); x.setId(UUID.randomUUID().toString()); x.setGroupId(groupId);
+		ResearchActivity x=new ResearchActivity(); x.setGroupId(groupId);
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime()); x.setLocation(r.location());
 		x.setAgenda(r.agenda()); x.setOrganizerId(a.getName()); x.setCreateBy(a.getName()); return activities.save(x);
 	}
@@ -108,7 +108,7 @@ public class ResearchErrorService {
 		scopes.assertStudentAccess(scope(a),studentId);
 		return books.findAll().stream().filter(b->studentId.equals(b.getStudentId()) && Objects.equals(courseId,b.getCourseId())
 				&& Objects.equals(semesterId,b.getSemesterId()) && !b.isArchived()).findFirst().orElseGet(()->{
-					ErrorBook b=new ErrorBook(); b.setId(UUID.randomUUID().toString()); b.setStudentId(studentId); b.setName("错题沉淀");
+					ErrorBook b=new ErrorBook(); b.setStudentId(studentId); b.setName("错题沉淀");
 					b.setCourseId(courseId); b.setSemesterId(semesterId); b.setCreateBy(a.getName()); return books.save(b);});
 	}
 	public ErrorItem recordManual(ErrorManualRequest r, Authentication a) {

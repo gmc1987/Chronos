@@ -38,7 +38,15 @@ public class TeachingReviewService {
 		String key = "EDU_TEACHING:" + type + ":" + id + ":" + submissionNo;
 		Map<String,Object> data = form == null ? Map.of() : new java.util.HashMap<>(form);
 		data.put("resourceType", type); data.put("resourceId", id); data.put("offeringId", offeringId == null ? "" : offeringId);
-		var instance = workflows.startByCode(FLOW, key, data, auth.getName());
+		// version/snapshot metadata belongs to the education review record, not
+		// the workflow's user form. Passing those internal keys as form fields
+		// makes WorkflowService reject them when the published flow has a
+		// different (or empty) form schema.
+		Map<String, Object> workflowForm = new java.util.LinkedHashMap<>();
+		workflowForm.put("resourceType", type);
+		workflowForm.put("resourceId", id);
+		workflowForm.put("offeringId", offeringId == null ? "" : offeringId);
+		var instance = workflows.startByCode(FLOW, key, workflowForm, auth.getName());
 		TeachingReviewRecord record = new TeachingReviewRecord();
 		record.setResourceType(type); record.setResourceId(id); record.setOfferingId(offeringId);
 		record.setBusinessKey(key); record.setWorkflowInstanceId(instance.getId()); record.setStatus("SUBMITTED");
