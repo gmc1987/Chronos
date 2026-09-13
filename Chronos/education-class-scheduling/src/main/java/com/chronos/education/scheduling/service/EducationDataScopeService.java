@@ -189,6 +189,12 @@ public class EducationDataScopeService {
 				|| scope.gradeIds().contains(student.getGradeId());
 	}
 
+	public boolean canAccessStudent(EducationDataScope scope, String studentId) {
+		return studentId != null && students.findById(studentId)
+				.map(student -> canAccessStudent(scope, student))
+				.orElse(false);
+	}
+
 	public void assertGuardianAccess(EducationDataScope scope, String relationId) {
 		StudentGuardianRelation relation = guardians.findById(relationId)
 				.orElseThrow(() -> new IllegalArgumentException("监护关系不存在"));
@@ -309,6 +315,22 @@ public class EducationDataScopeService {
 			return;
 		}
 		throw new AccessDeniedException("无权访问该教学任务");
+	}
+
+	public void assertCourseAccess(EducationDataScope scope, String courseId) {
+		if (courseId == null || courseId.isBlank()) {
+			assertFullAccess(scope);
+			return;
+		}
+		if (scope.fullAccess() || offerings.findByCourseCode(courseId).stream()
+				.anyMatch(offering -> canAccessOffering(scope, offering))) return;
+		throw new AccessDeniedException("无权访问该课程数据");
+	}
+
+	public boolean canAccessCourse(EducationDataScope scope, String courseId) {
+		return courseId != null && (scope.fullAccess()
+				|| offerings.findByCourseCode(courseId).stream()
+				.anyMatch(offering -> canAccessOffering(scope, offering)));
 	}
 
 	public void assertClassroomAccess(EducationDataScope scope, String classroomId) {

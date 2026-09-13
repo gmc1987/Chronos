@@ -7,12 +7,18 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.validation.BindException;
 
 /** Keeps validation, visibility, state and concurrency failures explicit to API clients. */
 @RestControllerAdvice(basePackageClasses = TeachingPlanLessonController.class)
 public class TeachingApiExceptionHandler {
 	@ExceptionHandler(IllegalArgumentException.class)
 	ResponseEntity<ResultData<?>> badRequest(IllegalArgumentException e) { return response(HttpStatus.BAD_REQUEST, e.getMessage()); }
+	@ExceptionHandler({MethodArgumentNotValidException.class, BindException.class})
+	ResponseEntity<ResultData<?>> validation(Exception e) {
+		return response(HttpStatus.BAD_REQUEST, "请求参数校验失败");
+	}
 	@ExceptionHandler(AccessDeniedException.class)
 	ResponseEntity<ResultData<?>> forbidden(AccessDeniedException e) { return response(HttpStatus.FORBIDDEN, e.getMessage()); }
 	@ExceptionHandler(java.util.NoSuchElementException.class)

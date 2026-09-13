@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.model.*;
+import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.util.*;
@@ -43,9 +44,20 @@ public class TeachingDomainService {
 		Class<?> entity = entity(type);
 		EducationDataScope scope = scopes.resolve(authentication.getName());
 		checkOffering(scope, offeringId, type, false);
-		if (!hasOffering(type) && offeringId == null) {
+		if (!hasOffering(type) && offeringId == null
+				&& !Set.of("KNOWLEDGE_POINT", "MISTAKE", "ERROR_BOOK").contains(type)) {
 			// 没有教学班字段的领域表不能套用班级过滤，必须先确认全校数据权限。
 			scopes.assertFullAccess(scope);
+		}
+		if (offeringId == null && Set.of("KNOWLEDGE_POINT", "MISTAKE", "ERROR_BOOK").contains(type)) {
+			List<?> values = entityManager.createQuery(
+					"select e from " + entity.getSimpleName() + " e where e.archived = false order by e.id desc",
+					entity).getResultList().stream()
+					.filter(value -> "KNOWLEDGE_POINT".equals(type)
+							? scopes.canAccessCourse(scope, textValue(value, "courseId"))
+							: scopes.canAccessStudent(scope, textValue(value, "studentId")))
+					.toList();
+			return PageView.from(values, page, size);
 		}
 		List<String> visibleOfferingIds = null;
 		if (hasOffering(type) && offeringId == null && !scope.fullAccess()) {
@@ -76,6 +88,7 @@ public class TeachingDomainService {
 		Object value;
 		try { value = clazz.getDeclaredConstructor().newInstance(); }
 		catch (ReflectiveOperationException e) { throw new IllegalStateException("教学实体不可创建", e); }
+		initializeNewEntity(value);
 		apply(type, value, body);
 		entityManager.persist(value);
 		return value;
@@ -188,6 +201,7 @@ public class TeachingDomainService {
 			scopes.assertScheduleEntryAccess(scope, scheduleEntryId);
 		}
 		if (offeringId == null && requiresGlobalScope(type)) scopes.assertFullAccess(scope);
+		if ("KNOWLEDGE_POINT".equals(type)) scopes.assertCourseAccess(scope, text(body, "courseId"));
 		if (Set.of("ERROR_BOOK", "MISTAKE").contains(type) && text(body, "studentId") != null)
 			scopes.assertStudentAccess(scope, text(body, "studentId"));
 		if ("KNOWLEDGE_POINT".equals(type) && text(body, "parentId") != null) {
@@ -213,6 +227,8 @@ public class TeachingDomainService {
 		String offering = offering(value);
 		if (offering != null) scopes.assertOfferingAccess(scope, offering);
 		else if (value instanceof ErrorBook book) scopes.assertStudentAccess(scope, book.getStudentId());
+		else if ("KNOWLEDGE_POINT".equals(type)) scopes.assertCourseAccess(scope,
+				textValue(value, "courseId"));
 		else if (requiresGlobalScope(type)) scopes.assertFullAccess(scope);
 		if (Boolean.TRUE.equals(read(value, "archived")))
 			throw new IllegalStateException("已归档实体不可修改");
@@ -227,7 +243,7 @@ public class TeachingDomainService {
 	}
 
 	private boolean hasOffering(String type) { return Set.of("PLAN","LESSON_PLAN","PREPARATION","COURSEWARE","MATERIAL","QUESTION_BANK").contains(type); }
-	private boolean requiresGlobalScope(String type) { return Set.of("PLAN","QUESTION_BANK","QUESTION","KNOWLEDGE_POINT","RESEARCH","RESEARCH_ACTIVITY").contains(type); }
+	private boolean requiresGlobalScope(String type) { return Set.of("PLAN","QUESTION_BANK","QUESTION","RESEARCH","RESEARCH_ACTIVITY").contains(type); }
 	private Class<?> entity(String type) {
 		Class<?> result = TYPES.get(type == null ? "" : type.trim().toUpperCase(Locale.ROOT));
 		if (result == null) throw new IllegalArgumentException("不支持的教学领域类型");
@@ -313,6 +329,17 @@ public class TeachingDomainService {
 			if (raw instanceof String s && s.isBlank()) return;
 			set(value, property, raw);
 		});
+	}
+	private void initializeNewEntity(Object value) {
+		if (value instanceof BaseEntity entity && entity.getId() == null) {
+			entity.setId(UUID.randomUUID().toString());
+		}
+		if (value instanceof Preparation preparation) preparation.setRowVersion(0L);
+		else if (value instanceof Courseware courseware) courseware.setRowVersion(0L);
+		else if (value instanceof TeachingMaterial material) material.setRowVersion(0L);
+		else if (value instanceof ResearchGroup group) group.setRowVersion(0L);
+		else if (value instanceof KnowledgePoint point) point.setRowVersion(0L);
+		else if (value instanceof ErrorBook book) book.setRowVersion(0L);
 	}
 	private String text(Map<String,Object> body, String key) {
 		Object value = body.get(key); return value == null ? null : value.toString().trim();

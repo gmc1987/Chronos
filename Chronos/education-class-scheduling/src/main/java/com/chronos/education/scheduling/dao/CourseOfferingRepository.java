@@ -14,4 +14,5 @@ public interface CourseOfferingRepository extends JpaRepository<CourseOffering, 
 	Page<CourseOffering> findBySemesterCodeOrderByOfferingCode(String semesterCode, Pageable pageable);
 	boolean existsByTeacherIdAndCampusIdIn(String teacherId, List<String> campusIds);
 	boolean existsByTeacherId(String teacherId);
+	List<CourseOffering> findByCourseCode(String courseCode);
 }

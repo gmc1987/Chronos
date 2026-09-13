@@ -35,5 +35,5 @@ public class ResearchGroup extends BaseEntity {
 	private String description;
 	@jakarta.persistence.Version
 	@Column(name = "row_version", nullable = false)
-	private long rowVersion;
+	private long rowVersion = 0L;
 }

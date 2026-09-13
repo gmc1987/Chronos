@@ -32,8 +32,7 @@ public class TeachingReviewService {
 		if (latest.filter(r -> "SUBMITTED".equals(r.getStatus())
 				|| "REVIEWING".equals(r.getStatus())).isPresent())
 			throw new IllegalStateException("该资源已在审核中");
-		if (offeringId != null && !offeringId.isBlank()) scopes.assertOfferingAccess(scopes.resolve(auth.getName()), offeringId);
-		else scopes.assertFullAccess(scopes.resolve(auth.getName()));
+		authorizeResource(type, id, offeringId, auth);
 		int submissionNo = records.findByResourceTypeAndResourceIdOrderBySubmissionNoDesc(type, id)
 				.stream().findFirst().map(r -> r.getSubmissionNo() + 1).orElse(1);
 		String key = "EDU_TEACHING:" + type + ":" + id + ":" + submissionNo;
@@ -74,10 +73,29 @@ public class TeachingReviewService {
 	public TeachingReviewRecord status(String type, String id, Authentication auth) {
 		TeachingReviewRecord record = records.findByResourceTypeAndResourceId(type,id)
 				.orElseThrow(() -> new IllegalArgumentException("尚未提交审核"));
-		if (record.getOfferingId()!=null && !record.getOfferingId().isBlank())
-			scopes.assertOfferingAccess(scopes.resolve(auth.getName()), record.getOfferingId());
-		else scopes.assertFullAccess(scopes.resolve(auth.getName()));
+		authorizeResource(record.getResourceType(), record.getResourceId(), record.getOfferingId(), auth);
 		return record;
+	}
+
+	private void authorizeResource(String type, String id, String offeringId, Authentication auth) {
+		EducationDataScope scope = scopes.resolve(auth.getName());
+		if (offeringId != null && !offeringId.isBlank()) {
+			scopes.assertOfferingAccess(scope, offeringId);
+			return;
+		}
+		if ("KNOWLEDGE_POINT".equals(type)) {
+			var point = em.find(com.chronos.education.scheduling.model.KnowledgePoint.class, id);
+			if (point == null) throw new IllegalArgumentException("知识点不存在");
+			scopes.assertCourseAccess(scope, point.getCourseId());
+			return;
+		}
+		if ("MISTAKE".equals(type) || "ERROR_BOOK".equals(type)) {
+			var book = em.find(com.chronos.education.scheduling.model.ErrorBook.class, id);
+			if (book == null) throw new IllegalArgumentException("错题本不存在");
+			scopes.assertStudentAccess(scope, book.getStudentId());
+			return;
+		}
+		scopes.assertFullAccess(scope);
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)

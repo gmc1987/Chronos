@@ -93,7 +93,7 @@ public class QuestionKnowledgeService {
 
 	public KnowledgePoint createKnowledgePoint(KnowledgePointRequest request, Authentication user) {
 		require(request != null && text(request.name()) != null, "知识点名称不能为空");
-		EducationDataScope scope = scopes.resolve(user.getName()); scopes.assertFullAccess(scope);
+		EducationDataScope scope = scopes.resolve(user.getName()); scopes.assertCourseAccess(scope, request.courseId());
 		validateParent(request.parentId(), request.courseId(), null);
 		KnowledgePoint value = new KnowledgePoint();
 		value.setParentId(blank(request.parentId())); value.setSubjectId(blank(request.subjectId()));
@@ -105,8 +105,10 @@ public class QuestionKnowledgeService {
 	}
 
 	public KnowledgePoint updateKnowledgePoint(String id, KnowledgePointRequest request, Authentication user) {
-		EducationDataScope scope = scopes.resolve(user.getName()); scopes.assertFullAccess(scope);
+		EducationDataScope scope = scopes.resolve(user.getName());
 		KnowledgePoint value = points.findById(id).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+		scopes.assertCourseAccess(scope, value.getCourseId());
+		scopes.assertCourseAccess(scope, request.courseId());
 		validateParent(request.parentId(), request.courseId(), id);
 		value.setParentId(blank(request.parentId())); value.setSubjectId(blank(request.subjectId()));
 		value.setCourseId(blank(request.courseId())); value.setCode(blank(request.code()));
@@ -117,8 +119,9 @@ public class QuestionKnowledgeService {
 	}
 
 	public void disableKnowledgePoint(String id, Authentication user) {
-		scopes.assertFullAccess(scopes.resolve(user.getName()));
+		EducationDataScope scope = scopes.resolve(user.getName());
 		KnowledgePoint value = points.findById(id).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+		scopes.assertCourseAccess(scope, value.getCourseId());
 		if (links.countByKnowledgePointId(id) > 0) throw new IllegalStateException("知识点已被题目引用，不能停用");
 		value.setEnabled(false); value.setStatus("DISABLED"); points.save(value);
 	}
@@ -131,8 +134,10 @@ public class QuestionKnowledgeService {
 
 	@Transactional(readOnly = true)
 	public List<KnowledgePoint> knowledgeTree(String courseId, Authentication user) {
-		scopes.assertFullAccess(scopes.resolve(user.getName()));
-		return points.findAll().stream().filter(p -> !p.isArchived() && Objects.equals(courseId, p.getCourseId()))
+		EducationDataScope scope = scopes.resolve(user.getName());
+		scopes.assertCourseAccess(scope, courseId);
+		return points.findAll().stream().filter(p -> !p.isArchived() && Objects.equals(courseId, p.getCourseId())
+				&& scopes.canAccessCourse(scope, p.getCourseId()))
 				.sorted(Comparator.comparing(KnowledgePoint::getSortOrder).thenComparing(KnowledgePoint::getName)).toList();
 	}
 
@@ -186,7 +191,12 @@ public class QuestionKnowledgeService {
 		if (r.knowledgePointIds() == null || r.knowledgePointIds().isEmpty()) throw new IllegalArgumentException("至少关联一个知识点");
 		EducationDataScope scope = scopes.resolve(user.getName());
 		QuestionBank b = banks.findById(r.bankId()).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
-		authorizeBank(b, user); for (String id : r.knowledgePointIds()) points.findById(id).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+		authorizeBank(b, user);
+		for (String id : r.knowledgePointIds()) {
+			KnowledgePoint point = points.findById(id)
+					.orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+			scopes.assertCourseAccess(scope, point.getCourseId());
+		}
 	}
 
 	private void replaceChildren(Question q, QuestionRequest r) {
@@ -224,10 +234,11 @@ public class QuestionKnowledgeService {
 	}
 	private void authorizeBank(QuestionBank b, Authentication u) {
 		if (b.getOfferingId() != null) scopes.assertOfferingAccess(scopes.resolve(u.getName()), b.getOfferingId());
-		else scopes.assertFullAccess(scopes.resolve(u.getName()));
+		else scopes.assertCourseAccess(scopes.resolve(u.getName()), b.getCourseId());
 	}
 	private void validateOffering(String offeringId, String courseId, EducationDataScope scope) {
 		if (offeringId != null) { scopes.assertOfferingAccess(scope, offeringId); var o = offerings.findById(offeringId).orElseThrow(); if (courseId != null && !courseId.equals(o.getCourseCode())) throw new IllegalArgumentException("课程与教学班不一致"); }
+		else if (courseId != null && !courseId.isBlank()) scopes.assertCourseAccess(scope, courseId);
 		else scopes.assertFullAccess(scope);
 	}
 	private void validateParent(String parent, String course, String self) {
