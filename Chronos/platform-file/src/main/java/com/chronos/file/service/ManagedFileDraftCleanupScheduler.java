@@ -26,5 +26,7 @@ public class ManagedFileDraftCleanupScheduler {
 		LocalDateTime cutoff = LocalDateTime.now()
 				.minus(retentionHours, ChronoUnit.HOURS);
 		files.cleanupExpiredDrafts(cutoff);
+		files.cleanupExpiredPendingBinds(LocalDateTime.now());
+		files.reconcileBoundReferences();
 	}
 }

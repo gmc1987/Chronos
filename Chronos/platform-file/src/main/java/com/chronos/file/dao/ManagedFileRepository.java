@@ -13,4 +13,10 @@ public interface ManagedFileRepository extends JpaRepository<ManagedFile, String
 			String businessType,
 			String status,
 			LocalDateTime createTime);
+
+	List<ManagedFile> findTop100ByBindStateAndStatusAndExpiresAtBeforeOrderByCreateTimeAsc(
+			String bindState, String status, LocalDateTime expiresAt);
+
+	List<ManagedFile> findByBindStateAndBusinessIdIsNotNullAndStatus(
+			String bindState, String status);
 }

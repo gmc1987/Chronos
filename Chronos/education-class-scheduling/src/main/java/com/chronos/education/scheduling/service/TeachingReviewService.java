@@ -85,6 +85,52 @@ public class TeachingReviewService {
 		return record;
 	}
 
+	@Transactional(readOnly = true)
+	public java.util.List<TeachingReviewRecord> history(String type, String id, Authentication auth) {
+		var values = records.findByResourceTypeAndResourceIdOrderBySubmissionNoDesc(type, id);
+		if (values.isEmpty()) throw new IllegalArgumentException("尚未提交审核");
+		authorizeResource(type, id, values.get(0).getOfferingId(), auth);
+		return values;
+	}
+
+	/** 审核待办只返回当前数据范围内的记录，不能凭主键越权读取。 */
+	@Transactional(readOnly = true)
+	public java.util.List<TeachingReviewRecord> pending(Authentication auth) {
+		var result = new java.util.ArrayList<TeachingReviewRecord>();
+		for (TeachingReviewRecord record : records.findByStatusInOrderBySubmittedAtAsc(
+				java.util.Set.of("SUBMITTED", "REVIEWING"))) {
+			try {
+				authorizeResource(record.getResourceType(), record.getResourceId(),
+						record.getOfferingId(), auth);
+				result.add(record);
+			} catch (org.springframework.security.access.AccessDeniedException ignored) {
+				// Data scope is an intentional filter for reviewer queues.
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Rejection/return is a domain command. It only reopens a draft; approval
+	 * and rejection decisions themselves remain exclusively Workflow actions.
+	 */
+	public TeachingReviewRecord revise(String type, String id, Authentication auth) {
+		TeachingReviewRecord record = status(type, id, auth);
+		if (!"REJECTED".equals(record.getDecision()) && !"DRAFT".equals(record.getStatus()))
+			throw new IllegalStateException("只有驳回内容可以修订");
+		Object resource = entity(type, id);
+		if (resource != null) {
+			try {
+				resource.getClass().getMethod("setStatus", String.class).invoke(resource, "DRAFT");
+			} catch (NoSuchMethodException ignored) {
+				// Resources without a status column use the review record projection.
+			} catch (ReflectiveOperationException ex) {
+				throw new IllegalStateException("无法切换为草稿", ex);
+			}
+		}
+		return record;
+	}
+
 	private void authorizeResource(String type, String id, String offeringId, Authentication auth) {
 		EducationDataScope scope = scopes.resolve(auth.getName());
 		if (offeringId != null && !offeringId.isBlank()) {

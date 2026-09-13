@@ -71,6 +71,10 @@ public class ManagedFileService {
 			value.setOwnerUsername(actor);
 			value.setBusinessType(required(businessType, "业务类型"));
 			value.setBusinessId(blankToNull(businessId));
+			value.setBindState(value.getBusinessId() == null ? "PENDING_BIND" : "BOUND");
+			value.setScanStatus("PASSED");
+			value.setBoundAt(value.getBusinessId() == null ? null : LocalDateTime.now());
+			value.setExpiresAt(LocalDateTime.now().plusHours(24));
 			value = files.save(value);
 			audit.log(actor, "FILE_UPLOAD", "fileId=" + value.getId() + ", type=" + value.getBusinessType());
 			return ManagedFileView.from(value);
@@ -107,6 +111,8 @@ public class ManagedFileService {
 			}
 			file.setBusinessType(type);
 			file.setBusinessId(targetId);
+			file.setBindState("BOUND");
+			file.setBoundAt(LocalDateTime.now());
 			return ManagedFileView.from(files.save(file));
 		}).toList();
 		audit.log(actor, "FILE_BIND", "businessType=" + type + ", businessId=" + targetId
@@ -117,6 +123,10 @@ public class ManagedFileService {
 	@Transactional(readOnly = true)
 	public ManagedFileView metadata(String id, Authentication authentication) {
 		ManagedFile file = active(id);
+		if (!"BOUND".equals(file.getBindState())
+				&& !authentication.getName().equals(file.getOwnerUsername())) {
+			throw new AccessDeniedException("文件尚未完成业务绑定");
+		}
 		assertReadable(file, authentication);
 		return ManagedFileView.from(file);
 	}
@@ -149,6 +159,10 @@ public class ManagedFileService {
 	@Transactional(readOnly = true)
 	public FileContent read(String id, Authentication authentication) {
 		ManagedFile file = active(id);
+		if (!"BOUND".equals(file.getBindState())
+				&& !authentication.getName().equals(file.getOwnerUsername())) {
+			throw new AccessDeniedException("文件尚未完成业务绑定");
+		}
 		assertReadable(file, authentication);
 		return new FileContent(file.getOriginalName(), file.getContentType(), storage.read(file.getStorageKey()));
 	}
@@ -199,6 +213,7 @@ public class ManagedFileService {
 			} catch (RuntimeException exception) {
 				failed += 1;
 			}
+
 		}
 		if (deleted > 0 || failed > 0) {
 			audit.log(
@@ -207,6 +222,43 @@ public class ManagedFileService {
 					"cutoff=" + cutoff + ", deleted=" + deleted + ", failed=" + failed);
 		}
 		return new DraftCleanupResult(expired.size(), deleted, failed);
+	}
+
+	/** 清理所有未绑定的教学/流程上传，并保留失败项供下一轮重试。 */
+	@Transactional
+	public DraftCleanupResult cleanupExpiredPendingBinds(LocalDateTime now) {
+		List<ManagedFile> expired = files
+				.findTop100ByBindStateAndStatusAndExpiresAtBeforeOrderByCreateTimeAsc(
+						"PENDING_BIND", "ACTIVE", now);
+		int deleted = 0;
+		int failed = 0;
+		for (ManagedFile file : expired) {
+			try {
+				storage.delete(file.getStorageKey());
+				file.setStatus("DELETED");
+				files.save(file);
+				deleted++;
+			} catch (RuntimeException ex) {
+				failed++;
+			}
+		}
+		if (deleted > 0 || failed > 0)
+			audit.log("system", "FILE_PENDING_BIND_CLEANUP",
+					"scanned=" + expired.size() + ", deleted=" + deleted + ", failed=" + failed);
+		return new DraftCleanupResult(expired.size(), deleted, failed);
+	}
+
+	/** 业务引用是事实来源；文件回写失败时将其补偿为 BOUND。 */
+	@Transactional
+	public int reconcileBoundReferences() {
+		int repaired = 0;
+		for (ManagedFile file : files.findByBindStateAndBusinessIdIsNotNullAndStatus("PENDING_BIND", "ACTIVE")) {
+			file.setBindState("BOUND");
+			file.setBoundAt(LocalDateTime.now());
+			files.save(file);
+			repaired++;
+		}
+		return repaired;
 	}
 
 	private void assertReadable(ManagedFile file, Authentication authentication) {

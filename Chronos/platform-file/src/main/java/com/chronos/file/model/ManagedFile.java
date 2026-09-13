@@ -4,6 +4,7 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -33,4 +34,12 @@ public class ManagedFile extends BaseEntity {
 	private String businessId;
 	@Column(name = "status", length = 24, nullable = false)
 	private String status = "ACTIVE";
+	@Column(name = "bind_state", length = 24, nullable = false)
+	private String bindState = "PENDING_BIND";
+	@Column(name = "scan_status", length = 24, nullable = false)
+	private String scanStatus = "PASSED";
+	@Column(name = "bound_at")
+	private LocalDateTime boundAt;
+	@Column(name = "expires_at")
+	private LocalDateTime expiresAt;
 }

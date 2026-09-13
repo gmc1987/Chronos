@@ -8,6 +8,8 @@ public record ManagedFileView(
 		String sha256,
 		String businessType,
 		String businessId,
+		String bindState,
+		String scanStatus,
 		String downloadUrl) {
 	public static ManagedFileView from(ManagedFile value) {
 		return new ManagedFileView(
@@ -18,6 +20,8 @@ public record ManagedFileView(
 				value.getSha256(),
 				value.getBusinessType(),
 				value.getBusinessId(),
+				value.getBindState(),
+				value.getScanStatus(),
 				"/files/" + value.getId() + "/content");
 	}
 }

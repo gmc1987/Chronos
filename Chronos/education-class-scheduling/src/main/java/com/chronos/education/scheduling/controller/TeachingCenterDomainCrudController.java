@@ -26,6 +26,26 @@ public class TeachingCenterDomainCrudController {
 		return ok(reviews.status(type, id, authentication));
 	}
 
+	@GetMapping("/{type}/{id}/review-history")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:review','education:teaching:manage')")
+	public ResultData<?> reviewHistory(@PathVariable String type, @PathVariable String id,
+			Authentication authentication) {
+		return ok(reviews.history(type, id, authentication));
+	}
+
+	@PostMapping("/{type}/{id}/revise")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:update','education:teaching:manage')")
+	public ResultData<?> revise(@PathVariable String type, @PathVariable String id,
+			Authentication authentication) {
+		return ok(reviews.revise(type, id, authentication));
+	}
+
+	@GetMapping("/review-todos")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:review','education:teaching:manage')")
+	public ResultData<?> reviewTodos(Authentication authentication) {
+		return ok(reviews.pending(authentication));
+	}
+
 	@GetMapping("/{type}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
 	public ResultData<PageView<?>> page(@PathVariable String type,
