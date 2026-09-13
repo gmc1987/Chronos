@@ -68,6 +68,7 @@
 
 <script setup>
 import { onMounted, reactive, ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createTeachingDomain, teachingDomainPage, archiveTeachingDomain, updateTeachingDomain, exportTeachingDomainCsv, importTeachingDomainCsv, teachingChildPage, createTeachingChild, updateTeachingChild, deleteTeachingChild, submitTeachingReview, teachingCenterOfferings } from '../api/teachingCenter'
 const types = [
@@ -77,7 +78,9 @@ const types = [
   { value: 'KNOWLEDGE_POINT', label: '知识点' }, { value: 'MISTAKE', label: '错题' },
   { value: 'RESEARCH', label: '教研' },
 ]
-const filters = reactive({ type: 'PLAN', offeringId: '' })
+const route = useRoute()
+const initialType = route.meta.teachingType || 'PLAN'
+const filters = reactive({ type: initialType, offeringId: '' })
 const offerings = ref([])
 const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20)
 const loading = ref(false); const dialog = ref(false); const editing = ref(null)

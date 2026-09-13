@@ -15,17 +15,17 @@ CREATE TEMP TABLE tmp_teaching_center_menu (
 INSERT INTO tmp_teaching_center_menu
     (menu_name, path, order_num, permission_prefix, permission_label, permission_profile)
 VALUES
-    ('教学中心', '/admin/education/teaching-center', 14, 'education:teaching', '教学中心', 'ROOT'),
-    ('教学计划', '/admin/education/teaching-center', 1, 'education:teaching:plan', '教学计划', 'CRUD'),
-    ('教案管理', '/admin/education/teaching-center', 2, 'education:teaching:lesson-plan', '教案', 'CRUD'),
-    ('备课管理', '/admin/education/teaching-center', 3, 'education:teaching:preparation', '备课', 'CRUD'),
-    ('课件管理', '/admin/education/teaching-center', 4, 'education:teaching:courseware', '课件', 'CRUD'),
-    ('教学材料', '/admin/education/teaching-center', 5, 'education:teaching:material', '教学材料', 'CRUD'),
-    ('作业管理', '/admin/education/teaching-center', 6, 'education:teaching:homework', '作业入口', 'CRUD'),
-    ('题库维护', '/admin/education/teaching-center', 7, 'education:teaching:question-bank', '题库', 'CRUD_IMPORT'),
-    ('知识点维护', '/admin/education/teaching-center', 8, 'education:teaching:knowledge-point', '知识点', 'CRUD_IMPORT'),
-    ('错题维护', '/admin/education/teaching-center', 9, 'education:teaching:error-book', '错题', 'CRUD'),
-    ('教研管理', '/admin/education/teaching-center', 10, 'education:teaching:research', '教研', 'CRUD');
+    ('教学中心', '/admin/education/teaching-center/plan', 14, 'education:teaching', '教学中心', 'ROOT'),
+    ('教学计划', '/admin/education/teaching-center/plan', 1, 'education:teaching:plan', '教学计划', 'CRUD'),
+    ('教案管理', '/admin/education/teaching-center/lesson-plan', 2, 'education:teaching:lesson-plan', '教案', 'CRUD'),
+    ('备课管理', '/admin/education/teaching-center/preparation', 3, 'education:teaching:preparation', '备课', 'CRUD'),
+    ('课件管理', '/admin/education/teaching-center/courseware', 4, 'education:teaching:courseware', '课件', 'CRUD'),
+    ('教学材料', '/admin/education/teaching-center/material', 5, 'education:teaching:material', '教学材料', 'CRUD'),
+    ('作业管理', '/admin/education/teaching-center/homework', 6, 'education:teaching:homework', '作业入口', 'CRUD'),
+    ('题库维护', '/admin/education/teaching-center/question-bank', 7, 'education:teaching:question-bank', '题库', 'CRUD_IMPORT'),
+    ('知识点维护', '/admin/education/teaching-center/knowledge-point', 8, 'education:teaching:knowledge-point', '知识点', 'CRUD_IMPORT'),
+    ('错题维护', '/admin/education/teaching-center/error-book', 9, 'education:teaching:error-book', '错题', 'CRUD'),
+    ('教研管理', '/admin/education/teaching-center/research', 10, 'education:teaching:research', '教研', 'CRUD');
 
 -- 根菜单不存在时创建；已有菜单只补齐统一门户路由。
 INSERT INTO t_menu (
