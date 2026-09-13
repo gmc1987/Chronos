@@ -12,5 +12,7 @@ public interface TeachingCenterResourceRepository
 			String resourceType, String offeringId, Pageable pageable);
 	Page<TeachingCenterResource> findByResourceTypeAndArchivedFalse(
 			String resourceType, Pageable pageable);
+	List<TeachingCenterResource> findByResourceTypeAndArchivedFalseOrderByLastUpdateTimeDesc(
+			String resourceType);
 	List<TeachingCenterResource> findByOfferingIdAndArchivedFalse(String offeringId);
 }

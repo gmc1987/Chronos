@@ -180,10 +180,19 @@ public class QuestionKnowledgeService {
 		if (!TYPES.contains(upper(r.questionType()))) throw new IllegalArgumentException("题型无效");
 		if (!DIFFICULTIES.contains(upper(r.difficulty()))) throw new IllegalArgumentException("难度无效");
 		if (r.score() == null || r.score().signum() <= 0) throw new IllegalArgumentException("分值必须大于0");
+		if (r.answerSchemaJson() != null && !r.answerSchemaJson().isBlank()) {
+			try {
+				json.readTree(r.answerSchemaJson());
+			} catch (JsonProcessingException ex) {
+				throw new IllegalArgumentException("答案结构必须是合法JSON");
+			}
+		}
 		if (r.usableFrom() != null && r.usableUntil() != null && r.usableFrom().isAfter(r.usableUntil())) throw new IllegalArgumentException("有效期无效");
 		List<OptionRequest> os = r.options() == null ? List.of() : r.options();
 		if (upper(r.questionType()).equals("SINGLE_CHOICE") || upper(r.questionType()).equals("MULTIPLE_CHOICE")) {
 			if (os.size() < 2) throw new IllegalArgumentException("选择题至少需要两个选项");
+			if (os.stream().anyMatch(o -> o == null || text(o.key()) == null || text(o.text()) == null))
+				throw new IllegalArgumentException("选项编号和内容不能为空");
 			long correct = os.stream().filter(o -> Boolean.TRUE.equals(o.correct())).count();
 			if (upper(r.questionType()).equals("SINGLE_CHOICE") && correct != 1 || upper(r.questionType()).equals("MULTIPLE_CHOICE") && correct < 2)
 				throw new IllegalArgumentException("选择题正确答案数量不匹配");
@@ -203,7 +212,8 @@ public class QuestionKnowledgeService {
 		options.deleteByQuestionId(q.getId()); links.deleteByQuestionId(q.getId()); files.deleteByQuestionId(q.getId());
 		if (r.options() != null) for (OptionRequest o : r.options()) {
 			QuestionOption x = new QuestionOption(); x.setId(UUID.randomUUID().toString()); x.setQuestionId(q.getId());
-			x.setOptionKey(o.key()); x.setOptionText(o.text()); x.setSortOrder(o.sortOrder() == null ? 0 : o.sortOrder()); options.save(x);
+			x.setOptionKey(o.key()); x.setOptionText(o.text()); x.setSortOrder(o.sortOrder() == null ? 0 : o.sortOrder());
+			x.setCorrect(Boolean.TRUE.equals(o.correct())); options.save(x);
 		}
 		for (String id : r.knowledgePointIds()) {
 			QuestionKnowledgePoint link = new QuestionKnowledgePoint();

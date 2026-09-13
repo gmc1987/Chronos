@@ -4,6 +4,8 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -34,6 +36,7 @@ public class Question extends BaseEntity {
 	@Column(nullable = false)
 	private boolean objective;
 	@Column(name = "answer_schema_json", columnDefinition = "jsonb")
+	@JdbcTypeCode(SqlTypes.JSON)
 	private String answerSchemaJson;
 	@Column(length = 32)
 	private String source;

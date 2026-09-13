@@ -119,7 +119,9 @@ public class ResearchErrorService {
 	public ErrorItem onWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
 		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a);
 		ErrorItem i=items.findByBookIdAndSourceTypeAndSourceItemId(b.getId(),"WRONG_ANSWER_CONFIRMED",r.sourceItemId()).orElse(null);
-		if (i!=null) { i.setWrongCount(i.getWrongCount()+1); i.setLastWrongAt(LocalDateTime.now()); return items.save(i); }
+		// sourceItemId is the producer's idempotency key. Replayed delivery must
+		// not inflate the student's error count.
+		if (i!=null) return i;
 		i=new ErrorItem(); i.setId(UUID.randomUUID().toString()); i.setBookId(b.getId()); i.setQuestionId(r.questionId());
 		i.setSourceRef(r.sourceRef()); i.setSourceType("WRONG_ANSWER_CONFIRMED"); i.setSourceItemId(r.sourceItemId());
 		i.setAnalysis(r.analysis()); i.setLastWrongAt(LocalDateTime.now()); i.setCreateTime(LocalDateTime.now()); return items.save(i);

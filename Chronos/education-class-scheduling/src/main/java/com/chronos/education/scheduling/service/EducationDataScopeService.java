@@ -355,7 +355,7 @@ public class EducationDataScopeService {
 		assertClassroomAccess(scope, entry.getClassroomId());
 	}
 
-	private boolean canAccessOffering(EducationDataScope scope, CourseOffering offering) {
+	public boolean canAccessOffering(EducationDataScope scope, CourseOffering offering) {
 		return (offering.getCampusId() != null
 				&& scope.campusIds().contains(offering.getCampusId()))
 				|| (offering.getTeacherId() != null

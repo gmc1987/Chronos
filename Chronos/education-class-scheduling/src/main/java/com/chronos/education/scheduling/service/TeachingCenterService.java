@@ -10,6 +10,7 @@ import com.chronos.education.scheduling.model.TeachingCenterResourceCommand;
 import java.util.Set;
 import java.util.Objects;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -47,8 +48,19 @@ public class TeachingCenterService {
 			throw new IllegalArgumentException("不支持的教学中心资源类型");
 		}
 		if (offeringId == null || offeringId.isBlank()) {
-			// 无教学班筛选时，仓储分页会覆盖全校资源；普通教师不能使用该入口。
-			scopes.assertFullAccess(scope);
+			// 审核人可能只拥有部门/校区范围，不能把“无筛选”误判为
+			// 全校权限；先按同一数据范围过滤，再做分页。
+			var visible = resources.findByResourceTypeAndArchivedFalseOrderByLastUpdateTimeDesc(type).stream()
+					.filter(value -> value.getOfferingId() == null
+							? scope.fullAccess()
+							: offerings.findById(value.getOfferingId())
+									.map(offering -> scopes.canAccessOffering(scope, offering))
+									.orElse(false))
+					.toList();
+			int from = Math.min((int) PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)).getOffset(), visible.size());
+			int to = Math.min(from + Math.min(Math.max(size, 1), 100), visible.size());
+			return PageView.from(new PageImpl<>(visible.subList(from, to),
+					PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)), visible.size()));
 		} else {
 			scopes.assertOfferingAccess(scope, offeringId);
 		}

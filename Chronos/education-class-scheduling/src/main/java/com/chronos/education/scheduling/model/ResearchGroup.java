@@ -4,6 +4,8 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -30,6 +32,7 @@ public class ResearchGroup extends BaseEntity {
 	@Column(name = "leader_teacher_id", length = 64)
 	private String leaderTeacherId;
 	@Column(name = "course_scope_json", columnDefinition = "jsonb")
+	@JdbcTypeCode(SqlTypes.JSON)
 	private String courseScopeJson;
 	@Column(columnDefinition = "text")
 	private String description;
