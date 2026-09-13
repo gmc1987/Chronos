@@ -94,7 +94,7 @@ public class TeachingReviewService {
 	}
 
 	/** 审核待办只返回当前数据范围内的记录，不能凭主键越权读取。 */
-	@Transactional(readOnly = true)
+	@Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
 	public java.util.List<TeachingReviewRecord> pending(Authentication auth) {
 		var result = new java.util.ArrayList<TeachingReviewRecord>();
 		for (TeachingReviewRecord record : records.findByStatusInOrderBySubmittedAtAsc(
@@ -103,7 +103,8 @@ public class TeachingReviewService {
 				authorizeResource(record.getResourceType(), record.getResourceId(),
 						record.getOfferingId(), auth);
 				result.add(record);
-			} catch (org.springframework.security.access.AccessDeniedException ignored) {
+			} catch (org.springframework.security.access.AccessDeniedException
+					| IllegalArgumentException ignored) {
 				// Data scope is an intentional filter for reviewer queues.
 			}
 		}
@@ -184,6 +185,26 @@ public class TeachingReviewService {
 					if ("PUBLISHED".equals(resourceStatus) && version != null) {
 						var lesson = em.find(com.chronos.education.scheduling.model.LessonPlan.class, r.getResourceId());
 						if (lesson != null) lesson.setPublishedVersionNo(version.getVersionNo());
+					}
+				} else if ("COURSEWARE".equals(r.getResourceType())) {
+					var version = em.find(com.chronos.education.scheduling.model.CoursewareVersion.class, r.getVersionId());
+					if (version != null) {
+						version.setStatus("PUBLISHED".equals(resourceStatus) ? "APPROVED" : resourceStatus);
+						if ("PUBLISHED".equals(resourceStatus)) {
+							version.setPublishedAt(java.time.Instant.now());
+							var courseware = em.find(com.chronos.education.scheduling.model.Courseware.class, r.getResourceId());
+							if (courseware != null) courseware.setPublishedVersionNo(version.getVersionNo());
+						}
+					}
+				} else if ("MATERIAL".equals(r.getResourceType())) {
+					var version = em.find(com.chronos.education.scheduling.model.TeachingMaterialVersion.class, r.getVersionId());
+					if (version != null) {
+						version.setStatus("PUBLISHED".equals(resourceStatus) ? "APPROVED" : resourceStatus);
+						if ("PUBLISHED".equals(resourceStatus)) {
+							version.setPublishedAt(java.time.Instant.now());
+							var material = em.find(com.chronos.education.scheduling.model.TeachingMaterial.class, r.getResourceId());
+							if (material != null) material.setPublishedVersionNo(version.getVersionNo());
+						}
 					}
 				}
 			}
