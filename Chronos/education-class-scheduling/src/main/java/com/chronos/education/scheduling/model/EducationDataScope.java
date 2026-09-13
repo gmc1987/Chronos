@@ -8,5 +8,14 @@ public record EducationDataScope(
 		Set<String> campusIds,
 		Set<String> gradeIds,
 		Set<String> administrativeClassIds,
-		Set<String> teacherIds) {
+		Set<String> teacherIds,
+		Set<String> studentIds) {
+	public EducationDataScope(
+			boolean fullAccess,
+			Set<String> campusIds,
+			Set<String> gradeIds,
+			Set<String> administrativeClassIds,
+			Set<String> teacherIds) {
+		this(fullAccess, campusIds, gradeIds, administrativeClassIds, teacherIds, Set.of());
+	}
 }

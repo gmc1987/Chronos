@@ -13,6 +13,17 @@ const AdminTeachingAssignments = () => import('../../modules/education/pages/Adm
 const AdminKnowledgeBases = () => import('../../modules/education/pages/AdminKnowledgeBases.vue')
 const AdminEducationAgents = () => import('../../modules/education/pages/AdminEducationAgents.vue')
 const AdminTeachingClassMembers = () => import('../../modules/education/pages/AdminTeachingClassMembers.vue')
+const AdminTeachingCenter = () => import('../../modules/education/pages/AdminTeachingCenter.vue')
+const AdminTeachingPlan = () => import('../../modules/education/pages/AdminTeachingPlan.vue')
+const AdminLessonPlans = () => import('../../modules/education/pages/AdminLessonPlans.vue')
+const AdminPreparation = () => import('../../modules/education/pages/AdminPreparation.vue')
+const AdminCourseware = () => import('../../modules/education/pages/AdminCourseware.vue')
+const AdminMaterials = () => import('../../modules/education/pages/AdminMaterials.vue')
+const AdminQuestionBank = () => import('../../modules/education/pages/AdminQuestionBank.vue')
+const AdminKnowledgePoints = () => import('../../modules/education/pages/AdminKnowledgePoints.vue')
+const AdminResearch = () => import('../../modules/education/pages/AdminResearch.vue')
+const AdminMistakes = () => import('../../modules/education/pages/AdminMistakes.vue')
+const PortalTeachingCenter = () => import('../../modules/education/pages/PortalTeachingCenter.vue')
 
 export const educationIndustry = {
   code: 'EDUCATION',
@@ -30,6 +41,17 @@ export const educationIndustry = {
     { path: '/admin/education/knowledge', name: 'admin-education-knowledge', component: AdminKnowledgeBases },
     { path: '/admin/education/agents', name: 'admin-education-agents', component: AdminEducationAgents },
     { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },
+    { path: '/admin/education/teaching-center', name: 'admin-education-teaching-center', component: AdminTeachingCenter },
+    { path: '/admin/education/teaching-plans', name: 'admin-education-teaching-plans', component: AdminTeachingPlan },
+    { path: '/admin/education/lesson-plans', name: 'admin-education-lesson-plans', component: AdminLessonPlans },
+    { path: '/admin/education/preparation', name: 'admin-education-preparation', component: AdminPreparation },
+    { path: '/admin/education/courseware', name: 'admin-education-courseware', component: AdminCourseware },
+    { path: '/admin/education/materials', name: 'admin-education-materials', component: AdminMaterials },
+    { path: '/admin/education/question-bank', name: 'admin-education-question-bank', component: AdminQuestionBank },
+    { path: '/admin/education/knowledge-points', name: 'admin-education-knowledge-points', component: AdminKnowledgePoints },
+    { path: '/admin/education/research', name: 'admin-education-research', component: AdminResearch },
+    { path: '/admin/education/mistakes', name: 'admin-education-mistakes', component: AdminMistakes },
+    { path: '/portal/education/teaching-center', name: 'portal-education-teaching-center', component: PortalTeachingCenter },
     {
       path: '/admin/education/scheduling',
       name: 'admin-education-class-scheduling',

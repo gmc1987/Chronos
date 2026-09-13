@@ -3,6 +3,7 @@ package com.chronos.education.scheduling.service;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
@@ -12,6 +13,7 @@ import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
+import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
@@ -27,6 +29,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -47,9 +50,34 @@ public class EducationDataScopeService {
 	private final AdministrativeClassRepository classes;
 	private final StudentProfileRepository students;
 	private final StudentGuardianRepository guardians;
+	private final EducationUserBindingRepository bindings;
 	private final CourseOfferingRepository offerings;
 	private final ClassroomRepository classrooms;
 	private final ScheduleEntryRepository scheduleEntries;
+
+	@Autowired
+	public EducationDataScopeService(
+			IDataScopeService platformScopes,
+			TeacherAcademicProfileRepository teachers,
+			TeacherTeachingAssignmentRepository assignments,
+			AdministrativeClassRepository classes,
+			StudentProfileRepository students,
+			StudentGuardianRepository guardians,
+			EducationUserBindingRepository bindings,
+			CourseOfferingRepository offerings,
+			ClassroomRepository classrooms,
+			ScheduleEntryRepository scheduleEntries) {
+		this.platformScopes = platformScopes;
+		this.teachers = teachers;
+		this.assignments = assignments;
+		this.classes = classes;
+		this.students = students;
+		this.guardians = guardians;
+		this.bindings = bindings;
+		this.offerings = offerings;
+		this.classrooms = classrooms;
+		this.scheduleEntries = scheduleEntries;
+	}
 
 	public EducationDataScopeService(
 			IDataScopeService platformScopes,
@@ -61,15 +89,8 @@ public class EducationDataScopeService {
 			CourseOfferingRepository offerings,
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository scheduleEntries) {
-		this.platformScopes = platformScopes;
-		this.teachers = teachers;
-		this.assignments = assignments;
-		this.classes = classes;
-		this.students = students;
-		this.guardians = guardians;
-		this.offerings = offerings;
-		this.classrooms = classrooms;
-		this.scheduleEntries = scheduleEntries;
+		this(platformScopes, teachers, assignments, classes, students, guardians, null,
+				offerings, classrooms, scheduleEntries);
 	}
 
 	public EducationDataScope resolve(String username) {
@@ -77,6 +98,7 @@ public class EducationDataScopeService {
 		if (platform.fullAccess()) {
 			return new EducationDataScope(
 					true,
+					Set.of(),
 					Set.of(),
 					Set.of(),
 					Set.of(),
@@ -88,6 +110,12 @@ public class EducationDataScopeService {
 		Set<String> classIds = new HashSet<>(platform.resourceIds()
 				.getOrDefault(CLASS_RESOURCE, Set.of()));
 		Set<String> teacherIds = new HashSet<>();
+		Set<String> studentIds = new HashSet<>();
+		(bindings == null ? List.<EducationUserBinding>of()
+				: bindings.findByUsernameAndStatusOrderByProfileType(username, "ACTIVE")).stream()
+				.filter(binding -> "STUDENT".equals(binding.getProfileType()))
+				.map(EducationUserBinding::getProfileId)
+				.forEach(studentIds::add);
 		if (!campusIds.isEmpty()) {
 			classIds.addAll(classes.findByCampusIdIn(campusIds.stream().toList()).stream()
 					.map(AdministrativeClass::getId)
@@ -102,7 +130,8 @@ public class EducationDataScopeService {
 					Set.copyOf(campusIds),
 					Set.copyOf(gradeIds),
 					Set.copyOf(classIds),
-					Set.copyOf(teacherIds));
+					Set.copyOf(teacherIds),
+					Set.copyOf(studentIds));
 		}
 		teacherIds.add(currentTeacher.getId());
 		Set<String> scopeTypes = platform.scopeTypes();
@@ -143,7 +172,8 @@ public class EducationDataScopeService {
 				Set.copyOf(campusIds),
 				Set.copyOf(gradeIds),
 				Set.copyOf(classIds),
-				Set.copyOf(teacherIds));
+				Set.copyOf(teacherIds),
+				Set.copyOf(studentIds));
 	}
 
 	/** 防止调用方绕过列表过滤后，凭已知主键读取或修改其他班级数据。 */
@@ -185,6 +215,7 @@ public class EducationDataScopeService {
 
 	public boolean canAccessStudent(EducationDataScope scope, StudentProfile student) {
 		return scope.fullAccess()
+				|| scope.studentIds().contains(student.getId())
 				|| scope.administrativeClassIds().contains(student.getAdministrativeClassId())
 				|| scope.gradeIds().contains(student.getGradeId());
 	}

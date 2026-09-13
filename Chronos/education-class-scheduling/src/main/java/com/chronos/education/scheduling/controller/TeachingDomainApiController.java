@@ -24,7 +24,7 @@ public class TeachingDomainApiController {
 		this.children = children;
 	}
 
-	@GetMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|mistakes|research}")
+	@GetMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|research}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
 	public ResultData<PageView<?>> page(@PathVariable String domain,
 			@RequestParam(required = false) String offeringId,
@@ -33,33 +33,48 @@ public class TeachingDomainApiController {
 		return ok(service.page(domain, offeringId, page, size, user));
 	}
 
-	@GetMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|mistakes|research}/{id}")
+	@GetMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|research}/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
 	public ResultData<?> detail(@PathVariable String domain, @PathVariable String id, Authentication user) {
 		return ok(service.detail(domain, id, user));
 	}
 
-	@PostMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|mistakes|research}")
+	@GetMapping("/mistakes")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage','education:error-book:view')")
+	public ResultData<PageView<?>> mistakes(
+			@RequestParam(required = false) String offeringId,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size, Authentication user) {
+		return ok(service.page("mistakes", offeringId, page, size, user));
+	}
+
+	@GetMapping("/mistakes/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage','education:error-book:view')")
+	public ResultData<?> mistake(@PathVariable String id, Authentication user) {
+		return ok(service.detail("mistakes", id, user));
+	}
+
+	@PostMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|research}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:create','education:teaching:manage')")
 	public ResultData<?> create(@PathVariable String domain, @RequestBody TeachingDomainCommand command,
 			Authentication user) {
 		return ok(service.create(domain, command, user));
 	}
 
-	@PutMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|mistakes|research}/{id}")
+	@PutMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|research}/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:update','education:teaching:manage')")
 	public ResultData<?> update(@PathVariable String domain, @PathVariable String id,
 			@RequestBody TeachingDomainCommand command, Authentication user) {
 		return ok(service.update(domain, id, command, user));
 	}
 
-	@PostMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|mistakes|research}/{id}/archive")
+	@PostMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|research}/{id}/archive")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:update','education:teaching:manage')")
 	public ResultData<?> archive(@PathVariable String domain, @PathVariable String id, Authentication user) {
 		return ok(service.archive(domain, id, user));
 	}
 
-	@PostMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|mistakes|research}/{id}/status")
+	@PostMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|research}/{id}/status")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:update','education:teaching:manage')")
 	public ResultData<?> transition(@PathVariable String domain, @PathVariable String id,
 			@RequestParam String status, Authentication user) {
