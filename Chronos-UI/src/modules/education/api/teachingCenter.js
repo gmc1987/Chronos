@@ -95,3 +95,29 @@ export const setCurrentResourceVersion = (domain, id, versionId) =>
   http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/current`)
 export const submitResource = (domain, id) =>
   http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/submit`)
+
+// Slice three contracts. Keep all identifiers selected from server data; these
+// helpers are deliberately small so the workbench can show the workflow steps.
+export const questionBanks = (params = {}) => resourcePage('question-banks', params)
+export const createQuestionBank = (body) => createResource('question-banks', body)
+export const updateQuestionBank = (id, body) => updateResource('question-banks', id, body)
+export const questions = (params = {}) => resourcePage('questions', params)
+export const createQuestion = (body) => createResource('questions', body)
+export const updateQuestion = (id, body) => updateResource('questions', id, body)
+export const questionOptions = (id, params = {}) =>
+  teachingDomainChildrenApi('questions', id, 'options', params)
+export const submitQuestion = (id) => submitResource('questions', id)
+export const questionVersions = (id) => resourceVersions('questions', id)
+export const questionImportTemplate = () => http.download('/education/teaching-center/question-banks/questions/import/template')
+export const validateQuestionImport = (body) =>
+  http.postText('/education/teaching-center/question-banks/questions/import/validate', body, 'text/csv')
+export const commitQuestionImport = (body) =>
+  http.postText('/education/teaching-center/question-banks/questions/import/commit', body, 'text/csv')
+export const knowledgePointTree = (courseId) =>
+  http.get(`/education/teaching-center/api/knowledge-points/tree?${queryString({ courseId })}`)
+export const createKnowledgePoint = (body) => createResource('knowledge-points', body)
+export const updateKnowledgePoint = (id, body) => updateResource('knowledge-points', id, body)
+export const moveKnowledgePoint = (id, body) =>
+  http.post(`/education/teaching-center/api/knowledge-points/${encodeURIComponent(id)}/move`, body)
+export const disableKnowledgePoint = (id) =>
+  http.post(`/education/teaching-center/api/knowledge-points/${encodeURIComponent(id)}/disable`)

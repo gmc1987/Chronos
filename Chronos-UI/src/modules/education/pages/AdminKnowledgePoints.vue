@@ -1,7 +1,24 @@
-<template><TeachingDomainPage title="知识点" description="维护知识点层级、描述和关联课程" entity-label="知识点" resource-type="KNOWLEDGE_POINT" :columns="columns" :fields="fields" :filter-fields="filterFields" :defaults="{ name: '', level: '', description: '', course: '' }" /></template>
+<template>
+  <section class="slice-page"><header class="page-head"><div><h1>知识点</h1><p>维护课程知识点树、父子关系、排序和引用影响。</p></div><el-button type="primary" :disabled="!courseId" @click="openPoint()">新增根节点</el-button></header>
+    <el-select v-model="courseId" filterable clearable placeholder="选择课程" @change="loadTree"><el-option v-for="c in courses" :key="c.id" :label="c.courseName" :value="c.id" /></el-select>
+    <div v-if="courseId" class="workspace"><div class="tree-panel"><el-empty v-if="!tree.length" description="暂无知识点" /><el-tree v-else :data="tree" node-key="id" draggable default-expand-all @node-click="selectPoint" @node-drop="dropPoint"><template #default="{ data }"><span class="tree-node"><span>{{ data.name }}</span><small>{{ data.referenceCount || 0 }} 次引用</small></span></template></el-tree></div>
+      <el-card v-if="selected" class="detail"><template #header><div class="detail-head"><strong>{{ selected.name }}</strong><el-tag>{{ selected.status || '-' }}</el-tag></div></template><el-descriptions :column="1" border><el-descriptions-item label="编码">{{ selected.code || '-' }}</el-descriptions-item><el-descriptions-item label="层级">{{ selected.level || '-' }}</el-descriptions-item><el-descriptions-item label="描述">{{ selected.description || '-' }}</el-descriptions-item><el-descriptions-item label="引用数量">{{ selected.referenceCount || 0 }}</el-descriptions-item></el-descriptions><div class="actions"><el-button @click="openPoint(selected)">编辑</el-button><el-button @click="openPoint({ parentId:selected.id })">新增子级</el-button><el-button type="warning" @click="disable(selected)">停用</el-button></div></el-card><el-empty v-else class="detail" description="选择一个知识点查看详情" /></div>
+  </section>
+  <el-dialog v-model="dialog" title="知识点" width="560px"><el-form :model="form" label-width="100px"><el-form-item label="父级"><el-tree-select v-model="form.parentId" :data="tree" node-key="id" check-strictly clearable :render-after-expand="false" placeholder="根节点" /></el-form-item><el-form-item label="名称" required><el-input v-model="form.name" /></el-form-item><el-form-item label="编码"><el-input v-model="form.code" /></el-form-item><el-form-item label="描述"><el-input v-model="form.description" type="textarea" /></el-form-item><el-form-item label="学习目标"><el-input v-model="form.learningObjective" type="textarea" /></el-form-item></el-form><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template></el-dialog>
+</template>
 <script setup>
-import TeachingDomainPage from '../components/TeachingDomainPage.vue'
-const columns = [{ prop: 'name', label: '知识点', minWidth: 180 }, { prop: 'level', label: '层级', width: 100 }, { prop: 'description', label: '描述', minWidth: 240 }, { prop: 'course', label: '关联课程', minWidth: 180 }, { prop: 'status', label: '状态', width: 100 }]
-const fields = [{ prop: 'name', label: '名称' }, { prop: 'level', label: '层级' }, { prop: 'description', label: '描述', type: 'textarea' }, { prop: 'course', label: '关联课程' }]
-const filterFields = [{ prop: 'level', label: '层级' }, { prop: 'course', label: '关联课程' }]
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { dictionaryOptions, listCourseCatalog } from '../../../api/admin'
+import { knowledgePointTree, createKnowledgePoint, updateKnowledgePoint, moveKnowledgePoint, disableKnowledgePoint } from '../api/teachingCenter'
+const courses=ref([]);const courseId=ref('');const tree=ref([]);const selected=ref(null);const dialog=ref(false);const form=reactive({})
+const reset=(v={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{courseId:courseId.value,name:'',code:'',description:'',learningObjective:'',parentId:'',...v})}
+const loadTree=async()=>{selected.value=null;tree.value=[];if(!courseId.value)return;try{const r=await knowledgePointTree(courseId.value);tree.value=r.data?.content||r.data||[]}catch(e){ElMessage.error(e.message)}}
+const selectPoint=(node)=>{selected.value=node}
+const openPoint=(point)=>{reset(point||{});dialog.value=true}
+const save=async()=>{if(!form.name)return ElMessage.warning('请输入知识点名称');try{form.id?await updateKnowledgePoint(form.id,{...form}):await createKnowledgePoint({...form});dialog.value=false;await loadTree();ElMessage.success('已保存')}catch(e){ElMessage.error(e.message)}}
+const dropPoint=async(node, _old, _parent)=>{try{await moveKnowledgePoint(node.data.id,{parentId:node.parent?.data?.id||null,sortOrder:node.data.sortOrder}) ;await loadTree()}catch(e){ElMessage.error(e.message);await loadTree()}}
+const disable=async(point)=>{try{await ElMessageBox.confirm(`停用后将影响 ${point.referenceCount||0} 个引用，是否继续？`,'确认停用');await disableKnowledgePoint(point.id);await loadTree();ElMessage.success('已停用')}catch(e){if(e!=='cancel')ElMessage.error(e.message)}}
+onMounted(async()=>{try{const r=await listCourseCatalog({page:0,size:500});courses.value=r.data?.content||r.data||[];await dictionaryOptions('COMMON_STATUS')}catch(e){ElMessage.error(e.message)}})
 </script>
+<style scoped>.slice-page{padding:24px}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.page-head h1{margin:0 0 6px}.page-head p{margin:0;color:#7b8794}.workspace{display:grid;grid-template-columns: minmax(320px,1fr) minmax(360px,1fr);gap:20px;margin-top:20px}.tree-panel,.detail{min-height:440px}.tree-node{display:flex;justify-content:space-between;width:100%;padding-right:12px}.tree-node small{color:#98a2b3}.detail-head{display:flex;justify-content:space-between}.actions{margin-top:24px;display:flex;gap:10px}</style>
