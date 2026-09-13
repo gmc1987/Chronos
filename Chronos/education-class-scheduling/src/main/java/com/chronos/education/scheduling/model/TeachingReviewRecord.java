@@ -12,11 +12,17 @@ import lombok.Setter;
 @Entity
 @Getter @Setter @NoArgsConstructor
 @Table(name = "edu_teaching_review_record", indexes = {
-		@Index(name = "uq_teaching_review_resource", columnList = "resource_type,resource_id", unique = true),
+		@Index(name = "uq_teaching_review_submission", columnList = "resource_type,resource_id,submission_no", unique = true),
 		@Index(name = "idx_teaching_review_workflow", columnList = "workflow_instance_id") })
 public class TeachingReviewRecord extends BaseEntity {
 	@Column(name="resource_type", nullable=false, length=32) private String resourceType;
 	@Column(name="resource_id", nullable=false, length=64) private String resourceId;
+	@Column(name="version_id", length=64) private String versionId;
+	@Column(name="submitter_id", length=128) private String submitterId;
+	@Column(name="submitted_at") private java.time.Instant submittedAt;
+	@Column(name="completed_at") private java.time.Instant completedAt;
+	@Column(name="snapshot_hash", length=64) private String snapshotHash;
+	@Column(name="submission_no", nullable=false) private Integer submissionNo = 1;
 	@Column(name="offering_id", length=64) private String offeringId;
 	@Column(name="business_key", nullable=false, length=160) private String businessKey;
 	@Column(name="workflow_instance_id", nullable=false, length=64) private String workflowInstanceId;

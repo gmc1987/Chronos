@@ -5,6 +5,10 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TeachingReviewRecordRepository extends JpaRepository<TeachingReviewRecord, String> {
-	Optional<TeachingReviewRecord> findByResourceTypeAndResourceId(String resourceType, String resourceId);
+	Optional<TeachingReviewRecord> findTopByResourceTypeAndResourceIdOrderBySubmissionNoDesc(String resourceType, String resourceId);
+	java.util.List<TeachingReviewRecord> findByResourceTypeAndResourceIdOrderBySubmissionNoDesc(String resourceType, String resourceId);
+	default Optional<TeachingReviewRecord> findByResourceTypeAndResourceId(String resourceType, String resourceId) {
+		return findTopByResourceTypeAndResourceIdOrderBySubmissionNoDesc(resourceType, resourceId);
+	}
 	Optional<TeachingReviewRecord> findByBusinessKey(String businessKey);
 }

@@ -28,18 +28,27 @@ public class TeachingReviewService {
 
 	public TeachingReviewRecord submit(String type, String id, String offeringId, Map<String,Object> form,
 			Authentication auth) {
-		if (records.findByResourceTypeAndResourceId(type, id).filter(r -> "SUBMITTED".equals(r.getStatus())
+		var latest = records.findByResourceTypeAndResourceId(type, id);
+		if (latest.filter(r -> "SUBMITTED".equals(r.getStatus())
 				|| "REVIEWING".equals(r.getStatus())).isPresent())
 			throw new IllegalStateException("该资源已在审核中");
 		if (offeringId != null && !offeringId.isBlank()) scopes.assertOfferingAccess(scopes.resolve(auth.getName()), offeringId);
 		else scopes.assertFullAccess(scopes.resolve(auth.getName()));
-		String key = "EDU_TEACHING:" + type + ":" + id;
+		int submissionNo = records.findByResourceTypeAndResourceIdOrderBySubmissionNoDesc(type, id)
+				.stream().findFirst().map(r -> r.getSubmissionNo() + 1).orElse(1);
+		String key = "EDU_TEACHING:" + type + ":" + id + ":" + submissionNo;
 		Map<String,Object> data = form == null ? Map.of() : new java.util.HashMap<>(form);
 		data.put("resourceType", type); data.put("resourceId", id); data.put("offeringId", offeringId == null ? "" : offeringId);
 		var instance = workflows.startByCode(FLOW, key, data, auth.getName());
-		TeachingReviewRecord record = records.findByResourceTypeAndResourceId(type,id).orElseGet(TeachingReviewRecord::new);
+		TeachingReviewRecord record = new TeachingReviewRecord();
 		record.setResourceType(type); record.setResourceId(id); record.setOfferingId(offeringId);
 		record.setBusinessKey(key); record.setWorkflowInstanceId(instance.getId()); record.setStatus("SUBMITTED");
+		record.setSubmissionNo(submissionNo); record.setSubmitterId(auth.getName());
+		record.setSubmittedAt(java.time.Instant.now());
+		Object versionId = data.get("versionId");
+		if (versionId != null) record.setVersionId(versionId.toString());
+		Object snapshotHash = data.get("snapshotHash");
+		if (snapshotHash != null) record.setSnapshotHash(snapshotHash.toString());
 		record.setDecision(null); record.setComment(null);
 		TeachingReviewRecord saved = records.save(record);
 		// 审核提交和资源状态在同一事务落库，防止门户继续展示为可编辑草稿。
@@ -87,9 +96,27 @@ public class TeachingReviewService {
 	private void writeBack(String key, String resourceStatus, String decision, String comment) {
 		records.findByBusinessKey(key).ifPresent(r -> {
 			if ("PUBLISHED".equals(r.getStatus()) || "REJECTED".equals(r.getDecision())) return;
-			r.setStatus(resourceStatus); r.setDecision(decision); r.setComment(comment); records.save(r);
-			String[] parts=key.split(":",3);
-			if (parts.length==3) {
+			r.setStatus(resourceStatus); r.setDecision(decision); r.setComment(comment);
+			r.setCompletedAt(java.time.Instant.now()); records.save(r);
+			if (r.getVersionId() != null) {
+				if ("PLAN".equals(r.getResourceType())) {
+					var version = em.find(com.chronos.education.scheduling.model.TeachingPlanVersion.class, r.getVersionId());
+					if (version != null) {
+						version.setStatus(resourceStatus); if ("PUBLISHED".equals(resourceStatus)) version.setPublishedAt(java.time.Instant.now());
+						var plan = em.find(com.chronos.education.scheduling.model.TeachingPlan.class, r.getResourceId());
+						if (plan != null && "PUBLISHED".equals(resourceStatus)) plan.setPublishedVersionNo(version.getVersionNo());
+					}
+				} else if ("LESSON_PLAN".equals(r.getResourceType())) {
+					var version = em.find(com.chronos.education.scheduling.model.LessonPlanVersion.class, r.getVersionId());
+					if (version != null) version.setStatus(resourceStatus);
+					if ("PUBLISHED".equals(resourceStatus) && version != null) {
+						var lesson = em.find(com.chronos.education.scheduling.model.LessonPlan.class, r.getResourceId());
+						if (lesson != null) lesson.setPublishedVersionNo(version.getVersionNo());
+					}
+				}
+			}
+			String[] parts=key.split(":",4);
+			if (parts.length>=3) {
 				Object entity = entity(parts[1], parts[2]);
 				if (entity == null) {
 					entity = em.find(com.chronos.education.scheduling.model.TeachingCenterResource.class, parts[2]);
