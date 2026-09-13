@@ -1,4 +1,5 @@
 package com.chronos.education.scheduling.model;
+import java.time.Instant;
 import jakarta.persistence.*; import lombok.*;
 @Entity @Getter @Setter @NoArgsConstructor @Table(name="edu_preparation_material")
-public class PreparationMaterial { @Id @Column(length=64) private String id; @Column(name="preparation_id",nullable=false,length=64) private String preparationId; @Column(name="file_id",length=64) private String fileId; @Column(nullable=false,length=200) private String title; @Column(name="metadata_json",columnDefinition="text") private String metadataJson; }
+public class PreparationMaterial { @Id @Column(length=64) private String id; @Column(name="preparation_id",nullable=false,length=64) private String preparationId; @Column(name="file_id",length=64) private String fileId; @Column(nullable=false,length=200) private String title; @Column(name="metadata_json",columnDefinition="text") private String metadataJson; @Column(name="bind_state",nullable=false) private String bindState="PENDING_BIND"; private Instant boundAt; private String createBy; private Instant createTime; }
