@@ -67,3 +67,31 @@ export const submitTeachingReview = (type, id, body) =>
   http.post(`/education/teaching-center/domain/${encodeURIComponent(type)}/${id}/submit-review`, body)
 export const teachingReviewStatus = (type, id) =>
   http.get(`/education/teaching-center/domain/${encodeURIComponent(type)}/${id}/review-status`)
+
+// Slice two uses explicit domain contracts; the generic compatibility CRUD above is
+// intentionally not used by the preparation and resource workbenches.
+export const preparationPage = (params = {}) => http.get(`/education/teaching-center/api/preparations?${queryString(params)}`)
+export const createPreparation = (body) => http.post('/education/teaching-center/api/preparations', body)
+export const updatePreparation = (id, body) => http.put(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}`, body)
+export const preparationChildren = (id, child, params = {}) =>
+  http.get(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}/${child}?${queryString(params)}`)
+export const createPreparationChild = (id, child, body) =>
+  http.post(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}/${child}`, body)
+export const submitPreparation = (id) =>
+  http.post(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}/submit`)
+
+export const resourcePage = (domain, params = {}) => http.get(`/education/teaching-center/api/${domain}?${queryString(params)}`)
+export const createResource = (domain, body) => http.post(`/education/teaching-center/api/${domain}`, body)
+export const updateResource = (domain, id, body) =>
+  http.put(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}`, body)
+export const resourceVersions = (domain, id) =>
+  http.get(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/versions`)
+export const uploadTeachingFile = (file, businessType, businessId, onProgress) => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload(`/files?${queryString({ businessType, businessId })}`, data, onProgress)
+}
+export const setCurrentResourceVersion = (domain, id, versionId) =>
+  http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/current`)
+export const submitResource = (domain, id) =>
+  http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/submit`)

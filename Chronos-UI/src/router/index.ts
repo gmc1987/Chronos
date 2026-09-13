@@ -44,6 +44,7 @@ const AdminLessonPlans = () => import('../modules/education/pages/AdminLessonPla
 const AdminPreparation = () => import('../modules/education/pages/AdminPreparation.vue')
 const AdminCourseware = () => import('../modules/education/pages/AdminCourseware.vue')
 const AdminMaterials = () => import('../modules/education/pages/AdminMaterials.vue')
+const TeachingResourceWorkbench = () => import('../modules/education/pages/TeachingResourceWorkbench.vue')
 const AdminHomework = () => import('../modules/education/pages/AdminHomework.vue')
 const AdminQuestionBank = () => import('../modules/education/pages/AdminQuestionBank.vue')
 const AdminKnowledgePoints = () => import('../modules/education/pages/AdminKnowledgePoints.vue')
@@ -117,6 +118,7 @@ const router = createRouter({
         { path: 'education/teaching-center/preparation', name: 'admin-education-preparation', component: AdminPreparation },
         { path: 'education/teaching-center/courseware', name: 'admin-education-courseware', component: AdminCourseware },
         { path: 'education/teaching-center/material', name: 'admin-education-material', component: AdminMaterials },
+        { path: 'teaching/resources', name: 'teaching-resources', component: TeachingResourceWorkbench },
         { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminHomework },
         { path: 'education/teaching-center/question-bank', name: 'admin-education-question-bank', component: AdminQuestionBank },
         { path: 'education/teaching-center/knowledge-point', name: 'admin-education-knowledge-point', component: AdminKnowledgePoints },

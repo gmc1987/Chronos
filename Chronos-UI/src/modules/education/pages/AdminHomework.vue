@@ -1,7 +1,3 @@
-<template><TeachingDomainPage title="作业入口" description="按用户范围进入备课任务，独立维护作业记录" entity-label="作业" resource-type="PREPARATION" :columns="columns" :fields="fields" :filter-fields="filterFields" :defaults="{ topic: '', activities: '', members: '', materials: '' }" /></template>
-<script setup>
-import TeachingDomainPage from '../components/TeachingDomainPage.vue'
-const columns = [{ prop: 'topic', label: '作业主题', minWidth: 180 }, { prop: 'activities', label: '作业活动', minWidth: 180 }, { prop: 'members', label: '用户范围', minWidth: 150 }, { prop: 'materials', label: '提交材料', minWidth: 180 }, { prop: 'status', label: '状态', width: 100 }]
-const fields = [{ prop: 'topic', label: '作业主题' }, { prop: 'activities', label: '作业活动', type: 'textarea' }, { prop: 'members', label: '用户范围' }, { prop: 'materials', label: '提交材料', type: 'textarea' }]
-const filterFields = [{ prop: 'members', label: '用户范围' }, { prop: 'activities', label: '活动' }]
-</script>
+<template><section class="redirect"><h1>作业中心</h1><p>作业布置、提交与批改请前往作业中心。</p><el-button type="primary" @click="go">进入作业中心</el-button></section></template>
+<script setup>import { onMounted } from 'vue';import { useRouter } from 'vue-router';const router=useRouter();const go=()=>router.push('/portal/tasks');onMounted(go)</script>
+<style scoped>.redirect{padding:32px}.redirect p{color:#667085}</style>
