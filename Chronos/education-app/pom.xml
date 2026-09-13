@@ -92,6 +92,13 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-quartz</artifactId>
 		</dependency>
+		<!-- Education services inject the shared Jackson ObjectMapper.
+		     Keep Boot's single auto-configured instance rather than creating
+		     module-local mappers or duplicate beans. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-json</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
