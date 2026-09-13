@@ -13,3 +13,11 @@
 - `/portal/data-scope`
 
 生产部署不得使用默认 JWT 密钥或默认数据库账号。允许来源通过 `CHRONOS_CORS_ALLOWED_ORIGINS` 传入逗号分隔白名单。
+
+全新数据库第一次启动必须通过部署环境提供以下变量：
+
+- `CHRONOS_BOOTSTRAP_ADMIN_USERNAME`：首个超级管理员用户名。
+- `CHRONOS_BOOTSTRAP_ADMIN_PASSWORD`：至少 12 位，包含大小写字母、数字和特殊字符。
+- `CHRONOS_BOOTSTRAP_ADMIN_DISPLAY_NAME`：可选，默认“系统管理员”。
+
+系统仅在 `t_admin_user` 完全为空时使用这些凭据，密码只保存 BCrypt 哈希，首个账号登录后必须立即修改密码。数据库已经存在任何账号时，引导逻辑不会创建、覆盖或重置用户。

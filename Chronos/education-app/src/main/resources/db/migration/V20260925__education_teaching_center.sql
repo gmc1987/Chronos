@@ -145,43 +145,29 @@ CREATE INDEX IF NOT EXISTS idx_preparation_offering ON edu_preparation(offering_
 CREATE INDEX IF NOT EXISTS idx_question_bank_offering ON edu_question_bank(offering_id);
 CREATE INDEX IF NOT EXISTS idx_research_activity_group ON edu_research_activity(group_id);
 
--- 聚合子表的引用完整性与重复约束（本迁移首次部署时一并建立）。
-ALTER TABLE edu_teaching_plan_item ADD CONSTRAINT fk_plan_item_plan
- FOREIGN KEY (plan_id) REFERENCES edu_teaching_plan(id);
-ALTER TABLE edu_teaching_plan_version ADD CONSTRAINT fk_plan_version_plan
- FOREIGN KEY (plan_id) REFERENCES edu_teaching_plan(id);
-ALTER TABLE edu_lesson_plan_version ADD CONSTRAINT fk_lesson_version_plan
- FOREIGN KEY (lesson_plan_id) REFERENCES edu_lesson_plan(id);
-ALTER TABLE edu_lesson_plan_review ADD CONSTRAINT fk_lesson_review_version
- FOREIGN KEY (lesson_plan_version_id) REFERENCES edu_lesson_plan_version(id);
-ALTER TABLE edu_preparation_member ADD CONSTRAINT fk_preparation_member
- FOREIGN KEY (preparation_id) REFERENCES edu_preparation(id);
-ALTER TABLE edu_preparation_material ADD CONSTRAINT fk_preparation_material
- FOREIGN KEY (preparation_id) REFERENCES edu_preparation(id);
-ALTER TABLE edu_preparation_comment ADD CONSTRAINT fk_preparation_comment
- FOREIGN KEY (preparation_id) REFERENCES edu_preparation(id);
-ALTER TABLE edu_question ADD CONSTRAINT fk_question_bank
- FOREIGN KEY (bank_id) REFERENCES edu_question_bank(id);
-ALTER TABLE edu_question_option ADD CONSTRAINT fk_question_option
- FOREIGN KEY (question_id) REFERENCES edu_question(id);
-ALTER TABLE edu_question_knowledge_point ADD CONSTRAINT fk_question_knowledge
- FOREIGN KEY (question_id) REFERENCES edu_question(id);
-ALTER TABLE edu_question_knowledge_point ADD CONSTRAINT fk_question_knowledge_point
- FOREIGN KEY (knowledge_point_id) REFERENCES edu_knowledge_point(id);
-ALTER TABLE edu_knowledge_point ADD CONSTRAINT fk_knowledge_parent
- FOREIGN KEY (parent_id) REFERENCES edu_knowledge_point(id);
-ALTER TABLE edu_error_item ADD CONSTRAINT fk_error_item_book
- FOREIGN KEY (book_id) REFERENCES edu_error_book(id);
-ALTER TABLE edu_research_group_member ADD CONSTRAINT fk_research_member_group
- FOREIGN KEY (group_id) REFERENCES edu_research_group(id);
-ALTER TABLE edu_research_activity ADD CONSTRAINT fk_research_activity_group
- FOREIGN KEY (group_id) REFERENCES edu_research_group(id);
-ALTER TABLE edu_research_material ADD CONSTRAINT fk_research_material_activity
- FOREIGN KEY (activity_id) REFERENCES edu_research_activity(id);
-ALTER TABLE edu_research_activity_member ADD CONSTRAINT fk_research_activity_member
- FOREIGN KEY (activity_id) REFERENCES edu_research_activity(id);
-ALTER TABLE edu_research_result ADD CONSTRAINT fk_research_result_activity
- FOREIGN KEY (activity_id) REFERENCES edu_research_activity(id);
+-- 兼容曾由 Hibernate 或人工脚本预建部分表结构的数据库。Flyway 升级时只补齐
+-- 缺失的外键，避免同名约束让整个事务回滚。
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_plan_item_plan' AND conrelid = 'edu_teaching_plan_item'::regclass) THEN ALTER TABLE edu_teaching_plan_item ADD CONSTRAINT fk_plan_item_plan FOREIGN KEY (plan_id) REFERENCES edu_teaching_plan(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_plan_version_plan' AND conrelid = 'edu_teaching_plan_version'::regclass) THEN ALTER TABLE edu_teaching_plan_version ADD CONSTRAINT fk_plan_version_plan FOREIGN KEY (plan_id) REFERENCES edu_teaching_plan(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_lesson_version_plan' AND conrelid = 'edu_lesson_plan_version'::regclass) THEN ALTER TABLE edu_lesson_plan_version ADD CONSTRAINT fk_lesson_version_plan FOREIGN KEY (lesson_plan_id) REFERENCES edu_lesson_plan(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_lesson_review_version' AND conrelid = 'edu_lesson_plan_review'::regclass) THEN ALTER TABLE edu_lesson_plan_review ADD CONSTRAINT fk_lesson_review_version FOREIGN KEY (lesson_plan_version_id) REFERENCES edu_lesson_plan_version(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_preparation_member' AND conrelid = 'edu_preparation_member'::regclass) THEN ALTER TABLE edu_preparation_member ADD CONSTRAINT fk_preparation_member FOREIGN KEY (preparation_id) REFERENCES edu_preparation(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_preparation_material' AND conrelid = 'edu_preparation_material'::regclass) THEN ALTER TABLE edu_preparation_material ADD CONSTRAINT fk_preparation_material FOREIGN KEY (preparation_id) REFERENCES edu_preparation(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_preparation_comment' AND conrelid = 'edu_preparation_comment'::regclass) THEN ALTER TABLE edu_preparation_comment ADD CONSTRAINT fk_preparation_comment FOREIGN KEY (preparation_id) REFERENCES edu_preparation(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_question_bank' AND conrelid = 'edu_question'::regclass) THEN ALTER TABLE edu_question ADD CONSTRAINT fk_question_bank FOREIGN KEY (bank_id) REFERENCES edu_question_bank(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_question_option' AND conrelid = 'edu_question_option'::regclass) THEN ALTER TABLE edu_question_option ADD CONSTRAINT fk_question_option FOREIGN KEY (question_id) REFERENCES edu_question(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_question_knowledge' AND conrelid = 'edu_question_knowledge_point'::regclass) THEN ALTER TABLE edu_question_knowledge_point ADD CONSTRAINT fk_question_knowledge FOREIGN KEY (question_id) REFERENCES edu_question(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_question_knowledge_point' AND conrelid = 'edu_question_knowledge_point'::regclass) THEN ALTER TABLE edu_question_knowledge_point ADD CONSTRAINT fk_question_knowledge_point FOREIGN KEY (knowledge_point_id) REFERENCES edu_knowledge_point(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_knowledge_parent' AND conrelid = 'edu_knowledge_point'::regclass) THEN ALTER TABLE edu_knowledge_point ADD CONSTRAINT fk_knowledge_parent FOREIGN KEY (parent_id) REFERENCES edu_knowledge_point(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_error_item_book' AND conrelid = 'edu_error_item'::regclass) THEN ALTER TABLE edu_error_item ADD CONSTRAINT fk_error_item_book FOREIGN KEY (book_id) REFERENCES edu_error_book(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_research_member_group' AND conrelid = 'edu_research_group_member'::regclass) THEN ALTER TABLE edu_research_group_member ADD CONSTRAINT fk_research_member_group FOREIGN KEY (group_id) REFERENCES edu_research_group(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_research_activity_group' AND conrelid = 'edu_research_activity'::regclass) THEN ALTER TABLE edu_research_activity ADD CONSTRAINT fk_research_activity_group FOREIGN KEY (group_id) REFERENCES edu_research_group(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_research_material_activity' AND conrelid = 'edu_research_material'::regclass) THEN ALTER TABLE edu_research_material ADD CONSTRAINT fk_research_material_activity FOREIGN KEY (activity_id) REFERENCES edu_research_activity(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_research_activity_member' AND conrelid = 'edu_research_activity_member'::regclass) THEN ALTER TABLE edu_research_activity_member ADD CONSTRAINT fk_research_activity_member FOREIGN KEY (activity_id) REFERENCES edu_research_activity(id); END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_research_result_activity' AND conrelid = 'edu_research_result'::regclass) THEN ALTER TABLE edu_research_result ADD CONSTRAINT fk_research_result_activity FOREIGN KEY (activity_id) REFERENCES edu_research_activity(id); END IF;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_question_option_key ON edu_question_option(question_id, option_key);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_plan_version_no ON edu_teaching_plan_version(plan_id, version_no);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_lesson_version_no ON edu_lesson_plan_version(lesson_plan_id, version_no);

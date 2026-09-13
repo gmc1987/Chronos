@@ -120,18 +120,46 @@ WITH checks(capability_no, capability, passed, evidence) AS (
     SELECT 18, 'Scheduling Agent',
            to_regclass('public.edu_scheduling_agent_proposal') IS NOT NULL
                AND EXISTS (
-                   SELECT 1 FROM t_permission
-                   WHERE permission_code = 'education:ai:agent:use' AND status = 1
+                   SELECT 1
+                   FROM t_role role
+                   JOIN t_role_permission role_permission
+                     ON role_permission.role_id = role.id
+                   JOIN t_permission permission
+                     ON permission.id = role_permission.permission_id
+                   WHERE role.role_code = 'EDU_ACADEMIC_APPROVER'
+                     AND role.status = 1
+                     AND permission.permission_code = 'education:ai:agent:use'
+                     AND permission.status = 1
+               )
+               AND EXISTS (
+                   SELECT 1
+                   FROM t_role role
+                   JOIN t_role_permission role_permission
+                     ON role_permission.role_id = role.id
+                   JOIN t_permission permission
+                     ON permission.id = role_permission.permission_id
+                   WHERE role.role_code = 'EDU_ACADEMIC_APPROVER'
+                     AND role.status = 1
+                     AND permission.permission_code = 'education:ai:agent:confirm'
+                     AND permission.status = 1
                ),
-           'controlled proposal table and use permission'
+           'controlled proposal table with academic role use and confirm permissions'
     UNION ALL
     SELECT 19, 'AI教务Agent',
            EXISTS (
-               SELECT 1 FROM t_permission
-               WHERE permission_code = 'education:ai:agent:use' AND status = 1
+               SELECT 1
+               FROM t_role role
+               JOIN t_role_permission role_permission
+                 ON role_permission.role_id = role.id
+               JOIN t_permission permission
+                 ON permission.id = role_permission.permission_id
+               WHERE role.role_code = 'EDU_ACADEMIC_APPROVER'
+                 AND role.status = 1
+                 AND permission.permission_code = 'education:ai:agent:use'
+                 AND permission.status = 1
            )
                AND to_regclass('public.edu_teacher_time_constraint') IS NOT NULL,
-           'read-only analysis permission and constraint data'
+           'academic role analysis permission and constraint data'
     UNION ALL
     SELECT 20, '审计',
            to_regclass('public.t_audit_log') IS NOT NULL
