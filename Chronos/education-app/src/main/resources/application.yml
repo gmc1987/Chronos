@@ -40,6 +40,24 @@ spring:
     locations: classpath:db/migration
     # V0 是新环境基线；已有更高版本历史的实例必须忽略它，不能重复建表。
     ignore-migration-patterns: "*:ignored"
+
+# Kubernetes probes must not claim database availability. Liveness is only
+# process health; readiness deliberately reports database/Flyway failures.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: ping
+        readiness:
+          include: db
+      show-details: never
   data:
     redis:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}

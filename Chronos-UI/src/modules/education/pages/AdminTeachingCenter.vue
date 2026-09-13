@@ -6,14 +6,14 @@
         <p>教学中心后台管理</p>
       </div>
     </div>
-    <PortalTeachingCenter />
+    <el-alert type="info" :closable="false"
+      description="教学中心已按业务领域拆分，请从左侧菜单进入教学计划、教案、备课、资源、题库、知识点、教研或错题页面。" />
   </section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import PortalTeachingCenter from './PortalTeachingCenter.vue'
 
 const route = useRoute()
 const labels = {
