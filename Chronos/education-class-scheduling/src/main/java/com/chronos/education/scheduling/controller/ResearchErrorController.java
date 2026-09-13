@@ -22,6 +22,8 @@ public class ResearchErrorController {
 	public ResultData<?> activityMember(@PathVariable String id,@Valid @RequestBody MemberRequest r,Authentication a) { return ok(service.inviteActivityMember(id,r,a)); }
 	@PostMapping("/research-activities/{id}/attendance")
 	public ResultData<?> attendance(@PathVariable String id,@Valid @RequestBody AttendanceRequest r,Authentication a) { return ok(service.attendance(id,r,a)); }
+	@PostMapping("/research-activities/{id}/minutes")
+	public ResultData<?> minutes(@PathVariable String id,@Valid @RequestBody MinutesRequest r,Authentication a) { return ok(service.updateMinutes(id,r,a)); }
 	@PostMapping("/research-activities/{id}/materials")
 	public ResultData<?> material(@PathVariable String id,@Valid @RequestBody MaterialRequest r,Authentication a) { return ok(service.addMaterial(id,r,a)); }
 	@PostMapping("/research-activities/{id}/results")

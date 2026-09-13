@@ -4,4 +4,5 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 public interface ErrorItemRepository extends JpaRepository<ErrorItem,String> {
 	Optional<ErrorItem> findByBookIdAndSourceTypeAndSourceItemId(String bookId,String sourceType,String sourceItemId);
+	Optional<ErrorItem> findByEventId(String eventId);
 }

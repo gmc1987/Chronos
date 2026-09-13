@@ -25,6 +25,7 @@ public class Courseware extends BaseEntity {
 	private String status = "DRAFT";
 	@Column(name = "share_scope", nullable = false, length = 32)
 	private String shareScope = "PRIVATE";
+	@Column(name="published_version_no") private Integer publishedVersionNo;
 	@jakarta.persistence.Version @Column(name="row_version", nullable=false) private Long rowVersion=0L;
 	@Column(nullable = false)
 	private boolean archived;

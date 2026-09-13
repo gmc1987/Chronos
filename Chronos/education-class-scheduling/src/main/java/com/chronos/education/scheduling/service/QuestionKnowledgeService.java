@@ -150,12 +150,13 @@ public class QuestionKnowledgeService {
 			try {
 				List<String> c = parseCsv(rows.get(i));
 				if (c.stream().allMatch(String::isBlank)) continue;
-				if (c.size() < 8) throw new IllegalArgumentException("列数不足");
+				if (c.size() < 9) throw new IllegalArgumentException("列数不足");
 				for (String cell : c) if (formula(cell)) throw new IllegalArgumentException("检测到公式注入");
 				if (!TYPES.contains(c.get(1).trim().toUpperCase(Locale.ROOT))) throw new IllegalArgumentException("题型无效");
 				if (!DIFFICULTIES.contains(c.get(2).trim().toUpperCase(Locale.ROOT))) throw new IllegalArgumentException("难度无效");
 				if (new java.math.BigDecimal(c.get(3)).signum() <= 0) throw new IllegalArgumentException("分值必须大于0");
 				if (c.get(4).isBlank() || c.get(6).isBlank()) throw new IllegalArgumentException("题干和题库不能为空");
+				if (c.get(8).isBlank()) throw new IllegalArgumentException("至少需要一个知识点");
 				accepted++;
 			} catch (RuntimeException ex) { errors.add(new RowError(i + 1, "", ex.getMessage())); }
 		}
@@ -168,8 +169,9 @@ public class QuestionKnowledgeService {
 		List<Question> result = new ArrayList<>();
 		for (String row : csv.lines().skip(1).toList()) {
 			if (row.isBlank()) continue; List<String> c = parseCsv(row);
+			List<String> pointIds=Arrays.stream(c.get(8).split("[;|]")).map(String::trim).filter(v->!v.isBlank()).toList();
 			result.add(createQuestion(new QuestionRequest(c.get(6), c.get(1), c.get(2), c.get(4),
-					new java.math.BigDecimal(c.get(3)), c.get(5), c.get(7), null, null, null, List.of(), List.of(), List.of()), user));
+					new java.math.BigDecimal(c.get(3)), c.get(5), c.get(7), null, null, null, List.of(), pointIds, List.of()), user));
 		}
 		return result;
 	}
@@ -180,6 +182,14 @@ public class QuestionKnowledgeService {
 		if (!TYPES.contains(upper(r.questionType()))) throw new IllegalArgumentException("题型无效");
 		if (!DIFFICULTIES.contains(upper(r.difficulty()))) throw new IllegalArgumentException("难度无效");
 		if (r.score() == null || r.score().signum() <= 0) throw new IllegalArgumentException("分值必须大于0");
+		String type = upper(r.questionType());
+		String answer = r.answer() == null ? "" : r.answer().trim();
+		if (Set.of("TRUE_FALSE","FILL_BLANK","SHORT_ANSWER","PRACTICAL").contains(type) && answer.isBlank())
+			throw new IllegalArgumentException("该题型必须填写标准答案");
+		if ("TRUE_FALSE".equals(type) && !Set.of("TRUE","FALSE","对","错","正确","错误").contains(answer.toUpperCase(Locale.ROOT)))
+			throw new IllegalArgumentException("判断题答案必须为TRUE/FALSE");
+		if ("PRACTICAL".equals(type) && (r.answerSchemaJson() == null || r.answerSchemaJson().isBlank()))
+			throw new IllegalArgumentException("实操题必须提供答案校验结构");
 		if (r.answerSchemaJson() != null && !r.answerSchemaJson().isBlank()) {
 			try {
 				json.readTree(r.answerSchemaJson());
@@ -193,6 +203,8 @@ public class QuestionKnowledgeService {
 			if (os.size() < 2) throw new IllegalArgumentException("选择题至少需要两个选项");
 			if (os.stream().anyMatch(o -> o == null || text(o.key()) == null || text(o.text()) == null))
 				throw new IllegalArgumentException("选项编号和内容不能为空");
+			if (os.stream().map(o -> upper(o.key())).distinct().count() != os.size())
+				throw new IllegalArgumentException("选项编号不能重复");
 			long correct = os.stream().filter(o -> Boolean.TRUE.equals(o.correct())).count();
 			if (upper(r.questionType()).equals("SINGLE_CHOICE") && correct != 1 || upper(r.questionType()).equals("MULTIPLE_CHOICE") && correct < 2)
 				throw new IllegalArgumentException("选择题正确答案数量不匹配");

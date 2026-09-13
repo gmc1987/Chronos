@@ -57,7 +57,7 @@ public class QuestionKnowledgeController {
 	}
 	@GetMapping("/questions/import/template")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:view','education:teaching:view')")
-	public String template() { return "id,questionType,difficulty,score,stem,answer,bankId,analysis\n"; }
+	public String template() { return "id,questionType,difficulty,score,stem,answer,bankId,analysis,knowledgePointIds\n"; }
 	@PostMapping("/questions/import/precheck")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
 	public ResultData<ImportPreview> precheck(@RequestBody String csv) { return ok(service.precheckCsv(csv)); }

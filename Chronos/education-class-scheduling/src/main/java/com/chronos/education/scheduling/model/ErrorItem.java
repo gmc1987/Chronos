@@ -15,6 +15,7 @@ public class ErrorItem {
 	@Column(name = "source_ref", length = 64) private String sourceRef;
 	@Column(name = "source_type", length = 32) private String sourceType;
 	@Column(name = "source_item_id", length = 64) private String sourceItemId;
+	@Column(name = "event_id", length = 128, unique = true) private String eventId;
 	@Column(columnDefinition = "text") private String analysis;
 	@Column(nullable = false, length = 24) private String status = "OPEN";
 	@Column(name = "wrong_count", nullable = false) private int wrongCount = 1;

@@ -68,7 +68,7 @@ public class ResearchErrorService {
 	public ResearchActivity createActivity(String groupId, ActivityRequest r, Authentication a) {
 		group(groupId,a); if (r.endTime()!=null && r.activityTime()!=null && r.endTime().isBefore(r.activityTime()))
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
-		ResearchActivity x=new ResearchActivity(); x.setGroupId(groupId);
+		ResearchActivity x=new ResearchActivity(); x.setGroupId(groupId); x.setStatus("SCHEDULED");
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime()); x.setLocation(r.location());
 		x.setAgenda(r.agenda()); x.setOrganizerId(a.getName()); x.setCreateBy(a.getName()); return activities.save(x);
 	}
@@ -84,9 +84,16 @@ public class ResearchErrorService {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(),a); ResearchActivityMember m=activityMembers.findByActivityIdAndTeacherId(activityId,r.teacherId()).orElse(null);
 		if (m==null) throw new IllegalArgumentException("活动成员不存在");
+		if (!a.getName().equals(r.teacherId()) && !scope(a).fullAccess()) throw new AccessDeniedException("只能为本人签到或请假");
 		if (!Set.of("SIGNED_IN","LEAVE","ABSENT").contains(r.status())) throw new IllegalArgumentException("签到状态无效");
+		if ("LEAVE".equals(r.status()) && (r.leaveReason()==null || r.leaveReason().isBlank())) throw new IllegalArgumentException("请假必须填写原因");
 		m.setAttendanceStatus(r.status()); m.setLeaveReason(r.leaveReason()); m.setRespondedAt(LocalDateTime.now());
 		if ("SIGNED_IN".equals(r.status())) m.setAttendanceAt(LocalDateTime.now()); return activityMembers.save(m);
+	}
+	public ResearchActivity updateMinutes(String activityId, MinutesRequest r, Authentication a) {
+		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a);
+		if (!Set.of("SCHEDULED","IN_PROGRESS","COMPLETED").contains(x.getStatus())) throw new IllegalStateException("当前活动状态不能记录纪要");
+		x.setMinutes(r.minutes()); x.setStatus("COMPLETED"); return activities.save(x);
 	}
 	public ResearchMaterial addMaterial(String activityId, MaterialRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a); file(r.fileId(),a);
@@ -117,13 +124,14 @@ public class ResearchErrorService {
 		i.setAnalysis(r.analysis()); i.setStudentNote(r.studentNote()); i.setCreateTime(LocalDateTime.now()); return items.save(i);
 	}
 	public ErrorItem onWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
+		var replay=items.findByEventId(r.eventId()); if (replay.isPresent()) return replay.get();
 		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a);
 		ErrorItem i=items.findByBookIdAndSourceTypeAndSourceItemId(b.getId(),"WRONG_ANSWER_CONFIRMED",r.sourceItemId()).orElse(null);
 		// sourceItemId is the producer's idempotency key. Replayed delivery must
 		// not inflate the student's error count.
 		if (i!=null) return i;
 		i=new ErrorItem(); i.setId(UUID.randomUUID().toString()); i.setBookId(b.getId()); i.setQuestionId(r.questionId());
-		i.setSourceRef(r.sourceRef()); i.setSourceType("WRONG_ANSWER_CONFIRMED"); i.setSourceItemId(r.sourceItemId());
+		i.setSourceRef(r.sourceRef()); i.setSourceType("WRONG_ANSWER_CONFIRMED"); i.setSourceItemId(r.sourceItemId()); i.setEventId(r.eventId());
 		i.setAnalysis(r.analysis()); i.setLastWrongAt(LocalDateTime.now()); i.setCreateTime(LocalDateTime.now()); return items.save(i);
 	}
 	public ErrorItem mastery(String id, MasteryRequest r, Authentication a) {

@@ -20,4 +20,5 @@ public final class ResearchErrorDtos {
 			String courseId, String semesterId, String questionId, @NotBlank String sourceItemId,
 			String sourceRef, String analysis) {}
 	public record MasteryRequest(@NotBlank String status, String note) {}
+	public record MinutesRequest(@NotBlank String minutes) {}
 }
