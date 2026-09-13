@@ -4,6 +4,9 @@
       <div><h1>教学中心</h1><p>教学资源与教研工作台（作业发布和评分请前往作业中心）</p></div>
       <el-button type="primary" @click="openCreate">新建资源</el-button>
     </div>
+    <el-tabs v-model="filters.type" class="teaching-tabs" @tab-change="switchType">
+      <el-tab-pane v-for="item in types" :key="item.value" :name="item.value" :label="item.label" />
+    </el-tabs>
     <el-form inline @submit.prevent="load">
       <el-form-item label="类型"><el-select v-model="filters.type" style="width:150px">
         <el-option v-for="item in types" :key="item.value" :label="item.label" :value="item.value" />
@@ -87,6 +90,10 @@ const load = async () => {
   loading.value = true
   try { const res = await teachingDomainPage(filters.type, { offeringId: filters.offeringId || undefined, page: page.value - 1, size: size.value }); rows.value = res.data?.content || []; total.value = res.data?.totalElements || 0 }
   catch (error) { ElMessage.error(error.message) } finally { loading.value = false }
+}
+const switchType = async () => {
+  page.value = 1
+  await load()
 }
 const openCreate = () => { editing.value = null; Object.assign(form, { resourceType: filters.type, offeringId: filters.offeringId, scheduleEntryId: '', name: '', title: '', subject: '', grade: '', preparationType: '', shareScope: 'PRIVATE', studentId: '', stem: '', questionType: '', difficulty: '', fileId: '', content: '' }); dialog.value = true }
 const edit = (row) => {

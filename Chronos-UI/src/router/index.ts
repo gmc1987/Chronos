@@ -102,6 +102,7 @@ const router = createRouter({
         { path: 'workflow/incidents', name: 'admin-workflow-incidents', component: AdminWorkflowIncidents },
         { path: 'publications', name: 'admin-publications', component: AdminPublications },
         { path: 'message-settings', name: 'admin-message-settings', component: AdminNotificationSettings },
+        { path: 'education/teaching-center', name: 'admin-education-teaching-center', component: PortalTeachingCenter },
         ...packagedIndustryRoutes(),
       ],
     },
