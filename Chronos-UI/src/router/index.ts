@@ -50,6 +50,8 @@ const AdminQuestionBank = () => import('../modules/education/pages/AdminQuestion
 const AdminKnowledgePoints = () => import('../modules/education/pages/AdminKnowledgePoints.vue')
 const AdminMistakes = () => import('../modules/education/pages/AdminMistakes.vue')
 const AdminResearch = () => import('../modules/education/pages/AdminResearch.vue')
+const ResearchWorkbench = () => import('../modules/education/pages/ResearchWorkbench.vue')
+const ErrorBook = () => import('../modules/education/pages/ErrorBook.vue')
 const AdminPortal = () => import('../modules/portal/pages/AdminPortal.vue')
 const AdminPublications = () => import('../modules/message/pages/AdminPublications.vue')
 const AdminNotificationSettings = () => import('../modules/message/pages/AdminNotificationSettings.vue')
@@ -124,6 +126,8 @@ const router = createRouter({
         { path: 'teaching/question-banks', name: 'teaching-question-banks', component: AdminQuestionBank },
         { path: 'education/teaching-center/knowledge-point', name: 'admin-education-knowledge-point', component: AdminKnowledgePoints },
         { path: 'teaching/knowledge-points', name: 'teaching-knowledge-points', component: AdminKnowledgePoints },
+        { path: 'teaching/research', name: 'teaching-research', component: ResearchWorkbench },
+        { path: 'teaching/error-book', name: 'teaching-error-book', component: ErrorBook },
         { path: 'education/teaching-center/error-book', name: 'admin-education-error-book', component: AdminMistakes },
         { path: 'education/teaching-center/research', name: 'admin-education-research', component: AdminResearch },
         ...packagedIndustryRoutes(),

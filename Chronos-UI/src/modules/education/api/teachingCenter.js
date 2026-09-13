@@ -121,3 +121,20 @@ export const moveKnowledgePoint = (id, body) =>
   http.post(`/education/teaching-center/api/knowledge-points/${encodeURIComponent(id)}/move`, body)
 export const disableKnowledgePoint = (id) =>
   http.post(`/education/teaching-center/api/knowledge-points/${encodeURIComponent(id)}/disable`)
+
+// Slice four contracts. Research and error-book writes go through the named
+// domain API; the UI never exposes status or foreign-key text inputs.
+export const researchPage = (params = {}) => resourcePage('research', params)
+export const createResearch = (body) => createResource('research', body)
+export const updateResearch = (id, body) => updateResource('research', id, body)
+export const researchChildren = (id, child, params = {}) =>
+  teachingDomainChildrenApi('research', id, child, params)
+export const createResearchChild = (id, child, body) =>
+  http.post(`/education/teaching-center/api/research/${encodeURIComponent(id)}/${child}`, body)
+export const transitionResearch = (id, status) =>
+  http.post(`/education/teaching-center/api/research/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
+export const mistakesPage = (params = {}) => resourcePage('mistakes', params)
+export const createMistake = (body) => createResource('mistakes', body)
+export const updateMistake = (id, body) => updateResource('mistakes', id, body)
+export const transitionMistake = (id, status) =>
+  http.post(`/education/teaching-center/api/mistakes/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
