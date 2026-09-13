@@ -23,4 +23,17 @@ public class ResearchGroup extends BaseEntity {
 	private String status = "ACTIVE";
 	@Column(nullable = false)
 	private boolean archived;
+	@Column(name = "school_id", nullable = false, length = 64)
+	private String schoolId;
+	@Column(name = "campus_id", length = 64)
+	private String campusId;
+	@Column(name = "leader_teacher_id", length = 64)
+	private String leaderTeacherId;
+	@Column(name = "course_scope_json", columnDefinition = "jsonb")
+	private String courseScopeJson;
+	@Column(columnDefinition = "text")
+	private String description;
+	@jakarta.persistence.Version
+	@Column(name = "row_version", nullable = false)
+	private long rowVersion;
 }

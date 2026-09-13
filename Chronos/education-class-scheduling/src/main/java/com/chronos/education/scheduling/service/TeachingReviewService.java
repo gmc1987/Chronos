@@ -125,6 +125,10 @@ public class TeachingReviewService {
 					try {
 						var m = entity.getClass().getMethod("setStatus", String.class);
 						m.invoke(entity, resourceStatus);
+						if ("PUBLISHED".equals(resourceStatus)
+								&& entity instanceof com.chronos.education.scheduling.model.ResearchResult result) {
+							result.setPublishedAt(java.time.LocalDateTime.now());
+						}
 					} catch (NoSuchMethodException ignored) {
 						if (entity instanceof com.chronos.education.scheduling.model.KnowledgePoint point)
 							point.setEnabled("PUBLISHED".equals(resourceStatus));
@@ -148,6 +152,7 @@ public class TeachingReviewService {
 			case "MISTAKE", "ERROR_BOOK" -> em.find(com.chronos.education.scheduling.model.ErrorBook.class,id);
 			case "RESEARCH" -> em.find(com.chronos.education.scheduling.model.ResearchGroup.class,id);
 			case "RESEARCH_ACTIVITY" -> em.find(com.chronos.education.scheduling.model.ResearchActivity.class,id);
+			case "RESEARCH_RESULT" -> em.find(com.chronos.education.scheduling.model.ResearchResult.class,id);
 			default -> null;
 		};
 	}

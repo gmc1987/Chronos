@@ -21,4 +21,8 @@ public class ErrorBook extends BaseEntity {
 	private String name;
 	@Column(nullable = false)
 	private boolean archived;
+	@Column(name = "course_id", length = 64) private String courseId;
+	@Column(name = "semester_id", length = 64) private String semesterId;
+	@Column(name = "owner_type", nullable = false, length = 16) private String ownerType = "STUDENT";
+	@jakarta.persistence.Version @Column(name = "row_version", nullable = false) private long rowVersion;
 }
