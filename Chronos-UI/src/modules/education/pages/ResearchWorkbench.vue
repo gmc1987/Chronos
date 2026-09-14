@@ -5,7 +5,7 @@
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="loadError" />
     <el-form inline @submit.prevent="load"><el-form-item label="关键词"><el-input v-model="keyword" clearable placeholder="搜索名称或主题" /></el-form-item><el-button @click="load">查询</el-button></el-form>
     <el-table v-loading="loading" :data="rows" stripe border>
-      <el-table-column prop="name" label="名称/主题" min-width="220" />
+      <el-table-column label="名称/主题" min-width="220"><template #default="{row}">{{ row.name || row.title }}</template></el-table-column>
       <el-table-column v-if="tab==='groups'" prop="leaderTeacherName" label="组长" width="140" />
       <el-table-column v-if="tab==='activities'" prop="activityTime" label="活动时间" width="180" />
       <el-table-column v-if="tab==='activities'" prop="location" label="地点" width="160" />
