@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run against an already-started education app. Tokens and identifiers are
-# supplied by the caller so this script never contains credentials or fixtures.
 : "${CHRONOS_BASE_URL:?set CHRONOS_BASE_URL, e.g. http://localhost:8080}"
 : "${CHRONOS_TEACHER_TOKEN:?set CHRONOS_TEACHER_TOKEN}"
 : "${CHRONOS_STUDENT_TOKEN:?set CHRONOS_STUDENT_TOKEN}"
@@ -15,7 +13,8 @@ teacher_auth=(-H "Authorization: Bearer ${CHRONOS_TEACHER_TOKEN}")
 student_auth=(-H "Authorization: Bearer ${CHRONOS_STUDENT_TOKEN}")
 
 request() {
-  local expected="$1"; shift
+  local expected="$1"
+  shift
   local response status
   set +e
   response="$(curl --fail-with-body --silent --show-error -w $'\n%{http_code}' "$@")"
@@ -39,12 +38,8 @@ request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/knowledge-p
 request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/mistakes?page=0&size=20"
 request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/research?page=0&size=20"
 
-# Student scope: published homework and only the logged-in student's own result.
 request 200 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks?page=0&size=20"
 request 200 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks/${CHRONOS_HOMEWORK_ID}/my-submission"
 request 403 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks?offeringId=${CHRONOS_OUT_OF_SCOPE_OFFERING_ID}&page=0&size=20"
-
-# A teacher token must not be usable as a student submission query unless it
-# is explicitly bound to a student profile; a forbidden response is expected.
 request 403 "${teacher_auth[@]}" "$api/education/teaching-center/api/homeworks/${CHRONOS_HOMEWORK_ID}/my-submission"
 request 403 "${teacher_auth[@]}" "$api/education/teaching-center/api/homeworks?offeringId=${CHRONOS_OUT_OF_SCOPE_OFFERING_ID}&page=0&size=20"
