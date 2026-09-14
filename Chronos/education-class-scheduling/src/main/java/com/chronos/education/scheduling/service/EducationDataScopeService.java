@@ -9,6 +9,7 @@ import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeacherTeachingAssignmentRepository;
+import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
@@ -52,6 +53,7 @@ public class EducationDataScopeService {
 	private final StudentGuardianRepository guardians;
 	private final EducationUserBindingRepository bindings;
 	private final CourseOfferingRepository offerings;
+	private final TeachingClassMemberRepository members;
 	private final ClassroomRepository classrooms;
 	private final ScheduleEntryRepository scheduleEntries;
 
@@ -65,6 +67,7 @@ public class EducationDataScopeService {
 			StudentGuardianRepository guardians,
 			EducationUserBindingRepository bindings,
 			CourseOfferingRepository offerings,
+			TeachingClassMemberRepository members,
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository scheduleEntries) {
 		this.platformScopes = platformScopes;
@@ -75,6 +78,7 @@ public class EducationDataScopeService {
 		this.guardians = guardians;
 		this.bindings = bindings;
 		this.offerings = offerings;
+		this.members = members;
 		this.classrooms = classrooms;
 		this.scheduleEntries = scheduleEntries;
 	}
@@ -90,7 +94,7 @@ public class EducationDataScopeService {
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository scheduleEntries) {
 		this(platformScopes, teachers, assignments, classes, students, guardians, null,
-				offerings, classrooms, scheduleEntries);
+				offerings, null, classrooms, scheduleEntries);
 	}
 
 	public EducationDataScope resolve(String username) {
@@ -390,7 +394,13 @@ public class EducationDataScopeService {
 		return (offering.getCampusId() != null
 				&& scope.campusIds().contains(offering.getCampusId()))
 				|| (offering.getTeacherId() != null
-				&& scope.teacherIds().contains(offering.getTeacherId()));
+				&& scope.teacherIds().contains(offering.getTeacherId()))
+				|| members != null && scope.studentIds().stream()
+				.anyMatch(studentId -> members.findByOfferingIdAndStudentId(
+						offering.getId(), studentId)
+						.map(member -> "ACTIVE".equals(member.getEnrollmentStatus())
+								|| "ENROLLED".equals(member.getEnrollmentStatus()))
+						.orElse(false));
 	}
 
 	/** 管理端课表查询只能使用调用者确实拥有的数据维度。 */

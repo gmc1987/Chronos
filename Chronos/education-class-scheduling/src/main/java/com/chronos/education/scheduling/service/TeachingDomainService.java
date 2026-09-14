@@ -77,6 +77,12 @@ public class TeachingDomainService {
 		if (hasOffering(type) && offeringId != null) query.setParameter("offeringId", offeringId);
 		if (visibleOfferingIds != null) query.setParameter("visibleOfferingIds", visibleOfferingIds);
 		List<?> values = query.getResultList();
+		if (studentOnly(scope)) {
+			values = values.stream()
+					.filter(value -> "PUBLISHED".equals(textValue(value, "status"))
+							|| "KNOWLEDGE_POINT".equals(type))
+					.toList();
+		}
 		return PageView.from(values, page, size);
 	}
 
@@ -244,6 +250,9 @@ public class TeachingDomainService {
 
 	private boolean hasOffering(String type) { return Set.of("PLAN","LESSON_PLAN","PREPARATION","COURSEWARE","MATERIAL","QUESTION_BANK").contains(type); }
 	private boolean requiresGlobalScope(String type) { return Set.of("PLAN","QUESTION_BANK","QUESTION","RESEARCH","RESEARCH_ACTIVITY").contains(type); }
+	private boolean studentOnly(EducationDataScope scope) {
+		return !scope.fullAccess() && !scope.studentIds().isEmpty() && scope.teacherIds().isEmpty();
+	}
 	private Class<?> entity(String type) {
 		Class<?> result = TYPES.get(type == null ? "" : type.trim().toUpperCase(Locale.ROOT));
 		if (result == null) throw new IllegalArgumentException("不支持的教学领域类型");

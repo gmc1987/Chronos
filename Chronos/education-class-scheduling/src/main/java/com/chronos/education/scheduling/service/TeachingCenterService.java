@@ -56,6 +56,7 @@ public class TeachingCenterService {
 							: offerings.findById(value.getOfferingId())
 									.map(offering -> scopes.canAccessOffering(scope, offering))
 									.orElse(false))
+					.filter(value -> !studentOnly(scope) || "PUBLISHED".equals(value.getStatus()))
 					.toList();
 			int from = Math.min((int) PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)).getOffset(), visible.size());
 			int to = Math.min(from + Math.min(Math.max(size, 1), 100), visible.size());
@@ -69,7 +70,17 @@ public class TeachingCenterService {
 		var result = offeringId == null || offeringId.isBlank()
 				? resources.findByResourceTypeAndArchivedFalse(type, request)
 				: resources.findByResourceTypeAndOfferingIdAndArchivedFalse(type, offeringId, request);
+		if (studentOnly(scope)) {
+			var published = result.getContent().stream()
+					.filter(value -> "PUBLISHED".equals(value.getStatus()))
+					.toList();
+			return PageView.from(new PageImpl<>(published, request, result.getTotalElements()));
+		}
 		return PageView.from(result);
+	}
+
+	private boolean studentOnly(EducationDataScope scope) {
+		return !scope.fullAccess() && !scope.studentIds().isEmpty() && scope.teacherIds().isEmpty();
 	}
 
 	public TeachingCenterResource create(
