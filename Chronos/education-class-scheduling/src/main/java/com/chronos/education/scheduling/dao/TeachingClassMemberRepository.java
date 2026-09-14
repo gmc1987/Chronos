@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 
 public interface TeachingClassMemberRepository extends JpaRepository<TeachingClassMember, String> {
+	void deleteByOfferingId(String offeringId);
+
 	List<TeachingClassMember> findByOfferingIdOrderByCreateTime(String offeringId);
 	List<TeachingClassMember> findByOfferingIdInAndEnrollmentStatus(
 			List<String> offeringIds,
