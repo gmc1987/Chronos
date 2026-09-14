@@ -23,6 +23,9 @@ grep -q 'baseline-on-migrate: true' "$APP" || {
 grep -q 'locations: classpath:db/migration' "$APP" || {
   echo "FAIL: migration location is not configured" >&2; exit 1;
 }
+grep -q 'ignore-migration-patterns:.*missing' "$APP" || {
+  echo "FAIL: shared databases must ignore unresolved migrations owned by other apps" >&2; exit 1;
+}
 test -f "$MIGRATIONS/V0__chronos_education_baseline.sql" || {
   echo "FAIL: empty databases require V0 baseline" >&2; exit 1;
 }
