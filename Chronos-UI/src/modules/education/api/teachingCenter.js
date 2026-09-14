@@ -108,7 +108,7 @@ export const updateResource = (domain, id, body) =>
 export const copyResource = (domain, id, body) =>
   http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/copy`, body)
 export const resourceVersions = (domain, id) =>
-  http.get(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/versions`)
+  http.get(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions`)
 export const addResourceVersion = (domain, id, body) =>
   http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions`, body)
 export const uploadTeachingFile = (file, businessType, businessId, onProgress) => {
@@ -117,9 +117,9 @@ export const uploadTeachingFile = (file, businessType, businessId, onProgress) =
   return http.upload(`/files?${queryString({ businessType, businessId })}`, data, onProgress)
 }
 export const setCurrentResourceVersion = (domain, id, versionId) =>
-  http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/current`)
+  http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/current`)
 export const submitResource = (domain, id) =>
-  http.post(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/submit`)
+  http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(id)}/submit-review`)
 
 // Slice three contracts. Keep all identifiers selected from server data; these
 // helpers are deliberately small so the workbench can show the workflow steps.
