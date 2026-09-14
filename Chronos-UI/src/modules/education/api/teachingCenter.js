@@ -100,6 +100,10 @@ export const createPreparationChild = (id, child, body) =>
   http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/${child}`, body)
 export const submitPreparation = (id) =>
   http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/submit`)
+export const invitePreparationMember = (id, body) =>
+  http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/members`, body)
+export const concludePreparation = (id, body) =>
+  http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/conclusion`, body)
 
 export const resourcePage = (domain, params = {}) => http.get(`/education/teaching-center/api/${domain}?${queryString(params)}`)
 export const createResource = (domain, body) => http.post(`/education/teaching-center/${domain}`, body)
@@ -118,8 +122,12 @@ export const uploadTeachingFile = (file, businessType, businessId, onProgress) =
 }
 export const setCurrentResourceVersion = (domain, id, versionId) =>
   http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/current`)
-export const submitResource = (domain, id) =>
-  http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(id)}/submit-review`)
+export const transitionResourceVersion = (domain, versionId, action) =>
+  http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(versionId)}/${encodeURIComponent(action)}`)
+export const submitResource = async (domain, id) => {
+  await http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(id)}/submit`)
+  return http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(id)}/submit-review`)
+}
 
 // Slice three contracts. Keep all identifiers selected from server data; these
 // helpers are deliberately small so the workbench can show the workflow steps.
