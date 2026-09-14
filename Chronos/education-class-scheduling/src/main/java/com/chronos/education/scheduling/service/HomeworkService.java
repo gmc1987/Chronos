@@ -103,7 +103,7 @@ public class HomeworkService {
 			if (value.studentIds().isEmpty()) {
 				teacherCan(value, dummy);
 				visible = assignments.findByOfferingIdOrderByDueAtDescCreateTimeDesc(offeringId);
-			} else if (value.fullAccess() || value.teacherIds().isEmpty()) {
+			} else if (!value.studentIds().isEmpty() && value.teacherIds().isEmpty()) {
 				List<TeachingClassMember> enrolled = members.findByStudentIdAndEnrollmentStatusIn(
 						studentId(auth), List.of("ACTIVE", "ENROLLED"));
 				if (enrolled.stream().noneMatch(m -> offeringId.equals(m.getOfferingId()))) {

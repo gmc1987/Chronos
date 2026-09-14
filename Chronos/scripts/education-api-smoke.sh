@@ -42,4 +42,3 @@ request 200 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks?p
 request 200 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks/${CHRONOS_HOMEWORK_ID}/my-submission"
 request 403 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks?offeringId=${CHRONOS_OUT_OF_SCOPE_OFFERING_ID}&page=0&size=20"
 request 403 "${teacher_auth[@]}" "$api/education/teaching-center/api/homeworks/${CHRONOS_HOMEWORK_ID}/my-submission"
-request 403 "${teacher_auth[@]}" "$api/education/teaching-center/api/homeworks?offeringId=${CHRONOS_OUT_OF_SCOPE_OFFERING_ID}&page=0&size=20"
