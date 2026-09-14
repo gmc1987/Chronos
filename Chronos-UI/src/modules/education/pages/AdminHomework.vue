@@ -11,7 +11,7 @@
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="loadError" />
     <el-form inline class="filters">
       <el-form-item label="教学班">
-        <el-select v-model="filters.offeringId" clearable filterable placeholder="选择负责的教学班" @change="load">
+        <el-select v-model="filters.offeringId" clearable filterable placeholder="选择负责的教学班" @change="loadReferences(); load()">
           <el-option v-for="item in offerings" :key="item.id" :value="item.id" :label="offeringLabel(item)" />
         </el-select>
       </el-form-item>
@@ -42,9 +42,9 @@
         <el-form-item label="作业说明"><el-input v-model="form.instructionsJson" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="截止时间" prop="dueAt"><el-date-picker v-model="form.dueAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" /></el-form-item>
         <el-form-item label="总分" prop="maxScore"><el-input-number v-model="form.maxScore" :min="1" :precision="0" /></el-form-item>
-        <el-form-item label="教学计划项"><el-input v-model="form.teachingPlanItemId" placeholder="可选，关联教学计划项 ID" /></el-form-item>
-        <el-form-item label="备课记录"><el-input v-model="form.preparationId" placeholder="可选，关联备课记录 ID" /></el-form-item>
-        <el-form-item label="教案"><el-input v-model="form.lessonPlanId" placeholder="可选，关联教案 ID" /></el-form-item>
+        <el-form-item label="教学计划项"><el-select v-model="form.teachingPlanItemId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班章节"><el-option v-for="item in planItems" :key="item.id" :value="item.id" :label="`${item.chapterNo || ''} · ${item.chapterName}`" /></el-select></el-form-item>
+        <el-form-item label="备课记录"><el-select v-model="form.preparationId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班备课"><el-option v-for="item in preparations" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
+        <el-form-item label="教案"><el-select v-model="form.lessonPlanId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班教案"><el-option v-for="item in lessonPlans" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item label="题目/附件快照"><el-input v-model="form.questionSnapshotJson" type="textarea" :rows="6" placeholder="可填写题目、要求或附件引用 JSON；发布后形成快照" /></el-form-item>
         <el-form-item label="允许迟交"><el-switch v-model="form.allowLate" /></el-form-item>
       </el-form>
@@ -79,7 +79,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, closeHomework, teachingCenterOfferings, updateHomework } from '../api/teachingCenter'
+import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, closeHomework, teachingCenterOfferings, teachingProduction, teachingPlanDetail, updateHomework } from '../api/teachingCenter'
 
 const offerings = ref([])
 const rows = ref([])
@@ -94,6 +94,9 @@ const editing = ref('')
 const selectedHomework = ref(null)
 const grading = ref(null)
 const formRef = ref()
+const planItems = ref([])
+const preparations = ref([])
+const lessonPlans = ref([])
 const filters = reactive({ offeringId: '' })
 const form = reactive({ title: '', instructionsJson: '', dueAt: '', maxScore: 100, questionSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false })
 const gradeForm = reactive({ score: 0, feedback: '', result: 'GRADED' })
@@ -111,8 +114,23 @@ const load = async () => {
   finally { loading.value = false }
 }
 const resetForm = value => Object.assign(form, { title: '', instructionsJson: '', dueAt: '', maxScore: 100, questionSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false }, value || {})
-const openCreate = () => { editing.value = ''; resetForm(); dialog.value = true }
-const edit = row => { editing.value = row.id; resetForm(row); dialog.value = true }
+const openCreate = async () => { editing.value = ''; resetForm(); await loadReferences(); dialog.value = true }
+const loadReferences = async () => {
+  if (!filters.offeringId) { planItems.value = []; preparations.value = []; lessonPlans.value = []; return }
+  try {
+    const response = await teachingProduction(filters.offeringId)
+    const data = response.data || {}
+    preparations.value = data.preparations || []
+    lessonPlans.value = data.lessons || []
+    const plans = data.plans || []
+    const details = await Promise.all(plans.map(plan => teachingPlanDetail(plan.id)))
+    planItems.value = details.flatMap(detail => detail.data?.items || [])
+  } catch (error) {
+    planItems.value = []; preparations.value = []; lessonPlans.value = []
+    ElMessage.error(error.message || '教学生产资源加载失败')
+  }
+}
+const edit = async row => { editing.value = row.id; resetForm(row); await loadReferences(); dialog.value = true }
 const save = async () => {
   try {
     await formRef.value.validate()
@@ -141,7 +159,7 @@ const grade = async () => {
   catch (error) { ElMessage.error(error.message || '保存批改失败') }
 }
 onMounted(async () => {
-  try { offerings.value = unwrap(await teachingCenterOfferings()); await load() }
+  try { offerings.value = unwrap(await teachingCenterOfferings()); if (!filters.offeringId && offerings.value[0]) filters.offeringId = offerings.value[0].id; await loadReferences(); await load() }
   catch (error) { loadError.value = error.message || '教学班加载失败' }
 })
 </script>

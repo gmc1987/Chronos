@@ -60,6 +60,19 @@ public class QuestionKnowledgeService {
 		return banks.save(bank);
 	}
 
+	public QuestionBank updateBank(String id, BankRequest request, Authentication user) {
+		QuestionBank bank = banks.findById(id).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
+		authorizeBank(bank, user);
+		require(request != null && text(request.name()) != null, "题库名称不能为空");
+		validateOffering(request.offeringId(), request.courseId(), scopes.resolve(user.getName()));
+		bank.setName(request.name().trim());
+		bank.setOfferingId(blank(request.offeringId()));
+		bank.setCourseId(blank(request.courseId()));
+		bank.setDescription(request.description());
+		bank.setVisibility(defaultValue(request.visibility(), "PRIVATE"));
+		return banks.save(bank);
+	}
+
 	public Question createQuestion(QuestionRequest request, Authentication user) {
 		validateQuestion(request, user);
 		QuestionBank bank = banks.findById(request.bankId()).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
@@ -216,6 +229,9 @@ public class QuestionKnowledgeService {
 		for (String id : r.knowledgePointIds()) {
 			KnowledgePoint point = points.findById(id)
 					.orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+			if (b.getCourseId() != null && point.getCourseId() != null
+					&& !b.getCourseId().equals(point.getCourseId()))
+				throw new IllegalArgumentException("知识点不属于题库课程");
 			scopes.assertCourseAccess(scope, point.getCourseId());
 		}
 	}

@@ -14,11 +14,16 @@ import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.HomeworkAssignmentRepository;
 import com.chronos.education.scheduling.dao.HomeworkSubmissionRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
+import com.chronos.education.scheduling.dao.TeachingPlanItemRepository;
+import com.chronos.education.scheduling.dao.TeachingPlanRepository;
+import com.chronos.education.scheduling.dao.PreparationRepository;
+import com.chronos.education.scheduling.dao.LessonPlanRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.HomeworkAssignment;
 import com.chronos.education.scheduling.model.HomeworkSubmission;
 import com.chronos.education.scheduling.model.TeachingClassMember;
+import com.chronos.education.scheduling.model.TeachingPlanItem;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
@@ -31,15 +36,23 @@ public class HomeworkService {
 	private final TeachingClassMemberRepository members;
 	private final CourseOfferingRepository offerings;
 	private final EducationDataScopeService scopes;
+	private final TeachingPlanItemRepository planItems;
+	private final TeachingPlanRepository plans;
+	private final PreparationRepository preparations;
+	private final LessonPlanRepository lessonPlans;
 
 	public HomeworkService(HomeworkAssignmentRepository assignments,
 			HomeworkSubmissionRepository submissions, TeachingClassMemberRepository members,
-			CourseOfferingRepository offerings, EducationDataScopeService scopes) {
+			CourseOfferingRepository offerings, EducationDataScopeService scopes,
+			TeachingPlanItemRepository planItems, TeachingPlanRepository plans,
+			PreparationRepository preparations, LessonPlanRepository lessonPlans) {
 		this.assignments = assignments;
 		this.submissions = submissions;
 		this.members = members;
 		this.offerings = offerings;
 		this.scopes = scopes;
+		this.planItems = planItems; this.plans = plans;
+		this.preparations = preparations; this.lessonPlans = lessonPlans;
 	}
 
 	private EducationDataScope scope(Authentication auth) {
@@ -124,6 +137,7 @@ public class HomeworkService {
 		EducationDataScope value = scope(auth);
 		scopes.assertOfferingAccess(value, request.offeringId());
 		offering(request.offeringId());
+		validateReferences(request, request.offeringId());
 		HomeworkAssignment result = new HomeworkAssignment();
 		apply(result, request);
 		return assignments.save(result);
@@ -136,6 +150,7 @@ public class HomeworkService {
 		if (!Objects.equals(result.getOfferingId(), request.offeringId())) {
 			scopes.assertOfferingAccess(scope(auth), request.offeringId());
 		}
+		validateReferences(request, request.offeringId());
 		apply(result, request);
 		return result;
 	}
@@ -151,6 +166,23 @@ public class HomeworkService {
 		result.setDueAt(request.dueAt());
 		result.setMaxScore(request.maxScore() == null ? 100 : request.maxScore());
 		result.setAllowLate(request.allowLate());
+	}
+
+	private void validateReferences(AssignmentRequest request, String offeringId) {
+		if (request.teachingPlanItemId() != null && !request.teachingPlanItemId().isBlank()) {
+			TeachingPlanItem item = planItems.findById(request.teachingPlanItemId())
+					.orElseThrow(() -> new IllegalArgumentException("教学计划项不存在"));
+			if (!plans.findById(item.getPlanId()).map(p -> offeringId.equals(p.getOfferingId())).orElse(false))
+				throw new IllegalArgumentException("教学计划项不属于该教学班");
+		}
+		if (request.preparationId() != null && !request.preparationId().isBlank()
+				&& !preparations.findById(request.preparationId())
+						.map(p -> offeringId.equals(p.getOfferingId())).orElse(false))
+			throw new IllegalArgumentException("备课记录不属于该教学班");
+		if (request.lessonPlanId() != null && !request.lessonPlanId().isBlank()
+				&& !lessonPlans.findById(request.lessonPlanId())
+						.map(p -> offeringId.equals(p.getOfferingId())).orElse(false))
+			throw new IllegalArgumentException("教案不属于该教学班");
 	}
 
 	public HomeworkAssignment publish(String id, Authentication auth) {

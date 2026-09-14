@@ -24,6 +24,7 @@ public class TeachingPlanLessonService {
 	private final TeachingPlanVersionRepository planVersions;
 	private final LessonPlanRepository lessons;
 	private final LessonPlanVersionRepository lessonVersions;
+	private final PreparationRepository preparations;
 	private final com.chronos.education.scheduling.dao.CourseOfferingRepository offerings;
 	private final com.chronos.education.scheduling.dao.ScheduleEntryRepository schedules;
 	private final EducationDataScopeService scopes;
@@ -34,13 +35,28 @@ public class TeachingPlanLessonService {
 	public TeachingPlanLessonService(TeachingPlanRepository plans, TeachingPlanItemRepository items,
 			TeachingPlanVersionRepository planVersions, LessonPlanRepository lessons,
 			LessonPlanVersionRepository lessonVersions,
+			PreparationRepository preparations,
 			com.chronos.education.scheduling.dao.CourseOfferingRepository offerings,
 			com.chronos.education.scheduling.dao.ScheduleEntryRepository schedules,
 			EducationDataScopeService scopes, TeachingReviewService reviews, ObjectMapper json,
 			ManagedFileRepository files) {
 		this.plans = plans; this.items = items; this.planVersions = planVersions;
 		this.lessons = lessons; this.lessonVersions = lessonVersions; this.offerings = offerings;
+		this.preparations = preparations;
 		this.schedules = schedules; this.scopes = scopes; this.reviews = reviews; this.json = json; this.files = files;
+	}
+	private void validatePlanItem(PlanItemUpdateRequest i) {
+		if (i.weekStart() > i.weekEnd()) throw new IllegalArgumentException("章节周次范围无效");
+		if (i.trainingHours() != null && i.trainingHours() > i.lessonHours())
+			throw new IllegalArgumentException("实训课时不得超过章节课时");
+	}
+	private void applyItem(TeachingPlanItem v, PlanItemUpdateRequest i) {
+		v.setChapterNo(i.chapterNo()); v.setChapterName(i.chapterName());
+		v.setWeekStart(i.weekStart()); v.setWeekEnd(i.weekEnd()); v.setLessonHours(i.lessonHours());
+		v.setTrainingHours(i.trainingHours() == null ? 0 : i.trainingHours()); v.setObjectives(i.objectives());
+		v.setKeyPoints(i.keyPoints()); v.setDifficultPoints(i.difficultPoints());
+		v.setAssessmentMethod(i.assessmentMethod()); v.setLinkedKnowledgePointId(i.linkedKnowledgePointId());
+		v.setSortOrder(i.sortOrder());
 	}
 
 	public TeachingPlan createPlan(PlanCreateRequest request, Authentication auth) {
@@ -58,6 +74,12 @@ public class TeachingPlanLessonService {
 		TeachingPlan saved = plans.save(plan);
 		saveItems(saved.getId(), request.items());
 		return saved;
+	}
+	private void validateLessonReference(String lessonId, String offeringId, Authentication auth) {
+		if (lessonId == null || lessonId.isBlank()) return;
+		LessonPlan lesson = getLesson(lessonId, auth);
+		if (!Objects.equals(offeringId, lesson.getOfferingId()))
+			throw new IllegalArgumentException("教案不属于该教学班");
 	}
 
 	@Transactional(readOnly = true)
@@ -92,6 +114,84 @@ public class TeachingPlanLessonService {
 	@Transactional(readOnly = true)
 	public List<TeachingPlanItem> planItems(String id, Authentication auth) {
 		getPlan(id, auth); return items.findByPlanIdOrderBySortOrderAsc(id);
+	}
+
+	@Transactional(readOnly = true)
+	public Map<String, Object> offeringProduction(String offeringId, Authentication auth) {
+		CourseOffering offering = offering(offeringId, auth);
+		return Map.of("offering", offering,
+				"plans", plans.findByOfferingIdAndArchivedFalseOrderByCreateTimeDesc(offeringId),
+				"lessons", lessons.findByOfferingIdAndArchivedFalseOrderByCreateTimeDesc(offeringId),
+				"preparations", preparations.findByOfferingIdAndArchivedFalseOrderByCreateTimeDesc(offeringId));
+	}
+	@Transactional(readOnly = true)
+	public List<TeachingPlan> plansForOffering(String offeringId, Authentication auth) {
+		offering(offeringId, auth);
+		return plans.findByOfferingIdAndArchivedFalseOrderByCreateTimeDesc(offeringId);
+	}
+	@Transactional(readOnly = true)
+	public List<LessonPlan> lessonsForOffering(String offeringId, Authentication auth) {
+		offering(offeringId, auth);
+		return lessons.findByOfferingIdAndArchivedFalseOrderByCreateTimeDesc(offeringId);
+	}
+	@Transactional(readOnly = true)
+	public List<Preparation> preparationsForOffering(String offeringId, Authentication auth) {
+		offering(offeringId, auth);
+		return preparations.findByOfferingIdAndArchivedFalseOrderByCreateTimeDesc(offeringId);
+	}
+
+	public TeachingPlanItem createPlanItem(String planId, PlanItemUpdateRequest request, Authentication auth) {
+		TeachingPlan plan = getPlan(planId, auth);
+		assertDraft(plan.getStatus());
+		validatePlanItem(request);
+		TeachingPlanItem item = new TeachingPlanItem();
+		item.setId(UUID.randomUUID().toString());
+		item.setPlanId(planId);
+		applyItem(item, request);
+		return items.save(item);
+	}
+
+	public TeachingPlanItem updatePlanItem(String id, PlanItemUpdateRequest request, Authentication auth) {
+		TeachingPlanItem item = items.findById(id).orElseThrow(() -> new NoSuchElementException("教学计划项不存在"));
+		TeachingPlan plan = getPlan(item.getPlanId(), auth);
+		assertDraft(plan.getStatus());
+		validatePlanItem(request);
+		applyItem(item, request);
+		return items.save(item);
+	}
+
+	public Preparation createPreparation(PreparationCreateRequest request, Authentication auth) {
+		CourseOffering offering = offering(request.offeringId(), auth);
+		validateSchedule(request.scheduleEntryId(), offering.getId(), auth);
+		validateLessonReference(request.conclusionLessonPlanId(), offering.getId(), auth);
+		Preparation value = new Preparation();
+		value.setOfferingId(offering.getId()); value.setCampusId(offering.getCampusId());
+		value.setOwnerTeacherId(offering.getTeacherId()); value.setScheduleEntryId(request.scheduleEntryId());
+		value.setTitle(request.title()); value.setPreparationType(request.preparationType());
+		value.setConclusion(request.conclusion()); value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
+		value.setCreateBy(auth.getName());
+		return preparations.save(value);
+	}
+
+	public Preparation updatePreparation(String id, PreparationUpdateRequest request, Authentication auth) {
+		Preparation value = preparations.findById(id).orElseThrow(() -> new NoSuchElementException("备课记录不存在"));
+		scopes.assertOfferingAccess(scopes.resolve(auth.getName()), value.getOfferingId());
+		if (!Objects.equals(value.getRowVersion(), request.rowVersion()))
+			throw new OptimisticLockException("备课记录已被更新");
+		assertDraft(value.getStatus());
+		validateSchedule(request.scheduleEntryId(), value.getOfferingId(), auth);
+		validateLessonReference(request.conclusionLessonPlanId(), value.getOfferingId(), auth);
+		value.setScheduleEntryId(request.scheduleEntryId()); value.setTitle(request.title());
+		value.setPreparationType(request.preparationType()); value.setConclusion(request.conclusion());
+		value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
+		return preparations.save(value);
+	}
+
+	@Transactional(readOnly = true)
+	public Preparation getPreparation(String id, Authentication auth) {
+		Preparation value = preparations.findById(id).orElseThrow(() -> new NoSuchElementException("备课记录不存在"));
+		scopes.assertOfferingAccess(scopes.resolve(auth.getName()), value.getOfferingId());
+		return value;
 	}
 
 	@Transactional(readOnly = true)

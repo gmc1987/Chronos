@@ -46,6 +46,31 @@ public final class TeachingPlanDtos {
 			String remarks,
 			@Valid List<PlanItemRequest> items) {}
 
+	public record PlanItemUpdateRequest(
+			@NotNull @Positive Integer chapterNo,
+			@NotBlank @Size(max = 200) String chapterName,
+			@NotNull @Min(1) @Max(60) Integer weekStart,
+			@NotNull @Min(1) @Max(60) Integer weekEnd,
+			@NotNull @Positive Integer lessonHours,
+			@Min(0) Integer trainingHours, @NotBlank String objectives,
+			@NotBlank String keyPoints, @NotBlank String difficultPoints,
+			String assessmentMethod, @Size(max = 64) String linkedKnowledgePointId,
+			@NotNull @Min(0) Integer sortOrder) {}
+
+	public record PreparationCreateRequest(
+			@NotBlank @Size(max = 64) String offeringId,
+			@Size(max = 64) String scheduleEntryId,
+			@NotBlank @Size(max = 200) String title,
+			@NotBlank @Size(max = 16) String preparationType,
+			String conclusion, @Size(max = 64) String conclusionLessonPlanId) {}
+
+	public record PreparationUpdateRequest(
+			@NotNull Long rowVersion,
+			@Size(max = 64) String scheduleEntryId,
+			@NotBlank @Size(max = 200) String title,
+			@NotBlank @Size(max = 16) String preparationType,
+			String conclusion, @Size(max = 64) String conclusionLessonPlanId) {}
+
 	public record LessonCreateRequest(
 			@NotBlank @Size(max = 64) String offeringId,
 			@Size(max = 64) String scheduleEntryId,

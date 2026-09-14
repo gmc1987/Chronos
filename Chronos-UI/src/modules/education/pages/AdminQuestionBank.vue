@@ -42,8 +42,8 @@
         <el-form-item label="难度" required><el-select v-model="questionForm.difficulty" style="width:220px"><el-option v-for="o in difficultyOptions" :key="o.value" v-bind="o" /></el-select></el-form-item>
         <el-form-item label="分值" required><el-input-number v-model="questionForm.score" :min="0.01" :precision="2" /></el-form-item>
         <template v-if="isChoice">
-          <el-form-item label="选项"><div class="options"><div v-for="(option, index) in questionForm.options" :key="option.optionKey" class="option-row">
-            <el-input v-model="option.content" :placeholder="`选项 ${option.optionKey}`" /><el-checkbox v-model="option.correct">正确答案</el-checkbox>
+          <el-form-item label="选项"><div class="options"><div v-for="(option, index) in questionForm.options" :key="option.key" class="option-row">
+              <el-input v-model="option.text" :placeholder="`选项 ${option.key}`" /><el-checkbox v-model="option.correct">正确答案</el-checkbox>
             <el-button link type="danger" @click="questionForm.options.splice(index,1)">删除</el-button>
           </div><el-button link type="primary" @click="addOption">添加选项</el-button></div></el-form-item>
         </template>
@@ -79,7 +79,7 @@ const loadQuestions = async () => { if (!bankId.value) return; loading.value = t
 const openBank = (row) => { reset(bankForm, row ? { ...row } : { courseId: courseId.value, offeringId: '', name: '', visibility: visibilityOptions.value[0]?.value || '', description: '' }); bankDialog.value = true }
 const saveBank = async () => { try { bankForm.id ? await updateQuestionBank(bankForm.id, { ...bankForm }) : await createQuestionBank({ ...bankForm }); bankDialog.value = false; await selectCourse(); ElMessage.success('题库已保存') } catch (e) { ElMessage.error(e.message) } }
 const openQuestion = (row) => { reset(questionForm, row ? { ...row, options: row.options || [], knowledgePointIds: row.knowledgePointIds || [] } : { bankId: bankId.value, questionType: typeOptions.value[0]?.value || '', difficulty: difficultyOptions.value[0]?.value || '', stem: '', score: 1, answer: '', analysis: '', options: [], knowledgePointIds: [] }); questionDialog.value = true }
-const addOption = () => questionForm.options.push({ optionKey: String.fromCharCode(65 + questionForm.options.length), content: '', correct: false })
+const addOption = () => questionForm.options.push({ key: String.fromCharCode(65 + questionForm.options.length), text: '', correct: false })
 const saveQuestion = async () => { if (!questionForm.stem || !questionForm.answer || !questionForm.knowledgePointIds?.length) return ElMessage.warning('请填写题干、答案并选择知识点'); try { const body = { ...questionForm, options: isChoice.value ? questionForm.options : [] }; questionForm.id ? await updateQuestion(questionForm.id, body) : await createQuestion(body); questionDialog.value = false; await loadQuestions(); ElMessage.success('草稿已保存') } catch (e) { ElMessage.error(e.message) } }
 const canSubmit = row => row.capabilities?.submit !== false
 const publish = async row => { await ElMessageBox.confirm('发布后编辑将生成新的草稿版本，是否继续？', '确认发布'); try { await submitQuestion(row.id); await loadQuestions(); ElMessage.success('已提交发布') } catch (e) { ElMessage.error(e.message) } }

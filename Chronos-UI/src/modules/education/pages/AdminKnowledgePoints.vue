@@ -13,7 +13,8 @@ import { dictionaryOptions, listCourseCatalog } from '../../../api/admin'
 import { knowledgePointTree, createKnowledgePoint, updateKnowledgePoint, moveKnowledgePoint, disableKnowledgePoint } from '../api/teachingCenter'
 const courses=ref([]);const courseId=ref('');const tree=ref([]);const selected=ref(null);const dialog=ref(false);const form=reactive({})
 const reset=(v={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{courseId:courseId.value,name:'',code:'',description:'',learningObjective:'',parentId:'',...v})}
-const loadTree=async()=>{selected.value=null;tree.value=[];if(!courseId.value)return;try{const r=await knowledgePointTree(courseId.value);tree.value=r.data?.content||r.data||[]}catch(e){ElMessage.error(e.message)}}
+const loadTree=async()=>{selected.value=null;tree.value=[];if(!courseId.value)return;try{const r=await knowledgePointTree(courseId.value);tree.value=toTree(r.data?.content||r.data||[])}catch(e){ElMessage.error(e.message)}}
+const toTree=(rows)=>{const byId=new Map(rows.map(x=>[x.id,{...x,children:[]}])) ;const roots=[];byId.forEach(x=>{if(x.parentId&&byId.has(x.parentId))byId.get(x.parentId).children.push(x);else roots.push(x)});return roots}
 const selectPoint=(node)=>{selected.value=node}
 const openPoint=(point)=>{reset(point||{});dialog.value=true}
 const save=async()=>{if(!form.name)return ElMessage.warning('请输入知识点名称');try{form.id?await updateKnowledgePoint(form.id,{...form}):await createKnowledgePoint({...form});dialog.value=false;await loadTree();ElMessage.success('已保存')}catch(e){ElMessage.error(e.message)}}

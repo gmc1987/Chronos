@@ -43,6 +43,11 @@ public class ResearchErrorController {
 	@PostMapping("/error-books/manual")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:create','education:teaching:manage')")
 	public ResultData<?> manual(@Valid @RequestBody ErrorManualRequest r,Authentication a) { return ok(service.recordManual(r,a)); }
+	@GetMapping("/error-books/items")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:error-book:view','education:teaching:manage')")
+	public ResultData<?> items(@RequestParam(required = false) String courseId, Authentication a) {
+		return ok(service.items(courseId, a));
+	}
 	@PostMapping("/error-books/wrong-answer-confirmed")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:create','education:teaching:manage')")
 	public ResultData<?> confirmed(@Valid @RequestBody WrongAnswerConfirmed r,Authentication a) { return ok(service.onWrongAnswerConfirmed(r,a)); }

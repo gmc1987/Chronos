@@ -15,7 +15,8 @@ public final class ResearchErrorDtos {
 	public record ResultRequest(@NotBlank String title, @NotBlank String resultType,
 			String content, String fileId) {}
 	public record ErrorManualRequest(@NotBlank String studentId, String courseId, String semesterId,
-			String questionId, String sourceRef, String analysis, String studentNote) {}
+			@NotBlank String questionId, @NotBlank String knowledgePointId, @NotBlank String errorReason, String sourceRef,
+			String analysis, String studentNote) {}
 	public record WrongAnswerConfirmed(@NotBlank String eventId, @NotBlank String studentId,
 			String courseId, String semesterId, String questionId, @NotBlank String sourceItemId,
 			String sourceRef, String analysis) {}

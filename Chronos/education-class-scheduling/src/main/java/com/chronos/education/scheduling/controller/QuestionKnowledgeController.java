@@ -20,6 +20,13 @@ public class QuestionKnowledgeController {
 	public ResultData<QuestionBank> createBank(@RequestBody BankRequest request, Authentication user) {
 		return ok(service.createBank(request, user));
 	}
+	@PutMapping("/question-banks/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
+	public ResultData<QuestionBank> updateBank(@PathVariable String id, @RequestBody BankRequest request,
+			Authentication user) {
+		QuestionBank bank = service.updateBank(id, request, user);
+		return ok(bank);
+	}
 	@PostMapping("/questions")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
 	public ResultData<Question> createQuestion(@RequestBody QuestionRequest request, Authentication user) {
