@@ -138,3 +138,23 @@ export const createMistake = (body) => createResource('mistakes', body)
 export const updateMistake = (id, body) => updateResource('mistakes', id, body)
 export const transitionMistake = (id, status) =>
   http.post(`/education/teaching-center/api/mistakes/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
+
+// Homework is a teaching-domain workflow, not a generic platform Workflow instance.
+export const homeworkPage = (params = {}) =>
+  http.get(`/education/teaching-center/api/homeworks?${queryString(params)}`)
+export const createHomework = (body) =>
+  http.post('/education/teaching-center/api/homeworks', body)
+export const updateHomework = (id, body) =>
+  http.put(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}`, body)
+export const publishHomework = (id) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/publish`)
+export const closeHomework = (id) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/close`)
+export const homeworkSubmissions = (id, params = {}) =>
+  http.get(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/submissions?${queryString(params)}`)
+export const saveHomeworkSubmission = (id, body) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/submissions`, body)
+export const submitHomework = (submissionId) =>
+  http.post(`/education/teaching-center/api/homework-submissions/${encodeURIComponent(submissionId)}/submit`)
+export const gradeHomeworkSubmission = (submissionId, body) =>
+  http.post(`/education/teaching-center/api/homework-submissions/${encodeURIComponent(submissionId)}/grade`, body)
