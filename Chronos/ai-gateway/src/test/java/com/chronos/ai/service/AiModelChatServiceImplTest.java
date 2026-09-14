@@ -16,11 +16,9 @@ import org.springframework.ai.chat.model.ChatModel;
 
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
-import com.chronos.service.factory.LLMServiceStrategy;
 
 class AiModelChatServiceImplTest {
 	private AiModelRepository models;
-	private LLMServiceStrategy legacy;
 	private DeepSeekChatModelFactory factory;
 	private ChatModel chatModel;
 	private AiModel model;
@@ -28,7 +26,6 @@ class AiModelChatServiceImplTest {
 	@BeforeEach
 	void setUp() {
 		models = mock(AiModelRepository.class);
-		legacy = mock(LLMServiceStrategy.class);
 		factory = mock(DeepSeekChatModelFactory.class);
 		chatModel = mock(ChatModel.class);
 		model = validModel("model-1");
@@ -40,7 +37,7 @@ class AiModelChatServiceImplTest {
 	void explicitModelUsesCachedClientUntilInvalidated() {
 		when(models.findById("model-1")).thenReturn(Optional.of(model));
 
-		AiModelChatServiceImpl service = new AiModelChatServiceImpl(models, legacy, factory);
+		AiModelChatServiceImpl service = new AiModelChatServiceImpl(models, factory);
 		assertThat(service.chat("model-1", "hello")).isEqualTo("world");
 		assertThat(service.chat("model-1", "hello")).isEqualTo("world");
 		assertThat(service.chat("model-1", "hello")).isEqualTo("world");
@@ -51,24 +48,22 @@ class AiModelChatServiceImplTest {
 	}
 
 	@Test
-	void fallsBackOnlyWhenDatabaseHasNoModelRows() {
+	void missingDefaultDoesNotFallBackToYamlConfiguration() {
 		when(models.findFirstDefault()).thenReturn(Optional.empty());
-		when(models.count()).thenReturn(0L);
-		when(legacy.chat("hello")).thenReturn("legacy");
-
-		assertThat(new AiModelChatServiceImpl(models, legacy, factory).chat(null, "hello"))
-				.isEqualTo("legacy");
+		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat(null, "hello"))
+				.isInstanceOf(AiModelConfigurationException.class)
+				.hasMessageContaining("模型管理");
 		verify(factory, times(0)).create(any());
 	}
 
 	@Test
 	void configuredDefaultIsUsedAndInvalidConfigurationIsNotSilentlyIgnored() {
 		when(models.findFirstDefault()).thenReturn(Optional.of(model));
-		assertThat(new AiModelChatServiceImpl(models, legacy, factory).chat(null, "hello"))
+		assertThat(new AiModelChatServiceImpl(models, factory).chat(null, "hello"))
 				.isEqualTo("world");
 
 		model.setApiKey(null);
-		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, legacy, factory).chat(null, "hello"))
+		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat(null, "hello"))
 				.isInstanceOf(AiModelConfigurationException.class)
 				.hasMessageContaining("API Key");
 	}
@@ -77,13 +72,13 @@ class AiModelChatServiceImplTest {
 	void disabledAndUnsupportedModelsFailClearly() {
 		model.setStatus(0);
 		when(models.findById("model-1")).thenReturn(Optional.of(model));
-		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, legacy, factory).chat("model-1", "hello"))
+		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat("model-1", "hello"))
 				.isInstanceOf(AiModelConfigurationException.class)
 				.hasMessageContaining("停用");
 
 		model.setStatus(1);
 		model.setProvider("openai");
-		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, legacy, factory).chat("model-1", "hello"))
+		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat("model-1", "hello"))
 				.isInstanceOf(AiModelConfigurationException.class)
 				.hasMessageContaining("不受支持");
 	}

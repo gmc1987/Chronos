@@ -6,15 +6,12 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.client.RestClientException;
 
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
-import com.chronos.service.factory.LLMServiceStrategy;
 
 /**
  * Public runtime for all database-backed model calls. The cache is keyed by
@@ -29,25 +26,14 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	private static final int DEFAULT_CALL_TIMEOUT_MS = 120_000;
 
 	private final AiModelRepository models;
-	private final LLMServiceStrategy legacyDeepseek;
 	private final DeepSeekChatModelFactory modelFactory;
 	private final ConcurrentHashMap<String, CachedModel> cache = new ConcurrentHashMap<>();
 
-	@Autowired
 	public AiModelChatServiceImpl(
 			AiModelRepository models,
-			@Qualifier("deepseekService") LLMServiceStrategy legacyDeepseek,
 			DeepSeekChatModelFactory modelFactory) {
 		this.models = models;
-		this.legacyDeepseek = legacyDeepseek;
 		this.modelFactory = modelFactory;
-	}
-
-	/** Kept for small module tests and source-compatible callers. */
-	public AiModelChatServiceImpl(
-			AiModelRepository models,
-			@Qualifier("deepseekService") LLMServiceStrategy legacyDeepseek) {
-		this(models, legacyDeepseek, new DeepSeekChatModelFactory());
 	}
 
 	@Override
@@ -64,10 +50,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		if (configuredDefault.isPresent()) {
 			return invoke(configuredDefault.get(), "默认 AI 模型", message);
 		}
-		if (models.count() == 0) {
-			return invokeLegacy(message);
-		}
-		throw new AiModelConfigurationException("未配置默认 AI 模型");
+		throw new AiModelConfigurationException("未配置默认 AI 模型，请在模型管理中启用并设为默认");
 	}
 
 	@Override
@@ -91,14 +74,6 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		}
 	}
 
-	private String invokeLegacy(String message) {
-		try {
-			return legacyDeepseek.chat(message);
-		} catch (RestClientException | WebClientException | IllegalStateException exception) {
-			throw new AiModelInvocationException("旧版 DeepSeek 模型调用失败，请稍后重试", exception);
-		}
-	}
-
 	private CachedModel cachedModel(AiModel model) {
 		String id = model.getId().trim();
 		String fingerprint = fingerprint(model);
@@ -110,6 +85,9 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	private void validate(AiModel model, String label) {
 		if (!Integer.valueOf(1).equals(model.getStatus())) {
 			throw new AiModelConfigurationException(label + "已停用");
+		}
+		if (!"CHAT".equalsIgnoreCase(model.getModelType())) {
+			throw new AiModelConfigurationException(label + "不是聊天模型");
 		}
 		if (model.getApiKey() == null || model.getApiKey().isBlank()) {
 			throw new AiModelConfigurationException(label + "未配置 API Key");

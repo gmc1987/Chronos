@@ -62,16 +62,6 @@ management:
     redis:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}
       port: ${CHRONOS_REDIS_PORT:6379}
-  ai:
-    model:
-      # 启用真实模型时同时设置 CHRONOS_AI_CHAT_MODEL=deepseek 和 API Key。
-      chat: ${CHRONOS_AI_CHAT_MODEL:none}
-    deepseek:
-      chat:
-        # 生产密钥只允许通过环境变量注入，仓库不保留真实凭据。
-        api-key: ${CHRONOS_DEEPSEEK_CHAT_API_KEY:disabled}
-        base-url: ${CHRONOS_DEEPSEEK_CHAT_BASE_URL:https://api.deepseek.com}
-        model: ${CHRONOS_DEEPSEEK_CHAT_MODEL:deepseek-chat}
           
 
 flowable:
