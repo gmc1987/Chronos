@@ -18,6 +18,14 @@
     <pluginManagement>
       <plugins>
         <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <configuration>
+            <!-- -am runs upstream modules that do not contain the selected test. -->
+            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+          </configuration>
+        </plugin>
+        <plugin>
           <groupId>org.springframework.boot</groupId>
           <artifactId>spring-boot-maven-plugin</artifactId>
           <!--

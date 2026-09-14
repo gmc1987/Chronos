@@ -14,11 +14,13 @@ import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeacherTeachingAssignmentRepository;
+import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.StudentProfile;
+import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.service.iService.IDataScopeService;
 import com.chronos.model.vo.DataScopeContext;
 import java.util.List;
@@ -34,6 +36,7 @@ class EducationDataScopeServiceTest {
 	private StudentProfileRepository students;
 	private IDataScopeService platformScopes;
 	private CourseOfferingRepository offerings;
+	private TeachingClassMemberRepository members;
 	private ClassroomRepository classrooms;
 	private EducationDataScopeService service;
 
@@ -43,6 +46,7 @@ class EducationDataScopeServiceTest {
 		students = mock(StudentProfileRepository.class);
 		platformScopes = mock(IDataScopeService.class);
 		offerings = mock(CourseOfferingRepository.class);
+		members = mock(TeachingClassMemberRepository.class);
 		classrooms = mock(ClassroomRepository.class);
 		service = new EducationDataScopeService(
 				platformScopes,
@@ -51,7 +55,9 @@ class EducationDataScopeServiceTest {
 				classes,
 				students,
 				mock(StudentGuardianRepository.class),
+				null,
 				offerings,
+				members,
 				classrooms,
 				mock(ScheduleEntryRepository.class));
 	}
@@ -184,6 +190,25 @@ class EducationDataScopeServiceTest {
 
 		assertThat(service.canAccessTeacher(scope, "teacher-1")).isTrue();
 		assertThat(service.canAccessTeacher(scope, "teacher-2")).isFalse();
+	}
+
+	@Test
+	void studentOnlySeesEnrolledOfferings() {
+		EducationDataScope scope = new EducationDataScope(
+				false, Set.of(), Set.of(), Set.of(), Set.of(), Set.of("student-1"));
+		CourseOffering enrolled = offering("offering-1", "campus-1");
+		CourseOffering other = offering("offering-2", "campus-1");
+		TeachingClassMember member = new TeachingClassMember();
+		member.setOfferingId("offering-1");
+		member.setStudentId("student-1");
+		member.setEnrollmentStatus("ENROLLED");
+		when(members.findByOfferingIdAndStudentId("offering-1", "student-1"))
+				.thenReturn(Optional.of(member));
+		when(members.findByOfferingIdAndStudentId("offering-2", "student-1"))
+				.thenReturn(Optional.empty());
+
+		assertThat(service.visibleOfferings(scope, List.of(enrolled, other)))
+				.containsExactly(enrolled);
 	}
 
 	private EducationDataScope scope(Set<String> gradeIds, Set<String> classIds) {

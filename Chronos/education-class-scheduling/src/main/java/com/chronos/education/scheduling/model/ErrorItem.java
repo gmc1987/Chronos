@@ -12,6 +12,8 @@ public class ErrorItem {
 	@Id @Column(length = 64) private String id;
 	@Column(name = "book_id", nullable = false, length = 64) private String bookId;
 	@Column(name = "question_id", length = 64) private String questionId;
+	@Column(name = "knowledge_point_id", length = 64) private String knowledgePointId;
+	@Column(name = "error_reason", length = 32) private String errorReason;
 	@Column(name = "source_ref", length = 64) private String sourceRef;
 	@Column(name = "source_type", length = 32) private String sourceType;
 	@Column(name = "source_item_id", length = 64) private String sourceItemId;

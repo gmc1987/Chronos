@@ -21,6 +21,25 @@ export const teachingDomainChildrenApi = (domain, id, child, params = {}) => {
 }
 export const publishedScheduleEntries = (offeringId) =>
   http.get(`/admin/education/schedules?dimension=OFFERING&targetId=${encodeURIComponent(offeringId)}&published=true`)
+export const teachingProduction = (offeringId) =>
+  http.get(`/education/teaching/offerings/${encodeURIComponent(offeringId)}/production`)
+export const offeringPlans = (offeringId) =>
+  http.get(`/education/teaching/offerings/${encodeURIComponent(offeringId)}/plans`)
+export const offeringLessons = (offeringId) =>
+  http.get(`/education/teaching/offerings/${encodeURIComponent(offeringId)}/lessons`)
+export const offeringPreparations = (offeringId) =>
+  http.get(`/education/teaching/offerings/${encodeURIComponent(offeringId)}/preparations`)
+export const createTeachingPlan = body => http.post('/education/teaching/plans', body)
+export const updateTeachingPlan = (id, body) => http.put(`/education/teaching/plans/${encodeURIComponent(id)}`, body)
+export const teachingPlanDetail = id => http.get(`/education/teaching/plans/${encodeURIComponent(id)}`)
+export const teachingPlanVersions = id => http.get(`/education/teaching/plans/${encodeURIComponent(id)}/versions`)
+export const lessonPlanDetail = id => http.get(`/education/teaching/lessons/${encodeURIComponent(id)}`)
+export const lessonPlanVersions = id => http.get(`/education/teaching/lessons/${encodeURIComponent(id)}/versions`)
+export const createLessonPlan = body => http.post('/education/teaching/lessons', body)
+export const updateLessonPlan = (id, body) => http.put(`/education/teaching/lessons/${encodeURIComponent(id)}`, body)
+export const createPlanItem = (planId, body) => http.post(`/education/teaching/plans/${encodeURIComponent(planId)}/items`, body)
+export const updatePlanItem = (id, body) => http.put(`/education/teaching/plan-items/${encodeURIComponent(id)}`, body)
+export const getPreparation = id => http.get(`/education/teaching/preparations/${encodeURIComponent(id)}`)
 
 const queryString = (params = {}) => new URLSearchParams(
   Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -70,9 +89,11 @@ export const teachingReviewStatus = (type, id) =>
 
 // Slice two uses explicit domain contracts; the generic compatibility CRUD above is
 // intentionally not used by the preparation and resource workbenches.
-export const preparationPage = (params = {}) => http.get(`/education/teaching-center/api/preparations?${queryString(params)}`)
-export const createPreparation = (body) => http.post('/education/teaching-center/api/preparations', body)
-export const updatePreparation = (id, body) => http.put(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}`, body)
+export const preparationPage = (params = {}) => params.offeringId
+  ? offeringPreparations(params.offeringId)
+  : http.get(`/education/teaching-center/api/preparations?${queryString(params)}`)
+export const createPreparation = (body) => http.post('/education/teaching/preparations', body)
+export const updatePreparation = (id, body) => http.put(`/education/teaching/preparations/${encodeURIComponent(id)}`, body)
 export const preparationChildren = (id, child, params = {}) =>
   http.get(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}/${child}?${queryString(params)}`)
 export const createPreparationChild = (id, child, body) =>
@@ -99,24 +120,26 @@ export const submitResource = (domain, id) =>
 // Slice three contracts. Keep all identifiers selected from server data; these
 // helpers are deliberately small so the workbench can show the workflow steps.
 export const questionBanks = (params = {}) => resourcePage('question-banks', params)
-export const createQuestionBank = (body) => createResource('question-banks', body)
-export const updateQuestionBank = (id, body) => updateResource('question-banks', id, body)
-export const questions = (params = {}) => resourcePage('questions', params)
-export const createQuestion = (body) => createResource('questions', body)
-export const updateQuestion = (id, body) => updateResource('questions', id, body)
+export const createQuestionBank = (body) => http.post('/education/teaching-center/question-banks', body)
+export const updateQuestionBank = (id, body) => http.put(`/education/teaching-center/question-banks/${encodeURIComponent(id)}`, body)
+export const questions = (params = {}) => params.bankId
+  ? http.get(`/education/teaching-center/question-banks/${encodeURIComponent(params.bankId)}/questions`)
+  : resourcePage('questions', params)
+export const createQuestion = (body) => http.post('/education/teaching-center/questions', body)
+export const updateQuestion = (id, body) => http.put(`/education/teaching-center/questions/${encodeURIComponent(id)}`, body)
 export const questionOptions = (id, params = {}) =>
   teachingDomainChildrenApi('questions', id, 'options', params)
 export const submitQuestion = (id) => submitResource('questions', id)
 export const questionVersions = (id) => resourceVersions('questions', id)
 export const questionImportTemplate = () => http.download('/education/teaching-center/question-banks/questions/import/template')
 export const validateQuestionImport = (body) =>
-  http.postText('/education/teaching-center/question-banks/questions/import/validate', body, 'text/csv')
+  http.postText('/education/teaching-center/questions/import/precheck', body, 'text/csv')
 export const commitQuestionImport = (body) =>
-  http.postText('/education/teaching-center/question-banks/questions/import/commit', body, 'text/csv')
+  http.postText('/education/teaching-center/questions/import/confirm', body, 'text/csv')
 export const knowledgePointTree = (courseId) =>
   http.get(`/education/teaching-center/api/knowledge-points/tree?${queryString({ courseId })}`)
-export const createKnowledgePoint = (body) => createResource('knowledge-points', body)
-export const updateKnowledgePoint = (id, body) => updateResource('knowledge-points', id, body)
+export const createKnowledgePoint = (body) => http.post('/education/teaching-center/knowledge-points', body)
+export const updateKnowledgePoint = (id, body) => http.put(`/education/teaching-center/knowledge-points/${encodeURIComponent(id)}`, body)
 export const moveKnowledgePoint = (id, body) =>
   http.post(`/education/teaching-center/api/knowledge-points/${encodeURIComponent(id)}/move`, body)
 export const disableKnowledgePoint = (id) =>
@@ -133,8 +156,30 @@ export const createResearchChild = (id, child, body) =>
   http.post(`/education/teaching-center/api/research/${encodeURIComponent(id)}/${child}`, body)
 export const transitionResearch = (id, status) =>
   http.post(`/education/teaching-center/api/research/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
-export const mistakesPage = (params = {}) => resourcePage('mistakes', params)
-export const createMistake = (body) => createResource('mistakes', body)
+export const mistakesPage = (params = {}) => http.get(`/education/teaching-center/error-books/items?${queryString(params)}`)
+export const createMistake = (body) => http.post('/education/teaching-center/error-books/manual', body)
 export const updateMistake = (id, body) => updateResource('mistakes', id, body)
 export const transitionMistake = (id, status) =>
   http.post(`/education/teaching-center/api/mistakes/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
+
+// Homework is a teaching-domain workflow, not a generic platform Workflow instance.
+export const homeworkPage = (params = {}) =>
+  http.get(`/education/teaching-center/api/homeworks?${queryString(params)}`)
+export const createHomework = (body) =>
+  http.post('/education/teaching-center/api/homeworks', body)
+export const updateHomework = (id, body) =>
+  http.put(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}`, body)
+export const publishHomework = (id) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/publish`)
+export const closeHomework = (id) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/close`)
+export const homeworkSubmissions = (id, params = {}) =>
+  http.get(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/submissions?${queryString(params)}`)
+export const myHomeworkSubmission = (id) =>
+  http.get(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/my-submission`)
+export const saveHomeworkSubmission = (id, body) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/submissions`, body)
+export const submitHomework = (submissionId) =>
+  http.post(`/education/teaching-center/api/homework-submissions/${encodeURIComponent(submissionId)}/submit`)
+export const gradeHomeworkSubmission = (submissionId, body) =>
+  http.post(`/education/teaching-center/api/homework-submissions/${encodeURIComponent(submissionId)}/grade`, body)

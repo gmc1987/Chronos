@@ -26,15 +26,22 @@ public class ResearchErrorService {
 	private final EducationDataScopeService scopes;
 	private final ManagedFileRepository files;
 	private final TeachingReviewService reviews;
+	private final QuestionRepository questions;
+	private final KnowledgePointRepository points;
+	private final QuestionKnowledgePointRepository questionPoints;
+	private final QuestionBankRepository questionBanks;
 
 	public ResearchErrorService(ResearchGroupRepository groups, ResearchGroupMemberRepository groupMembers,
 			ResearchActivityRepository activities, ResearchActivityMemberRepository activityMembers,
 			ResearchMaterialRepository materials, ResearchResultRepository results, ErrorBookRepository books,
 			ErrorItemRepository items, EducationDataScopeService scopes, ManagedFileRepository files,
-			TeachingReviewService reviews) {
+			TeachingReviewService reviews, QuestionRepository questions, KnowledgePointRepository points,
+			QuestionKnowledgePointRepository questionPoints, QuestionBankRepository questionBanks) {
 		this.groups=groups; this.groupMembers=groupMembers; this.activities=activities;
 		this.activityMembers=activityMembers; this.materials=materials; this.results=results;
-		this.books=books; this.items=items; this.scopes=scopes; this.files=files; this.reviews=reviews;
+		this.books=books; this.items=items; this.scopes=scopes; 		this.files=files; this.reviews=reviews; this.questions=questions; this.points=points;
+		this.questionPoints=questionPoints;
+		this.questionBanks=questionBanks;
 	}
 
 	private EducationDataScope scope(Authentication a) { return scopes.resolve(a.getName()); }
@@ -119,8 +126,20 @@ public class ResearchErrorService {
 					b.setCourseId(courseId); b.setSemesterId(semesterId); b.setCreateBy(a.getName()); return books.save(b);});
 	}
 	public ErrorItem recordManual(ErrorManualRequest r, Authentication a) {
+		if (r.questionId() != null) {
+			Question q = questions.findById(r.questionId()).orElseThrow(() -> new IllegalArgumentException("题目不存在"));
+			QuestionBank bank = questionBanks.findById(q.getBankId()).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
+			if (r.courseId() != null && !r.courseId().equals(bank.getCourseId()))
+				throw new IllegalArgumentException("题目不属于所选课程");
+			if (r.knowledgePointId() != null && questionPoints.findByQuestionId(r.questionId()).stream()
+					.noneMatch(link -> r.knowledgePointId().equals(link.getKnowledgePointId())))
+				throw new IllegalArgumentException("知识点未关联该题目");
+		}
+		if (r.knowledgePointId() != null)
+			points.findById(r.knowledgePointId()).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
 		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a); ErrorItem i=new ErrorItem(); i.setId(UUID.randomUUID().toString());
-		i.setBookId(b.getId()); i.setQuestionId(r.questionId()); i.setSourceRef(r.sourceRef()); i.setSourceType("MANUAL");
+		i.setBookId(b.getId()); i.setQuestionId(r.questionId()); i.setKnowledgePointId(r.knowledgePointId());
+		i.setErrorReason(r.errorReason()); i.setSourceRef(r.sourceRef()); i.setSourceType("MANUAL");
 		i.setAnalysis(r.analysis()); i.setStudentNote(r.studentNote()); i.setCreateTime(LocalDateTime.now()); return items.save(i);
 	}
 	public ErrorItem onWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
@@ -138,5 +157,15 @@ public class ResearchErrorService {
 		ErrorItem i=items.findById(id).orElseThrow(); ErrorBook b=books.findById(i.getBookId()).orElseThrow();
 		scopes.assertStudentAccess(scope(a),b.getStudentId()); if (!Set.of("MASTERED","NEEDS_PRACTICE").contains(r.status()))
 			throw new IllegalArgumentException("掌握状态无效"); i.setMasteryStatus(r.status()); i.setStudentNote(r.note()); return items.save(i);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ErrorItem> items(String courseId, Authentication a) {
+			EducationDataScope current = scope(a);
+			Set<String> visibleBooks = books.findAll().stream()
+					.filter(book -> !book.isArchived() && (courseId == null || courseId.equals(book.getCourseId())))
+					.filter(book -> scopes.canAccessStudent(current, book.getStudentId()))
+					.map(ErrorBook::getId).collect(java.util.stream.Collectors.toSet());
+			return items.findAll().stream().filter(item -> visibleBooks.contains(item.getBookId())).toList();
 	}
 }

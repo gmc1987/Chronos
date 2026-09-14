@@ -17,6 +17,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -34,6 +36,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	private IConsumerUserRepository consumerUserRepository;
 	@Autowired
 	private JwtUtil jwtUtil;
+	@PersistenceContext
+	private EntityManager entityManager;
 	private ObjectMapper objectMapper = new ObjectMapper();
 
 	/**
@@ -62,8 +66,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 							cu = this.consumerUserRepository.findByPhone(username);
 						}
 						if (cu != null) {
-							User userDetails = new User(username, "",
-									List.of(new SimpleGrantedAuthority("ROLE_CONSUMER")));
+							List<SimpleGrantedAuthority> authorities = new java.util.ArrayList<>();
+							authorities.add(new SimpleGrantedAuthority("ROLE_CONSUMER"));
+							@SuppressWarnings("unchecked")
+							List<String> permissions = entityManager.createNativeQuery(
+									"select p.permission_code from t_consumer_user_role ur "
+											+ "join t_role_permission rp on rp.role_id = ur.role_id "
+											+ "join t_permission p on p.id = rp.permission_id "
+											+ "where ur.user_id = ?1")
+									.setParameter(1, cu.getId())
+									.getResultList();
+							permissions.stream().filter(StringUtils::hasText)
+									.map(SimpleGrantedAuthority::new).forEach(authorities::add);
+							User userDetails = new User(username, "", authorities);
 							UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
 									userDetails, null, userDetails.getAuthorities());
 							auth.setDetails((new WebAuthenticationDetailsSource()).buildDetails(request));

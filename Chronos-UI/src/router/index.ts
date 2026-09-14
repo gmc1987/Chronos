@@ -46,6 +46,7 @@ const AdminCourseware = () => import('../modules/education/pages/AdminCourseware
 const AdminMaterials = () => import('../modules/education/pages/AdminMaterials.vue')
 const TeachingResourceWorkbench = () => import('../modules/education/pages/TeachingResourceWorkbench.vue')
 const AdminHomework = () => import('../modules/education/pages/AdminHomework.vue')
+const PortalHomework = () => import('../modules/education/pages/PortalHomework.vue')
 const AdminQuestionBank = () => import('../modules/education/pages/AdminQuestionBank.vue')
 const AdminKnowledgePoints = () => import('../modules/education/pages/AdminKnowledgePoints.vue')
 const AdminMistakes = () => import('../modules/education/pages/AdminMistakes.vue')
@@ -70,6 +71,7 @@ const router = createRouter({
         { path: '', name: 'portal-home', component: PortalHome },
         { path: 'apps', name: 'portal-apps', component: PortalApplications },
         { path: 'education/schedule', name: 'portal-education-schedule', component: PortalEducationSchedule },
+        { path: 'education/homework', name: 'portal-education-homework', component: PortalHomework },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
         { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
         { path: 'workflow-notifications', name: 'portal-workflow-notifications', component: PortalWorkflowNotifications },

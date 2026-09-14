@@ -61,11 +61,11 @@
      this.consumerUserRepository.save(u);
  
      
-     Role defaultRole = this.roleRepository.findByRoleName("ROLE_PLATFORM_USER");
+     Role defaultRole = this.roleRepository.findByRoleCode("ROLE_PLATFORM_USER");
      if (defaultRole == null) {
        throw new IllegalStateException("default role ROLE_PLATFORM_USER not found");
      }
-     this.entityManager.createNativeQuery("INSERT INTO t_user_role (user_id, role_id) VALUES (?, ?)")
+     this.entityManager.createNativeQuery("INSERT INTO t_consumer_user_role (user_id, role_id) VALUES (?, ?)")
        .setParameter(1, u.getId())
        .setParameter(2, defaultRole.getId())
        .executeUpdate();
@@ -141,4 +141,3 @@
      this.consumerUserRepository.deleteById(id);
    }
  }
-
