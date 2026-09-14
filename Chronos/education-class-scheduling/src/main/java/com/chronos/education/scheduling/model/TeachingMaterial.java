@@ -19,6 +19,10 @@ public class TeachingMaterial extends BaseEntity {
 	private String offeringId;
 	@Column(name="campus_id", length=64) private String campusId;
 	@Column(name="owner_teacher_id", length=64) private String ownerTeacherId;
+	@Column(name="preparation_id", length=64) private String preparationId;
+	@Column(name="lesson_plan_id", length=64) private String lessonPlanId;
+	@Column(name="plan_item_id", length=64) private String planItemId;
+	@Column(name="source_type", length=32) private String sourceType;
 	@Column(nullable = false, length = 200)
 	private String title;
 	@Column(name = "material_type", length = 32)

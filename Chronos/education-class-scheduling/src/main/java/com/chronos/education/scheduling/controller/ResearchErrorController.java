@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.controller;
 
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.*;
+import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.service.ResearchErrorService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -13,6 +14,24 @@ import org.springframework.web.bind.annotation.*;
 public class ResearchErrorController {
 	private final ResearchErrorService service;
 	public ResearchErrorController(ResearchErrorService service) { this.service=service; }
+	@GetMapping("/research-groups")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	public ResultData<?> groups(Authentication a) { return ok(service.groups(a)); }
+	@GetMapping("/research-groups/{id}/activities")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	public ResultData<?> activities(@PathVariable String id, Authentication a) { return ok(service.activities(id, a)); }
+	@GetMapping("/research-activities/{id}/results")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	public ResultData<?> results(@PathVariable String id, Authentication a) { return ok(service.results(id, a)); }
+	@PutMapping("/research-groups/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> updateGroup(@PathVariable String id, @Valid @RequestBody GroupRequest r, Authentication a) { return ok(service.updateGroup(id, r, a)); }
+	@PutMapping("/research-activities/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> updateActivity(@PathVariable String id, @Valid @RequestBody ActivityRequest r, Authentication a) { return ok(service.updateActivity(id, r, a)); }
+	@PutMapping("/research-results/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> updateResult(@PathVariable String id, @Valid @RequestBody ResultRequest r, Authentication a) { return ok(service.updateResult(id, r, a)); }
 	@PostMapping("/research-groups")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:create','education:teaching:manage')")
 	public ResultData<?> group(@Valid @RequestBody GroupRequest r, Authentication a) { return ok(service.createGroup(r,a)); }

@@ -95,18 +95,22 @@ export const preparationPage = (params = {}) => params.offeringId
 export const createPreparation = (body) => http.post('/education/teaching/preparations', body)
 export const updatePreparation = (id, body) => http.put(`/education/teaching/preparations/${encodeURIComponent(id)}`, body)
 export const preparationChildren = (id, child, params = {}) =>
-  http.get(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}/${child}?${queryString(params)}`)
+  http.get(`/education/teaching-center/preparations/${encodeURIComponent(id)}/${child}?${queryString(params)}`)
 export const createPreparationChild = (id, child, body) =>
-  http.post(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}/${child}`, body)
+  http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/${child}`, body)
 export const submitPreparation = (id) =>
-  http.post(`/education/teaching-center/api/preparations/${encodeURIComponent(id)}/submit`)
+  http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/submit`)
 
 export const resourcePage = (domain, params = {}) => http.get(`/education/teaching-center/api/${domain}?${queryString(params)}`)
-export const createResource = (domain, body) => http.post(`/education/teaching-center/api/${domain}`, body)
+export const createResource = (domain, body) => http.post(`/education/teaching-center/${domain}`, body)
 export const updateResource = (domain, id, body) =>
-  http.put(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}`, body)
+  http.put(`/education/teaching-center/${domain}/${encodeURIComponent(id)}`, body)
+export const copyResource = (domain, id, body) =>
+  http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/copy`, body)
 export const resourceVersions = (domain, id) =>
   http.get(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/versions`)
+export const addResourceVersion = (domain, id, body) =>
+  http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions`, body)
 export const uploadTeachingFile = (file, businessType, businessId, onProgress) => {
   const data = new FormData()
   data.append('file', file)
@@ -129,9 +133,9 @@ export const createQuestion = (body) => http.post('/education/teaching-center/qu
 export const updateQuestion = (id, body) => http.put(`/education/teaching-center/questions/${encodeURIComponent(id)}`, body)
 export const questionOptions = (id, params = {}) =>
   teachingDomainChildrenApi('questions', id, 'options', params)
-export const submitQuestion = (id) => submitResource('questions', id)
-export const questionVersions = (id) => resourceVersions('questions', id)
-export const questionImportTemplate = () => http.download('/education/teaching-center/question-banks/questions/import/template')
+export const submitQuestion = (id) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/submit`)
+export const questionVersions = (id) => http.get(`/education/teaching-center/questions/${encodeURIComponent(id)}/versions`)
+export const questionImportTemplate = () => http.download('/education/teaching-center/questions/import/template')
 export const validateQuestionImport = (body) =>
   http.postText('/education/teaching-center/questions/import/precheck', body, 'text/csv')
 export const commitQuestionImport = (body) =>
@@ -150,6 +154,18 @@ export const disableKnowledgePoint = (id) =>
 export const researchPage = (params = {}) => resourcePage('research', params)
 export const createResearch = (body) => createResource('research', body)
 export const updateResearch = (id, body) => updateResource('research', id, body)
+export const researchGroups = () => http.get('/education/teaching-center/research-groups')
+export const createResearchGroup = (body) => http.post('/education/teaching-center/research-groups', body)
+export const updateResearchGroup = (id, body) => http.put(`/education/teaching-center/research-groups/${encodeURIComponent(id)}`, body)
+export const researchActivities = (id) => http.get(`/education/teaching-center/research-groups/${encodeURIComponent(id)}/activities`)
+export const createResearchActivity = (id, body) => http.post(`/education/teaching-center/research-groups/${encodeURIComponent(id)}/activities`, body)
+export const updateResearchActivity = (id, body) => http.put(`/education/teaching-center/research-activities/${encodeURIComponent(id)}`, body)
+export const researchResults = (id) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/results`)
+export const createResearchResult = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/results`, body)
+export const updateResearchResult = (id, body) => http.put(`/education/teaching-center/research-results/${encodeURIComponent(id)}`, body)
+export const researchAttendance = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/attendance`, body)
+export const researchMinutes = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/minutes`, body)
+export const submitResearchResult = (id) => http.post(`/education/teaching-center/research-results/${encodeURIComponent(id)}/submit`)
 export const researchChildren = (id, child, params = {}) =>
   teachingDomainChildrenApi('research', id, child, params)
 export const createResearchChild = (id, child, body) =>

@@ -42,6 +42,16 @@ public class QuestionKnowledgeController {
 	public ResultData<List<Question>> questions(@PathVariable String id, Authentication user) {
 		return ok(service.questions(id, user));
 	}
+	@GetMapping("/questions/{id}/versions")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:view','education:teaching:view')")
+	public ResultData<List<QuestionVersion>> versions(@PathVariable String id, Authentication user) {
+		return ok(service.versions(id, user));
+	}
+	@PostMapping("/questions/{id}/submit")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
+	public ResultData<Question> submit(@PathVariable String id, Authentication user) {
+		return ok(service.submitQuestion(id, user));
+	}
 	@PostMapping("/knowledge-points")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:knowledge-point:manage','education:teaching:manage')")
 	public ResultData<KnowledgePoint> createPoint(@RequestBody KnowledgePointRequest request, Authentication user) {

@@ -8,6 +8,9 @@ public final class CollaborationDtos {
  public record MaterialRequest(@NotBlank String title,@NotBlank String fileId,String metadataJson){}
  public record CommentRequest(@NotBlank String content){}
  public record ConclusionRequest(@NotBlank String conclusion,@NotBlank String lessonPlanId){}
- public record ResourceCreateRequest(@NotBlank String offeringId,@NotBlank String title,String shareScope,String materialType){}
+ public record ResourceCreateRequest(@NotBlank String offeringId,@NotBlank String title,String shareScope,String materialType,
+   String preparationId,String lessonPlanId,String planItemId,String sourceType){}
+ public record ResourceCopyRequest(@NotBlank String offeringId,@NotBlank String title,String shareScope,
+   String preparationId,String lessonPlanId,String planItemId){}
  public record VersionRequest(@NotBlank String fileId,String metadataJson){}
 }

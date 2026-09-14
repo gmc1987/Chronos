@@ -146,6 +146,39 @@ public class QuestionKnowledgeService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<QuestionVersion> versions(String questionId, Authentication user) {
+		Question question = questions.findById(questionId)
+				.orElseThrow(() -> new IllegalArgumentException("题目不存在"));
+		QuestionBank bank = banks.findById(question.getBankId())
+				.orElseThrow(() -> new IllegalArgumentException("题库不存在"));
+		authorizeBank(bank, user);
+		return versions.findAll().stream()
+				.filter(version -> questionId.equals(version.getQuestionId()))
+				.sorted(Comparator.comparing(QuestionVersion::getVersionNo).reversed())
+				.toList();
+	}
+
+	public Question submitQuestion(String id, Authentication user) {
+		Question question = questions.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("题目不存在"));
+		QuestionBank bank = banks.findById(question.getBankId())
+				.orElseThrow(() -> new IllegalArgumentException("题库不存在"));
+		authorizeBank(bank, user);
+		if (!"DRAFT".equals(question.getStatus())) {
+			throw new IllegalStateException("只有草稿题目可以提交发布");
+		}
+		persistVersion(question);
+		QuestionVersion version = versions.findByQuestionIdAndVersionNo(id, question.getCurrentVersionNo())
+				.orElseThrow(() -> new IllegalStateException("题目版本生成失败"));
+		version.setStatus("PUBLISHED");
+		version.setPublishedAt(LocalDateTime.now());
+		versions.save(version);
+		question.setStatus("PUBLISHED");
+		question.setPublishedVersionId(version.getId());
+		return questions.save(question);
+	}
+
+	@Transactional(readOnly = true)
 	public List<KnowledgePoint> knowledgeTree(String courseId, Authentication user) {
 		EducationDataScope scope = scopes.resolve(user.getName());
 		scopes.assertCourseAccess(scope, courseId);

@@ -54,6 +54,49 @@ public class ResearchErrorService {
 			throw new AccessDeniedException("无权访问该教研组");
 		return g;
 	}
+	@Transactional(readOnly = true)
+	public List<ResearchGroup> groups(Authentication a) {
+		EducationDataScope s = scope(a);
+		return groups.findAll().stream().filter(g -> s.fullAccess()
+				|| s.teacherIds().contains(g.getLeaderTeacherId())
+				|| groupMembers.findByGroupId(g.getId()).stream()
+						.anyMatch(m -> s.teacherIds().contains(m.getTeacherId()))).toList();
+	}
+	@Transactional(readOnly = true)
+	public List<ResearchActivity> activities(String groupId, Authentication a) {
+		group(groupId, a);
+		return activities.findAll().stream().filter(x -> groupId.equals(x.getGroupId()) && !x.isArchived()).toList();
+	}
+	@Transactional(readOnly = true)
+	public List<ResearchResult> results(String activityId, Authentication a) {
+		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		return results.findAll().stream().filter(r -> activityId.equals(r.getActivityId())).toList();
+	}
+	public ResearchGroup updateGroup(String id, GroupRequest r, Authentication a) {
+		ResearchGroup g = group(id, a);
+		teacher(a, r.leaderTeacherId());
+		g.setName(r.name()); g.setSubjectId(r.subjectId()); g.setCampusId(r.campusId());
+		g.setLeaderTeacherId(r.leaderTeacherId()); g.setCourseScopeJson(r.courseScopeJson());
+		g.setDescription(r.description()); return groups.save(g);
+	}
+	public ResearchActivity updateActivity(String id, ActivityRequest r, Authentication a) {
+		ResearchActivity x = activities.findById(id).orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		if (r.endTime() != null && r.activityTime() != null && r.endTime().isBefore(r.activityTime()))
+			throw new IllegalArgumentException("结束时间不能早于开始时间");
+		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime());
+		x.setLocation(r.location()); x.setAgenda(r.agenda()); return activities.save(x);
+	}
+	public ResearchResult updateResult(String id, ResultRequest r, Authentication a) {
+		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
+		ResearchActivity x = activities.findById(z.getActivityId()).orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		if (!"DRAFT".equals(z.getStatus())) throw new IllegalStateException("只有草稿成果可以编辑");
+		if (r.fileId() != null) file(r.fileId(), a);
+		z.setTitle(r.title()); z.setResultType(r.resultType()); z.setContent(r.content()); z.setFileId(r.fileId());
+		return results.save(z);
+	}
 	private void file(String id, Authentication a) {
 		if (id==null || id.isBlank() || id.contains("/") || id.contains("\\")) throw new IllegalArgumentException("fileId无效");
 		var f=files.findById(id).orElseThrow(()->new IllegalArgumentException("文件不存在"));
