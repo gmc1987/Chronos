@@ -263,6 +263,14 @@ public class HomeworkService {
 		return PageView.from(submissions.findByAssignmentIdOrderByCreateTimeAsc(assignmentId), page, size);
 	}
 
+	@Transactional(readOnly = true)
+	public HomeworkSubmission mySubmission(String assignmentId, Authentication auth) {
+		HomeworkAssignment homework = assignment(assignmentId);
+		String student = studentId(auth);
+		studentCan(scope(auth), homework, student);
+		return submissions.findByAssignmentIdAndStudentId(assignmentId, student).orElse(null);
+	}
+
 	public HomeworkSubmission grade(String id, GradeRequest request, Authentication auth) {
 		HomeworkSubmission result = submissions.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("提交不存在"));

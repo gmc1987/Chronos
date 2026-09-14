@@ -6,13 +6,27 @@
       <el-table-column prop="title" label="作业" min-width="240" />
       <el-table-column prop="dueAt" label="截止时间" width="190" />
       <el-table-column prop="maxScore" label="总分" width="90" />
-      <el-table-column label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="open(row)">作答</el-button></template></el-table-column>
+      <el-table-column label="提交状态" width="150">
+        <template #default="{ row }">{{ statusLabel(row.submission?.status) }}</template>
+      </el-table-column>
+      <el-table-column label="成绩" width="90">
+        <template #default="{ row }">{{ row.submission?.score ?? '—' }}</template>
+      </el-table-column>
+      <el-table-column prop="submission.teacherFeedback" label="教师评语" min-width="220" show-overflow-tooltip />
+      <el-table-column label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="open(row)">{{ canEdit(row) ? '作答' : '查看' }}</el-button></template></el-table-column>
     </el-table>
     <el-empty v-if="!loading && !rows.length" description="暂无已发布作业" />
     <el-dialog v-model="dialog" :title="current?.title || '作业'" width="720px">
-      <el-descriptions :column="1" border><el-descriptions-item label="截止时间">{{ current?.dueAt || '未设置' }}</el-descriptions-item><el-descriptions-item label="作业说明">{{ current?.instructionsJson || '—' }}</el-descriptions-item><el-descriptions-item label="题目/要求">{{ current?.questionSnapshotJson || '—' }}</el-descriptions-item></el-descriptions>
-      <el-form label-width="90px" class="answer-form"><el-form-item label="我的答案"><el-input v-model="answerSnapshotJson" type="textarea" :rows="10" placeholder="请输入答案或按题目编号填写" /></el-form-item></el-form>
-      <template #footer><el-button @click="dialog=false">取消</el-button><el-button @click="saveDraft">保存草稿</el-button><el-button type="primary" @click="submit">提交作业</el-button></template>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="截止时间">{{ current?.dueAt || '未设置' }}</el-descriptions-item>
+        <el-descriptions-item label="作业说明">{{ current?.instructionsJson || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="题目/要求">{{ current?.questionSnapshotJson || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="提交状态">{{ statusLabel(current?.submission?.status) }}</el-descriptions-item>
+        <el-descriptions-item label="成绩">{{ current?.submission?.score ?? '—' }} / {{ current?.maxScore }}</el-descriptions-item>
+        <el-descriptions-item label="教师评语">{{ current?.submission?.teacherFeedback || '—' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="90px" class="answer-form"><el-form-item label="我的答案"><el-input v-model="answerSnapshotJson" type="textarea" :rows="10" :disabled="!canEdit(current)" placeholder="请输入答案或按题目编号填写" /></el-form-item></el-form>
+      <template #footer><el-button @click="dialog=false">关闭</el-button><template v-if="canEdit(current)"><el-button @click="saveDraft">保存草稿</el-button><el-button type="primary" @click="submit">提交作业</el-button></template></template>
     </el-dialog>
   </section>
 </template>
@@ -20,7 +34,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { homeworkPage, saveHomeworkSubmission, submitHomework } from '../api/teachingCenter'
+import { homeworkPage, myHomeworkSubmission, saveHomeworkSubmission, submitHomework } from '../api/teachingCenter'
 
 const rows = ref([])
 const current = ref(null)
@@ -30,18 +44,33 @@ const loadError = ref('')
 const dialog = ref(false)
 const submissionId = ref('')
 const unwrap = response => response?.data?.content || response?.data || []
+const statusLabels = { DRAFT: '草稿', SUBMITTED: '待批改', GRADED: '已评分', RETURNED_FOR_REVISION: '退回重做' }
+const statusLabel = status => statusLabels[status] || '未提交'
+const canEdit = row => row && (!row.submission || ['DRAFT', 'RETURNED_FOR_REVISION'].includes(row.submission.status))
 
 const load = async () => {
   loading.value = true
-  try { rows.value = unwrap(await homeworkPage({ page: 0, size: 100 })) }
+  try {
+    const assignments = unwrap(await homeworkPage({ page: 0, size: 100 }))
+    rows.value = await Promise.all(assignments.map(async assignment => ({
+      ...assignment,
+      submission: (await myHomeworkSubmission(assignment.id))?.data || null
+    })))
+  }
   catch (error) { loadError.value = error.message || '作业加载失败' }
   finally { loading.value = false }
 }
-const open = row => { current.value = row; answerSnapshotJson.value = ''; submissionId.value = ''; dialog.value = true }
+const open = row => {
+  current.value = row
+  answerSnapshotJson.value = row.submission?.answerSnapshotJson || ''
+  submissionId.value = row.submission?.id || ''
+  dialog.value = true
+}
 const saveDraft = async () => {
   try {
     const response = await saveHomeworkSubmission(current.value.id, { answerSnapshotJson: answerSnapshotJson.value || '{}' })
     submissionId.value = response?.data?.id || submissionId.value
+    current.value.submission = response?.data || current.value.submission
     ElMessage.success('答案草稿已保存')
   } catch (error) { ElMessage.error(error.message || '保存失败') }
 }

@@ -175,6 +175,8 @@ export const closeHomework = (id) =>
   http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/close`)
 export const homeworkSubmissions = (id, params = {}) =>
   http.get(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/submissions?${queryString(params)}`)
+export const myHomeworkSubmission = (id) =>
+  http.get(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/my-submission`)
 export const saveHomeworkSubmission = (id, body) =>
   http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/submissions`, body)
 export const submitHomework = (submissionId) =>

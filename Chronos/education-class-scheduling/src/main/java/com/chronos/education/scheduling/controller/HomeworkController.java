@@ -72,6 +72,12 @@ public class HomeworkController {
 		return ok(service.submissions(id, page, size, auth));
 	}
 
+	@GetMapping("/homeworks/{id}/my-submission")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:submission:view','education:homework:view','education:homework:manage')")
+	public ResultData<HomeworkSubmission> mySubmission(@PathVariable String id, Authentication auth) {
+		return ok(service.mySubmission(id, auth));
+	}
+
 	@PostMapping("/homeworks/{assignmentId}/submissions")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:submission:create','education:homework:view','education:homework:manage')")
 	public ResultData<HomeworkSubmission> saveDraft(@PathVariable String assignmentId,

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run against an already-started education app. Tokens and identifiers are
+# supplied by the caller so this script never contains credentials or fixtures.
+: "${CHRONOS_BASE_URL:?set CHRONOS_BASE_URL, e.g. http://localhost:8080}"
+: "${CHRONOS_TEACHER_TOKEN:?set CHRONOS_TEACHER_TOKEN}"
+: "${CHRONOS_STUDENT_TOKEN:?set CHRONOS_STUDENT_TOKEN}"
+: "${CHRONOS_OFFERING_ID:?set CHRONOS_OFFERING_ID}"
+: "${CHRONOS_OUT_OF_SCOPE_OFFERING_ID:?set CHRONOS_OUT_OF_SCOPE_OFFERING_ID}"
+: "${CHRONOS_HOMEWORK_ID:?set CHRONOS_HOMEWORK_ID}"
+
+api="${CHRONOS_BASE_URL%/}"
+teacher_auth=(-H "Authorization: Bearer ${CHRONOS_TEACHER_TOKEN}")
+student_auth=(-H "Authorization: Bearer ${CHRONOS_STUDENT_TOKEN}")
+
+request() {
+  local expected="$1"; shift
+  local response status
+  set +e
+  response="$(curl --fail-with-body --silent --show-error -w $'\n%{http_code}' "$@")"
+  local curl_status=$?
+  set -e
+  status="${response##*$'\n'}"
+  if [[ "$status" != "$expected" || ( "$curl_status" -ne 0 && "$expected" == 2* ) ]]; then
+    printf 'expected HTTP %s, got %s for %s\n%s\n' "$expected" "$status" "$*" "$response" >&2
+    return 1
+  fi
+  printf 'OK %s %s\n' "$status" "$1"
+}
+
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/plans?offeringId=${CHRONOS_OFFERING_ID}&page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/lesson-plans?offeringId=${CHRONOS_OFFERING_ID}&page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/preparations?offeringId=${CHRONOS_OFFERING_ID}&page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/coursewares?offeringId=${CHRONOS_OFFERING_ID}&page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/materials?offeringId=${CHRONOS_OFFERING_ID}&page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/question-banks?offeringId=${CHRONOS_OFFERING_ID}&page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/knowledge-points?page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/mistakes?page=0&size=20"
+request 200 "${teacher_auth[@]}" "$api/education/teaching-center/api/research?page=0&size=20"
+
+# Student scope: published homework and only the logged-in student's own result.
+request 200 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks?page=0&size=20"
+request 200 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks/${CHRONOS_HOMEWORK_ID}/my-submission"
+request 403 "${student_auth[@]}" "$api/education/teaching-center/api/homeworks?offeringId=${CHRONOS_OUT_OF_SCOPE_OFFERING_ID}&page=0&size=20"
+
+# A teacher token must not be usable as a student submission query unless it
+# is explicitly bound to a student profile; a forbidden response is expected.
+request 403 "${teacher_auth[@]}" "$api/education/teaching-center/api/homeworks/${CHRONOS_HOMEWORK_ID}/my-submission"
+request 403 "${teacher_auth[@]}" "$api/education/teaching-center/api/homeworks?offeringId=${CHRONOS_OUT_OF_SCOPE_OFFERING_ID}&page=0&size=20"
