@@ -77,6 +77,25 @@ class TeachingCollaborationServiceTest {
 		verifyNoInteractions(offerings, coursewares);
 	}
 
+	@Test
+	void rejectsCollectivePreparationWithoutTwoAcceptedMembersAndAgenda() {
+		var service = service();
+		var preparation = new Preparation();
+		preparation.setId("prep-collective");
+		preparation.setOfferingId("offering-1");
+		preparation.setPreparationType("COLLECTIVE");
+		when(preparations.findById("prep-collective")).thenReturn(Optional.of(preparation));
+		when(authentication.getName()).thenReturn("teacher-1");
+		when(scopes.resolve("teacher-1"))
+				.thenReturn(new EducationDataScope(true, java.util.Set.of(), java.util.Set.of(),
+						java.util.Set.of(), java.util.Set.of()));
+		when(members.findByPreparationId("prep-collective")).thenReturn(java.util.List.of());
+
+		assertThrows(IllegalStateException.class,
+				() -> service.submitPreparation("prep-collective", authentication));
+		verifyNoInteractions(reviews);
+	}
+
 	private TeachingCollaborationService service() {
 		return new TeachingCollaborationService(
 				preparations, members, prepMaterials, comments, coursewares, coursewareVersions,
