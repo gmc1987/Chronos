@@ -73,6 +73,23 @@ public class ResearchErrorService {
 		group(x.getGroupId(), a);
 		return results.findAll().stream().filter(r -> activityId.equals(r.getActivityId())).toList();
 	}
+	@Transactional(readOnly = true)
+	public List<ResearchGroupMember> groupMembers(String groupId, Authentication a) {
+		group(groupId, a);
+		return groupMembers.findByGroupId(groupId);
+	}
+	@Transactional(readOnly = true)
+	public List<ResearchActivityMember> activityMembers(String activityId, Authentication a) {
+		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		return activityMembers.findByActivityId(activityId);
+	}
+	@Transactional(readOnly = true)
+	public List<ResearchMaterial> materials(String activityId, Authentication a) {
+		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		return materials.findByActivityId(activityId);
+	}
 	public ResearchGroup updateGroup(String id, GroupRequest r, Authentication a) {
 		ResearchGroup g = group(id, a);
 		teacher(a, r.leaderTeacherId());
@@ -115,6 +132,12 @@ public class ResearchErrorService {
 		ResearchGroupMember m=new ResearchGroupMember(); m.setId(UUID.randomUUID().toString()); m.setGroupId(id);
 		m.setTeacherId(r.teacherId()); m.setRole(r.role()); return groupMembers.save(m);
 	}
+	public void removeMember(String id, String teacherId, Authentication a) {
+		group(id, a);
+		if (!groupMembers.existsByGroupIdAndTeacherId(id, teacherId))
+			throw new NoSuchElementException("教师不是教研组成员");
+		groupMembers.deleteByGroupIdAndTeacherId(id, teacherId);
+	}
 	public ResearchActivity createActivity(String groupId, ActivityRequest r, Authentication a) {
 		group(groupId,a); if (r.endTime()!=null && r.activityTime()!=null && r.endTime().isBefore(r.activityTime()))
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
@@ -129,6 +152,13 @@ public class ResearchErrorService {
 			throw new IllegalStateException("教师已在活动成员中");
 		ResearchActivityMember m=new ResearchActivityMember(); m.setId(UUID.randomUUID().toString());
 		m.setActivityId(activityId); m.setTeacherId(r.teacherId()); m.setRole(r.role()); return activityMembers.save(m);
+	}
+	public void removeActivityMember(String activityId, String teacherId, Authentication a) {
+		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		if (activityMembers.findByActivityIdAndTeacherId(activityId, teacherId).isEmpty())
+			throw new NoSuchElementException("教师不是活动成员");
+		activityMembers.deleteByActivityIdAndTeacherId(activityId, teacherId);
 	}
 	public ResearchActivityMember attendance(String activityId, AttendanceRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));
@@ -160,6 +190,20 @@ public class ResearchErrorService {
 		ResearchResult z=results.findById(id).orElseThrow(); ResearchActivity x=activities.findById(z.getActivityId()).orElseThrow();
 		group(x.getGroupId(),a); var review=reviews.submit("RESEARCH_RESULT",id,null,Map.of("resultType",z.getResultType()),a);
 		z.setReviewRecordId(review.getId()); z.setStatus("SUBMITTED"); return results.save(z);
+	}
+	public ResearchResult transitionResult(String id, String status, Authentication a) {
+		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
+		ResearchActivity x = activities.findById(z.getActivityId()).orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		if ("ARCHIVED".equals(status)) {
+			if (!"PUBLISHED".equals(z.getStatus())) throw new IllegalStateException("只有已发布成果可以归档");
+			z.setStatus("ARCHIVED");
+		} else if ("PUBLISHED".equals(status)) {
+			if (!"PUBLISHED".equals(z.getStatus())) throw new IllegalStateException("成果须审核通过后才能发布");
+		} else {
+			throw new IllegalArgumentException("不支持的成果状态");
+		}
+		return results.save(z);
 	}
 	private ErrorBook book(String studentId,String courseId,String semesterId,Authentication a) {
 		scopes.assertStudentAccess(scope(a),studentId);
