@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.controller;
 
 import com.chronos.commons.model.ResultData;
+import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.*;
 import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.service.ResearchErrorService;
@@ -16,10 +17,28 @@ public class ResearchErrorController {
 	public ResearchErrorController(ResearchErrorService service) { this.service=service; }
 	@GetMapping("/research-groups")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
-	public ResultData<?> groups(Authentication a) { return ok(service.groups(a)); }
+	public ResultData<PageView<ResearchGroup>> groups(
+			@RequestParam(required = false) String keyword,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size, Authentication a) {
+		var values = service.groups(a).stream()
+				.filter(x -> keyword == null || keyword.isBlank()
+						|| contains(x.getName(), keyword) || contains(x.getDescription(), keyword))
+				.toList();
+		return ok(PageView.from(values, page, size));
+	}
 	@GetMapping("/research-groups/{id}/activities")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
-	public ResultData<?> activities(@PathVariable String id, Authentication a) { return ok(service.activities(id, a)); }
+	public ResultData<PageView<ResearchActivity>> activities(@PathVariable String id,
+			@RequestParam(required = false) String keyword,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size, Authentication a) {
+		var values = service.activities(id, a).stream()
+				.filter(x -> keyword == null || keyword.isBlank()
+						|| contains(x.getTitle(), keyword) || contains(x.getAgenda(), keyword))
+				.toList();
+		return ok(PageView.from(values, page, size));
+	}
 	@GetMapping("/research-groups/{id}/members")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
 	public ResultData<?> groupMembers(@PathVariable String id, Authentication a) { return ok(service.groupMembers(id, a)); }
@@ -30,7 +49,16 @@ public class ResearchErrorController {
 	}
 	@GetMapping("/research-activities/{id}/results")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
-	public ResultData<?> results(@PathVariable String id, Authentication a) { return ok(service.results(id, a)); }
+	public ResultData<PageView<ResearchResult>> results(@PathVariable String id,
+			@RequestParam(required = false) String keyword,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size, Authentication a) {
+		var values = service.results(id, a).stream()
+				.filter(x -> keyword == null || keyword.isBlank()
+						|| contains(x.getTitle(), keyword) || contains(x.getContent(), keyword))
+				.toList();
+		return ok(PageView.from(values, page, size));
+	}
 	@GetMapping("/research-activities/{id}/members")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
 	public ResultData<?> activityMembers(@PathVariable String id, Authentication a) { return ok(service.activityMembers(id, a)); }
@@ -108,4 +136,8 @@ public class ResearchErrorController {
 		return ok(service.review(id, r, a));
 	}
 	private <T> ResultData<T> ok(T value) { return ResultData.<T>builder().code("200").msg("success").data(value).build(); }
+	private boolean contains(String value, String keyword) {
+		return value != null && value.toLowerCase(java.util.Locale.ROOT)
+				.contains(keyword.trim().toLowerCase(java.util.Locale.ROOT));
+	}
 }
