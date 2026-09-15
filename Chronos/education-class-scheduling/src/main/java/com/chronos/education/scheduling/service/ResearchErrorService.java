@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /** 第四切片应用服务。所有关联均指向既有 IAM、教务和 platform-file 主数据。 */
 @Service
@@ -30,6 +31,7 @@ public class ResearchErrorService {
 	private final KnowledgePointRepository points;
 	private final QuestionKnowledgePointRepository questionPoints;
 	private final QuestionBankRepository questionBanks;
+	private ErrorReviewRepository errorReviews;
 
 	public ResearchErrorService(ResearchGroupRepository groups, ResearchGroupMemberRepository groupMembers,
 			ResearchActivityRepository activities, ResearchActivityMemberRepository activityMembers,
@@ -42,6 +44,20 @@ public class ResearchErrorService {
 		this.books=books; this.items=items; this.scopes=scopes; 		this.files=files; this.reviews=reviews; this.questions=questions; this.points=points;
 		this.questionPoints=questionPoints;
 		this.questionBanks=questionBanks;
+		this.errorReviews = null;
+	}
+
+	@Autowired
+	public ResearchErrorService(ResearchGroupRepository groups, ResearchGroupMemberRepository groupMembers,
+			ResearchActivityRepository activities, ResearchActivityMemberRepository activityMembers,
+			ResearchMaterialRepository materials, ResearchResultRepository results, ErrorBookRepository books,
+			ErrorItemRepository items, EducationDataScopeService scopes, ManagedFileRepository files,
+			TeachingReviewService reviews, QuestionRepository questions, KnowledgePointRepository points,
+			QuestionKnowledgePointRepository questionPoints, QuestionBankRepository questionBanks,
+			ErrorReviewRepository errorReviews) {
+		this(groups, groupMembers, activities, activityMembers, materials, results, books, items, scopes, files,
+				reviews, questions, points, questionPoints, questionBanks);
+		this.errorReviews = errorReviews;
 	}
 
 	private EducationDataScope scope(Authentication a) { return scopes.resolve(a.getName()); }
@@ -103,7 +119,7 @@ public class ResearchErrorService {
 		if (r.endTime() != null && r.activityTime() != null && r.endTime().isBefore(r.activityTime()))
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime());
-		x.setLocation(r.location()); x.setAgenda(r.agenda()); return activities.save(x);
+		x.setLocation(r.location()); x.setAgenda(r.agenda()); x.setCourseId(r.courseId()); x.setTopicId(r.topicId()); return activities.save(x);
 	}
 	public ResearchResult updateResult(String id, ResultRequest r, Authentication a) {
 		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
@@ -143,7 +159,8 @@ public class ResearchErrorService {
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
 		ResearchActivity x=new ResearchActivity(); x.setGroupId(groupId); x.setStatus("SCHEDULED");
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime()); x.setLocation(r.location());
-		x.setAgenda(r.agenda()); x.setOrganizerId(a.getName()); x.setCreateBy(a.getName()); return activities.save(x);
+		x.setAgenda(r.agenda()); x.setCourseId(r.courseId()); x.setTopicId(r.topicId());
+		x.setOrganizerId(a.getName()); x.setCreateBy(a.getName()); return activities.save(x);
 	}
 	public ResearchActivityMember inviteActivityMember(String activityId, MemberRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));
@@ -213,6 +230,8 @@ public class ResearchErrorService {
 					b.setCourseId(courseId); b.setSemesterId(semesterId); b.setCreateBy(a.getName()); return books.save(b);});
 	}
 	public ErrorItem recordManual(ErrorManualRequest r, Authentication a) {
+		if (!Set.of("MANUAL", "STUDENT_SELF").contains(r.sourceType()))
+			throw new IllegalArgumentException("手工错题来源无效");
 		if (r.questionId() != null) {
 			Question q = questions.findById(r.questionId()).orElseThrow(() -> new IllegalArgumentException("题目不存在"));
 			QuestionBank bank = questionBanks.findById(q.getBankId()).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
@@ -226,24 +245,46 @@ public class ResearchErrorService {
 			points.findById(r.knowledgePointId()).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
 		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a); ErrorItem i=new ErrorItem(); i.setId(UUID.randomUUID().toString());
 		i.setBookId(b.getId()); i.setQuestionId(r.questionId()); i.setKnowledgePointId(r.knowledgePointId());
-		i.setErrorReason(r.errorReason()); i.setSourceRef(r.sourceRef()); i.setSourceType("MANUAL");
+		i.setErrorReason(r.errorReason()); i.setSourceRef(r.sourceRef()); i.setSourceType(r.sourceType());
+		i.setSourceItemId(r.sourceItemId());
 		i.setAnalysis(r.analysis()); i.setStudentNote(r.studentNote()); i.setCreateTime(LocalDateTime.now()); return items.save(i);
 	}
 	public ErrorItem onWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
+		if (!Set.of("HOMEWORK", "EXAM", "MANUAL", "STUDENT_SELF").contains(r.sourceType()))
+			throw new IllegalArgumentException("错题来源无效");
 		var replay=items.findByEventId(r.eventId()); if (replay.isPresent()) return replay.get();
 		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a);
-		ErrorItem i=items.findByBookIdAndSourceTypeAndSourceItemId(b.getId(),"WRONG_ANSWER_CONFIRMED",r.sourceItemId()).orElse(null);
+		ErrorItem i=items.findByBookIdAndSourceTypeAndSourceItemId(b.getId(),r.sourceType(),r.sourceItemId()).orElse(null);
 		// sourceItemId is the producer's idempotency key. Replayed delivery must
 		// not inflate the student's error count.
 		if (i!=null) return i;
 		i=new ErrorItem(); i.setId(UUID.randomUUID().toString()); i.setBookId(b.getId()); i.setQuestionId(r.questionId());
-		i.setSourceRef(r.sourceRef()); i.setSourceType("WRONG_ANSWER_CONFIRMED"); i.setSourceItemId(r.sourceItemId()); i.setEventId(r.eventId());
+		i.setSourceRef(r.sourceRef()); i.setSourceType(r.sourceType()); i.setSourceItemId(r.sourceItemId()); i.setEventId(r.eventId());
 		i.setAnalysis(r.analysis()); i.setLastWrongAt(LocalDateTime.now()); i.setCreateTime(LocalDateTime.now()); return items.save(i);
 	}
 	public ErrorItem mastery(String id, MasteryRequest r, Authentication a) {
 		ErrorItem i=items.findById(id).orElseThrow(); ErrorBook b=books.findById(i.getBookId()).orElseThrow();
 		scopes.assertStudentAccess(scope(a),b.getStudentId()); if (!Set.of("MASTERED","NEEDS_PRACTICE").contains(r.status()))
 			throw new IllegalArgumentException("掌握状态无效"); i.setMasteryStatus(r.status()); i.setStudentNote(r.note()); return items.save(i);
+	}
+
+	public ErrorItem review(String id, ErrorReviewRequest r, Authentication a) {
+			ErrorItem item = items.findById(id).orElseThrow(() -> new NoSuchElementException("错题不存在"));
+			ErrorBook book = books.findById(item.getBookId()).orElseThrow(() -> new NoSuchElementException("错题本不存在"));
+			scopes.assertStudentAccess(scope(a), book.getStudentId());
+			if (!Set.of("OPEN", "RESOLVED", "MASTERED", "NEEDS_PRACTICE").contains(r.status()))
+				throw new IllegalArgumentException("复习状态无效");
+			item.setStatus(r.status());
+			item.setTeacherNote(r.note());
+			ErrorItem saved = items.save(item);
+			if (errorReviews != null) {
+				ErrorReview review = new ErrorReview();
+				review.setId(UUID.randomUUID().toString()); review.setErrorItemId(id);
+				review.setReviewerId(a.getName()); review.setStatus(r.status());
+				review.setNote(r.note()); review.setReviewedAt(LocalDateTime.now());
+				errorReviews.save(review);
+			}
+			return saved;
 	}
 
 	@Transactional(readOnly = true)

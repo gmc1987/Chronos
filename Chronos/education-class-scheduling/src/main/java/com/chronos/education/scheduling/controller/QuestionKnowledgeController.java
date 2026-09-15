@@ -87,6 +87,17 @@ public class QuestionKnowledgeController {
 	public ResultData<Void> disablePoint(@PathVariable String id, Authentication user) {
 		service.disableKnowledgePoint(id, user); return ok(null);
 	}
+	@PostMapping("/knowledge-points/{id}/enable")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:knowledge-point:manage','education:teaching:manage')")
+	public ResultData<KnowledgePoint> enablePoint(@PathVariable String id, Authentication user) {
+		return ok(service.enableKnowledgePoint(id, user));
+	}
+	@PostMapping("/knowledge-points/{id}/move")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:knowledge-point:manage','education:teaching:manage')")
+	public ResultData<KnowledgePoint> movePoint(@PathVariable String id,
+			@RequestBody KnowledgePointMoveRequest request, Authentication user) {
+		return ok(service.moveKnowledgePoint(id, request, user));
+	}
 	@GetMapping("/knowledge-points/tree")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:knowledge-point:view','education:teaching:view')")
 	public ResultData<List<KnowledgePoint>> tree(@RequestParam String courseId, Authentication user) {

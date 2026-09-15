@@ -139,6 +139,25 @@ public class QuestionKnowledgeService {
 		value.setEnabled(false); value.setStatus("DISABLED"); points.save(value);
 	}
 
+	public KnowledgePoint enableKnowledgePoint(String id, Authentication user) {
+		KnowledgePoint value = points.findById(id).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+		scopes.assertCourseAccess(scopes.resolve(user.getName()), value.getCourseId());
+		if (value.isArchived()) throw new IllegalStateException("已归档知识点不能启用");
+		value.setEnabled(true); value.setStatus("ACTIVE");
+		return points.save(value);
+	}
+
+	public KnowledgePoint moveKnowledgePoint(String id, KnowledgePointMoveRequest request, Authentication user) {
+		KnowledgePoint value = points.findById(id).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+		EducationDataScope scope = scopes.resolve(user.getName());
+		scopes.assertCourseAccess(scope, value.getCourseId());
+		require(request != null, "移动参数不能为空");
+		validateParent(request.parentId(), value.getCourseId(), id);
+		value.setParentId(blank(request.parentId()));
+		value.setSortOrder(request.sortOrder() == null ? 0 : request.sortOrder());
+		return points.save(value);
+	}
+
 	@Transactional(readOnly = true)
 	public List<Question> questions(String bankId, Authentication user) {
 		QuestionBank bank = banks.findById(bankId).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
@@ -259,7 +278,7 @@ public class QuestionKnowledgeService {
 	public List<KnowledgePoint> knowledgeTree(String courseId, Authentication user) {
 		EducationDataScope scope = scopes.resolve(user.getName());
 		scopes.assertCourseAccess(scope, courseId);
-		return points.findAll().stream().filter(p -> !p.isArchived() && Objects.equals(courseId, p.getCourseId())
+		return points.findByCourseIdAndArchivedFalseOrderByParentIdAscSortOrderAscNameAsc(courseId).stream().filter(p -> p.isEnabled() && Objects.equals(courseId, p.getCourseId())
 				&& scopes.canAccessCourse(scope, p.getCourseId()))
 				.sorted(Comparator.comparing(KnowledgePoint::getSortOrder).thenComparing(KnowledgePoint::getName)).toList();
 	}
