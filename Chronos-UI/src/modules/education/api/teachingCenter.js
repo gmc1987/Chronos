@@ -144,12 +144,18 @@ export const updateQuestion = (id, body) => http.put(`/education/teaching-center
 export const questionOptions = (id, params = {}) =>
   teachingDomainChildrenApi('questions', id, 'options', params)
 export const submitQuestion = (id) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/submit`)
+export const approveQuestion = (id) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/approve`)
+export const publishQuestion = (id) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/publish`)
+export const withdrawQuestion = (id) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/withdraw`)
+export const reviseQuestion = (id) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/revise`)
+export const archiveQuestion = (id) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/archive`)
+export const rollbackQuestion = (id, versionNo) => http.post(`/education/teaching-center/questions/${encodeURIComponent(id)}/rollback/${versionNo}`)
 export const questionVersions = (id) => http.get(`/education/teaching-center/questions/${encodeURIComponent(id)}/versions`)
 export const questionImportTemplate = () => http.download('/education/teaching-center/questions/import/template')
 export const validateQuestionImport = (body) =>
   http.postText('/education/teaching-center/questions/import/precheck', body, 'text/csv')
 export const commitQuestionImport = (body) =>
-  http.postText('/education/teaching-center/questions/import/confirm', body, 'text/csv')
+  http.post('/education/teaching-center/questions/import/confirm', body)
 export const knowledgePointTree = (courseId) =>
   http.get(`/education/teaching-center/api/knowledge-points/tree?${queryString({ courseId })}`)
 export const createKnowledgePoint = (body) => http.post('/education/teaching-center/knowledge-points', body)

@@ -52,6 +52,26 @@ public class QuestionKnowledgeController {
 	public ResultData<Question> submit(@PathVariable String id, Authentication user) {
 		return ok(service.submitQuestion(id, user));
 	}
+	@PostMapping("/questions/{id}/approve")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:review','education:question-bank:manage','education:teaching:manage')")
+	public ResultData<Question> approve(@PathVariable String id, Authentication user) { return ok(service.approveQuestion(id, user)); }
+	@PostMapping("/questions/{id}/publish")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:publish','education:question-bank:manage','education:teaching:manage')")
+	public ResultData<Question> publish(@PathVariable String id, Authentication user) { return ok(service.publishQuestion(id, user)); }
+	@PostMapping("/questions/{id}/withdraw")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:publish','education:question-bank:manage','education:teaching:manage')")
+	public ResultData<Question> withdraw(@PathVariable String id, Authentication user) { return ok(service.withdrawQuestion(id, user)); }
+	@PostMapping("/questions/{id}/revise")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
+	public ResultData<Question> revise(@PathVariable String id, Authentication user) { return ok(service.reviseQuestion(id, user)); }
+	@PostMapping("/questions/{id}/archive")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
+	public ResultData<Question> archive(@PathVariable String id, Authentication user) { return ok(service.archiveQuestion(id, user)); }
+	@PostMapping("/questions/{id}/rollback/{versionNo}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
+	public ResultData<Question> rollback(@PathVariable String id, @PathVariable int versionNo, Authentication user) {
+		return ok(service.rollbackQuestion(id, versionNo, user));
+	}
 	@PostMapping("/knowledge-points")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:knowledge-point:manage','education:teaching:manage')")
 	public ResultData<KnowledgePoint> createPoint(@RequestBody KnowledgePointRequest request, Authentication user) {
@@ -80,7 +100,9 @@ public class QuestionKnowledgeController {
 	public ResultData<ImportPreview> precheck(@RequestBody String csv) { return ok(service.precheckCsv(csv)); }
 	@PostMapping("/questions/import/confirm")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:manage','education:teaching:manage')")
-	public ResultData<List<Question>> confirm(@RequestBody String csv, Authentication user) { return ok(service.importCsv(csv, user)); }
+	public ResultData<List<Question>> confirm(@RequestBody ImportConfirm request, Authentication user) {
+		return ok(service.importCsv(request.csv(), request.precheckHash(), user));
+	}
 
 	private <T> ResultData<T> ok(T data) {
 		return ResultData.<T>builder().code("200").msg("success").data(data).build();
