@@ -52,10 +52,13 @@ public class TeachingPlanLessonService {
 	}
 	private void applyItem(TeachingPlanItem v, PlanItemUpdateRequest i) {
 		v.setChapterNo(i.chapterNo()); v.setChapterName(i.chapterName());
+		v.setKnowledgeUnit(i.knowledgeUnit()); v.setExpectedDate(i.expectedDate());
 		v.setWeekStart(i.weekStart()); v.setWeekEnd(i.weekEnd()); v.setLessonHours(i.lessonHours());
 		v.setTrainingHours(i.trainingHours() == null ? 0 : i.trainingHours()); v.setObjectives(i.objectives());
 		v.setKeyPoints(i.keyPoints()); v.setDifficultPoints(i.difficultPoints());
 		v.setAssessmentMethod(i.assessmentMethod()); v.setLinkedKnowledgePointId(i.linkedKnowledgePointId());
+		if (i.completionStatus() != null && !i.completionStatus().isBlank())
+			v.setCompletionStatus(i.completionStatus().trim().toUpperCase(Locale.ROOT));
 		v.setSortOrder(i.sortOrder());
 	}
 
@@ -169,6 +172,9 @@ public class TeachingPlanLessonService {
 		value.setOwnerTeacherId(offering.getTeacherId()); value.setScheduleEntryId(request.scheduleEntryId());
 		value.setTitle(request.title()); value.setPreparationType(request.preparationType());
 		value.setConclusion(request.conclusion()); value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
+		value.setObjective(request.objective()); value.setKeyPoints(request.keyPoints());
+		value.setDifficultPoints(request.difficultPoints()); value.setDiscussion(request.discussion());
+		value.setScheduledAt(request.scheduledAt());
 		value.setCreateBy(auth.getName());
 		return preparations.save(value);
 	}
@@ -184,6 +190,9 @@ public class TeachingPlanLessonService {
 		value.setScheduleEntryId(request.scheduleEntryId()); value.setTitle(request.title());
 		value.setPreparationType(request.preparationType()); value.setConclusion(request.conclusion());
 		value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
+		value.setObjective(request.objective()); value.setKeyPoints(request.keyPoints());
+		value.setDifficultPoints(request.difficultPoints()); value.setDiscussion(request.discussion());
+		value.setScheduledAt(request.scheduledAt());
 		return preparations.save(value);
 	}
 
@@ -335,10 +344,15 @@ public class TeachingPlanLessonService {
 		if (values == null) return;
 		values.forEach(i -> { TeachingPlanItem v = new TeachingPlanItem(); v.setId(UUID.randomUUID().toString());
 			v.setPlanId(planId); v.setChapterNo(i.chapterNo()); v.setChapterName(i.chapterName());
+			v.setKnowledgeUnit(i.knowledgeUnit()); v.setExpectedDate(i.expectedDate());
 			v.setWeekStart(i.weekStart()); v.setWeekEnd(i.weekEnd()); v.setLessonHours(i.lessonHours());
 			v.setTrainingHours(i.trainingHours() == null ? 0 : i.trainingHours()); v.setObjectives(i.objectives());
 			v.setKeyPoints(i.keyPoints()); v.setDifficultPoints(i.difficultPoints()); v.setAssessmentMethod(i.assessmentMethod());
-			v.setLinkedKnowledgePointId(i.linkedKnowledgePointId()); v.setSortOrder(i.sortOrder()); items.save(v); });
+			v.setLinkedKnowledgePointId(i.linkedKnowledgePointId()); v.setSortOrder(i.sortOrder());
+			if (i.completionStatus() != null && !i.completionStatus().isBlank()) {
+				v.setCompletionStatus(i.completionStatus().trim().toUpperCase(Locale.ROOT));
+			}
+			items.save(v); });
 	}
 	private void assertPlanEditable(TeachingPlan p, Long rowVersion, Authentication a) {
 		scopes.assertOfferingAccess(scopes.resolve(a.getName()), p.getOfferingId());
