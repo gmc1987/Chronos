@@ -15,6 +15,7 @@ public final class HomeworkDtos {
 			String lessonPlanId,
 			@NotBlank String title,
 			@NotBlank String questionSnapshotJson,
+			String questionVersionRefsJson,
 			String instructionsJson,
 			java.time.LocalDateTime dueAt,
 			java.time.LocalDateTime startAt,

@@ -50,6 +50,7 @@
         <el-form-item label="备课记录"><el-select v-model="form.preparationId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班备课"><el-option v-for="item in preparations" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item label="教案"><el-select v-model="form.lessonPlanId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班教案"><el-option v-for="item in lessonPlans" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item label="题目/附件快照"><el-input v-model="form.questionSnapshotJson" type="textarea" :rows="6" placeholder="可填写题目、要求或附件引用 JSON；发布后形成快照" /></el-form-item>
+        <el-form-item label="已发布题目版本"><el-input v-model="form.questionVersionRefsJson" type="textarea" :rows="3" placeholder='必须填写 [{"questionId":"...","versionId":"..."}]' /></el-form-item>
         <el-form-item label="允许迟交"><el-switch v-model="form.allowLate" /></el-form-item>
         <el-form-item label="发布对象"><el-select v-model="form.publishAudience" style="width:100%"><el-option label="有效选课学生" value="ENROLLED_STUDENTS" /><el-option label="全体学生" value="ALL_STUDENTS" /></el-select></el-form-item>
         <el-form-item label="附件快照"><el-input v-model="form.attachmentSnapshotJson" type="textarea" :rows="2" placeholder="附件引用 JSON" /></el-form-item>
@@ -104,7 +105,7 @@ const planItems = ref([])
 const preparations = ref([])
 const lessonPlans = ref([])
 const filters = reactive({ offeringId: '' })
-const form = reactive({ type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' })
+const form = reactive({ type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', questionVersionRefsJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' })
 const gradeForm = reactive({ score: 0, feedback: '', result: 'GRADED' })
 const rules = { title: [{ required: true, message: '请输入作业名称' }], dueAt: [{ required: true, message: '请选择截止时间' }] }
 const unwrap = response => response?.data?.content || response?.data || []
@@ -119,7 +120,7 @@ const load = async () => {
   catch (error) { loadError.value = error.message || '作业加载失败' }
   finally { loading.value = false }
 }
-const resetForm = value => Object.assign(form, { type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' }, value || {})
+const resetForm = value => Object.assign(form, { type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', questionVersionRefsJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' }, value || {})
 const openCreate = async () => { editing.value = ''; resetForm(); await loadReferences(); dialog.value = true }
 const loadReferences = async () => {
   if (!filters.offeringId) { planItems.value = []; preparations.value = []; lessonPlans.value = []; return }

@@ -40,6 +40,9 @@ public class HomeworkAssignment extends BaseEntity {
 	@Column(name = "question_snapshot_json", nullable = false, columnDefinition = "text")
 	private String questionSnapshotJson = "[]";
 
+	@Column(name = "question_version_refs_json", nullable = false, columnDefinition = "text")
+	private String questionVersionRefsJson = "[]";
+
 	@Column(name = "instructions_json", columnDefinition = "text")
 	private String instructionsJson;
 

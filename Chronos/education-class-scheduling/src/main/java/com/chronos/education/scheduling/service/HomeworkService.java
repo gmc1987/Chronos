@@ -20,10 +20,14 @@ import com.chronos.education.scheduling.dao.TeachingPlanItemRepository;
 import com.chronos.education.scheduling.dao.TeachingPlanRepository;
 import com.chronos.education.scheduling.dao.PreparationRepository;
 import com.chronos.education.scheduling.dao.LessonPlanRepository;
+import com.chronos.education.scheduling.dao.QuestionRepository;
+import com.chronos.education.scheduling.dao.QuestionVersionRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.HomeworkAssignment;
 import com.chronos.education.scheduling.model.HomeworkSubmission;
+import com.chronos.education.scheduling.model.Question;
+import com.chronos.education.scheduling.model.QuestionVersion;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.education.scheduling.model.TeachingPlanItem;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest;
@@ -44,12 +48,15 @@ public class HomeworkService {
 	private final TeachingPlanRepository plans;
 	private final PreparationRepository preparations;
 	private final LessonPlanRepository lessonPlans;
+	private final QuestionRepository questions;
+	private final QuestionVersionRepository questionVersions;
 
 	public HomeworkService(HomeworkAssignmentRepository assignments,
 			HomeworkSubmissionRepository submissions, TeachingClassMemberRepository members,
 			CourseOfferingRepository offerings, EducationDataScopeService scopes,
 			TeachingPlanItemRepository planItems, TeachingPlanRepository plans,
-			PreparationRepository preparations, LessonPlanRepository lessonPlans) {
+			PreparationRepository preparations, LessonPlanRepository lessonPlans,
+			QuestionRepository questions, QuestionVersionRepository questionVersions) {
 		this.assignments = assignments;
 		this.submissions = submissions;
 		this.members = members;
@@ -57,6 +64,7 @@ public class HomeworkService {
 		this.scopes = scopes;
 		this.planItems = planItems; this.plans = plans;
 		this.preparations = preparations; this.lessonPlans = lessonPlans;
+		this.questions = questions; this.questionVersions = questionVersions;
 	}
 
 	private EducationDataScope scope(Authentication auth) {
@@ -159,6 +167,36 @@ public class HomeworkService {
 		return result;
 	}
 
+	private void validatePublishedQuestionRefs(String raw) {
+		try {
+			JsonNode refs = JSON.readTree(raw == null ? "[]" : raw);
+			if (!refs.isArray() || refs.isEmpty()) {
+				throw new IllegalArgumentException("发布作业必须引用至少一个题目的已发布版本");
+			}
+			for (JsonNode ref : refs) {
+				String questionId = ref.path("questionId").asText(null);
+				String versionId = ref.path("versionId").asText(null);
+				if (questionId == null || versionId == null) {
+					throw new IllegalArgumentException("题目版本引用必须包含 questionId 和 versionId");
+				}
+				Question question = questions.findById(questionId)
+						.orElseThrow(() -> new IllegalArgumentException("引用题目不存在"));
+				if (!versionId.equals(question.getPublishedVersionId())) {
+					throw new IllegalArgumentException("作业只能引用题目的当前发布版本");
+				}
+				QuestionVersion version = questionVersions.findById(versionId)
+						.orElseThrow(() -> new IllegalArgumentException("引用题目版本不存在"));
+				if (!questionId.equals(version.getQuestionId()) || !"PUBLISHED".equals(version.getStatus())) {
+					throw new IllegalArgumentException("引用题目版本未发布或不属于该题目");
+				}
+			}
+		} catch (IllegalArgumentException ex) {
+			throw ex;
+		} catch (Exception ex) {
+			throw new IllegalArgumentException("题目版本引用格式无效", ex);
+		}
+	}
+
 	private void apply(HomeworkAssignment result, AssignmentRequest request) {
 		result.setOfferingId(request.offeringId());
 		result.setType(request.type());
@@ -167,6 +205,7 @@ public class HomeworkService {
 		result.setLessonPlanId(request.lessonPlanId());
 		result.setTitle(request.title());
 		result.setQuestionSnapshotJson(request.questionSnapshotJson());
+		result.setQuestionVersionRefsJson(request.questionVersionRefsJson() == null ? "[]" : request.questionVersionRefsJson());
 		result.setInstructionsJson(request.instructionsJson());
 		result.setDueAt(request.dueAt());
 		result.setStartAt(request.startAt());
@@ -199,6 +238,7 @@ public class HomeworkService {
 		HomeworkAssignment result = assignment(id);
 		teacherCan(scope(auth), result);
 		if (!"DRAFT".equals(result.getStatus())) throw new IllegalStateException("只有草稿可以发布");
+		validatePublishedQuestionRefs(result.getQuestionVersionRefsJson());
 		result.setStatus("PUBLISHED");
 		return result;
 	}
