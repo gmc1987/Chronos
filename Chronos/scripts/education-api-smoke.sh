@@ -104,6 +104,7 @@ if [[ "${RUN_TEACHING_RESOURCE_LIFECYCLE:-0}" == "1" ]]; then
 
   request 200 "${teacher_auth[@]}" -X POST "$api/education/teaching-center/materials/versions/$version_id/submit"
   request 200 "${teacher_auth[@]}" -X POST "$api/education/teaching-center/materials/versions/$version_id/submit-review"
+  request 200 "${teacher_auth[@]}" -X POST "$api/education/teaching-center/materials/versions/$version_id/approve"
   request 200 "${teacher_auth[@]}" -X POST "$api/education/teaching-center/materials/versions/$version_id/publish"
   request 200 "${teacher_auth[@]}" -X POST "$api/education/teaching-center/materials/versions/$version_id/archive"
 fi

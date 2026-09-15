@@ -12,5 +12,7 @@ public interface TeachingReviewRecordRepository extends JpaRepository<TeachingRe
 		return findTopByResourceTypeAndResourceIdOrderBySubmissionNoDesc(resourceType, resourceId);
 	}
 	Optional<TeachingReviewRecord> findByBusinessKey(String businessKey);
+	Optional<TeachingReviewRecord> findTopByResourceTypeAndResourceIdAndVersionIdOrderBySubmissionNoDesc(
+			String resourceType, String resourceId, String versionId);
 	List<TeachingReviewRecord> findByStatusInOrderBySubmittedAtAsc(java.util.Collection<String> statuses);
 }

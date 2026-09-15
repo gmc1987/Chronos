@@ -77,6 +77,23 @@ public class TeachingReviewService {
 		return saved;
 	}
 
+	public TeachingReviewRecord approve(String type, String id, String versionId, Authentication auth) {
+		var record = records
+				.findTopByResourceTypeAndResourceIdAndVersionIdOrderBySubmissionNoDesc(type, id, versionId)
+				.orElseThrow(() -> new IllegalStateException("未找到待审核版本"));
+		authorizeResource(type, id, record.getOfferingId(), auth);
+		if (!java.util.Set.of("SUBMITTED", "REVIEWING").contains(record.getStatus())) {
+			throw new IllegalStateException("只有审核中的版本可以通过审核");
+		}
+		record.setStatus("COMPLETED");
+		record.setDecision("APPROVED");
+		record.setCompletedAt(java.time.Instant.now());
+		record.setComment("");
+		var saved = records.save(record);
+		writeBack(record.getBusinessKey(), "APPROVED", "APPROVED", "");
+		return saved;
+	}
+
 	@Transactional(readOnly=true)
 	public TeachingReviewRecord status(String type, String id, Authentication auth) {
 		TeachingReviewRecord record = records.findByResourceTypeAndResourceId(type,id)
