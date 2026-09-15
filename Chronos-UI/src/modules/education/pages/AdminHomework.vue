@@ -163,7 +163,7 @@ const showSubmissions = async row => {
   try { submissions.value = unwrap(await homeworkSubmissions(row.id, { page: 0, size: 200 })) } catch (error) { ElMessage.error(error.message) }
   finally { submissionLoading.value = false }
 }
-const openGrade = row => { grading.value = row; Object.assign(gradeForm, { score: row.score || 0, feedback: row.feedback || '', result: 'GRADED' }); gradeDialog.value = true }
+const openGrade = row => { grading.value = row; Object.assign(gradeForm, { score: row.score || 0, feedback: row.teacherFeedback || '', result: 'GRADED' }); gradeDialog.value = true }
 const grade = async () => {
   try { await gradeHomeworkSubmission(grading.value.id, { score: gradeForm.score, teacherFeedback: gradeForm.feedback, returnForRevision: gradeForm.result === 'RETURNED_FOR_REVISION' }); gradeDialog.value = false; ElMessage.success('批改结果已保存'); await showSubmissions(selectedHomework.value) }
   catch (error) { ElMessage.error(error.message || '保存批改失败') }
