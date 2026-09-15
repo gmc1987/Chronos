@@ -17,6 +17,7 @@ public final class ResearchErrorDtos {
 	}
 	public record ActivityCancelRequest(@NotBlank String reason) {}
 	public record AttendanceRequest(@NotBlank String teacherId, @NotBlank String status, String leaveReason) {}
+	public record ActivityInviteResponse(@NotBlank String status) {}
 	public record MaterialRequest(@NotBlank String title, @NotBlank String fileId) {}
 	public record ResultRequest(@NotBlank String title, @NotBlank String resultType,
 			String content, String fileId) {}

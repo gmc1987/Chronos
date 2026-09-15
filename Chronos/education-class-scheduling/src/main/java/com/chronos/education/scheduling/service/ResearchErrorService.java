@@ -182,6 +182,20 @@ public class ResearchErrorService {
 		ResearchActivityMember m=new ResearchActivityMember(); m.setId(UUID.randomUUID().toString());
 		m.setActivityId(activityId); m.setTeacherId(r.teacherId()); m.setRole(r.role()); return activityMembers.save(m);
 	}
+	public ResearchActivityMember respondActivityInvite(String activityId, ActivityInviteResponse request,
+			Authentication a) {
+		ResearchActivity activity = activities.findById(activityId)
+				.orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(activity.getGroupId(), a);
+		if (!Set.of("ACCEPTED", "DECLINED").contains(request.status()))
+			throw new IllegalArgumentException("邀请回应状态无效");
+		ResearchActivityMember member = activityMembers
+				.findByActivityIdAndTeacherId(activityId, a.getName())
+				.orElseThrow(() -> new AccessDeniedException("当前账号不是活动成员"));
+		member.setInvitationStatus(request.status());
+		member.setRespondedAt(LocalDateTime.now());
+		return activityMembers.save(member);
+	}
 	public void removeActivityMember(String activityId, String teacherId, Authentication a) {
 		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(), a);
@@ -196,7 +210,7 @@ public class ResearchErrorService {
 		if (!a.getName().equals(r.teacherId()) && !scope(a).fullAccess()) throw new AccessDeniedException("只能为本人签到或请假");
 		if (!Set.of("SIGNED_IN","LEAVE","ABSENT").contains(r.status())) throw new IllegalArgumentException("签到状态无效");
 		if ("LEAVE".equals(r.status()) && (r.leaveReason()==null || r.leaveReason().isBlank())) throw new IllegalArgumentException("请假必须填写原因");
-		m.setAttendanceStatus(r.status()); m.setLeaveReason(r.leaveReason()); m.setRespondedAt(LocalDateTime.now());
+		m.setAttendanceStatus(r.status()); m.setLeaveReason(r.leaveReason()); m.setAttendanceUpdatedBy(a.getName()); m.setRespondedAt(LocalDateTime.now());
 		if ("SIGNED_IN".equals(r.status())) m.setAttendanceAt(LocalDateTime.now()); return activityMembers.save(m);
 	}
 	public ResearchActivity updateMinutes(String activityId, MinutesRequest r, Authentication a) {
