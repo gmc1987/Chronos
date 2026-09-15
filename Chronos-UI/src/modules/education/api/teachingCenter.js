@@ -161,9 +161,11 @@ export const knowledgePointTree = (courseId) =>
 export const createKnowledgePoint = (body) => http.post('/education/teaching-center/knowledge-points', body)
 export const updateKnowledgePoint = (id, body) => http.put(`/education/teaching-center/knowledge-points/${encodeURIComponent(id)}`, body)
 export const moveKnowledgePoint = (id, body) =>
-  http.post(`/education/teaching-center/api/knowledge-points/${encodeURIComponent(id)}/move`, body)
+  http.post(`/education/teaching-center/knowledge-points/${encodeURIComponent(id)}/move`, body)
 export const disableKnowledgePoint = (id) =>
-  http.post(`/education/teaching-center/api/knowledge-points/${encodeURIComponent(id)}/disable`)
+  http.post(`/education/teaching-center/knowledge-points/${encodeURIComponent(id)}/disable`)
+export const enableKnowledgePoint = (id) =>
+  http.post(`/education/teaching-center/knowledge-points/${encodeURIComponent(id)}/enable`)
 
 // Slice four contracts. Research and error-book writes go through the named
 // domain API; the UI never exposes status or foreign-key text inputs.
@@ -201,7 +203,9 @@ export const mistakesPage = (params = {}) => http.get(`/education/teaching-cente
 export const createMistake = (body) => http.post('/education/teaching-center/error-books/manual', body)
 export const updateMistake = (id, body) => updateResource('mistakes', id, body)
 export const transitionMistake = (id, status) =>
-  http.post(`/education/teaching-center/api/mistakes/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
+  http.post(`/education/teaching-center/error-items/${encodeURIComponent(id)}/mastery`, { status })
+export const reviewMistake = (id, body) =>
+  http.post(`/education/teaching-center/error-items/${encodeURIComponent(id)}/review`, body)
 
 // Homework is a teaching-domain workflow, not a generic platform Workflow instance.
 export const homeworkPage = (params = {}) =>
