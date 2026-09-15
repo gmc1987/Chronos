@@ -107,6 +107,8 @@ export const concludePreparation = (id, body) =>
 
 export const resourcePage = (domain, params = {}) => http.get(`/education/teaching-center/api/${domain}?${queryString(params)}`)
 export const createResource = (domain, body) => http.post(`/education/teaching-center/${domain}`, body)
+export const createCoursewareFromPreparation = (preparationId, body) =>
+  http.post(`/education/teaching-center/coursewares/from-preparation/${encodeURIComponent(preparationId)}`, body)
 export const updateResource = (domain, id, body) =>
   http.put(`/education/teaching-center/${domain}/${encodeURIComponent(id)}`, body)
 export const copyResource = (domain, id, body) =>
