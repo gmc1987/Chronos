@@ -42,7 +42,9 @@ class ClassSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class),
 				members,
 				mock(StudentProfileRepository.class),
-				mock(AcademicCalendarService.class));
+				mock(AcademicCalendarService.class),
+				mock(ExamResourceReservationService.class),
+				mock(EducationResourceTransactionLock.class));
 	}
 
 	@Test

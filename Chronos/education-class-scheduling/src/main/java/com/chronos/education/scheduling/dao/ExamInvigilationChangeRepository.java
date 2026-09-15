@@ -8,5 +8,6 @@ import com.chronos.education.scheduling.model.ExamInvigilationChange;
 
 public interface ExamInvigilationChangeRepository extends JpaRepository<ExamInvigilationChange, String> {
 	List<ExamInvigilationChange> findByStatusOrderByCreateTimeDesc(String status);
+	List<ExamInvigilationChange> findByRequestedByOrderByCreateTimeDesc(String requestedBy);
 	boolean existsByAssignmentIdAndStatus(String assignmentId, String status);
 }

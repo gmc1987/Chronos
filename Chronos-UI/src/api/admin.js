@@ -358,6 +358,70 @@ export const exportEducationStudents = () => http.download('/admin/education/stu
 export const createEducationStudent = (payload) => http.post('/admin/education/students', payload)
 export const updateEducationStudent = (id, payload) => http.put(`/admin/education/students/${id}`, payload)
 export const listEducationTeachers = (params) => http.get(`/admin/education/teachers?${qs(params)}`)
+
+// 考试计划、考场与监考排班共用同一组考试中心业务接口。
+export const listExamPlans = (semesterCode) => http.get(`/admin/education/exam/plans?${qs({ semesterCode })}`)
+export const createExamPlan = (payload) => http.post('/admin/education/exam/plans', payload)
+export const updateExamPlan = (id, payload) => http.put(`/admin/education/exam/plans/${id}`, payload)
+export const deleteExamPlan = (id) => http.delete(`/admin/education/exam/plans/${id}`)
+export const listExamSessions = (planId) => http.get(`/admin/education/exam/plans/${planId}/sessions`)
+export const createExamSession = (planId, payload) => http.post(`/admin/education/exam/plans/${planId}/sessions`, payload)
+export const updateExamSession = (planId, id, payload) => http.put(`/admin/education/exam/plans/${planId}/sessions/${id}`, payload)
+export const deleteExamSession = (planId, id) => http.delete(`/admin/education/exam/plans/${planId}/sessions/${id}`)
+export const listExamRooms = (sessionId) => http.get(`/admin/education/exam/sessions/${sessionId}/rooms`)
+export const createExamRoom = (sessionId, payload) => http.post(`/admin/education/exam/sessions/${sessionId}/rooms`, payload)
+export const deleteExamRoom = (sessionId, id) => http.delete(`/admin/education/exam/sessions/${sessionId}/rooms/${id}`)
+export const listExamCandidates = (roomId) => http.get(`/admin/education/exam/rooms/${roomId}/candidates`)
+export const addExamCandidates = (roomId, studentIds) => http.post(`/admin/education/exam/rooms/${roomId}/candidates`, { studentIds })
+export const addExamClassCandidates = (roomId, administrativeClassId) => http.post(`/admin/education/exam/rooms/${roomId}/class-candidates?${qs({ administrativeClassId })}`)
+export const removeExamCandidate = (roomId, id) => http.delete(`/admin/education/exam/rooms/${roomId}/candidates/${id}`)
+export const listExamInvigilators = (roomId) => http.get(`/admin/education/exam/rooms/${roomId}/invigilators`)
+export const removeExamInvigilator = (roomId, id) => http.delete(`/admin/education/exam/rooms/${roomId}/invigilators/${id}`)
+export const listAvailableInvigilators = (roomId) => http.get(`/admin/education/exam/rooms/${roomId}/available-teachers`)
+export const assignExamInvigilator = (roomId, payload) => http.post(`/admin/education/exam/rooms/${roomId}/invigilators`, payload)
+export const autoAssignExamInvigilators = (planId) => http.post(`/admin/education/exam/plans/${planId}/auto-invigilation`)
+export const previewExamConflicts = (planId) => http.get(`/admin/education/exam/plans/${planId}/conflicts`)
+export const publishExamPlan = (planId) => http.post(`/admin/education/exam/plans/${planId}/publish`)
+export const previewExamSuspensionImpacts = (planId, scopeMode) => http.get(
+  `/admin/education/exam/plans/${planId}/suspension-impacts?${qs({ scopeMode })}`,
+)
+export const listExamSuspensionRequests = (planId) => http.get(
+  `/admin/education/exam/plans/${planId}/suspension-requests`,
+)
+export const listExamSuspensionItems = (requestId) => http.get(
+  `/admin/education/exam/suspension-requests/${requestId}/items`,
+)
+export const requestExamSuspension = (planId, payload) => http.post(
+  `/admin/education/exam/plans/${planId}/suspension-requests`, payload,
+)
+export const decideExamSuspension = (requestId, approve) => http.post(
+  `/admin/education/exam/suspension-requests/${requestId}/decide`, { approve },
+)
+export const listExamPublishedChanges = (planId) => http.get(
+  `/admin/education/exam/plans/${planId}/published-changes`,
+)
+export const requestExamPublishedChange = (planId, payload) => http.post(
+  `/admin/education/exam/plans/${planId}/published-changes`, payload,
+)
+export const decideExamPublishedChange = (changeId, approve) => http.post(
+  `/admin/education/exam/published-changes/${changeId}/decide`, { approve },
+)
+export const listInvigilationChanges = () => http.get('/admin/education/exam/invigilation-changes')
+export const requestInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilations/${id}/change-requests`, payload)
+export const decideInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilation-changes/${id}/decide`, payload)
+export const emergencyInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilations/${id}/emergency-change`, payload)
+export const listExamStandbys = (sessionId) => http.get(`/admin/education/exam/sessions/${sessionId}/standbys`)
+export const addExamStandby = (roomId, teacherId) => http.post(`/admin/education/exam/rooms/${roomId}/standbys?${qs({ teacherId })}`)
+export const markExamInvigilatorAbsent = (id) => http.post(`/admin/education/exam/invigilations/${id}/mark-absent`)
+export const listExamTeacherQualifications = (teacherId) => http.get(`/admin/education/exam/teachers/${teacherId}/qualifications`)
+export const addExamTeacherQualification = (teacherId, subjectId) => http.post(`/admin/education/exam/teachers/${teacherId}/qualifications/${subjectId}`)
+export const removeExamTeacherQualification = (teacherId, subjectId) => http.delete(`/admin/education/exam/teachers/${teacherId}/qualifications/${subjectId}`)
+export const listExamPaperItems = (sessionId) => http.get(`/admin/education/exam/sessions/${sessionId}/paper-items`)
+export const createExamPaperItem = (sessionId, payload) => http.post(`/admin/education/exam/sessions/${sessionId}/paper-items`, payload)
+export const deleteExamPaperItem = (sessionId, itemId) => http.delete(`/admin/education/exam/sessions/${sessionId}/paper-items/${itemId}`)
+export const listExamItemScores = (sessionId, itemId) => http.get(`/admin/education/exam/sessions/${sessionId}/paper-items/${itemId}/scores`)
+export const saveExamItemScore = (sessionId, itemId, payload) => http.put(`/admin/education/exam/sessions/${sessionId}/paper-items/${itemId}/scores`, payload)
+export const getExamPaperAnalysis = (sessionId) => http.get(`/admin/education/exam/sessions/${sessionId}/paper-analysis`)
 export const createEducationTeacher = (payload) => http.post('/admin/education/teachers', payload)
 export const updateEducationTeacher = (id, payload) => http.put(`/admin/education/teachers/${id}`, payload)
 export const bindEducationTeacherAccount = (id) => http.post(`/admin/education/teachers/${id}/account`)

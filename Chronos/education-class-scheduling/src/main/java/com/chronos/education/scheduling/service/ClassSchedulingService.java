@@ -37,6 +37,8 @@ public class ClassSchedulingService {
 	private final TeachingClassMemberRepository teachingClassMembers;
 	private final StudentProfileRepository students;
 	private final AcademicCalendarService academicCalendar;
+	private final ExamResourceReservationService examReservations;
+	private final EducationResourceTransactionLock resourceLock;
 
 	public ClassSchedulingService(
 			CourseOfferingRepository offerings,
@@ -46,7 +48,9 @@ public class ClassSchedulingService {
 			TeacherTimeConstraintRepository teacherConstraints,
 			TeachingClassMemberRepository teachingClassMembers,
 			StudentProfileRepository students,
-			AcademicCalendarService academicCalendar) {
+			AcademicCalendarService academicCalendar,
+			ExamResourceReservationService examReservations,
+			EducationResourceTransactionLock resourceLock) {
 		this.offerings = offerings;
 		this.classrooms = classrooms;
 		this.unavailableSlots = unavailableSlots;
@@ -55,6 +59,8 @@ public class ClassSchedulingService {
 		this.teachingClassMembers = teachingClassMembers;
 		this.students = students;
 		this.academicCalendar = academicCalendar;
+		this.examReservations = examReservations;
+		this.resourceLock = resourceLock;
 	}
 
 	@Transactional(readOnly = true)
@@ -210,6 +216,7 @@ public class ClassSchedulingService {
 
 	@Transactional
 	public ScheduleEntryView saveEntry(String id, ScheduleEntryCommand command) {
+		resourceLock.lockSemester(command.semesterCode());
 		validateEntry(command);
 		CourseOffering offering = offerings.findById(command.offeringId())
 				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
@@ -268,6 +275,19 @@ public class ClassSchedulingService {
 				command.endWeek(),
 				id);
 		Set<String> targetStudentIds = enrolledStudentIds(command.offeringId());
+		// 已发布考试反向占用具体日期资源，不能再通过新增周课表绕过发布检查。
+		examReservations.assertWeeklyCourseAvailable(
+				command.semesterCode(),
+				offering.getCampusId(),
+				command.dayOfWeek(),
+				command.periodNo(),
+				duration,
+				command.startWeek(),
+				command.endWeek(),
+				weekPattern,
+				command.classroomId(),
+				offering.getTeacherId(),
+				targetStudentIds);
 		for (ScheduleEntry existing : overlapping) {
 			if (!weekPatternsOverlap(existing.getWeekPattern(), weekPattern)) {
 				continue;

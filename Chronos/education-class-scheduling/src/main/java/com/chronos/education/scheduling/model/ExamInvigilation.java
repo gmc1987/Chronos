@@ -1,5 +1,7 @@
 package com.chronos.education.scheduling.model;
 
+import java.time.LocalDateTime;
+
 import com.chronos.model.pojo.BaseEntity;
 
 import jakarta.persistence.Column;
@@ -24,6 +26,18 @@ public class ExamInvigilation extends BaseEntity {
 
 	@Column(name = "status", nullable = false, length = 24)
 	private String status = "ASSIGNED";
+
+	@Column(name = "acknowledged_at")
+	private LocalDateTime acknowledgedAt;
+
+	@Column(name = "checked_in_at")
+	private LocalDateTime checkedInAt;
+
+	@Column(name = "absent_at")
+	private LocalDateTime absentAt;
+
+	@Column(name = "absence_escalated_at")
+	private LocalDateTime absenceEscalatedAt;
 
 	@Column(name = "replaced_by_id", length = 64)
 	private String replacedById;

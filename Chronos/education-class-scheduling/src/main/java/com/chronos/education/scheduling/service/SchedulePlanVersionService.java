@@ -1,8 +1,11 @@
 package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
+import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.SchedulePlanVersionRepository;
+import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
+import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulePlanVersion;
 import com.chronos.education.scheduling.model.SchedulePlanVersionView;
@@ -12,6 +15,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +32,10 @@ public class SchedulePlanVersionService {
 	private final SchedulePublicationNotificationService publicationNotifications;
 	private final ScheduleQualityAnalysisService qualityAnalysis;
 	private final ScheduleQualityRiskNotificationService qualityNotifications;
+	private final CourseOfferingRepository offerings;
+	private final TeachingClassMemberRepository members;
+	private final ExamResourceReservationService examReservations;
+	private final EducationResourceTransactionLock resourceLock;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
 	public SchedulePlanVersionService(
@@ -37,7 +46,11 @@ public class SchedulePlanVersionService {
 			EntityManager entityManager,
 			SchedulePublicationNotificationService publicationNotifications,
 			ScheduleQualityAnalysisService qualityAnalysis,
-			ScheduleQualityRiskNotificationService qualityNotifications) {
+			ScheduleQualityRiskNotificationService qualityNotifications,
+			CourseOfferingRepository offerings,
+			TeachingClassMemberRepository members,
+			ExamResourceReservationService examReservations,
+			EducationResourceTransactionLock resourceLock) {
 		this.entries = entries;
 		this.versions = versions;
 		this.terms = terms;
@@ -46,6 +59,10 @@ public class SchedulePlanVersionService {
 		this.publicationNotifications = publicationNotifications;
 		this.qualityAnalysis = qualityAnalysis;
 		this.qualityNotifications = qualityNotifications;
+		this.offerings = offerings;
+		this.members = members;
+		this.examReservations = examReservations;
+		this.resourceLock = resourceLock;
 	}
 
 	@Transactional(readOnly = true)
@@ -58,11 +75,13 @@ public class SchedulePlanVersionService {
 	@Transactional
 	public SchedulePlanVersion publish(String semesterCode, String actor) {
 		String semester = required(semesterCode);
+		resourceLock.lockSemester(semester);
 		lockTerm(semester);
 		List<ScheduleEntry> current = entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(semester);
 		if (current.isEmpty()) {
 			throw new IllegalStateException("当前学期没有可发布的课表");
 		}
+		assertExamAvailability(current);
 		List<String> blockers = qualityAnalysis.publishBlockers(semester);
 		if (!blockers.isEmpty()) {
 			qualityNotifications.notifyBlocked(actor, semester, blockers);
@@ -83,8 +102,10 @@ public class SchedulePlanVersionService {
 	public SchedulePlanVersion rollback(String versionId, String actor) {
 		SchedulePlanVersion source = versions.findById(versionId)
 				.orElseThrow(() -> new IllegalArgumentException("课表版本不存在"));
+		resourceLock.lockSemester(source.getSemesterCode());
 		lockTerm(source.getSemesterCode());
 		List<ScheduleEntry> snapshot = read(source.getSnapshotJson());
+		assertExamAvailability(snapshot);
 		entries.deleteAllForRollback(source.getSemesterCode());
 		entityManager.clear();
 		for (ScheduleEntry entry : snapshot) {
@@ -106,6 +127,30 @@ public class SchedulePlanVersionService {
 		return versions.findFirstBySemesterCodeOrderByVersionNoDesc(semesterCode)
 				.map(value -> read(value.getSnapshotJson()))
 				.orElseGet(List::of);
+	}
+
+	/** 版本回滚走原生 SQL，须在恢复前单独校验考试资源占用。 */
+	private void assertExamAvailability(List<ScheduleEntry> snapshot) {
+		for (ScheduleEntry entry : snapshot) {
+			if ("CANCELLED".equals(entry.getStatus())) {
+				continue;
+			}
+			CourseOffering offering = offerings.findById(entry.getOfferingId())
+					.orElseThrow(() -> new IllegalStateException(
+							"课表版本引用的教学任务不存在"));
+			Set<String> studentIds = members
+					.findByOfferingIdOrderByCreateTime(entry.getOfferingId())
+					.stream()
+					.filter(member -> "ENROLLED".equals(member.getEnrollmentStatus()))
+					.map(member -> member.getStudentId())
+					.collect(Collectors.toSet());
+			examReservations.assertWeeklyCourseAvailable(
+					entry.getSemesterCode(), offering.getCampusId(),
+					entry.getDayOfWeek(), entry.getPeriodNo(),
+					entry.getDurationPeriods(), entry.getStartWeek(),
+					entry.getEndWeek(), entry.getWeekPattern(),
+					entry.getClassroomId(), offering.getTeacherId(), studentIds);
+		}
 	}
 
 	private SchedulePlanVersion createVersion(
