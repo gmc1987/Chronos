@@ -14,6 +14,17 @@ case "$mode" in
   *) echo "usage: $0 [empty|existing|both]" >&2; exit 2 ;;
 esac
 
+duplicates="$(
+  for migration in "$MIGRATIONS"/V*.sql; do
+    basename "$migration" | sed 's/__.*//' 
+  done | sort | uniq -d
+)"
+if [[ -n "$duplicates" ]]; then
+  echo "FAIL: duplicate Flyway migration versions:" >&2
+  printf '%s\n' "$duplicates" >&2
+  exit 1
+fi
+
 grep -q 'ddl-auto:.*validate' "$APP" || {
   echo "FAIL: JPA must validate Flyway-managed schema" >&2; exit 1;
 }
