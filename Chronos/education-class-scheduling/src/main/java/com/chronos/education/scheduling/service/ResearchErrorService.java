@@ -31,6 +31,7 @@ public class ResearchErrorService {
 	private final KnowledgePointRepository points;
 	private final QuestionKnowledgePointRepository questionPoints;
 	private final QuestionBankRepository questionBanks;
+	private QuestionVersionRepository questionVersions;
 	private ErrorReviewRepository errorReviews;
 
 	public ResearchErrorService(ResearchGroupRepository groups, ResearchGroupMemberRepository groupMembers,
@@ -45,6 +46,7 @@ public class ResearchErrorService {
 		this.questionPoints=questionPoints;
 		this.questionBanks=questionBanks;
 		this.errorReviews = null;
+		this.questionVersions = null;
 	}
 
 	@Autowired
@@ -54,10 +56,22 @@ public class ResearchErrorService {
 			ErrorItemRepository items, EducationDataScopeService scopes, ManagedFileRepository files,
 			TeachingReviewService reviews, QuestionRepository questions, KnowledgePointRepository points,
 			QuestionKnowledgePointRepository questionPoints, QuestionBankRepository questionBanks,
-			ErrorReviewRepository errorReviews) {
+			ErrorReviewRepository errorReviews, QuestionVersionRepository questionVersions) {
 		this(groups, groupMembers, activities, activityMembers, materials, results, books, items, scopes, files,
 				reviews, questions, points, questionPoints, questionBanks);
 		this.errorReviews = errorReviews;
+		this.questionVersions = questionVersions;
+	}
+
+	private void validateQuestionVersion(String questionId, String questionVersionId) {
+		if (questionVersionId == null || questionVersionId.isBlank()) return;
+		if (questionVersions == null)
+			throw new IllegalStateException("题目版本校验服务未配置");
+		QuestionVersion version = questionVersions.findById(questionVersionId)
+				.orElseThrow(() -> new IllegalArgumentException("题目版本不存在"));
+		if (questionId == null || !questionId.equals(version.getQuestionId())
+				|| !"PUBLISHED".equals(version.getStatus()))
+			throw new IllegalArgumentException("只能引用该题目的已发布版本");
 	}
 
 	private EducationDataScope scope(Authentication a) { return scopes.resolve(a.getName()); }
@@ -244,6 +258,7 @@ public class ResearchErrorService {
 	public ErrorItem recordManual(ErrorManualRequest r, Authentication a) {
 		if (!Set.of("MANUAL", "STUDENT_SELF").contains(r.sourceType()))
 			throw new IllegalArgumentException("手工错题来源无效");
+		validateQuestionVersion(r.questionId(), r.questionVersionId());
 		if (r.questionId() != null) {
 			Question q = questions.findById(r.questionId()).orElseThrow(() -> new IllegalArgumentException("题目不存在"));
 			QuestionBank bank = questionBanks.findById(q.getBankId()).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
@@ -266,6 +281,7 @@ public class ResearchErrorService {
 	public ErrorItem onWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
 		if (!Set.of("HOMEWORK", "EXAM", "MANUAL", "STUDENT_SELF").contains(r.sourceType()))
 			throw new IllegalArgumentException("错题来源无效");
+		validateQuestionVersion(r.questionId(), r.questionVersionId());
 		var replay=items.findByEventId(r.eventId()); if (replay.isPresent()) return replay.get();
 		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a);
 		ErrorItem i=items.findByBookIdAndSourceTypeAndSourceItemId(b.getId(),r.sourceType(),r.sourceItemId()).orElse(null);
