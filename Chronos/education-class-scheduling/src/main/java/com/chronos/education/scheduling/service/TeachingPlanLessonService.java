@@ -167,6 +167,7 @@ public class TeachingPlanLessonService {
 		Preparation value = new Preparation();
 		value.setOfferingId(offering.getId()); value.setCampusId(offering.getCampusId());
 		value.setOwnerTeacherId(offering.getTeacherId()); value.setScheduleEntryId(request.scheduleEntryId());
+		value.setScheduledAt(request.scheduledAt()); value.setAgenda(request.agenda());
 		value.setTitle(request.title()); value.setPreparationType(request.preparationType());
 		value.setConclusion(request.conclusion()); value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
 		value.setCreateBy(auth.getName());
@@ -182,6 +183,7 @@ public class TeachingPlanLessonService {
 		validateSchedule(request.scheduleEntryId(), value.getOfferingId(), auth);
 		validateLessonReference(request.conclusionLessonPlanId(), value.getOfferingId(), auth);
 		value.setScheduleEntryId(request.scheduleEntryId()); value.setTitle(request.title());
+		value.setScheduledAt(request.scheduledAt()); value.setAgenda(request.agenda());
 		value.setPreparationType(request.preparationType()); value.setConclusion(request.conclusion());
 		value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
 		return preparations.save(value);

@@ -62,14 +62,28 @@ public final class TeachingPlanDtos {
 			@Size(max = 64) String scheduleEntryId,
 			@NotBlank @Size(max = 200) String title,
 			@NotBlank @Size(max = 16) String preparationType,
-			String conclusion, @Size(max = 64) String conclusionLessonPlanId) {}
+			String conclusion, @Size(max = 64) String conclusionLessonPlanId,
+			java.time.LocalDateTime scheduledAt, String agenda) {
+		public PreparationCreateRequest(String offeringId, String scheduleEntryId, String title,
+				String preparationType, String conclusion, String conclusionLessonPlanId) {
+			this(offeringId, scheduleEntryId, title, preparationType, conclusion,
+					conclusionLessonPlanId, null, null);
+		}
+	}
 
 	public record PreparationUpdateRequest(
 			@NotNull Long rowVersion,
 			@Size(max = 64) String scheduleEntryId,
 			@NotBlank @Size(max = 200) String title,
 			@NotBlank @Size(max = 16) String preparationType,
-			String conclusion, @Size(max = 64) String conclusionLessonPlanId) {}
+			String conclusion, @Size(max = 64) String conclusionLessonPlanId,
+			java.time.LocalDateTime scheduledAt, String agenda) {
+		public PreparationUpdateRequest(Long rowVersion, String scheduleEntryId, String title,
+				String preparationType, String conclusion, String conclusionLessonPlanId) {
+			this(rowVersion, scheduleEntryId, title, preparationType, conclusion,
+					conclusionLessonPlanId, null, null);
+		}
+	}
 
 	public record LessonCreateRequest(
 			@NotBlank @Size(max = 64) String offeringId,

@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import java.time.LocalDateTime;
 
 /** 个人/集体备课聚合根，成员、资料、讨论和结论独立持久化。 */
 @Entity
@@ -19,11 +20,14 @@ public class Preparation extends BaseEntity {
 	private String offeringId;
 	@Column(name="campus_id", length=64) private String campusId;
 	@Column(name="schedule_entry_id", length=64) private String scheduleEntryId;
+	@Column(name="scheduled_at") private LocalDateTime scheduledAt;
 	@Column(name="owner_teacher_id", length=64) private String ownerTeacherId;
 	@Column(nullable = false, length = 200)
 	private String title;
 	@Column(name = "preparation_type", nullable = false, length = 16)
 	private String preparationType;
+	@Column(columnDefinition = "text")
+	private String agenda;
 	@Column(nullable = false, length = 24)
 	private String status = "DRAFT";
 	@Column(columnDefinition = "text")
