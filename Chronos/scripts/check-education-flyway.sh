@@ -16,7 +16,7 @@ esac
 
 duplicates="$(
   for migration in "$MIGRATIONS"/V*.sql; do
-    basename "$migration" | sed 's/__.*//' 
+    basename "$migration" | sed 's/__.*//'
   done | sort | uniq -d
 )"
 if [[ -n "$duplicates" ]]; then
