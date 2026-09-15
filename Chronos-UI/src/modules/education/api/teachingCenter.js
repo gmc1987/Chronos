@@ -181,6 +181,8 @@ export const createResearchGroupMember = (id, body) => http.post(`/education/tea
 export const removeResearchGroupMember = (id, teacherId) => http.delete(`/education/teaching-center/research-groups/${encodeURIComponent(id)}/members/${encodeURIComponent(teacherId)}`)
 export const createResearchActivity = (id, body) => http.post(`/education/teaching-center/research-groups/${encodeURIComponent(id)}/activities`, body)
 export const updateResearchActivity = (id, body) => http.put(`/education/teaching-center/research-activities/${encodeURIComponent(id)}`, body)
+export const cancelResearchActivity = (id, reason) =>
+  http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/cancel`, { reason })
 export const researchResults = (id) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/results`)
 export const researchActivityMembers = (id) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members`)
 export const removeResearchActivityMember = (id, teacherId) => http.delete(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members/${encodeURIComponent(teacherId)}`)

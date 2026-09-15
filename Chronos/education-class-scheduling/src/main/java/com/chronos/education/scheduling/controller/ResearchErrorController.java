@@ -48,6 +48,11 @@ public class ResearchErrorController {
 	@PutMapping("/research-activities/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> updateActivity(@PathVariable String id, @Valid @RequestBody ActivityRequest r, Authentication a) { return ok(service.updateActivity(id, r, a)); }
+	@PostMapping("/research-activities/{id}/cancel")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> cancelActivity(@PathVariable String id, @Valid @RequestBody ActivityCancelRequest r, Authentication a) {
+		return ok(service.cancelActivity(id, r, a));
+	}
 	@PutMapping("/research-results/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> updateResult(@PathVariable String id, @Valid @RequestBody ResultRequest r, Authentication a) { return ok(service.updateResult(id, r, a)); }

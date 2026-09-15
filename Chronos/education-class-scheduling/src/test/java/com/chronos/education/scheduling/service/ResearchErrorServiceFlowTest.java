@@ -105,6 +105,27 @@ class ResearchErrorServiceFlowTest {
 	}
 
 	@Test
+	void cancelsScheduledActivityOnlyWithReason() {
+		ResearchActivity activity = new ResearchActivity();
+		activity.setId("activity-1");
+		activity.setGroupId("group-1");
+		activity.setStatus("SCHEDULED");
+		when(activities.findById("activity-1")).thenReturn(Optional.of(activity));
+		when(groups.findById("group-1")).thenReturn(Optional.of(new ResearchGroup()));
+		when(activities.save(any(ResearchActivity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThatThrownBy(() -> service.cancelActivity("activity-1",
+				new ActivityCancelRequest(" "), auth))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("取消活动必须填写原因");
+
+		ResearchActivity cancelled = service.cancelActivity("activity-1",
+				new ActivityCancelRequest("场地临时不可用"), auth);
+		assertThat(cancelled.getStatus()).isEqualTo("CANCELLED");
+		assertThat(cancelled.getCancelReason()).isEqualTo("场地临时不可用");
+	}
+
+	@Test
 	void rejectsGroupAccessOutsideTeacherScope() {
 		when(scopes.resolve("teacher-1")).thenReturn(new EducationDataScope(
 				false, Set.of(), Set.of(), Set.of(), Set.of("teacher-1"), Set.of()));

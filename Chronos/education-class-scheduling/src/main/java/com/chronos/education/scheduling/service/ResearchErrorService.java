@@ -121,6 +121,18 @@ public class ResearchErrorService {
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime());
 		x.setLocation(r.location()); x.setAgenda(r.agenda()); x.setCourseId(r.courseId()); x.setTopicId(r.topicId()); return activities.save(x);
 	}
+	public ResearchActivity cancelActivity(String id, ActivityCancelRequest request, Authentication a) {
+		ResearchActivity x = activities.findById(id)
+				.orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(), a);
+		if (!Set.of("SCHEDULED", "IN_PROGRESS").contains(x.getStatus()))
+			throw new IllegalStateException("当前活动状态不能取消");
+		if (request == null || request.reason() == null || request.reason().isBlank())
+			throw new IllegalArgumentException("取消活动必须填写原因");
+		x.setStatus("CANCELLED");
+		x.setCancelReason(request.reason().trim());
+		return activities.save(x);
+	}
 	public ResearchResult updateResult(String id, ResultRequest r, Authentication a) {
 		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
 		ResearchActivity x = activities.findById(z.getActivityId()).orElseThrow(() -> new NoSuchElementException("活动不存在"));
