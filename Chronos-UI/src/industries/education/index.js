@@ -1,5 +1,9 @@
 // 行业页面也按路由拆包，未启用教育模板时不会进入核心首屏包。
 const AdminClassScheduling = () => import('../../modules/education/pages/AdminClassScheduling.vue')
+const AdminExamCenter = () => import('../../modules/education/pages/AdminExamCenter.vue')
+const AdminExamInvigilation = () => import('../../modules/education/pages/AdminExamInvigilation.vue')
+const AdminExamRooms = () => import('../../modules/education/pages/AdminExamRooms.vue')
+const AdminExamPaperAnalysis = () => import('../../modules/education/pages/AdminExamPaperAnalysis.vue')
 const AdminAcademicTerms = () => import('../../modules/education/pages/AdminAcademicTerms.vue')
 const AdminCourses = () => import('../../modules/education/pages/AdminCourses.vue')
 const AdminMajors = () => import('../../modules/education/pages/AdminMajors.vue')
@@ -38,6 +42,10 @@ export const educationIndustry = {
     { path: '/admin/education/subjects', name: 'admin-education-subjects', component: AdminSubjects },
     { path: '/admin/education/parents', name: 'admin-education-parents', component: AdminParents },
     { path: '/admin/education/teaching-assignments', name: 'admin-education-teaching-assignments', component: AdminTeachingAssignments },
+    { path: '/admin/education/exam/plans', name: 'admin-education-exam-plans', component: AdminExamCenter },
+    { path: '/admin/education/exam/invigilation', name: 'admin-education-exam-invigilation', component: AdminExamInvigilation },
+    { path: '/admin/education/exam/rooms', name: 'admin-education-exam-rooms', component: AdminExamRooms },
+    { path: '/admin/education/exam/paper-analysis', name: 'admin-education-exam-paper-analysis', component: AdminExamPaperAnalysis },
     { path: '/admin/education/knowledge', name: 'admin-education-knowledge', component: AdminKnowledgeBases },
     { path: '/admin/education/agents', name: 'admin-education-agents', component: AdminEducationAgents },
     { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },

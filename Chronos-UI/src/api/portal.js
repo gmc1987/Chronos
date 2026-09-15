@@ -8,6 +8,18 @@ export const portalEducationSchedule = (studentId, date) => http.get(
     Object.entries({ studentId, date }).filter(([, value]) => value),
   )}`,
 )
+export const portalMyInvigilations = () => http.get('/portal/education/exam/my-invigilations')
+export const portalAcknowledgeInvigilation = (id) => http.post(
+  `/portal/education/exam/my-invigilations/${id}/acknowledge`,
+)
+export const portalCheckInInvigilation = (id) => http.post(
+  `/portal/education/exam/my-invigilations/${id}/check-in`,
+)
+export const portalMyExams = () => http.get('/portal/education/exam/my-exams')
+export const portalMyInvigilationChanges = () => http.get('/portal/education/exam/my-change-requests')
+export const portalRequestInvigilationChange = (id, payload) => http.post(
+  `/portal/education/exam/my-invigilations/${id}/change-requests`, payload,
+)
 export const portalApplications = () => http.get('/portal/applications')
 export const savePortalPreference = (payload) => http.put('/portal/preference', payload)
 export const resetPortalPreference = () => http.post('/portal/preference/reset')
