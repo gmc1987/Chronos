@@ -44,7 +44,7 @@ const loadError = ref('')
 const dialog = ref(false)
 const submissionId = ref('')
 const unwrap = response => response?.data?.content || response?.data || []
-const statusLabels = { DRAFT: '草稿', SUBMITTED: '待批改', GRADED: '已评分', RETURNED_FOR_REVISION: '退回重做' }
+const statusLabels = { NOT_STARTED: '未开始', DRAFT: '草稿', SUBMITTED: '待批改', GRADED: '已评分', RETURNED_FOR_REVISION: '退回重做' }
 const statusLabel = status => statusLabels[status] || '未提交'
 const canEdit = row => row && (!row.submission || ['DRAFT', 'RETURNED_FOR_REVISION'].includes(row.submission.status))
 

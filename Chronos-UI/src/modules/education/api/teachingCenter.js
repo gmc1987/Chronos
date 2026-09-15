@@ -214,6 +214,10 @@ export const publishHomework = (id) =>
   http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/publish`)
 export const closeHomework = (id) =>
   http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/close`)
+export const archiveHomework = (id) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/archive`)
+export const publishHomeworkGrades = (id) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/publish-grades`)
 export const homeworkSubmissions = (id, params = {}) =>
   http.get(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/submissions?${queryString(params)}`)
 export const myHomeworkSubmission = (id) =>
@@ -224,3 +228,5 @@ export const submitHomework = (submissionId) =>
   http.post(`/education/teaching-center/api/homework-submissions/${encodeURIComponent(submissionId)}/submit`)
 export const gradeHomeworkSubmission = (submissionId, body) =>
   http.post(`/education/teaching-center/api/homework-submissions/${encodeURIComponent(submissionId)}/grade`, body)
+export const batchGradeHomework = (id, body) =>
+  http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/batch-grade`, body)

@@ -30,6 +30,7 @@
           <el-button link @click="showSubmissions(row)">提交情况</el-button>
           <el-button v-if="row.status === 'DRAFT'" link type="success" @click="publish(row)">发布</el-button>
           <el-button v-if="row.status === 'PUBLISHED'" link type="warning" @click="close(row)">关闭</el-button>
+          <el-button v-if="row.status === 'CLOSED'" link type="info" @click="archive(row)">归档</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -39,14 +40,19 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="教学班"><el-input :model-value="offeringLabel(selectedOffering)" disabled /></el-form-item>
         <el-form-item label="作业名称" prop="title"><el-input v-model="form.title" maxlength="200" /></el-form-item>
+        <el-form-item label="作业类型"><el-select v-model="form.type" style="width:100%"><el-option label="作业" value="HOMEWORK" /><el-option label="测验" value="QUIZ" /><el-option label="项目" value="PROJECT" /></el-select></el-form-item>
         <el-form-item label="作业说明"><el-input v-model="form.instructionsJson" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="截止时间" prop="dueAt"><el-date-picker v-model="form.dueAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" /></el-form-item>
+        <el-form-item label="开始时间"><el-date-picker v-model="form.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" /></el-form-item>
         <el-form-item label="总分" prop="maxScore"><el-input-number v-model="form.maxScore" :min="1" :precision="0" /></el-form-item>
+        <el-form-item label="提交次数"><el-input-number v-model="form.attemptLimit" :min="1" :max="100" :precision="0" /></el-form-item>
         <el-form-item label="教学计划项"><el-select v-model="form.teachingPlanItemId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班章节"><el-option v-for="item in planItems" :key="item.id" :value="item.id" :label="`${item.chapterNo || ''} · ${item.chapterName}`" /></el-select></el-form-item>
         <el-form-item label="备课记录"><el-select v-model="form.preparationId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班备课"><el-option v-for="item in preparations" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item label="教案"><el-select v-model="form.lessonPlanId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班教案"><el-option v-for="item in lessonPlans" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item label="题目/附件快照"><el-input v-model="form.questionSnapshotJson" type="textarea" :rows="6" placeholder="可填写题目、要求或附件引用 JSON；发布后形成快照" /></el-form-item>
         <el-form-item label="允许迟交"><el-switch v-model="form.allowLate" /></el-form-item>
+        <el-form-item label="发布对象"><el-select v-model="form.publishAudience" style="width:100%"><el-option label="有效选课学生" value="ENROLLED_STUDENTS" /><el-option label="全体学生" value="ALL_STUDENTS" /></el-select></el-form-item>
+        <el-form-item label="附件快照"><el-input v-model="form.attachmentSnapshotJson" type="textarea" :rows="2" placeholder="附件引用 JSON" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="save">保存草稿</el-button></template>
     </el-dialog>
@@ -79,7 +85,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, closeHomework, teachingCenterOfferings, teachingProduction, teachingPlanDetail, updateHomework } from '../api/teachingCenter'
+import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, closeHomework, archiveHomework, teachingCenterOfferings, teachingProduction, teachingPlanDetail, updateHomework } from '../api/teachingCenter'
 
 const offerings = ref([])
 const rows = ref([])
@@ -98,7 +104,7 @@ const planItems = ref([])
 const preparations = ref([])
 const lessonPlans = ref([])
 const filters = reactive({ offeringId: '' })
-const form = reactive({ title: '', instructionsJson: '', dueAt: '', maxScore: 100, questionSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false })
+const form = reactive({ type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' })
 const gradeForm = reactive({ score: 0, feedback: '', result: 'GRADED' })
 const rules = { title: [{ required: true, message: '请输入作业名称' }], dueAt: [{ required: true, message: '请选择截止时间' }] }
 const unwrap = response => response?.data?.content || response?.data || []
@@ -113,7 +119,7 @@ const load = async () => {
   catch (error) { loadError.value = error.message || '作业加载失败' }
   finally { loading.value = false }
 }
-const resetForm = value => Object.assign(form, { title: '', instructionsJson: '', dueAt: '', maxScore: 100, questionSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false }, value || {})
+const resetForm = value => Object.assign(form, { type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' }, value || {})
 const openCreate = async () => { editing.value = ''; resetForm(); await loadReferences(); dialog.value = true }
 const loadReferences = async () => {
   if (!filters.offeringId) { planItems.value = []; preparations.value = []; lessonPlans.value = []; return }
@@ -148,6 +154,10 @@ const close = async row => {
   await ElMessageBox.confirm('关闭后不再接受新的提交，是否继续？', '确认关闭')
   try { await closeHomework(row.id); ElMessage.success('作业已关闭'); await load() } catch (error) { ElMessage.error(error.message) }
 }
+const archive = async row => {
+  await ElMessageBox.confirm('归档后将从默认列表隐藏，是否继续？', '确认归档')
+  try { await archiveHomework(row.id); ElMessage.success('作业已归档'); await load() } catch (error) { ElMessage.error(error.message) }
+}
 const showSubmissions = async row => {
   selectedHomework.value = row; submissionDialog.value = true; submissionLoading.value = true
   try { submissions.value = unwrap(await homeworkSubmissions(row.id, { page: 0, size: 200 })) } catch (error) { ElMessage.error(error.message) }
@@ -155,7 +165,7 @@ const showSubmissions = async row => {
 }
 const openGrade = row => { grading.value = row; Object.assign(gradeForm, { score: row.score || 0, feedback: row.feedback || '', result: 'GRADED' }); gradeDialog.value = true }
 const grade = async () => {
-  try { await gradeHomeworkSubmission(grading.value.id, { ...gradeForm }); gradeDialog.value = false; ElMessage.success('批改结果已保存'); await showSubmissions(selectedHomework.value) }
+  try { await gradeHomeworkSubmission(grading.value.id, { score: gradeForm.score, teacherFeedback: gradeForm.feedback, returnForRevision: gradeForm.result === 'RETURNED_FOR_REVISION' }); gradeDialog.value = false; ElMessage.success('批改结果已保存'); await showSubmissions(selectedHomework.value) }
   catch (error) { ElMessage.error(error.message || '保存批改失败') }
 }
 onMounted(async () => {

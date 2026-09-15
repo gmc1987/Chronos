@@ -22,6 +22,9 @@ public class HomeworkAssignment extends BaseEntity {
 	@Column(name = "offering_id", nullable = false, length = 64)
 	private String offeringId;
 
+	@Column(nullable = false, length = 32)
+	private String type = "HOMEWORK";
+
 	@Column(name = "teaching_plan_item_id", length = 64)
 	private String teachingPlanItemId;
 
@@ -43,11 +46,26 @@ public class HomeworkAssignment extends BaseEntity {
 	@Column(name = "due_at")
 	private LocalDateTime dueAt;
 
+	@Column(name = "start_at")
+	private LocalDateTime startAt;
+
 	@Column(name = "max_score", nullable = false)
 	private Integer maxScore = 100;
 
+	@Column(name = "attempt_limit", nullable = false)
+	private Integer attemptLimit = 1;
+
 	@Column(name = "allow_late", nullable = false)
 	private boolean allowLate;
+
+	@Column(name = "late_rule", nullable = false, length = 32)
+	private String lateRule = "REJECT";
+
+	@Column(name = "publish_audience", nullable = false, length = 32)
+	private String publishAudience = "ENROLLED_STUDENTS";
+
+	@Column(name = "attachment_snapshot_json", nullable = false, columnDefinition = "text")
+	private String attachmentSnapshotJson = "[]";
 
 	@Column(nullable = false, length = 24)
 	private String status = "DRAFT";
