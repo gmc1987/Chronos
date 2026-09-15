@@ -157,7 +157,7 @@ export const validateQuestionImport = (body) =>
 export const commitQuestionImport = (body) =>
   http.post('/education/teaching-center/questions/import/confirm', body)
 export const knowledgePointTree = (courseId) =>
-  http.get(`/education/teaching-center/api/knowledge-points/tree?${queryString({ courseId })}`)
+  http.get(`/education/teaching-center/knowledge-points/tree?${queryString({ courseId })}`)
 export const createKnowledgePoint = (body) => http.post('/education/teaching-center/knowledge-points', body)
 export const updateKnowledgePoint = (id, body) => http.put(`/education/teaching-center/knowledge-points/${encodeURIComponent(id)}`, body)
 export const moveKnowledgePoint = (id, body) =>

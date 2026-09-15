@@ -31,8 +31,9 @@ public class TeachingDomainApiService {
 	}
 
 	@Transactional(readOnly = true)
-	public PageView<?> page(String domain, String offeringId, int page, int size, Authentication user) {
-		return delegate.page(type(domain), offeringId, page, size, user);
+	public PageView<?> page(String domain, String offeringId, String keyword, String status,
+			String category, String shareScope, int page, int size, Authentication user) {
+		return delegate.page(type(domain), offeringId, keyword, status, category, shareScope, page, size, user);
 	}
 
 	@Transactional(readOnly = true)

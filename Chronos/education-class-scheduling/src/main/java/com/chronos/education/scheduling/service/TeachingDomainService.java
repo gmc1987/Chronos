@@ -41,6 +41,13 @@ public class TeachingDomainService {
 	@Transactional(readOnly = true)
 	public PageView<?> page(String type, String offeringId, int page, int size,
 			Authentication authentication) {
+		return page(type, offeringId, null, null, null, null, page, size, authentication);
+	}
+
+	@Transactional(readOnly = true)
+	public PageView<?> page(String type, String offeringId, String keyword, String status,
+			String category, String shareScope, int page, int size,
+			Authentication authentication) {
 		Class<?> entity = entity(type);
 		EducationDataScope scope = scopes.resolve(authentication.getName());
 		checkOffering(scope, offeringId, type, false);
@@ -57,7 +64,7 @@ public class TeachingDomainService {
 							? scopes.canAccessCourse(scope, textValue(value, "courseId"))
 							: scopes.canAccessStudent(scope, textValue(value, "studentId")))
 					.toList();
-			return PageView.from(values, page, size);
+			return PageView.from(filter(values, keyword, status, category, shareScope), page, size);
 		}
 		List<String> visibleOfferingIds = null;
 		if (hasOffering(type) && offeringId == null && !scope.fullAccess()) {
@@ -83,7 +90,26 @@ public class TeachingDomainService {
 							|| "KNOWLEDGE_POINT".equals(type))
 					.toList();
 		}
-		return PageView.from(values, page, size);
+		return PageView.from(filter(values, keyword, status, category, shareScope), page, size);
+	}
+
+	private List<?> filter(List<?> values, String keyword, String status, String category, String shareScope) {
+		String term = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
+		return values.stream().filter(value -> {
+			String title = textValue(value, "title");
+			String name = textValue(value, "name");
+			String resourceCategory = textValue(value, "resourceCategory");
+			String materialType = textValue(value, "materialType");
+			String currentStatus = textValue(value, "status");
+			String currentShareScope = textValue(value, "shareScope");
+			return (term.isBlank() || Stream.of(title, name).filter(Objects::nonNull)
+					.anyMatch(v -> v.toLowerCase(Locale.ROOT).contains(term)))
+					&& (status == null || status.isBlank() || Objects.equals(status, currentStatus))
+					&& (category == null || category.isBlank()
+							|| Objects.equals(category, resourceCategory)
+							|| Objects.equals(category, materialType))
+					&& (shareScope == null || shareScope.isBlank() || Objects.equals(shareScope, currentShareScope));
+		}).toList();
 	}
 
 	public Object create(String type, Map<String, Object> body, Authentication authentication) {
