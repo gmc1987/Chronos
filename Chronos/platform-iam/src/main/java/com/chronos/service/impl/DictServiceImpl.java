@@ -132,6 +132,16 @@ public class DictServiceImpl implements IDictService {
 						(Collection<? extends DictVO>) byParent.stream().map(this::toVO).collect(Collectors.toList()));
 			}
 		}
+		// Some business dictionaries are intentionally stored as flat rows
+		// without a separate root item. Those rows are valid options and must
+		// not disappear merely because they have no children.
+		if (result.isEmpty()) {
+			return (List<DictVO>) items.stream()
+					.filter(item -> item != null && item.getDictValue() != null
+							&& !item.getDictValue().isBlank())
+					.map(this::toVO)
+					.collect(Collectors.toList());
+		}
 		return result;
 	}
 
