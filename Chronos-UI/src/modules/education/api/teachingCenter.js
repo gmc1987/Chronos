@@ -202,6 +202,7 @@ export const createResearchChild = (id, child, body) =>
 export const transitionResearch = (id, status) =>
   http.post(`/education/teaching-center/api/research/${encodeURIComponent(id)}/status?status=${encodeURIComponent(status)}`)
 export const mistakesPage = (params = {}) => http.get(`/education/teaching-center/error-books/items?${queryString(params)}`)
+export const teacherErrorAggregation = (params = {}) => http.get(`/education/teaching-center/error-books/teacher-aggregation?${queryString(params)}`)
 export const createMistake = (body) => http.post('/education/teaching-center/error-books/manual', body)
 export const updateMistake = (id, body) => updateResource('mistakes', id, body)
 export const transitionMistake = (id, status) =>

@@ -256,10 +256,12 @@ public class ResearchErrorService {
 		if (r.knowledgePointId() != null)
 			points.findById(r.knowledgePointId()).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
 		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a); ErrorItem i=new ErrorItem(); i.setId(UUID.randomUUID().toString());
-		i.setBookId(b.getId()); i.setQuestionId(r.questionId()); i.setKnowledgePointId(r.knowledgePointId());
+		i.setBookId(b.getId()); i.setQuestionId(r.questionId()); i.setQuestionVersionId(r.questionVersionId()); i.setKnowledgePointId(r.knowledgePointId());
 		i.setErrorReason(r.errorReason()); i.setSourceRef(r.sourceRef()); i.setSourceType(r.sourceType());
 		i.setSourceItemId(r.sourceItemId());
-		i.setAnalysis(r.analysis()); i.setStudentNote(r.studentNote()); i.setCreateTime(LocalDateTime.now()); return items.save(i);
+		i.setAnalysis(r.analysis()); i.setStudentNote(r.studentNote()); i.setCreateTime(LocalDateTime.now());
+		i.setOccurredAt(r.occurredAt() == null ? i.getCreateTime() : r.occurredAt());
+		i.setLastWrongAt(i.getOccurredAt()); return items.save(i);
 	}
 	public ErrorItem onWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
 		if (!Set.of("HOMEWORK", "EXAM", "MANUAL", "STUDENT_SELF").contains(r.sourceType()))
@@ -271,8 +273,11 @@ public class ResearchErrorService {
 		// not inflate the student's error count.
 		if (i!=null) return i;
 		i=new ErrorItem(); i.setId(UUID.randomUUID().toString()); i.setBookId(b.getId()); i.setQuestionId(r.questionId());
+		i.setQuestionVersionId(r.questionVersionId());
 		i.setSourceRef(r.sourceRef()); i.setSourceType(r.sourceType()); i.setSourceItemId(r.sourceItemId()); i.setEventId(r.eventId());
-		i.setAnalysis(r.analysis()); i.setLastWrongAt(LocalDateTime.now()); i.setCreateTime(LocalDateTime.now()); return items.save(i);
+		i.setAnalysis(r.analysis()); i.setCreateTime(LocalDateTime.now());
+		i.setOccurredAt(r.occurredAt() == null ? i.getCreateTime() : r.occurredAt());
+		i.setLastWrongAt(i.getOccurredAt()); return items.save(i);
 	}
 	public ErrorItem mastery(String id, MasteryRequest r, Authentication a) {
 		ErrorItem i=items.findById(id).orElseThrow(); ErrorBook b=books.findById(i.getBookId()).orElseThrow();
@@ -307,5 +312,17 @@ public class ResearchErrorService {
 					.filter(book -> scopes.canAccessStudent(current, book.getStudentId()))
 					.map(ErrorBook::getId).collect(java.util.stream.Collectors.toSet());
 			return items.findAll().stream().filter(item -> visibleBooks.contains(item.getBookId())).toList();
+	}
+	public List<TeacherErrorAggregate> teacherAggregation(String courseId, Authentication a) {
+		List<ErrorItem> visible = items(courseId, a);
+		Map<String, List<ErrorItem>> grouped = visible.stream().collect(java.util.stream.Collectors.groupingBy(
+				x -> String.valueOf(x.getQuestionId()) + "\u0000" + String.valueOf(x.getKnowledgePointId())));
+		return grouped.values().stream().map(values -> new TeacherErrorAggregate(values.get(0).getQuestionId(),
+				values.get(0).getKnowledgePointId(),
+				values.stream().map(x -> books.findById(x.getBookId()).map(ErrorBook::getStudentId).orElse(""))
+						.filter(s -> !s.isBlank()).distinct().count(),
+				values.stream().mapToLong(ErrorItem::getWrongCount).sum(),
+				values.stream().map(ErrorItem::getLastWrongAt).filter(Objects::nonNull)
+						.max(LocalDateTime::compareTo).orElse(null))).toList();
 	}
 }

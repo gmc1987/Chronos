@@ -124,6 +124,11 @@ public class ResearchErrorController {
 	public ResultData<?> items(@RequestParam(required = false) String courseId, Authentication a) {
 		return ok(service.items(courseId, a));
 	}
+	@GetMapping("/error-books/teacher-aggregation")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:error-book:view','education:teaching:manage')")
+	public ResultData<?> teacherAggregation(@RequestParam(required = false) String courseId, Authentication a) {
+		return ok(service.teacherAggregation(courseId, a));
+	}
 	@PostMapping("/error-books/wrong-answer-confirmed")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:create','education:teaching:manage')")
 	public ResultData<?> confirmed(@Valid @RequestBody WrongAnswerConfirmed r,Authentication a) { return ok(service.onWrongAnswerConfirmed(r,a)); }

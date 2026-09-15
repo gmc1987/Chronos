@@ -22,22 +22,26 @@ public final class ResearchErrorDtos {
 			String content, String fileId) {}
 	public record ErrorManualRequest(@NotBlank String studentId, String courseId, String semesterId,
 			String questionId, String knowledgePointId, @NotBlank String errorReason, String sourceRef,
-			String analysis, String studentNote, String sourceType, String sourceItemId) {
+			String analysis, String studentNote, String sourceType, String sourceItemId, String questionVersionId,
+			LocalDateTime occurredAt) {
 		public ErrorManualRequest(String studentId, String courseId, String semesterId, String questionId,
 				String knowledgePointId, String errorReason, String sourceRef, String analysis, String studentNote) {
 			this(studentId, courseId, semesterId, questionId, knowledgePointId, errorReason, sourceRef,
-					analysis, studentNote, "MANUAL", null);
+					analysis, studentNote, "MANUAL", null, null, null);
 		}
 	}
 	public record WrongAnswerConfirmed(@NotBlank String eventId, @NotBlank String studentId,
 			String courseId, String semesterId, String questionId, @NotBlank String sourceItemId,
-			String sourceRef, String analysis, String sourceType) {
+			String sourceRef, String analysis, String sourceType, String questionVersionId,
+			LocalDateTime occurredAt) {
 		public WrongAnswerConfirmed(String eventId, String studentId, String courseId, String semesterId,
 				String questionId, String sourceItemId, String sourceRef, String analysis) {
 			this(eventId, studentId, courseId, semesterId, questionId, sourceItemId, sourceRef, analysis,
-					"HOMEWORK");
+					"HOMEWORK", null, null);
 		}
 	}
+	public record TeacherErrorAggregate(String questionId, String knowledgePointId, long studentCount,
+			long errorCount, LocalDateTime lastWrongAt) {}
 	public record MasteryRequest(@NotBlank String status, String note) {}
 	public record ErrorReviewRequest(@NotBlank String status, String note) {}
 	public record MinutesRequest(@NotBlank String minutes) {}
