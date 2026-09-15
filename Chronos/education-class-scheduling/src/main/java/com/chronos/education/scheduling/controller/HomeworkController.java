@@ -11,6 +11,7 @@ import com.chronos.education.scheduling.model.HomeworkSubmission;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
+import com.chronos.education.scheduling.model.dto.HomeworkDtos.BatchGradeRequest;
 import com.chronos.education.scheduling.service.HomeworkService;
 
 import jakarta.validation.Valid;
@@ -64,6 +65,12 @@ public class HomeworkController {
 		return ok(service.close(id, auth));
 	}
 
+	@PostMapping("/homeworks/{id}/archive")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:archive','education:homework:manage')")
+	public ResultData<HomeworkAssignment> archive(@PathVariable String id, Authentication auth) {
+		return ok(service.archive(id, auth));
+	}
+
 	@GetMapping("/homeworks/{id}/submissions")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:submission:view','education:homework:manage')")
 	public ResultData<PageView<HomeworkSubmission>> submissions(@PathVariable String id,
@@ -103,6 +110,19 @@ public class HomeworkController {
 	public ResultData<HomeworkSubmission> grade(@PathVariable String id,
 			@Valid @RequestBody GradeRequest request, Authentication auth) {
 		return ok(service.grade(id, request, auth));
+	}
+
+	@PostMapping("/homeworks/{id}/batch-grade")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:submission:grade','education:homework:manage')")
+	public ResultData<java.util.List<HomeworkSubmission>> batchGrade(@PathVariable String id,
+			@Valid @RequestBody BatchGradeRequest request, Authentication auth) {
+		return ok(service.batchGrade(id, request, auth));
+	}
+
+	@PostMapping("/homeworks/{id}/publish-grades")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:submission:publish','education:homework:manage')")
+	public ResultData<Integer> publishGrades(@PathVariable String id, Authentication auth) {
+		return ok(service.publishGrades(id, auth));
 	}
 
 	private <T> ResultData<T> ok(T data) {

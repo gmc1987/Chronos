@@ -9,17 +9,36 @@ public final class ResearchErrorDtos {
 			@NotBlank String leaderTeacherId, String courseScopeJson, String description) {}
 	public record MemberRequest(@NotBlank String teacherId, String role) {}
 	public record ActivityRequest(@NotBlank String title, LocalDateTime activityTime,
-			LocalDateTime endTime, String location, String agenda) {}
+			LocalDateTime endTime, String location, String agenda, String courseId, String topicId) {
+		public ActivityRequest(String title, LocalDateTime activityTime, LocalDateTime endTime,
+				String location, String agenda) {
+			this(title, activityTime, endTime, location, agenda, null, null);
+		}
+	}
 	public record AttendanceRequest(@NotBlank String teacherId, @NotBlank String status, String leaveReason) {}
 	public record MaterialRequest(@NotBlank String title, @NotBlank String fileId) {}
 	public record ResultRequest(@NotBlank String title, @NotBlank String resultType,
 			String content, String fileId) {}
 	public record ErrorManualRequest(@NotBlank String studentId, String courseId, String semesterId,
-			@NotBlank String questionId, @NotBlank String knowledgePointId, @NotBlank String errorReason, String sourceRef,
-			String analysis, String studentNote) {}
+			String questionId, String knowledgePointId, @NotBlank String errorReason, String sourceRef,
+			String analysis, String studentNote, String sourceType, String sourceItemId) {
+		public ErrorManualRequest(String studentId, String courseId, String semesterId, String questionId,
+				String knowledgePointId, String errorReason, String sourceRef, String analysis, String studentNote) {
+			this(studentId, courseId, semesterId, questionId, knowledgePointId, errorReason, sourceRef,
+					analysis, studentNote, "MANUAL", null);
+		}
+	}
 	public record WrongAnswerConfirmed(@NotBlank String eventId, @NotBlank String studentId,
 			String courseId, String semesterId, String questionId, @NotBlank String sourceItemId,
-			String sourceRef, String analysis) {}
+			String sourceRef, String analysis, String sourceType) {
+		public WrongAnswerConfirmed(String eventId, String studentId, String courseId, String semesterId,
+				String questionId, String sourceItemId, String sourceRef, String analysis) {
+			this(eventId, studentId, courseId, semesterId, questionId, sourceItemId, sourceRef, analysis,
+					"HOMEWORK");
+		}
+	}
 	public record MasteryRequest(@NotBlank String status, String note) {}
+	public record ErrorReviewRequest(@NotBlank String status, String note) {}
 	public record MinutesRequest(@NotBlank String minutes) {}
+	public record ResultTransitionRequest(@NotBlank String status) {}
 }

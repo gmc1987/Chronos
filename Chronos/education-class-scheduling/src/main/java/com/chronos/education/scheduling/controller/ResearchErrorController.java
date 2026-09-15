@@ -20,9 +20,28 @@ public class ResearchErrorController {
 	@GetMapping("/research-groups/{id}/activities")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
 	public ResultData<?> activities(@PathVariable String id, Authentication a) { return ok(service.activities(id, a)); }
+	@GetMapping("/research-groups/{id}/members")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	public ResultData<?> groupMembers(@PathVariable String id, Authentication a) { return ok(service.groupMembers(id, a)); }
+	@DeleteMapping("/research-groups/{id}/members/{teacherId}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> removeGroupMember(@PathVariable String id, @PathVariable String teacherId, Authentication a) {
+		service.removeMember(id, teacherId, a); return ok(Boolean.TRUE);
+	}
 	@GetMapping("/research-activities/{id}/results")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
 	public ResultData<?> results(@PathVariable String id, Authentication a) { return ok(service.results(id, a)); }
+	@GetMapping("/research-activities/{id}/members")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	public ResultData<?> activityMembers(@PathVariable String id, Authentication a) { return ok(service.activityMembers(id, a)); }
+	@DeleteMapping("/research-activities/{id}/members/{teacherId}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> removeActivityMember(@PathVariable String id, @PathVariable String teacherId, Authentication a) {
+		service.removeActivityMember(id, teacherId, a); return ok(Boolean.TRUE);
+	}
+	@GetMapping("/research-activities/{id}/materials")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	public ResultData<?> materials(@PathVariable String id, Authentication a) { return ok(service.materials(id, a)); }
 	@PutMapping("/research-groups/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> updateGroup(@PathVariable String id, @Valid @RequestBody GroupRequest r, Authentication a) { return ok(service.updateGroup(id, r, a)); }
@@ -59,6 +78,11 @@ public class ResearchErrorController {
 	@PostMapping("/research-results/{id}/submit")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> submit(@PathVariable String id,Authentication a) { return ok(service.submitResult(id,a)); }
+	@PostMapping("/research-results/{id}/archive")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> archive(@PathVariable String id, Authentication a) {
+		return ok(service.transitionResult(id, "ARCHIVED", a));
+	}
 	@PostMapping("/error-books/manual")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:create','education:teaching:manage')")
 	public ResultData<?> manual(@Valid @RequestBody ErrorManualRequest r,Authentication a) { return ok(service.recordManual(r,a)); }
@@ -73,5 +97,10 @@ public class ResearchErrorController {
 	@PostMapping("/error-items/{id}/mastery")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:update','education:teaching:manage')")
 	public ResultData<?> mastery(@PathVariable String id,@Valid @RequestBody MasteryRequest r,Authentication a) { return ok(service.mastery(id,r,a)); }
+	@PostMapping("/error-items/{id}/review")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:update','education:teaching:manage')")
+	public ResultData<?> review(@PathVariable String id, @Valid @RequestBody ErrorReviewRequest r, Authentication a) {
+		return ok(service.review(id, r, a));
+	}
 	private <T> ResultData<T> ok(T value) { return ResultData.<T>builder().code("200").msg("success").data(value).build(); }
 }

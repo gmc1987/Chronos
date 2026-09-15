@@ -16,6 +16,8 @@ public final class QuestionDtos {
 	public record KnowledgePointRequest(String parentId, String subjectId, String courseId,
 			String code, String name, String description, String learningObjective,
 			Short level, Integer sortOrder) {}
+	public record KnowledgePointMoveRequest(String parentId, Integer sortOrder) {}
 	public record RowError(int row, String field, String message) {}
-	public record ImportPreview(int acceptedRows, List<RowError> errors) {}
+	public record ImportPreview(int acceptedRows, int totalRows, String precheckHash, List<RowError> errors) {}
+	public record ImportConfirm(String csv, String precheckHash) {}
 }

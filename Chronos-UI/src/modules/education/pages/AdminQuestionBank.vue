@@ -62,7 +62,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
 import { listCourseCatalog } from '../../../api/admin'
-import { teachingCenterOfferings, questionBanks, createQuestionBank, updateQuestionBank, questions, createQuestion, updateQuestion, submitQuestion, questionVersions, questionImportTemplate, validateQuestionImport, commitQuestionImport, knowledgePointTree } from '../api/teachingCenter'
+import { teachingCenterOfferings, questionBanks, createQuestionBank, updateQuestionBank, questions, createQuestion, updateQuestion, submitQuestion, approveQuestion, publishQuestion, questionVersions, questionImportTemplate, validateQuestionImport, commitQuestionImport, knowledgePointTree } from '../api/teachingCenter'
 const courses = ref([]); const banks = ref([]); const rows = ref([]); const points = ref([]); const loading = ref(false)
 const courseId = ref(''); const bankId = ref(''); const offerings = ref([])
 const typeOptions = ref([]); const difficultyOptions = ref([]); const statusOptions = ref([]); const visibilityOptions = ref([])
@@ -82,11 +82,12 @@ const openQuestion = (row) => { reset(questionForm, row ? { ...row, options: row
 const addOption = () => questionForm.options.push({ key: String.fromCharCode(65 + questionForm.options.length), text: '', correct: false })
 const saveQuestion = async () => { if (!questionForm.stem || !questionForm.answer || !questionForm.knowledgePointIds?.length) return ElMessage.warning('请填写题干、答案并选择知识点'); try { const body = { ...questionForm, options: isChoice.value ? questionForm.options : [] }; questionForm.id ? await updateQuestion(questionForm.id, body) : await createQuestion(body); questionDialog.value = false; await loadQuestions(); ElMessage.success('草稿已保存') } catch (e) { ElMessage.error(e.message) } }
 const canSubmit = row => row.capabilities?.submit !== false
-const publish = async row => { await ElMessageBox.confirm('发布后编辑将生成新的草稿版本，是否继续？', '确认发布'); try { await submitQuestion(row.id); await loadQuestions(); ElMessage.success('已提交发布') } catch (e) { ElMessage.error(e.message) } }
+const publish = async row => { await ElMessageBox.confirm('题目将按审核流程提交，是否继续？', '确认发布'); try { if (row.status === 'DRAFT' || row.status === 'REVISED') await submitQuestion(row.id); else if (row.status === 'REVIEW') { await approveQuestion(row.id); await publishQuestion(row.id) } await loadQuestions(); ElMessage.success(row.status === 'REVIEW' ? '已发布' : '已提交审核') } catch (e) { ElMessage.error(e.message) } }
 const showVersions = async row => { try { versions.value = (await questionVersions(row.id)).data || []; versionsDialog.value = true } catch (e) { ElMessage.error(e.message) } }
 const downloadTemplate = async () => { const blob = await questionImportTemplate(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'question-import-template.csv'; a.click(); URL.revokeObjectURL(url) }
-const previewImport = async file => { importBody.value = await file.text(); try { const res = await validateQuestionImport(importBody.value); const data = res.data || {}; importErrors.value = data.errors || []; importSummary.value = `预检 ${data.total || 0} 行，${data.valid || 0} 行可导入`; importDialog.value = true } catch (e) { ElMessage.error(e.message) } return false }
-const commitImport = async () => { try { await commitQuestionImport(importBody.value); importDialog.value = false; await loadQuestions(); ElMessage.success('导入成功') } catch (e) { ElMessage.error(e.message) } }
+const importHash = ref('')
+const previewImport = async file => { importBody.value = await file.text(); try { const res = await validateQuestionImport(importBody.value); const data = res.data || {}; importErrors.value = data.errors || []; importHash.value = data.precheckHash || ''; importSummary.value = `预检 ${data.totalRows || 0} 行，${data.acceptedRows || 0} 行可导入`; importDialog.value = true } catch (e) { ElMessage.error(e.message) } return false }
+const commitImport = async () => { try { await commitQuestionImport({ csv: importBody.value, precheckHash: importHash.value }); importDialog.value = false; await loadQuestions(); ElMessage.success('导入成功') } catch (e) { ElMessage.error(e.message) } }
 onMounted(async () => { try { const [catalog, offering, types, difficulty, status, visibility] = await Promise.all([listCourseCatalog({ page: 0, size: 500 }), teachingCenterOfferings(), dict('EDU_QUESTION_TYPE'), dict('EDU_QUESTION_DIFFICULTY'), dict('COMMON_STATUS'), dict('EDU_RESOURCE_VISIBILITY')]); courses.value = (catalog.data?.content || catalog.data || []).filter(course => course.id || course.courseCode); offerings.value = offering.data || []; typeOptions.value = types; difficultyOptions.value = difficulty; statusOptions.value = status; visibilityOptions.value = visibility } catch (e) { ElMessage.error(e.message) } })
 </script>
 <style scoped>

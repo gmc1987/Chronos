@@ -5,4 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ResearchGroupMemberRepository extends JpaRepository<ResearchGroupMember,String> {
 	List<ResearchGroupMember> findByGroupId(String groupId);
 	boolean existsByGroupIdAndTeacherId(String groupId,String teacherId);
+	void deleteByGroupIdAndTeacherId(String groupId, String teacherId);
 }

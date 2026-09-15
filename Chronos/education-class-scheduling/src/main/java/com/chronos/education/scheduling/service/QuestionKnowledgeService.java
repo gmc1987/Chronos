@@ -97,7 +97,7 @@ public class QuestionKnowledgeService {
 			replacement.setBankId(current.getBankId()); replacement.setCurrentVersionNo(current.getCurrentVersionNo() + 1);
 			replacement = questions.save(replacement);
 			replaceChildren(replacement, request);
-			persistVersion(replacement);
+			persistVersion(replacement, "REVISED");
 			current.setArchived(true); current.setStatus("ARCHIVED"); questions.save(current);
 			return replacement;
 		}
@@ -139,6 +139,25 @@ public class QuestionKnowledgeService {
 		value.setEnabled(false); value.setStatus("DISABLED"); points.save(value);
 	}
 
+	public KnowledgePoint enableKnowledgePoint(String id, Authentication user) {
+		KnowledgePoint value = points.findById(id).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+		scopes.assertCourseAccess(scopes.resolve(user.getName()), value.getCourseId());
+		if (value.isArchived()) throw new IllegalStateException("已归档知识点不能启用");
+		value.setEnabled(true); value.setStatus("ACTIVE");
+		return points.save(value);
+	}
+
+	public KnowledgePoint moveKnowledgePoint(String id, KnowledgePointMoveRequest request, Authentication user) {
+		KnowledgePoint value = points.findById(id).orElseThrow(() -> new IllegalArgumentException("知识点不存在"));
+		EducationDataScope scope = scopes.resolve(user.getName());
+		scopes.assertCourseAccess(scope, value.getCourseId());
+		require(request != null, "移动参数不能为空");
+		validateParent(request.parentId(), value.getCourseId(), id);
+		value.setParentId(blank(request.parentId()));
+		value.setSortOrder(request.sortOrder() == null ? 0 : request.sortOrder());
+		return points.save(value);
+	}
+
 	@Transactional(readOnly = true)
 	public List<Question> questions(String bankId, Authentication user) {
 		QuestionBank bank = banks.findById(bankId).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
@@ -152,10 +171,7 @@ public class QuestionKnowledgeService {
 		QuestionBank bank = banks.findById(question.getBankId())
 				.orElseThrow(() -> new IllegalArgumentException("题库不存在"));
 		authorizeBank(bank, user);
-		return versions.findAll().stream()
-				.filter(version -> questionId.equals(version.getQuestionId()))
-				.sorted(Comparator.comparing(QuestionVersion::getVersionNo).reversed())
-				.toList();
+		return versions.findByQuestionIdOrderByVersionNoDesc(questionId);
 	}
 
 	public Question submitQuestion(String id, Authentication user) {
@@ -164,25 +180,105 @@ public class QuestionKnowledgeService {
 		QuestionBank bank = banks.findById(question.getBankId())
 				.orElseThrow(() -> new IllegalArgumentException("题库不存在"));
 		authorizeBank(bank, user);
-		if (!"DRAFT".equals(question.getStatus())) {
-			throw new IllegalStateException("只有草稿题目可以提交发布");
-		}
-		persistVersion(question);
+		if (!"DRAFT".equals(question.getStatus()) && !"REVISED".equals(question.getStatus()))
+			throw new IllegalStateException("只有草稿或修订题目可以提交审核");
+		persistVersion(question, "REVIEW");
+		question.setStatus("REVIEW");
+		return questions.save(question);
+	}
+
+	public Question approveQuestion(String id, Authentication user) {
+		Question question = authorizeQuestion(id, user);
+		if (!"REVIEW".equals(question.getStatus())) throw new IllegalStateException("只有审核中的题目可以通过审核");
+		question.setStatus("APPROVED");
+		return questions.save(question);
+	}
+
+	public Question publishQuestion(String id, Authentication user) {
+		Question question = authorizeQuestion(id, user);
+		if (!"APPROVED".equals(question.getStatus())) throw new IllegalStateException("只有已审核题目可以发布");
 		QuestionVersion version = versions.findByQuestionIdAndVersionNo(id, question.getCurrentVersionNo())
 				.orElseThrow(() -> new IllegalStateException("题目版本生成失败"));
-		version.setStatus("PUBLISHED");
-		version.setPublishedAt(LocalDateTime.now());
-		versions.save(version);
-		question.setStatus("PUBLISHED");
-		question.setPublishedVersionId(version.getId());
+		version.setStatus("PUBLISHED"); version.setPublishedAt(LocalDateTime.now()); versions.save(version);
+		question.setStatus("PUBLISHED"); question.setPublishedVersionId(version.getId());
 		return questions.save(question);
+	}
+
+	public Question withdrawQuestion(String id, Authentication user) {
+		Question question = authorizeQuestion(id, user);
+		if (!"PUBLISHED".equals(question.getStatus())) throw new IllegalStateException("只有已发布题目可以撤回");
+		question.setStatus("WITHDRAWN");
+		return questions.save(question);
+	}
+
+	public Question reviseQuestion(String id, Authentication user) {
+		Question question = authorizeQuestion(id, user);
+		if (!Set.of("PUBLISHED", "WITHDRAWN").contains(question.getStatus()))
+			throw new IllegalStateException("只有已发布或已撤回题目可以修订");
+		question.setStatus("REVISED");
+		return questions.save(question);
+	}
+
+	public Question archiveQuestion(String id, Authentication user) {
+		Question question = authorizeQuestion(id, user);
+		if ("PUBLISHED".equals(question.getStatus())) throw new IllegalStateException("已发布题目必须先撤回");
+		question.setArchived(true); question.setStatus("ARCHIVED");
+		return questions.save(question);
+	}
+
+	public Question rollbackQuestion(String id, int versionNo, Authentication user) {
+		Question question = authorizeQuestion(id, user);
+		QuestionVersion version = versions.findByQuestionIdAndVersionNo(id, versionNo)
+				.orElseThrow(() -> new IllegalArgumentException("题目版本不存在"));
+		try {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> snapshot = json.readValue(version.getSnapshotJson(), Map.class);
+			question.setQuestionType((String) snapshot.get("questionType"));
+			question.setDifficulty((String) snapshot.get("difficulty"));
+			question.setStem((String) snapshot.get("stem"));
+			question.setAnswer((String) snapshot.get("answer"));
+			question.setAnalysis((String) snapshot.get("analysis"));
+			question.setAnswerSchemaJson((String) snapshot.get("answerSchemaJson"));
+			question.setScore(snapshot.get("score") == null ? null : new java.math.BigDecimal(snapshot.get("score").toString()));
+			options.deleteByQuestionId(id); links.deleteByQuestionId(id); files.deleteByQuestionId(id);
+			Object optionValues = snapshot.get("options");
+			if (optionValues instanceof List<?> values) for (Object value : values) {
+				if (value instanceof Map<?, ?> option) {
+					QuestionOption restored = new QuestionOption();
+					restored.setId(UUID.randomUUID().toString()); restored.setQuestionId(id);
+					restored.setOptionKey(String.valueOf(option.get("optionKey")));
+					restored.setOptionText(String.valueOf(option.get("optionText")));
+					restored.setSortOrder(option.get("sortOrder") == null ? 0 : Integer.parseInt(option.get("sortOrder").toString()));
+					restored.setCorrect(Boolean.TRUE.equals(option.get("correct"))); options.save(restored);
+				}
+			}
+			Object pointValues = snapshot.get("knowledgePointIds");
+			if (pointValues instanceof List<?> values) for (Object value : values) {
+				QuestionKnowledgePoint restored = new QuestionKnowledgePoint();
+				restored.setQuestionId(id); restored.setKnowledgePointId(String.valueOf(value)); links.save(restored);
+			}
+			Object fileValues = snapshot.get("fileIds");
+			if (fileValues instanceof List<?> values) for (Object value : values) {
+				QuestionFile restored = new QuestionFile();
+				restored.setQuestionId(id); restored.setFileId(String.valueOf(value)); files.save(restored);
+			}
+			question.setStatus("DRAFT");
+			return questions.save(question);
+		} catch (JsonProcessingException ex) { throw new IllegalStateException("题目版本快照损坏", ex); }
+	}
+
+	private Question authorizeQuestion(String id, Authentication user) {
+		Question question = questions.findById(id).orElseThrow(() -> new IllegalArgumentException("题目不存在"));
+		QuestionBank bank = banks.findById(question.getBankId()).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
+		authorizeBank(bank, user);
+		return question;
 	}
 
 	@Transactional(readOnly = true)
 	public List<KnowledgePoint> knowledgeTree(String courseId, Authentication user) {
 		EducationDataScope scope = scopes.resolve(user.getName());
 		scopes.assertCourseAccess(scope, courseId);
-		return points.findAll().stream().filter(p -> !p.isArchived() && Objects.equals(courseId, p.getCourseId())
+		return points.findByCourseIdAndArchivedFalseOrderByParentIdAscSortOrderAscNameAsc(courseId).stream().filter(p -> p.isEnabled() && Objects.equals(courseId, p.getCourseId())
 				&& scopes.canAccessCourse(scope, p.getCourseId()))
 				.sorted(Comparator.comparing(KnowledgePoint::getSortOrder).thenComparing(KnowledgePoint::getName)).toList();
 	}
@@ -206,11 +302,18 @@ public class QuestionKnowledgeService {
 				accepted++;
 			} catch (RuntimeException ex) { errors.add(new RowError(i + 1, "", ex.getMessage())); }
 		}
-		return new ImportPreview(accepted, List.copyOf(errors));
+		int total = (int) rows.stream().skip(1).filter(r -> !r.isBlank()).count();
+		return new ImportPreview(accepted, total, hash(csv), List.copyOf(errors));
 	}
 
 	public List<Question> importCsv(String csv, Authentication user) {
+		return importCsv(csv, precheckCsv(csv).precheckHash(), user);
+	}
+
+	public List<Question> importCsv(String csv, String precheckHash, Authentication user) {
 		ImportPreview preview = precheckCsv(csv);
+		if (precheckHash == null || !MessageDigest.isEqual(preview.precheckHash().getBytes(StandardCharsets.UTF_8),
+				precheckHash.getBytes(StandardCharsets.UTF_8))) throw new IllegalArgumentException("CSV预检结果已失效");
 		if (!preview.errors().isEmpty()) throw new IllegalArgumentException("CSV预检存在错误: " + preview.errors());
 		List<Question> result = new ArrayList<>();
 		for (String row : csv.lines().skip(1).toList()) {
@@ -292,15 +395,23 @@ public class QuestionKnowledgeService {
 		q.setScore(r.score()); q.setAnswer(r.answer()); q.setAnalysis(r.analysis()); q.setAnswerSchemaJson(r.answerSchemaJson());
 		q.setUsableFrom(r.usableFrom()); q.setUsableUntil(r.usableUntil()); q.setStatus("DRAFT");
 	}
-	private void persistVersion(Question q) {
+	private void persistVersion(Question q, String status) {
 		try {
 			Map<String, Object> snapshot = new LinkedHashMap<>();
 			snapshot.put("questionType", q.getQuestionType()); snapshot.put("difficulty", q.getDifficulty());
 			snapshot.put("stem", q.getStem()); snapshot.put("answer", q.getAnswer()); snapshot.put("analysis", q.getAnalysis());
+			snapshot.put("score", q.getScore()); snapshot.put("objective", q.isObjective());
+			snapshot.put("answerSchemaJson", q.getAnswerSchemaJson());
+			snapshot.put("usableFrom", q.getUsableFrom()); snapshot.put("usableUntil", q.getUsableUntil());
+			snapshot.put("options", options.findByQuestionIdOrderBySortOrderAsc(q.getId()));
+			snapshot.put("knowledgePointIds", links.findByQuestionId(q.getId()).stream().map(QuestionKnowledgePoint::getKnowledgePointId).toList());
+			snapshot.put("fileIds", files.findByQuestionId(q.getId()).stream().map(QuestionFile::getFileId).toList());
 			String body = json.writeValueAsString(snapshot);
+			int next = q.getCurrentVersionNo() + 1; q.setCurrentVersionNo(next);
 			QuestionVersion version = new QuestionVersion(); version.setQuestionId(q.getId());
-			version.setVersionNo(q.getCurrentVersionNo()); version.setSnapshotJson(body); version.setSnapshotHash(hash(body));
+			version.setVersionNo(next); version.setSnapshotJson(body); version.setSnapshotHash(hash(body)); version.setStatus(status);
 			versions.save(version);
+			questions.save(q);
 		} catch (JsonProcessingException ex) { throw new IllegalStateException("题目版本快照失败", ex); }
 	}
 	private void authorizeBank(QuestionBank b, Authentication u) {
