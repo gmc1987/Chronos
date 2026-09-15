@@ -31,6 +31,9 @@ public class TeachingClassMember extends BaseEntity {
 	@Column(name = "enrollment_status", length = 24, nullable = false)
 	private String enrollmentStatus = "ENROLLED";
 
+	@Column(name = "enrollment_source", length = 16, nullable = false)
+	private String enrollmentSource = "MANUAL";
+
 	@Column(name = "enrolled_at", nullable = false)
 	private LocalDateTime enrolledAt;
 

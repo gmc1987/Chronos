@@ -70,15 +70,6 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
-  ai:
-    model:
-      # 未配置密钥时不实例化远程模型，避免本地和 CI 启动失败。
-      chat: ${CHRONOS_AI_CHAT_MODEL:none}
-    deepseek:
-      api-key: ${CHRONOS_DEEPSEEK_CHAT_API_KEY:}
-      base-url: https://api.deepseek.com
-      chat:
-        model: deepseek-v4-pro
 flowable:
   database-schema-update: true
   async-executor-activate: true

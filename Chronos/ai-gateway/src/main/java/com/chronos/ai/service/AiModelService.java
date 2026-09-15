@@ -155,6 +155,9 @@ public class AiModelService {
 		if (!Integer.valueOf(1).equals(target.getStatus())) {
 			throw new IllegalArgumentException("只有启用的模型才能设为默认模型");
 		}
+		if (!"CHAT".equalsIgnoreCase(target.getModelType())) {
+			throw new IllegalArgumentException("只有聊天模型才能设为默认模型");
+		}
 		if (target.getApiKey() == null || target.getApiKey().isBlank()) {
 			throw new IllegalArgumentException("只有已配置 API Key 的模型才能设为默认模型");
 		}

@@ -37,8 +37,11 @@
                 :value="item.value" />
             </el-select>
           </div>
-          <div>
-            <el-radio-group v-model="scheduleView" class="view-switch"><el-radio-button value="grid">网格</el-radio-button><el-radio-button value="list">列表</el-radio-button></el-radio-group>
+          <div class="schedule-actions">
+            <el-radio-group v-model="scheduleView" class="view-switch">
+              <el-radio-button value="grid">网格</el-radio-button>
+              <el-radio-button value="list">列表</el-radio-button>
+            </el-radio-group>
             <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" @click="downloadImportTemplate">下载导入模板</el-button>
             <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" type="warning" @click="chooseImportFile">导入课表</el-button>
             <el-button v-permission="['education:scheduling:view', 'education:scheduling:manage']" @click="exportSchedule">导出当前课表</el-button>
@@ -57,6 +60,9 @@
           </el-table-column>
           <el-table-column prop="courseName" label="课程" />
           <el-table-column prop="teachingClassName" label="教学班" />
+          <el-table-column label="组班方式" width="100">
+            <template #default="scope">{{ scope.row.offeringMode === 'COMBINED' ? '合班' : '普通' }}</template>
+          </el-table-column>
           <el-table-column prop="teacherName" label="教师" width="120" />
           <el-table-column prop="classroomName" label="教室" width="140" />
           <el-table-column label="周次" width="120">
@@ -286,9 +292,10 @@
           <el-table-column prop="teacherName" label="教师" />
           <el-table-column prop="studentCount" label="人数" width="90" />
           <el-table-column prop="weeklyLessons" label="周课时" width="90" />
-          <el-table-column label="操作" width="140">
+          <el-table-column label="操作" width="230">
             <template #default="scope">
               <el-button link @click="openOffering(scope.row)">编辑</el-button>
+              <el-button link type="primary" @click="openCombined(scope.row)">合班设置</el-button>
               <el-button link type="danger" @click="removeOffering(scope.row)">删除</el-button>
             </template>
           </el-table-column>
@@ -440,6 +447,31 @@
       <template #footer><el-button @click="entryDialog = false">取消</el-button><el-button type="primary" @click="saveEntry">保存并校验</el-button></template>
     </el-dialog>
 
+    <el-dialog v-model="combinedDialog" title="合班公共课设置" width="640px">
+      <el-alert type="info" :closable="false" title="选择至少两个同校区行政班；保存后把在籍学生同步到当前教学任务。已有课表时会检查教室容量和学生冲突，失败则整次回滚。" />
+      <el-form label-width="110px" class="combined-form">
+        <el-form-item label="教学任务">{{ combinedOffering?.teachingClassName }} / {{ combinedOffering?.courseName }}</el-form-item>
+        <el-form-item label="来源行政班" required>
+          <el-select v-model="combinedClassIds" multiple filterable collapse-tags placeholder="选择两个或更多行政班" style="width:100%">
+            <el-option
+              v-for="item in availableCombinedClasses"
+              :key="item.id"
+              :label="item.className"
+              :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="当前人数">{{ combinedInfo?.studentCount ?? 0 }}</el-form-item>
+        <el-form-item v-if="combinedInfo?.syncRequired" label="同步提示">
+          <el-tag type="warning">行政班人数已变化，预计 {{ combinedInfo.expectedStudentCount }} 人</el-tag>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="combinedDialog = false">取消</el-button>
+        <el-button v-if="combinedOffering?.offeringMode === 'COMBINED'" :loading="combinedSaving" @click="syncCombined">只同步成员</el-button>
+        <el-button type="primary" :loading="combinedSaving" @click="saveCombined">保存来源班级并同步</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="offeringDialog" title="教学任务" width="620px">
       <el-form label-width="110px">
         <el-form-item label="教学班编码"><el-input v-model="offeringForm.offeringCode" /></el-form-item>
@@ -454,7 +486,7 @@
             <el-option v-for="teacher in teachers" :key="teacher.id" :label="`${teacher.teacherName}（${teacher.teacherNo}）`" :value="teacher.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="学生人数"><el-input-number v-model="offeringForm.studentCount" :min="1" /></el-form-item>
+        <el-form-item label="学生人数"><el-input-number v-model="offeringForm.studentCount" :min="1" :disabled="offeringForm.offeringMode === 'COMBINED'" /><span v-if="offeringForm.offeringMode === 'COMBINED'">由来源行政班同步</span></el-form-item>
         <el-form-item label="每周课时"><el-input-number v-model="offeringForm.weeklyLessons" :min="1" /></el-form-item>
         <el-form-item label="连堂节数"><el-input-number v-model="offeringForm.preferredDurationPeriods" :min="1" :max="4" /></el-form-item>
         <el-form-item label="授课周模式"><el-select v-model="offeringForm.weekPattern"><el-option label="每周" value="ALL" /><el-option label="单周" value="ODD" /><el-option label="双周" value="EVEN" /></el-select></el-form-item>
@@ -599,14 +631,17 @@ import {
   batchRetryCourseAdjustmentIncidents,
   createClassroom,
   createCourseOffering,
+  configureCombinedOffering,
   createScheduleEntry,
   deleteClassroom,
   deleteCourseOffering,
+  deleteCombinedOffering,
   deleteScheduleEntry,
   downloadScheduleImportTemplate,
   importClassSchedule,
   exportClassSchedule,
   getScheduleQualityAnalysis,
+  getCombinedOffering,
   getSchedulePolicy,
   compareScheduleCandidates,
   discardScheduleCandidate,
@@ -631,6 +666,7 @@ import {
   previewSchedulePublication,
   publishScheduleVersion,
   saveSchedulePolicy,
+  syncCombinedOffering,
   retryCourseAdjustmentIncident,
   rollbackScheduleVersion,
   updateClassroom,
@@ -705,6 +741,11 @@ const classroomPageSize = ref(10)
 const classroomTotal = ref(0)
 const entryDialog = ref(false)
 const offeringDialog = ref(false)
+const combinedDialog = ref(false)
+const combinedSaving = ref(false)
+const combinedOffering = ref(null)
+const combinedInfo = ref(null)
+const combinedClassIds = ref([])
 const classroomDialog = ref(false)
 const candidateDialog = ref(false)
 const candidateGenerating = ref(false)
@@ -723,6 +764,8 @@ const roomConstraintForm = reactive({})
 const dateExceptionForm = reactive({})
 const orgName = item => item.organizationName || item.orgName || item.name || item.id
 const selectedTerm = computed(() => terms.value.find(item => item.termCode === semesterCode.value))
+const availableCombinedClasses = computed(() => administrativeClasses.value.filter(item =>
+  item.status === 'ACTIVE' && item.campusId === combinedOffering.value?.campusId))
 const selectedClassroom = computed(() => classroomOptions.value.find(item => item.id === entryForm.classroomId))
 const availablePeriods = computed(() => {
   const schedule = bellSchedules.value.find(item =>
@@ -920,7 +963,38 @@ const selectTeacher = id => {
   offeringForm.teacherName = teachers.value.find(item => item.id === id)?.teacherName || ''
 }
 const saveOffering = async () => { const payload = { ...offeringForm, semesterCode: semesterCode.value }; await (offeringForm.id ? updateCourseOffering(offeringForm.id, payload) : createCourseOffering(payload)); offeringDialog.value = false; ElMessage.success('教学任务已保存'); await loadAll() }
-const removeOffering = async (row) => { await ElMessageBox.confirm('确认删除该教学任务？', '删除'); await deleteCourseOffering(row.id); await loadAll() }
+const openCombined = async row => {
+  combinedOffering.value = row
+  try {
+    const response = await getCombinedOffering(row.id)
+    combinedInfo.value = response.data
+    combinedClassIds.value = [...(response.data?.administrativeClassIds || [])]
+    combinedDialog.value = true
+  } catch (error) { ElMessage.error(error.message) }
+}
+const saveCombined = async () => {
+  if (combinedClassIds.value.length < 2) return ElMessage.warning('请选择至少两个来源行政班')
+  combinedSaving.value = true
+  try {
+    const response = await configureCombinedOffering(combinedOffering.value.id, combinedClassIds.value)
+    combinedInfo.value = response.data
+    combinedDialog.value = false
+    ElMessage.success(`合班成员已同步，共 ${response.data.studentCount} 人`)
+    await loadAll()
+  } catch (error) { ElMessage.error(error.message) }
+  finally { combinedSaving.value = false }
+}
+const syncCombined = async () => {
+  combinedSaving.value = true
+  try {
+    const response = await syncCombinedOffering(combinedOffering.value.id)
+    combinedInfo.value = response.data
+    ElMessage.success(`合班成员已同步，共 ${response.data.studentCount} 人`)
+    await loadAll()
+  } catch (error) { ElMessage.error(error.message) }
+  finally { combinedSaving.value = false }
+}
+const removeOffering = async (row) => { await ElMessageBox.confirm('确认删除该教学任务？', '删除'); await (row.offeringMode === 'COMBINED' ? deleteCombinedOffering(row.id) : deleteCourseOffering(row.id)); await loadAll() }
 const openClassroom = (row) => { reset(classroomForm, row ? { ...row } : { capacity: 40, roomType: roomTypes.value[0]?.value || '', enabled: true }); classroomDialog.value = true }
 const saveClassroom = async () => { await (classroomForm.id ? updateClassroom(classroomForm.id, classroomForm) : createClassroom(classroomForm)); classroomDialog.value = false; ElMessage.success('教室已保存'); await loadAll() }
 const removeClassroom = async (row) => { await ElMessageBox.confirm('确认删除该教室？', '删除'); await deleteClassroom(row.id); await loadAll() }
@@ -1207,13 +1281,28 @@ header .el-input {
 }
 .schedule-toolbar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
 }
 .dimension-filter {
   display: flex;
+  align-items: center;
   gap: 10px;
+}
+.schedule-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.schedule-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.view-switch {
+  margin-right: 8px;
+  flex-shrink: 0;
 }
 .dimension-select {
   width: 140px;

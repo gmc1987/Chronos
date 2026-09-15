@@ -45,6 +45,10 @@ public class CourseOffering extends BaseEntity {
 	@Column(name = "student_count", nullable = false)
 	private Integer studentCount = 0;
 
+	/** 合班任务由来源行政班同步成员，不再手工维护人数。 */
+	@Column(name = "offering_mode", length = 16, nullable = false)
+	private String offeringMode = "NORMAL";
+
 	@Column(name = "weekly_lessons", nullable = false)
 	private Integer weeklyLessons = 2;
 

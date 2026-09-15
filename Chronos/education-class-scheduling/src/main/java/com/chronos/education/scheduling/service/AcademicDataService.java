@@ -540,8 +540,24 @@ public class AcademicDataService {
 
 	@Transactional
 	public TeachingClassMember enroll(String offeringId, String studentId) {
+		return enrollInternal(offeringId, studentId, false);
+	}
+
+	/** 合班同步只调用这一入口，保留普通学生选课的冲突检查。 */
+	@Transactional
+	public TeachingClassMember enrollFromCombined(String offeringId, String studentId) {
+		return enrollInternal(offeringId, studentId, true);
+	}
+
+	private TeachingClassMember enrollInternal(
+			String offeringId,
+			String studentId,
+			boolean fromCombined) {
 		var offering = offerings.findById(offeringId)
 				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+		if ("COMBINED".equals(offering.getOfferingMode()) != fromCombined) {
+			throw new IllegalStateException("合班课成员只能通过来源行政班同步维护");
+		}
 		students.findById(studentId).orElseThrow(() -> new IllegalArgumentException("学生不存在"));
 		TeachingClassMember member = members.findByOfferingIdAndStudentId(offeringId, studentId)
 				.orElseGet(TeachingClassMember::new);
@@ -558,6 +574,7 @@ public class AcademicDataService {
 		member.setOfferingId(offeringId);
 		member.setStudentId(studentId);
 		member.setEnrollmentStatus("ENROLLED");
+		member.setEnrollmentSource(fromCombined ? "SOURCE_CLASS" : "MANUAL");
 		member.setEnrolledAt(LocalDateTime.now());
 		member.setWithdrawnAt(null);
 		return members.save(member);
@@ -565,6 +582,11 @@ public class AcademicDataService {
 
 	@Transactional
 	public TeachingClassMember withdraw(String offeringId, String studentId) {
+		if ("COMBINED".equals(offerings.findById(offeringId)
+				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"))
+				.getOfferingMode())) {
+			throw new IllegalStateException("合班课成员只能通过来源行政班同步维护");
+		}
 		TeachingClassMember member = members.findByOfferingIdAndStudentId(offeringId, studentId)
 				.orElseThrow(() -> new IllegalArgumentException("学生不在该教学班"));
 		member.setEnrollmentStatus("WITHDRAWN");

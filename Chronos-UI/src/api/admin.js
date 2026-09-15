@@ -240,6 +240,11 @@ export const listCourseOfferings = (semesterCode, params) => http.get(`/admin/ed
 export const createCourseOffering = (payload) => http.post('/admin/education/course-offerings', payload)
 export const updateCourseOffering = (id, payload) => http.put(`/admin/education/course-offerings/${id}`, payload)
 export const deleteCourseOffering = (id) => http.delete(`/admin/education/course-offerings/${id}`)
+export const getCombinedOffering = (id) => http.get(`/admin/education/course-offerings/${id}/combined-classes`)
+export const configureCombinedOffering = (id, administrativeClassIds) =>
+  http.put(`/admin/education/course-offerings/${id}/combined-classes`, { administrativeClassIds })
+export const syncCombinedOffering = (id) => http.post(`/admin/education/course-offerings/${id}/combined-classes/sync`)
+export const deleteCombinedOffering = (id) => http.delete(`/admin/education/course-offerings/${id}/combined-classes`)
 export const listClassrooms = (params) => http.get(`/admin/education/classrooms?${qs(params)}`)
 export const createClassroom = (payload) => http.post('/admin/education/classrooms', payload)
 export const updateClassroom = (id, payload) => http.put(`/admin/education/classrooms/${id}`, payload)

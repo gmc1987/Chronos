@@ -74,6 +74,15 @@ public class ClassSchedulingService {
 		CourseOffering value = id == null
 				? new CourseOffering()
 				: offerings.findById(id).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+		if ("COMBINED".equals(value.getOfferingMode())
+				&& !value.getStudentCount().equals(command.getStudentCount())) {
+			throw new IllegalStateException("合班课人数由来源行政班同步，不能手工修改");
+		}
+		if ("COMBINED".equals(value.getOfferingMode())
+				&& (!java.util.Objects.equals(value.getCampusId(), command.getCampusId())
+						|| !value.getSemesterCode().equals(command.getSemesterCode()))) {
+			throw new IllegalStateException("合班课不能直接变更校区或学期，请重新创建教学任务");
+		}
 		value.setSemesterCode(command.getSemesterCode().trim());
 		value.setOfferingCode(command.getOfferingCode().trim());
 		value.setCourseCode(command.getCourseCode().trim());
@@ -98,6 +107,11 @@ public class ClassSchedulingService {
 	public void deleteOffering(String id) {
 		if (entries.countByOfferingId(id) > 0) {
 			throw new IllegalStateException("教学任务已有课表安排，不能删除");
+		}
+		if ("COMBINED".equals(offerings.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"))
+				.getOfferingMode())) {
+			throw new IllegalStateException("合班教学任务需先解除来源班级，不能直接删除");
 		}
 		offerings.deleteById(id);
 	}
@@ -253,6 +267,7 @@ public class ClassSchedulingService {
 				command.startWeek(),
 				command.endWeek(),
 				id);
+		Set<String> targetStudentIds = enrolledStudentIds(command.offeringId());
 		for (ScheduleEntry existing : overlapping) {
 			if (!weekPatternsOverlap(existing.getWeekPattern(), weekPattern)) {
 				continue;
@@ -266,6 +281,14 @@ public class ClassSchedulingService {
 			}
 			if (occupied != null && occupied.getTeacherId().equals(offering.getTeacherId())) {
 				throw new IllegalStateException("排课冲突：教师在相同时间已有课程");
+			}
+			if (!targetStudentIds.isEmpty()
+					&& teachingClassMembers
+							.findByOfferingIdOrderByCreateTime(existing.getOfferingId())
+							.stream()
+							.anyMatch(member -> "ENROLLED".equals(member.getEnrollmentStatus())
+									&& targetStudentIds.contains(member.getStudentId()))) {
+				throw new IllegalStateException("排课冲突：学生在相同时间已有课程");
 			}
 		}
 		ScheduleEntry value = id == null
@@ -446,6 +469,14 @@ public class ClassSchedulingService {
 		return offering.getCampusId() != null
 				&& classroom.getCampusId() != null
 				&& !offering.getCampusId().equals(classroom.getCampusId());
+	}
+
+	private Set<String> enrolledStudentIds(String offeringId) {
+		return teachingClassMembers.findByOfferingIdOrderByCreateTime(offeringId)
+				.stream()
+				.filter(member -> "ENROLLED".equals(member.getEnrollmentStatus()))
+				.map(member -> member.getStudentId())
+				.collect(Collectors.toSet());
 	}
 
 	private boolean containsAllCodes(String actual, String requiredCodes) {
