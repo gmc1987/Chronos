@@ -184,6 +184,7 @@ export const researchAttendance = (id, body) => http.post(`/education/teaching-c
 export const researchMinutes = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/minutes`, body)
 export const submitResearchResult = (id) => http.post(`/education/teaching-center/research-results/${encodeURIComponent(id)}/submit`)
 export const archiveResearchResult = (id) => http.post(`/education/teaching-center/research-results/${encodeURIComponent(id)}/archive`)
+export const researchReviewStatus = (id) => http.get(`/education/teaching-center/domain/RESEARCH_RESULT/${encodeURIComponent(id)}/review-status`)
 export const researchChildren = (id, child, params = {}) =>
   teachingDomainChildrenApi('research', id, child, params)
 export const createResearchChild = (id, child, body) =>
