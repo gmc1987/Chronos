@@ -44,6 +44,8 @@ public class ScheduleOccurrenceService {
 	private final ClassroomUnavailableSlotRepository unavailableSlots;
 	private final TeacherTimeConstraintRepository teacherConstraints;
 	private final TeachingClassMemberRepository teachingClassMembers;
+	private final ExamResourceReservationService examReservations;
+	private final EducationResourceTransactionLock resourceLock;
 
 	public ScheduleOccurrenceService(
 			AcademicTermRepository terms,
@@ -55,7 +57,9 @@ public class ScheduleOccurrenceService {
 			ClassroomRepository classrooms,
 			ClassroomUnavailableSlotRepository unavailableSlots,
 			TeacherTimeConstraintRepository teacherConstraints,
-			TeachingClassMemberRepository teachingClassMembers) {
+			TeachingClassMemberRepository teachingClassMembers,
+			ExamResourceReservationService examReservations,
+			EducationResourceTransactionLock resourceLock) {
 		this.terms = terms;
 		this.calendarDays = calendarDays;
 		this.entries = entries;
@@ -66,6 +70,8 @@ public class ScheduleOccurrenceService {
 		this.unavailableSlots = unavailableSlots;
 		this.teacherConstraints = teacherConstraints;
 		this.teachingClassMembers = teachingClassMembers;
+		this.examReservations = examReservations;
+		this.resourceLock = resourceLock;
 	}
 
 	@Transactional(readOnly = true)
@@ -316,6 +322,7 @@ public class ScheduleOccurrenceService {
 			ScheduleDateException command,
 			ScheduleEntry source,
 			AcademicTerm term) {
+		resourceLock.lockSemester(source.getSemesterCode());
 		if ("CANCEL".equals(command.getExceptionType())) {
 			return;
 		}
@@ -375,6 +382,16 @@ public class ScheduleOccurrenceService {
 		}
 
 		Set<String> sourceStudents = studentIds(source.getOfferingId());
+		// 调课、补课和代课不能占用已发布考试的考场、监考教师或考生。
+		examReservations.assertDatedCourseAvailable(
+				source.getSemesterCode(),
+				sourceOffering.getCampusId(),
+				date,
+				period,
+				duration,
+				classroomId,
+				teacherId,
+				sourceStudents);
 		for (ScheduleOccurrenceView occupied : occurrences(source.getSemesterCode(), date)) {
 			if (occupied.entry().id().equals(source.getId())
 					&& date.equals(command.getSourceDate())) {

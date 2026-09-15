@@ -14,7 +14,13 @@ public final class ExamCommands {
 			String examType,
 			LocalDate startDate,
 			LocalDate endDate,
-			String ruleJson) {
+			Integer baseInvigilators,
+			Integer extraStaffThreshold,
+			Boolean allowOwnClassInvigilation,
+			String ruleJson,
+			Integer maxConsecutiveDuties,
+			Integer campusTravelMinutes,
+			Boolean requireSubjectQualification) {
 	}
 
 	public record Session(
@@ -37,5 +43,16 @@ public final class ExamCommands {
 	}
 
 	public record Decision(boolean approve, String replacementTeacherId) {
+	}
+
+	public record PublishedChange(
+			String changeType,
+			String sessionId,
+			String roomId,
+			LocalDate newExamDate,
+			LocalTime newStartTime,
+			LocalTime newEndTime,
+			String newClassroomId,
+			String reason) {
 	}
 }

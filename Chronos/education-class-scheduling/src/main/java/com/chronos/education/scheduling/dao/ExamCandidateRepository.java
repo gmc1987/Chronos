@@ -8,5 +8,6 @@ import com.chronos.education.scheduling.model.ExamCandidate;
 
 public interface ExamCandidateRepository extends JpaRepository<ExamCandidate, String> {
 	List<ExamCandidate> findByRoomIdOrderBySeatNoAsc(String roomId);
+	List<ExamCandidate> findByStudentId(String studentId);
 	boolean existsByRoomIdAndStudentId(String roomId, String studentId);
 }

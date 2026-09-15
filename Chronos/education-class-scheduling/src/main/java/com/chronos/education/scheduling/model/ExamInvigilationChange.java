@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -19,6 +20,10 @@ public class ExamInvigilationChange {
 	@Id
 	@GeneratedValue(strategy = GenerationType.UUID)
 	private String id;
+
+	@Version
+	@Column(name = "record_version", nullable = false)
+	private Long recordVersion = 0L;
 
 	@Column(name = "assignment_id", nullable = false, length = 64)
 	private String assignmentId;
