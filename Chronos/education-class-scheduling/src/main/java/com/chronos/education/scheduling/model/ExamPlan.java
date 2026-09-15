@@ -33,6 +33,27 @@ public class ExamPlan extends BaseEntity {
 	@Column(name = "status", nullable = false, length = 24)
 	private String status = "DRAFT";
 
+	@Column(name = "base_invigilators", nullable = false)
+	private Integer baseInvigilators = 2;
+
+	@Column(name = "extra_staff_threshold", nullable = false)
+	private Integer extraStaffThreshold = 60;
+
+	@Column(name = "allow_own_class_invigilation", nullable = false)
+	private Boolean allowOwnClassInvigilation = false;
+
 	@Column(name = "rule_json", columnDefinition = "text")
 	private String ruleJson;
+
+	@Column(name = "max_consecutive_duties", nullable = false)
+	private Integer maxConsecutiveDuties = 2;
+
+	@Column(name = "campus_travel_minutes", nullable = false)
+	private Integer campusTravelMinutes = 60;
+
+	@Column(name = "require_subject_qualification", nullable = false)
+	private Boolean requireSubjectQualification = false;
+
+	@Column(name = "published_version", nullable = false)
+	private Integer publishedVersion = 0;
 }

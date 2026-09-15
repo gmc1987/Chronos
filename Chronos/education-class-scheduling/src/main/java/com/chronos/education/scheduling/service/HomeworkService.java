@@ -8,6 +8,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
@@ -26,11 +28,13 @@ import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.education.scheduling.model.TeachingPlanItem;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
+import com.chronos.education.scheduling.model.dto.HomeworkDtos.BatchGradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
 
 @Service
 @Transactional
 public class HomeworkService {
+	private static final ObjectMapper JSON = new ObjectMapper();
 	private final HomeworkAssignmentRepository assignments;
 	private final HomeworkSubmissionRepository submissions;
 	private final TeachingClassMemberRepository members;
@@ -157,6 +161,7 @@ public class HomeworkService {
 
 	private void apply(HomeworkAssignment result, AssignmentRequest request) {
 		result.setOfferingId(request.offeringId());
+		result.setType(request.type());
 		result.setTeachingPlanItemId(request.teachingPlanItemId());
 		result.setPreparationId(request.preparationId());
 		result.setLessonPlanId(request.lessonPlanId());
@@ -164,8 +169,13 @@ public class HomeworkService {
 		result.setQuestionSnapshotJson(request.questionSnapshotJson());
 		result.setInstructionsJson(request.instructionsJson());
 		result.setDueAt(request.dueAt());
+		result.setStartAt(request.startAt());
 		result.setMaxScore(request.maxScore() == null ? 100 : request.maxScore());
+		result.setAttemptLimit(request.attemptLimit() == null ? 1 : request.attemptLimit());
 		result.setAllowLate(request.allowLate());
+		result.setLateRule(request.lateRule() == null ? (request.allowLate() ? "ALLOW" : "REJECT") : request.lateRule());
+		result.setPublishAudience(request.publishAudience() == null ? "ENROLLED_STUDENTS" : request.publishAudience());
+		result.setAttachmentSnapshotJson(request.attachmentSnapshotJson() == null ? "[]" : request.attachmentSnapshotJson());
 	}
 
 	private void validateReferences(AssignmentRequest request, String offeringId) {
@@ -201,6 +211,16 @@ public class HomeworkService {
 		return result;
 	}
 
+	public HomeworkAssignment archive(String id, Authentication auth) {
+		HomeworkAssignment result = assignment(id);
+		teacherCan(scope(auth), result);
+		if (!"CLOSED".equals(result.getStatus())) {
+			throw new IllegalStateException("只有已关闭作业可以归档");
+		}
+		result.setStatus("ARCHIVED");
+		return result;
+	}
+
 	@Transactional(readOnly = true)
 	public HomeworkAssignment get(String id, Authentication auth) {
 		HomeworkAssignment result = assignment(id);
@@ -220,13 +240,24 @@ public class HomeworkService {
 		studentCan(scope(auth), assignment, student);
 		HomeworkSubmission result = submissions.findByAssignmentIdAndStudentId(assignmentId, student)
 				.orElseGet(HomeworkSubmission::new);
-		if (result.getId() != null && !"DRAFT".equals(result.getStatus())
+		if (result.getId() != null && !"NOT_STARTED".equals(result.getStatus())
+				&& !"DRAFT".equals(result.getStatus())
 				&& !"RETURNED_FOR_REVISION".equals(result.getStatus())) {
 			throw new IllegalStateException("当前提交不能修改");
+		}
+		if (result.getId() == null) {
+			result.setAttemptNo(1);
+		} else if ("RETURNED_FOR_REVISION".equals(result.getStatus())) {
+			int nextAttempt = result.getAttemptNo() + 1;
+			if (nextAttempt > assignment.getAttemptLimit()) {
+				throw new IllegalStateException("已达到提交次数限制");
+			}
+			result.setAttemptNo(nextAttempt);
 		}
 		result.setAssignmentId(assignmentId);
 		result.setStudentId(student);
 		result.setAnswerSnapshotJson(request.answerSnapshotJson());
+		result.setAttachmentSnapshotJson(request.attachmentSnapshotJson() == null ? "[]" : request.attachmentSnapshotJson());
 		result.setStatus("DRAFT");
 		return submissions.save(result);
 	}
@@ -244,7 +275,8 @@ public class HomeworkService {
 		String student = studentId(auth);
 		if (!student.equals(result.getStudentId())) throw new AccessDeniedException("无权提交该答案");
 		studentCan(scope(auth), assignment, student);
-		if (!assignment.isAllowLate() && assignment.getDueAt() != null
+		if (!assignment.isAllowLate() && !"ALLOW".equals(assignment.getLateRule())
+				&& assignment.getDueAt() != null
 				&& LocalDateTime.now().isAfter(assignment.getDueAt())) {
 			throw new IllegalStateException("作业已超过截止时间");
 		}
@@ -281,10 +313,69 @@ public class HomeworkService {
 		if (request.score() != null
 				&& (request.score() < 0 || request.score() > assignment.getMaxScore()))
 			throw new IllegalArgumentException("分数超出作业满分");
+		String questionScores = request.questionScoresJson() == null ? "{}" : request.questionScoresJson();
+		validateQuestionScores(questionScores, assignment.getMaxScore());
 		result.setScore(request.score());
 		result.setTeacherFeedback(request.teacherFeedback());
+		result.setQuestionScoresJson(questionScores);
+		result.setAnnotationSnapshotJson(request.annotationSnapshotJson() == null ? "[]" : request.annotationSnapshotJson());
 		result.setStatus(request.returnForRevision() ? "RETURNED_FOR_REVISION" : "GRADED");
 		result.setGradedAt(LocalDateTime.now());
 		return result;
+	}
+
+	private void validateQuestionScores(String raw, int maxScore) {
+		try {
+			JsonNode node = JSON.readTree(raw);
+			if (node == null || !node.isObject()) {
+				throw new IllegalArgumentException("题目得分必须是 JSON 对象");
+			}
+			int total = 0;
+			var fields = node.fields();
+			while (fields.hasNext()) {
+				JsonNode score = fields.next().getValue();
+				if (!score.isNumber() || score.asInt() < 0) {
+					throw new IllegalArgumentException("题目得分必须是非负数字");
+				}
+				total += score.asInt();
+			}
+			if (total > maxScore) {
+				throw new IllegalArgumentException("题目得分合计超出作业满分");
+			}
+		} catch (IllegalArgumentException ex) {
+			throw ex;
+		} catch (Exception ex) {
+			throw new IllegalArgumentException("题目得分格式无效", ex);
+		}
+	}
+
+	public List<HomeworkSubmission> batchGrade(String assignmentId, BatchGradeRequest request,
+			Authentication auth) {
+		HomeworkAssignment homework = assignment(assignmentId);
+		teacherCan(scope(auth), homework);
+		if (request.submissionIds() == null || request.submissionIds().isEmpty()) {
+			throw new IllegalArgumentException("至少选择一条提交");
+		}
+		return request.submissionIds().stream().map(id -> {
+			HomeworkSubmission submission = submissions.findById(id)
+					.orElseThrow(() -> new IllegalArgumentException("提交不存在"));
+			if (!assignmentId.equals(submission.getAssignmentId())) {
+				throw new AccessDeniedException("提交不属于该作业");
+			}
+			return grade(id, new GradeRequest(request.score(), request.teacherFeedback(),
+					request.questionScoresJson(), request.annotationSnapshotJson(),
+					request.returnForRevision()), auth);
+		}).toList();
+	}
+
+	public int publishGrades(String assignmentId, Authentication auth) {
+		HomeworkAssignment homework = assignment(assignmentId);
+		teacherCan(scope(auth), homework);
+		if (!"CLOSED".equals(homework.getStatus()) && !"PUBLISHED".equals(homework.getStatus())) {
+			throw new IllegalStateException("只有已发布或已关闭作业可以发布成绩");
+		}
+		List<HomeworkSubmission> values = submissions.findByAssignmentIdOrderByCreateTimeAsc(assignmentId);
+		values.stream().filter(s -> "GRADED".equals(s.getStatus())).forEach(s -> s.setGradesPublished(true));
+		return (int) values.stream().filter(s -> "GRADED".equals(s.getStatus())).count();
 	}
 }

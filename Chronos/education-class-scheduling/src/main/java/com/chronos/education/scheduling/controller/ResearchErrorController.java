@@ -97,5 +97,10 @@ public class ResearchErrorController {
 	@PostMapping("/error-items/{id}/mastery")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:update','education:teaching:manage')")
 	public ResultData<?> mastery(@PathVariable String id,@Valid @RequestBody MasteryRequest r,Authentication a) { return ok(service.mastery(id,r,a)); }
+	@PostMapping("/error-items/{id}/review")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:error-book:update','education:teaching:manage')")
+	public ResultData<?> review(@PathVariable String id, @Valid @RequestBody ErrorReviewRequest r, Authentication a) {
+		return ok(service.review(id, r, a));
+	}
 	private <T> ResultData<T> ok(T value) { return ResultData.<T>builder().code("200").msg("success").data(value).build(); }
 }

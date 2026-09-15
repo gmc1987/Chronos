@@ -10,6 +10,10 @@ import com.chronos.education.scheduling.model.ExamSession;
 
 public interface ExamSessionRepository extends JpaRepository<ExamSession, String> {
 	List<ExamSession> findByPlanIdOrderByExamDateAscStartTimeAsc(String planId);
+	List<ExamSession> findByExamDateBetweenAndStatus(
+			LocalDate startDate,
+			LocalDate endDate,
+			String status);
 
 	List<ExamSession> findByExamDateAndStartTimeLessThanAndEndTimeGreaterThan(
 			LocalDate examDate,

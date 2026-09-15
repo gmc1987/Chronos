@@ -9,6 +9,7 @@ public final class HomeworkDtos {
 
 	public record AssignmentRequest(
 			@NotBlank String offeringId,
+			@NotBlank String type,
 			String teachingPlanItemId,
 			String preparationId,
 			String lessonPlanId,
@@ -16,11 +17,22 @@ public final class HomeworkDtos {
 			@NotBlank String questionSnapshotJson,
 			String instructionsJson,
 			java.time.LocalDateTime dueAt,
+			java.time.LocalDateTime startAt,
 			@Min(1) @Max(10000) Integer maxScore,
-			boolean allowLate) {}
+			@Min(1) @Max(100) Integer attemptLimit,
+			boolean allowLate,
+			String lateRule,
+			String publishAudience,
+			String attachmentSnapshotJson) {}
 
-	public record SubmissionRequest(@NotBlank String answerSnapshotJson) {}
+	public record SubmissionRequest(@NotBlank String answerSnapshotJson,
+			String attachmentSnapshotJson) {}
 
 	public record GradeRequest(@Min(0) Integer score, String teacherFeedback,
+			String questionScoresJson, String annotationSnapshotJson,
 			boolean returnForRevision) {}
+
+	public record BatchGradeRequest(java.util.List<String> submissionIds,
+			Integer score, String teacherFeedback, String questionScoresJson,
+			String annotationSnapshotJson, boolean returnForRevision) {}
 }

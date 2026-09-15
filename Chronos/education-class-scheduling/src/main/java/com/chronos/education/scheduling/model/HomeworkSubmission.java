@@ -30,13 +30,28 @@ public class HomeworkSubmission extends BaseEntity {
 	private String answerSnapshotJson = "{}";
 
 	@Column(nullable = false, length = 24)
-	private String status = "DRAFT";
+	private String status = "NOT_STARTED";
+
+	@Column(name = "attempt_no", nullable = false)
+	private Integer attemptNo = 1;
 
 	@Column
 	private Integer score;
 
 	@Column(name = "teacher_feedback", columnDefinition = "text")
 	private String teacherFeedback;
+
+	@Column(name = "question_scores_json", nullable = false, columnDefinition = "text")
+	private String questionScoresJson = "{}";
+
+	@Column(name = "annotation_snapshot_json", nullable = false, columnDefinition = "text")
+	private String annotationSnapshotJson = "[]";
+
+	@Column(name = "attachment_snapshot_json", nullable = false, columnDefinition = "text")
+	private String attachmentSnapshotJson = "[]";
+
+	@Column(name = "grades_published", nullable = false)
+	private boolean gradesPublished;
 
 	@Column(name = "submitted_at")
 	private LocalDateTime submittedAt;

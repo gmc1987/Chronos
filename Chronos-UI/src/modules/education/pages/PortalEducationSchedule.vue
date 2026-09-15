@@ -9,6 +9,11 @@
       </template>
     </el-page-header>
 
+    <el-button class="exam-duty-link" @click="$router.push('/portal/education/exam/invigilation')">
+      查看我的监考
+    </el-button>
+    <el-button @click="$router.push('/portal/education/exam/my-exams')">查看我的考试</el-button>
+
     <el-alert
       title="仅展示教务处最近发布的课表版本；未发布的调整草稿不会出现在这里。"
       type="info"
