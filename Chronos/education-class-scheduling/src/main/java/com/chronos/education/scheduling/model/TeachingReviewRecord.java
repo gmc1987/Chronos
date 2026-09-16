@@ -25,6 +25,7 @@ public class TeachingReviewRecord extends BaseEntity {
 	@Column(name="submission_no", nullable=false) private Integer submissionNo = 1;
 	@Column(name="offering_id", length=64) private String offeringId;
 	@Column(name="business_key", nullable=false, length=160) private String businessKey;
+	@Column(name="idempotency_key", length=128) private String idempotencyKey;
 	@Column(name="workflow_instance_id", nullable=false, length=64) private String workflowInstanceId;
 	@Column(name="status", nullable=false, length=24) private String status = "SUBMITTED";
 	@Column(name="decision", length=24) private String decision;

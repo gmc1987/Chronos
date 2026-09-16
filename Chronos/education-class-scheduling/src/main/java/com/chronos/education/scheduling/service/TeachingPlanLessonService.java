@@ -202,6 +202,8 @@ public class TeachingPlanLessonService {
 	}
 
 	public TeachingReviewRecord submitPlan(String id, String idempotencyKey, Authentication auth) {
+		var existing = reviews.findIdempotent("PLAN", id, idempotencyKey, auth);
+		if (existing != null) return existing;
 		TeachingPlan plan = getPlan(id, auth);
 		assertDraft(plan.getStatus());
 		if (plan.getObjective() == null || plan.getObjective().isBlank()

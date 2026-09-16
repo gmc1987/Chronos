@@ -28,6 +28,15 @@ public class TeachingReviewService {
 
 	public TeachingReviewRecord submit(String type, String id, String offeringId, Map<String,Object> form,
 			Authentication auth) {
+		String idempotencyKey = form == null ? null : String.valueOf(form.getOrDefault("idempotencyKey", ""));
+		if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+			var existing = records.findByResourceTypeAndResourceIdAndIdempotencyKey(type, id, idempotencyKey);
+			if (existing.isPresent()) {
+				authorizeResource(type, id, offeringId, auth);
+				return existing.get();
+			}
+
+		}
 		var latest = records.findByResourceTypeAndResourceId(type, id);
 		if (latest.filter(r -> "SUBMITTED".equals(r.getStatus())
 				|| "REVIEWING".equals(r.getStatus())).isPresent())
@@ -50,6 +59,7 @@ public class TeachingReviewService {
 		TeachingReviewRecord record = new TeachingReviewRecord();
 		record.setResourceType(type); record.setResourceId(id); record.setOfferingId(offeringId);
 		record.setBusinessKey(key); record.setWorkflowInstanceId(instance.getId()); record.setStatus("SUBMITTED");
+		record.setIdempotencyKey(idempotencyKey == null || idempotencyKey.isBlank() ? null : idempotencyKey);
 		record.setSubmissionNo(submissionNo); record.setSubmitterId(auth.getName());
 		record.setSubmittedAt(java.time.Instant.now());
 		Object versionId = data.get("versionId");
@@ -75,6 +85,18 @@ public class TeachingReviewService {
 			}
 		}
 		return saved;
+	}
+
+	@Transactional(readOnly = true)
+	public TeachingReviewRecord findIdempotent(String type, String id, String idempotencyKey,
+			Authentication auth) {
+		if (idempotencyKey == null || idempotencyKey.isBlank()) return null;
+		return records.findByResourceTypeAndResourceIdAndIdempotencyKey(type, id, idempotencyKey)
+				.map(record -> {
+					authorizeResource(type, id, record.getOfferingId(), auth);
+					return record;
+				})
+				.orElse(null);
 	}
 
 	public TeachingReviewRecord approve(String type, String id, String versionId, Authentication auth) {
