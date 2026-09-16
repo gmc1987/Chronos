@@ -4,6 +4,8 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Getter @Setter @NoArgsConstructor
@@ -14,6 +16,7 @@ public class QuestionVersion extends BaseEntity {
 	@Column(name = "version_no", nullable = false)
 	private Integer versionNo;
 	@Column(name = "snapshot_json", nullable = false, columnDefinition = "jsonb")
+	@JdbcTypeCode(SqlTypes.JSON)
 	private String snapshotJson;
 	@Column(name = "snapshot_hash", nullable = false, length = 64)
 	private String snapshotHash;
