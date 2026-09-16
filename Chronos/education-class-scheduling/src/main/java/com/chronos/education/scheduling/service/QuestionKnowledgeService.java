@@ -403,11 +403,17 @@ public class QuestionKnowledgeService {
 			snapshot.put("score", q.getScore()); snapshot.put("objective", q.isObjective());
 			snapshot.put("answerSchemaJson", q.getAnswerSchemaJson());
 			snapshot.put("usableFrom", q.getUsableFrom()); snapshot.put("usableUntil", q.getUsableUntil());
-			snapshot.put("options", options.findByQuestionIdOrderBySortOrderAsc(q.getId()));
+			snapshot.put("options", options.findByQuestionIdOrderBySortOrderAsc(q.getId()).stream()
+					.map(option -> Map.of(
+							"optionKey", option.getOptionKey(),
+							"optionText", option.getOptionText(),
+							"sortOrder", option.getSortOrder(),
+							"correct", option.isCorrect()))
+					.toList());
 			snapshot.put("knowledgePointIds", links.findByQuestionId(q.getId()).stream().map(QuestionKnowledgePoint::getKnowledgePointId).toList());
 			snapshot.put("fileIds", files.findByQuestionId(q.getId()).stream().map(QuestionFile::getFileId).toList());
 			String body = json.writeValueAsString(snapshot);
-			int next = q.getCurrentVersionNo() + 1; q.setCurrentVersionNo(next);
+			int next = (q.getCurrentVersionNo() == null ? 0 : q.getCurrentVersionNo()) + 1; q.setCurrentVersionNo(next);
 			QuestionVersion version = new QuestionVersion(); version.setQuestionId(q.getId());
 			version.setVersionNo(next); version.setSnapshotJson(body); version.setSnapshotHash(hash(body)); version.setStatus(status);
 			versions.save(version);
