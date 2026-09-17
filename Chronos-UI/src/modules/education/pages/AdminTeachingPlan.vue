@@ -70,7 +70,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
-import { archiveTeachingDomainApi, createPlanItem, createTeachingPlan, teachingCenterOfferings, offeringPlans, teachingPlanDetail, teachingPlanVersions, transitionTeachingDomainApi, updatePlanItem, updateTeachingPlan } from '../api/teachingCenter'
+import { archiveTeachingDomainApi, createPlanItem, createTeachingPlan, teachingCenterOfferings, offeringPlans, teachingPlanDetail, teachingPlanVersions, submitTeachingPlan, updatePlanItem, updateTeachingPlan } from '../api/teachingCenter'
 const offerings = ref([]); const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20); const loading = ref(false)
 const filters = reactive({ offeringId: '' }); const planTypes = ref([])
 const editor = ref(false); const editing = ref(''); const wizardStep = ref(0); const formRef = ref()
@@ -93,7 +93,7 @@ const removeChapter = (i) => chapters.value.splice(i, 1)
 const duplicateChapter = (i) => chapters.value.splice(i + 1, 0, { ...chapters.value[i], id: undefined, chapterName: `${chapters.value[i].chapterName}（副本）` })
 const moveChapter = (i, delta) => { const target = i + delta; if (target < 0 || target >= chapters.value.length) return; [chapters.value[i], chapters.value[target]] = [chapters.value[target], chapters.value[i]] }
 const saveChapters = async () => { if (chapterError.value) return ElMessage.warning(chapterError.value); try { await Promise.all(chapters.value.map((item, i) => { const payload = { chapterNo: i + 1, chapterName: item.chapterName, lessonHours: item.lessonHours, weekStart: item.weekStart, weekEnd: item.weekEnd, objectives: item.objectives || '—', keyPoints: item.keyPoints || '—', difficultPoints: item.difficultPoints || '—', sortOrder: i }; return item.id ? updatePlanItem(item.id, payload) : createPlanItem(selected.value.id, payload) })); ElMessage.success('章节已保存'); await openWorkbench(selected.value) } catch (e) { ElMessage.error(e.message) } }
-const submitPlan = async () => { try { await transitionTeachingDomainApi('plans', selected.value.id, 'SUBMITTED'); ElMessage.success('已提交审核'); workbench.value = false; await load() } catch (e) { ElMessage.error(e.message) } }
+const submitPlan = async () => { try { await submitTeachingPlan(selected.value.id, `plan-${selected.value.id}-${Date.now()}`); ElMessage.success('已提交审核'); workbench.value = false; await load() } catch (e) { ElMessage.error(e.message) } }
 const reviewText = computed(() => reviewStatus.value?.status || '待提交')
 const archive = async (row) => { await ElMessageBox.confirm('归档后将从默认列表隐藏，是否继续？', '确认'); try { await archiveTeachingDomainApi('plans', row.id); ElMessage.success('已归档'); await load() } catch (e) { ElMessage.error(e.message) } }
 onMounted(async () => { try { const [o, d] = await Promise.all([teachingCenterOfferings(), dictionaryOptions('EDU_TEACHING_PLAN_TYPE')]); offerings.value = o.data || []; planTypes.value = (d.data || []).map(x => ({ label: x.dictName || x.itemName || x.name || x.label, value: x.dictValue || x.itemValue || x.value || x.code })); if (!filters.offeringId && offerings.value[0]) filters.offeringId = offerings.value[0].id; await load() } catch (e) { ElMessage.error(e.message) } })

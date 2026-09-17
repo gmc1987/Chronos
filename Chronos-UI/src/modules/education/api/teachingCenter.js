@@ -33,10 +33,16 @@ export const createTeachingPlan = body => http.post('/education/teaching/plans',
 export const updateTeachingPlan = (id, body) => http.put(`/education/teaching/plans/${encodeURIComponent(id)}`, body)
 export const teachingPlanDetail = id => http.get(`/education/teaching/plans/${encodeURIComponent(id)}`)
 export const teachingPlanVersions = id => http.get(`/education/teaching/plans/${encodeURIComponent(id)}/versions`)
+export const submitTeachingPlan = (id, idempotencyKey) =>
+  http.post(`/education/teaching/plans/${encodeURIComponent(id)}/submit`, null,
+    idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined)
 export const lessonPlanDetail = id => http.get(`/education/teaching/lessons/${encodeURIComponent(id)}`)
 export const lessonPlanVersions = id => http.get(`/education/teaching/lessons/${encodeURIComponent(id)}/versions`)
 export const createLessonPlan = body => http.post('/education/teaching/lessons', body)
 export const updateLessonPlan = (id, body) => http.put(`/education/teaching/lessons/${encodeURIComponent(id)}`, body)
+export const submitLessonPlan = (id, idempotencyKey) =>
+  http.post(`/education/teaching/lessons/${encodeURIComponent(id)}/submit`, null,
+    idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined)
 export const createPlanItem = (planId, body) => http.post(`/education/teaching/plans/${encodeURIComponent(planId)}/items`, body)
 export const updatePlanItem = (id, body) => http.put(`/education/teaching/plan-items/${encodeURIComponent(id)}`, body)
 export const getPreparation = id => http.get(`/education/teaching/preparations/${encodeURIComponent(id)}`)
