@@ -70,7 +70,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
-import { archiveTeachingDomainApi, createPlanItem, createTeachingPlan, teachingCenterOfferings, offeringPlans, teachingPlanDetail, teachingPlanVersions, updatePlanItem, updateTeachingPlan } from '../api/teachingCenter'
+import { archiveTeachingDomainApi, createPlanItem, createTeachingPlan, teachingCenterOfferings, offeringPlans, teachingPlanDetail, teachingPlanVersions, transitionTeachingDomainApi, updatePlanItem, updateTeachingPlan } from '../api/teachingCenter'
 const offerings = ref([]); const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20); const loading = ref(false)
 const filters = reactive({ offeringId: '' }); const planTypes = ref([])
 const editor = ref(false); const editing = ref(''); const wizardStep = ref(0); const formRef = ref()
