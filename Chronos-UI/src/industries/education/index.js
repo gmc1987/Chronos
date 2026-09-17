@@ -28,6 +28,8 @@ const AdminKnowledgePoints = () => import('../../modules/education/pages/AdminKn
 const AdminResearch = () => import('../../modules/education/pages/AdminResearch.vue')
 const AdminMistakes = () => import('../../modules/education/pages/AdminMistakes.vue')
 const PortalTeachingCenter = () => import('../../modules/education/pages/PortalTeachingCenter.vue')
+const AdminMeetings = () => import('../../modules/education/pages/AdminMeetings.vue')
+const AdminMeetingRooms = () => import('../../modules/education/pages/AdminMeetingRooms.vue')
 
 export const educationIndustry = {
   code: 'EDUCATION',
@@ -46,6 +48,8 @@ export const educationIndustry = {
     { path: '/admin/education/exam/invigilation', name: 'admin-education-exam-invigilation', component: AdminExamInvigilation },
     { path: '/admin/education/exam/rooms', name: 'admin-education-exam-rooms', component: AdminExamRooms },
     { path: '/admin/education/exam/paper-analysis', name: 'admin-education-exam-paper-analysis', component: AdminExamPaperAnalysis },
+    { path: '/admin/education/meeting/manage', name: 'admin-education-meetings', component: AdminMeetings },
+    { path: '/admin/education/meeting/rooms', name: 'admin-education-meeting-rooms', component: AdminMeetingRooms },
     { path: '/admin/education/knowledge', name: 'admin-education-knowledge', component: AdminKnowledgeBases },
     { path: '/admin/education/agents', name: 'admin-education-agents', component: AdminEducationAgents },
     { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },

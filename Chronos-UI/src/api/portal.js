@@ -34,3 +34,5 @@ export const readPortalPublication = (id) => http.post(`/publications/${id}/read
 export const downloadPortalPublicationAttachment = (id) => http.download(`/publications/attachments/${id}`)
 export const notificationChannelPreferences = () => http.get('/message/channel-preferences')
 export const saveNotificationChannelPreference = (channel, payload) => http.put(`/message/channel-preferences/${channel}`, payload)
+export const portalMeetings = () => http.get('/portal/education/meetings')
+export const respondToMeeting = (id, payload) => http.post(`/portal/education/meetings/${id}/response`, payload)

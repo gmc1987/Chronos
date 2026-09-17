@@ -178,6 +178,22 @@ export const resubmitWorkflowTask = (id, payload) => http.post(`/workflow-tasks/
 export const transferWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/transfer`, payload)
 export const addSignWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/add-sign`, payload)
 export const ccWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/cc`, payload)
+
+// 会议中心：会议与会议室分开管理，发布时由后端完成最终冲突校验。
+export const listMeetingRooms = () => http.get('/admin/education/meeting/rooms')
+export const listMeetingParticipantOptions = (keyword = '') => http.get(
+  `/admin/education/meeting/participant-options?${qs({ keyword })}`,
+)
+export const createMeetingRoom = (payload) => http.post('/admin/education/meeting/rooms', payload)
+export const updateMeetingRoom = (id, payload) => http.put(`/admin/education/meeting/rooms/${id}`, payload)
+export const deleteMeetingRoom = (id) => http.delete(`/admin/education/meeting/rooms/${id}`)
+export const listMeetings = () => http.get('/admin/education/meetings')
+export const createMeeting = (payload) => http.post('/admin/education/meetings', payload)
+export const updateMeeting = (id, payload) => http.put(`/admin/education/meetings/${id}`, payload)
+export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id}`)
+export const publishMeeting = (id) => http.post(`/admin/education/meetings/${id}/publish`)
+export const decideMeetingRoom = (id, payload) => http.post(`/admin/education/meetings/${id}/room-decision`, payload)
+export const cancelMeeting = (id, payload) => http.post(`/admin/education/meetings/${id}/cancel`, payload)
 export const returnWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/return`, payload)
 export const withdrawWorkflowInstance = (id, payload) => http.post(`/workflow-instances/${id}/withdraw`, payload)
 export const remindWorkflowTask = (id) => http.post(`/workflow-tasks/${id}/remind`)

@@ -6,6 +6,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 @Repository("adminUserRepository")
@@ -19,6 +20,21 @@ public interface IAdminUserRepository extends JpaRepository<AdminUser, String> {
 	long countByOrganizationId(String organizationId);
 
 	List<AdminUser> findByRoles_Id(String roleId);
+
+	@Query("""
+			select account from AdminUser account
+			where account.status = 1
+			  and (account.accountLocked is null or account.accountLocked = false)
+			  and (
+			    :keyword = ''
+			    or lower(account.username) like lower(concat('%', :keyword, '%'))
+			    or lower(coalesce(account.displayName, '')) like lower(concat('%', :keyword, '%'))
+			  )
+			order by coalesce(account.displayName, account.username), account.username
+			""")
+	List<AdminUser> searchActiveMeetingUsers(
+			@Param("keyword") String keyword,
+			Pageable pageable);
 
 	/** 查询真正拥有指定原子权限的有效账号，供业务事故告警精确触达。 */
 	@Query(value = """

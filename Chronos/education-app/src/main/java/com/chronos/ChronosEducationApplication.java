@@ -11,8 +11,9 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         "com.chronos.model",
         "com.chronos.message.model",
         "com.chronos.file.model",
-        "com.chronos.industry.model",
-        "com.chronos.education.scheduling.model",
+		"com.chronos.industry.model",
+		"com.chronos.education.scheduling.model",
+		"com.chronos.education.meeting.model",
         "com.chronos.knowledge.model",
         "com.chronos.ai.model"
 })
@@ -20,8 +21,9 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         "com.chronos.Idao",
         "com.chronos.message.Idao",
         "com.chronos.file.dao",
-        "com.chronos.industry.dao",
-        "com.chronos.education.scheduling.dao",
+		"com.chronos.industry.dao",
+		"com.chronos.education.scheduling.dao",
+		"com.chronos.education.meeting.dao",
         "com.chronos.knowledge.dao",
         "com.chronos.ai.dao"
 })

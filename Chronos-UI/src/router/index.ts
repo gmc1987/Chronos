@@ -41,6 +41,7 @@ const PortalApplications = () => import('../modules/portal/pages/PortalApplicati
 const PortalEducationSchedule = () => import('../modules/education/pages/PortalEducationSchedule.vue')
 const PortalExamInvigilation = () => import('../modules/education/pages/PortalExamInvigilation.vue')
 const PortalMyExams = () => import('../modules/education/pages/PortalMyExams.vue')
+const PortalMeetings = () => import('../modules/education/pages/PortalMeetings.vue')
 const AdminTeachingPlan = () => import('../modules/education/pages/AdminTeachingPlan.vue')
 const AdminLessonPlans = () => import('../modules/education/pages/AdminLessonPlans.vue')
 const AdminPreparation = () => import('../modules/education/pages/AdminPreparation.vue')
@@ -75,6 +76,7 @@ const router = createRouter({
         { path: 'education/schedule', name: 'portal-education-schedule', component: PortalEducationSchedule },
         { path: 'education/exam/invigilation', name: 'portal-education-exam-invigilation', component: PortalExamInvigilation },
         { path: 'education/exam/my-exams', name: 'portal-education-my-exams', component: PortalMyExams },
+        { path: 'education/meetings', name: 'portal-education-meetings', component: PortalMeetings },
         { path: 'education/homework', name: 'portal-education-homework', component: PortalHomework },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
         { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
