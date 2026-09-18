@@ -10,6 +10,7 @@ import java.util.Set;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -113,6 +114,22 @@ public class MeetingCenterService {
 		return meetings.findAllByOrderByStartTimeDesc().stream()
 				.map(this::view)
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public Page<MeetingView> meetingPage(
+			String keyword,
+			String status,
+			int page,
+			int size) {
+		// 会议数量会持续增长，管理端分页必须在数据库执行，不能先读取全表再截取。
+		int safePage = Math.max(page, 0);
+		int safeSize = Math.min(Math.max(size, 1), 200);
+		return meetings.search(
+				normalizeSearch(keyword),
+				normalizeSearch(status).toUpperCase(),
+				PageRequest.of(safePage, safeSize))
+				.map(this::view);
 	}
 
 	@Transactional(readOnly = true)
@@ -347,6 +364,10 @@ public class MeetingCenterService {
 				throw new IllegalArgumentException("线上会议链接格式无效");
 			}
 		}
+	}
+
+	private String normalizeSearch(String value) {
+		return value == null ? "" : value.trim();
 	}
 
 	private ParticipantChange replaceParticipants(

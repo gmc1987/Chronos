@@ -188,6 +188,9 @@ export const createMeetingRoom = (payload) => http.post('/admin/education/meetin
 export const updateMeetingRoom = (id, payload) => http.put(`/admin/education/meeting/rooms/${id}`, payload)
 export const deleteMeetingRoom = (id) => http.delete(`/admin/education/meeting/rooms/${id}`)
 export const listMeetings = () => http.get('/admin/education/meetings')
+export const pageMeetings = (params = {}) => http.get(
+  `/admin/education/meetings/page?${qs(params)}`,
+)
 export const createMeeting = (payload) => http.post('/admin/education/meetings', payload)
 export const updateMeeting = (id, payload) => http.put(`/admin/education/meetings/${id}`, payload)
 export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id}`)

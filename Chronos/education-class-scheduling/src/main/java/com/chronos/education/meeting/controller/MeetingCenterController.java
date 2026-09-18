@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.chronos.commons.model.ResultData;
+import com.chronos.commons.model.PageView;
 import com.chronos.education.meeting.model.MeetingCommands;
 import com.chronos.education.meeting.model.MeetingRoom;
 import com.chronos.education.meeting.model.MeetingView;
@@ -21,6 +22,7 @@ import com.chronos.education.meeting.service.MeetingCenterService;
 import com.chronos.security.IamAuthorization;
 
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 
 @RestController
 @RequiredArgsConstructor
@@ -68,10 +70,24 @@ public class MeetingCenterController {
 		return ok(service.allMeetings());
 	}
 
+	@GetMapping("/admin/education/meetings/page")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:view','education:meeting:manage')")
+	public ResultData<PageView<MeetingView>> meetingPage(
+			@RequestParam(defaultValue = "") String keyword,
+			@RequestParam(defaultValue = "") String status,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size) {
+		return ok(PageView.from(service.meetingPage(
+				keyword,
+				status,
+				page,
+				size)));
+	}
+
 	@PostMapping("/admin/education/meetings")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:create','education:meeting:manage')")
 	public ResultData<MeetingView> create(
-			@RequestBody MeetingCommands.Save command,
+			@RequestBody @Valid MeetingCommands.Save command,
 			Authentication authentication) {
 		return ok(service.saveMeeting(null, command, authentication.getName()));
 	}
@@ -80,7 +96,7 @@ public class MeetingCenterController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:update','education:meeting:manage')")
 	public ResultData<MeetingView> update(
 			@PathVariable String id,
-			@RequestBody MeetingCommands.Save command,
+			@RequestBody @Valid MeetingCommands.Save command,
 			Authentication authentication) {
 		return ok(service.saveMeeting(id, command, authentication.getName()));
 	}

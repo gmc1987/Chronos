@@ -8,7 +8,7 @@ import {
   deleteMeeting,
   listMeetingRooms,
   listMeetingParticipantOptions,
-  listMeetings,
+  pageMeetings,
   publishMeeting,
   updateMeeting,
 } from '../../../api/admin'
@@ -18,6 +18,10 @@ const rooms = ref([])
 const users = ref([])
 const dialogVisible = ref(false)
 const busy = ref(false)
+const page = ref(1)
+const size = ref(20)
+const total = ref(0)
+const filters = reactive({ keyword: '', status: '' })
 const form = reactive({})
 const unwrap = response => response?.data?.content || response?.data || []
 const typeLabels = { ONSITE: '线下会议', ONLINE: '线上会议', HYBRID: '混合会议' }
@@ -55,11 +59,17 @@ async function load() {
   busy.value = true
   try {
     const [meetingResult, roomResult, userResult] = await Promise.all([
-      listMeetings(),
+      pageMeetings({
+        keyword: filters.keyword,
+        status: filters.status,
+        page: page.value - 1,
+        size: size.value,
+      }),
       listMeetingRooms(),
       listMeetingParticipantOptions(),
     ])
-    meetings.value = unwrap(meetingResult)
+    meetings.value = meetingResult?.data?.content || []
+    total.value = meetingResult?.data?.totalElements || 0
     rooms.value = unwrap(roomResult).filter(item => item.enabled)
     users.value = unwrap(userResult)
   } finally {
@@ -163,6 +173,18 @@ onMounted(load)
       title="人工审批的会议室只在批准后发送参会邀请；线上会议暂保存第三方加入链接。"
       type="info" :closable="false"
     />
+    <el-form inline class="filters" @submit.prevent="page = 1; load()">
+      <el-form-item label="关键词">
+        <el-input v-model="filters.keyword" clearable placeholder="会议主题或组织者" />
+      </el-form-item>
+      <el-form-item label="状态">
+        <el-select v-model="filters.status" clearable placeholder="全部状态" style="width: 160px">
+          <el-option v-for="(label, value) in statusLabels" :key="value" :label="label" :value="value" />
+        </el-select>
+      </el-form-item>
+      <el-button type="primary" @click="page = 1; load()">查询</el-button>
+      <el-button @click="filters.keyword = ''; filters.status = ''; page = 1; load()">重置</el-button>
+    </el-form>
     <el-table v-loading="busy" :data="meetings" border>
       <el-table-column label="会议" min-width="220">
         <template #default="scope">
@@ -192,6 +214,16 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="size"
+      :total="total"
+      :page-sizes="[20, 50, 100]"
+      layout="total, sizes, prev, pager, next"
+      class="pagination"
+      @current-change="load"
+      @size-change="page = 1; load()"
+    />
 
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑会议' : '新建会议'" width="760px">
       <el-form label-width="110px">
@@ -232,5 +264,7 @@ header { display: flex; align-items: center; justify-content: space-between; mar
 h2 { margin: 0 0 6px; }
 p, .muted { margin: 0; color: #84909a; }
 .el-alert { margin-bottom: 14px; }
+.filters { margin-bottom: 6px; }
+.pagination { justify-content: flex-end; margin-top: 16px; }
 .el-select { width: 100%; }
 </style>

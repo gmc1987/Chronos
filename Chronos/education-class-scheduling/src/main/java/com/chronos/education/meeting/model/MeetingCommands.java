@@ -3,6 +3,10 @@ package com.chronos.education.meeting.model;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 public final class MeetingCommands {
 	private MeetingCommands() {
 	}
@@ -22,17 +26,17 @@ public final class MeetingCommands {
 	}
 
 	public record Save(
-			String title,
-			String agenda,
-			String meetingType,
-			LocalDateTime startTime,
-			LocalDateTime endTime,
+			@NotBlank @Size(max = 200) String title,
+			@Size(max = 10000) String agenda,
+			@NotBlank @Size(max = 16) String meetingType,
+			@NotNull LocalDateTime startTime,
+			@NotNull LocalDateTime endTime,
 			String roomId,
-			String meetingProvider,
-			String externalMeetingId,
-			String joinUrl,
-			String onlineAccessCode,
-			List<String> participantUsernames,
+			@Size(max = 32) String meetingProvider,
+			@Size(max = 128) String externalMeetingId,
+			@Size(max = 1000) String joinUrl,
+			@Size(max = 128) String onlineAccessCode,
+			@Size(max = 500) List<@NotBlank @Size(max = 128) String> participantUsernames,
 			Long recordVersion) {
 	}
 

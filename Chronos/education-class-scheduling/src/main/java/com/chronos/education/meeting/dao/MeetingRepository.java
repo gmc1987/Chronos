@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +17,19 @@ public interface MeetingRepository extends JpaRepository<Meeting, String> {
 	List<Meeting> findAllByOrderByStartTimeDesc();
 
 	List<Meeting> findByOrganizerUsernameOrderByStartTimeDesc(String username);
+
+	@Query("""
+			select meeting from Meeting meeting
+			where (:status = '' or meeting.status = :status)
+			  and (:keyword = ''
+			       or lower(meeting.title) like lower(concat('%', :keyword, '%'))
+			       or lower(meeting.organizerUsername) like lower(concat('%', :keyword, '%')))
+			order by meeting.startTime desc
+			""")
+	Page<Meeting> search(
+			@Param("keyword") String keyword,
+			@Param("status") String status,
+			Pageable pageable);
 
 	boolean existsByRoomId(String roomId);
 
