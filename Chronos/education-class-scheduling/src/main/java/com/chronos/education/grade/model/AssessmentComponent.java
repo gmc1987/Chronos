@@ -1,0 +1,4 @@
+package com.chronos.education.grade.model;
+import com.chronos.model.pojo.BaseEntity; import jakarta.persistence.*; import lombok.*; import java.math.BigDecimal;
+@Entity @Getter @Setter @NoArgsConstructor @Table(name="edu_assessment_component",uniqueConstraints=@UniqueConstraint(name="uk_edu_assessment_component_code",columnNames={"scheme_id","code"}))
+public class AssessmentComponent extends BaseEntity { @Column(name="scheme_id",nullable=false,length=64) private String schemeId; @Column(nullable=false,length=64) private String code; @Column(nullable=false,length=200) private String name; @Column(name="source_type",nullable=false,length=16) private String sourceType="MANUAL"; @Column(nullable=false,precision=8,scale=2) private BigDecimal weight; @Column(name="max_score",nullable=false,precision=8,scale=2) private BigDecimal maxScore; @Column(name="sort_order",nullable=false) private Integer sortOrder=0; }

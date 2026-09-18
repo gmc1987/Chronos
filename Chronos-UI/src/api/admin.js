@@ -197,6 +197,30 @@ export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id
 export const publishMeeting = (id) => http.post(`/admin/education/meetings/${id}/publish`)
 export const decideMeetingRoom = (id, payload) => http.post(`/admin/education/meetings/${id}/room-decision`, payload)
 export const cancelMeeting = (id, payload) => http.post(`/admin/education/meetings/${id}/cancel`, payload)
+
+// 成绩中心使用独立 score 路由，避免与年级管理的 grades 路由冲突。
+export const listAssessmentSchemes = (params = {}) => http.get(
+  `/admin/education/grades/schemes?${qs(params)}`,
+)
+export const createAssessmentScheme = (payload) => http.post('/admin/education/grades/schemes', payload)
+export const updateAssessmentScheme = (id, payload) => http.put(`/admin/education/grades/schemes/${id}`, payload)
+export const publishAssessmentScheme = (id, payload = {}) => http.post(
+  `/admin/education/grades/schemes/${id}/publish`, payload,
+)
+export const listGradebooks = (params = {}) => http.get(
+  `/admin/education/grades/gradebooks?${qs(params)}`,
+)
+export const createGradebook = (payload) => http.post('/admin/education/grades/gradebooks', payload)
+export const getGradebook = (id) => http.get(`/admin/education/grades/gradebooks/${id}`)
+export const updateGradebookItems = (id, payload) => http.put(
+  `/admin/education/grades/gradebooks/${id}/items`, payload,
+)
+export const submitGradebook = (id, payload = {}) => http.post(
+  `/admin/education/grades/gradebooks/${id}/submit`, payload,
+)
+export const publishGradebook = (id, payload = {}) => http.post(
+  `/admin/education/grades/gradebooks/${id}/publish`, payload,
+)
 export const returnWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/return`, payload)
 export const withdrawWorkflowInstance = (id, payload) => http.post(`/workflow-instances/${id}/withdraw`, payload)
 export const remindWorkflowTask = (id) => http.post(`/workflow-tasks/${id}/remind`)

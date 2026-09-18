@@ -42,11 +42,13 @@ const PortalEducationSchedule = () => import('../modules/education/pages/PortalE
 const PortalExamInvigilation = () => import('../modules/education/pages/PortalExamInvigilation.vue')
 const PortalMyExams = () => import('../modules/education/pages/PortalMyExams.vue')
 const PortalMeetings = () => import('../modules/education/pages/PortalMeetings.vue')
+const PortalGrades = () => import('../modules/education/pages/PortalGrades.vue')
 const AdminTeachingPlan = () => import('../modules/education/pages/AdminTeachingPlan.vue')
 const AdminLessonPlans = () => import('../modules/education/pages/AdminLessonPlans.vue')
 const AdminPreparation = () => import('../modules/education/pages/AdminPreparation.vue')
 const AdminCourseware = () => import('../modules/education/pages/AdminCourseware.vue')
 const AdminMaterials = () => import('../modules/education/pages/AdminMaterials.vue')
+const AdminScoreCenter = () => import('../modules/education/pages/AdminScoreCenter.vue')
 const TeachingResourceWorkbench = () => import('../modules/education/pages/TeachingResourceWorkbench.vue')
 const AdminHomework = () => import('../modules/education/pages/AdminHomework.vue')
 const PortalHomework = () => import('../modules/education/pages/PortalHomework.vue')
@@ -77,6 +79,7 @@ const router = createRouter({
         { path: 'education/exam/invigilation', name: 'portal-education-exam-invigilation', component: PortalExamInvigilation },
         { path: 'education/exam/my-exams', name: 'portal-education-my-exams', component: PortalMyExams },
         { path: 'education/meetings', name: 'portal-education-meetings', component: PortalMeetings },
+        { path: 'education/grades', name: 'portal-education-grades', component: PortalGrades },
         { path: 'education/homework', name: 'portal-education-homework', component: PortalHomework },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
         { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
@@ -131,6 +134,7 @@ const router = createRouter({
         { path: 'education/courseware', redirect: { name: 'admin-education-courseware' } },
         { path: 'education/teaching-center/material', name: 'admin-education-material', component: AdminMaterials },
         { path: 'education/teaching-center/materials', redirect: { name: 'admin-education-material' } },
+        { path: 'education/score-center', name: 'admin-education-score-center', component: AdminScoreCenter },
         { path: 'education/materials', redirect: { name: 'admin-education-material' } },
         { path: 'teaching/resources', name: 'teaching-resources', component: TeachingResourceWorkbench },
         { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminHomework },
