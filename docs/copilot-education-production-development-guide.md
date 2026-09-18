@@ -90,6 +90,8 @@ com.chronos.education.<domain>.dao
 
 ## 5 数据库与Flyway规则
 
+当前 `V20261121` 已由 Codex 用于会议中心执行闭环。Copilot 开工时必须重新扫描迁移目录，不得再使用该版本；后续版本仍以实际目录和 `flyway_schema_history` 为准。
+
 1. 修改前查询迁移目录和 `flyway_schema_history`，选择下一个未占用版本。
 2. 不得修改已经执行的迁移文件。
 3. 新列按 nullable、回填、校验、NOT NULL 的顺序实施。
@@ -99,6 +101,75 @@ com.chronos.education.<domain>.dao
 7. 菜单、权限、角色授权和字典初始化必须幂等。
 8. 迁移脚本失败必须终止并返回可定位原因，不能静默跳过异常数据。
 9. Copilot每次提交只能申请一组连续版本，并在提交说明中列出版本号。
+
+## 5A 成绩中心开工前冻结决策
+
+以下决策已经由总架构确认，Copilot不再将其作为编码阻塞项：
+
+1. `ExamItemScore.candidateId` 通过 `ExamCandidate.id` 稳定关联，学生标识读取 `ExamCandidate.studentId`。不得根据姓名、座位号或学号文本猜测学生。
+2. 当前代码尚未发布考试成绩确认领域事件。成绩中心第一片不消费考试成绩；后续由考试中心增加显式“确认成绩”命令并发布 `ExamScoresConfirmedV1`。
+3. 当前作业中心没有 `HomeworkGradesPublished` 事件，`publishGrades` 只更新 `gradesPublished`。成绩中心第一片不消费该事件；后续由作业中心发布 `HomeworkGradesPublishedV1`。
+4. 现有 `EDU_TEACHING_CONTENT_REVIEW` 只用于教学内容审核，不能复用为成绩审核。成绩中心新建独立流程定义 `EDU_GRADEBOOK_REVIEW`。
+5. 权限按录入提交、审核、发布三类职责分离。默认禁止提交人审核本人数据，发布人使用独立权限；小型学校可给同一角色授予审核和发布权限，但同一成绩册仍不得自审。
+6. `CourseOffering` 已包含 `offeringMode` 和 `campusId`，并通过 `TeachingClassMember` 表达实际学生范围，足以支持第一片普通班、走班、合班和校区数据范围。它目前只支持一名主教师；协同教师不在成绩中心第一片扩展。
+7. 成绩册成员以规范化的 `edu_gradebook_student` 表作为事实来源，同时保存不可变快照和SHA-256。不能只用一个可变JSON字段承载全部成员。
+8. 学生成绩使用独立门户路由 `/portal/education/grades`，后端增加独立 `GradePortalContributionProvider`，providerCode 为 `GRADE`；不要把成绩逻辑继续塞入现有 `DATA` provider。
+9. `V20261121` 已分配给会议中心。仓库级为成绩中心预留 `V20261122` 至 `V20261124`，分别用于领域结构、菜单权限字典、审核流程初始化。真正执行前仍须核对实际 `flyway_schema_history`；如果数据库已有冲突，整体顺延，禁止修改已执行脚本。
+10. 成绩通知不使用 Publication API。Publication 面向人工发布的通知公告；成绩发布使用 `WorkflowNotificationService.enqueueUserEvent` 封装成独立 `GradeNotificationService`，通过现有Outbox可靠投递。
+
+考试事件的课程归属不能仅从 `ExamSession.subjectId` 推断。后续考试集成新增 `edu_exam_session_offering(session_id, offering_id)` 多对多映射，因为同一考试场次可能覆盖多个课程开设或行政班。事件按 offeringId 分组，至少包含：
+
+```text
+eventId eventType occurredAt payloadVersion
+examPlanId sessionId offeringId studentId
+rawScore maxScore specialStatus confirmedAt
+```
+
+作业成绩事件至少包含：
+
+```text
+eventId eventType occurredAt payloadVersion
+assignmentId offeringId studentId score maxScore publishedAt
+```
+
+成绩中心第一片只实现 MANUAL 来源的成绩项目和人工录入。事件DTO、消费者接口和幂等表可以预留，但不得伪造考试或作业事件，也不得直接修改考试、作业核心服务。
+
+`edu_gradebook_student` 至少保存：`gradebook_id,student_id,student_no,student_name,administrative_class_id,enrollment_status,source_member_id,enrolled_at,withdrawn_at,snapshot_version,snapshot_hash`。其中姓名和学号是创建成绩册时的追溯快照，不作为实时学生档案的事实来源。
+
+成绩册整体快照JSON结构冻结为：
+
+```json
+{
+  "snapshotVersion": 1,
+  "capturedAt": "ISO-8601",
+  "offering": {
+    "id": "string",
+    "offeringCode": "string",
+    "teachingClassName": "string",
+    "semesterCode": "string",
+    "courseCode": "string",
+    "courseName": "string",
+    "campusId": "string|null",
+    "offeringMode": "NORMAL|COMBINED"
+  },
+  "students": [
+    {
+      "studentId": "string",
+      "studentNo": "string",
+      "studentName": "string",
+      "administrativeClassId": "string|null",
+      "enrollmentStatus": "string",
+      "sourceMemberId": "string",
+      "enrolledAt": "ISO-8601|null",
+      "withdrawnAt": "ISO-8601|null"
+    }
+  ]
+}
+```
+
+JSON字段顺序必须稳定，使用UTF-8序列化后计算SHA-256，并在发布快照中同时保存 `snapshot_version` 和 `snapshot_hash`。
+
+`EDU_GRADEBOOK_REVIEW` v1流程固定为：开始 -> 教研审核 -> 教务审核 -> 结束。候选角色分别为 `EDU_GRADE_REVIEWER` 和 `EDU_ACADEMIC_APPROVER`，审批模式为 SINGLE，允许退回上一节点。流程结束只将成绩册置为 `APPROVED`，不自动发布；拥有 `education:score:gradebook:publish` 的独立发布人执行发布命令。服务层必须禁止提交人处理本人成绩册的审核任务。
 
 ## 6 第一阶段成绩中心
 
@@ -201,13 +272,15 @@ GET  /portal/education/grades/{id}
 
 ### 6.7 权限
 
-`education:grade:scheme:view/create/update/publish`、`education:grade:gradebook:view/create/update/submit/publish/export`、`education:grade:review`、`education:grade:change:request/approve`、`education:grade:privacy:view`。
+`education:score:scheme:view/create/update/publish`、`education:score:gradebook:view/create/update/submit/publish/export`、`education:score:review`、`education:score:change:request/approve`、`education:score:privacy:view`。
+
+注意：现有 `education:grade:*` 属于“年级管理”，禁止复用于成绩中心。已有 `education:score:*` 历史权限可以迁移绑定到新的成绩菜单，但需要按上述原子动作补齐，不能继续只依赖一个 `education:score:manage`。
 
 教师只能维护本人任课教学班。学生只能查看本人，家长必须通过有效监护关系。教务管理员也必须受校区或全校数据范围约束。
 
 ### 6.8 事件
 
-消费 `ExamScoresConfirmedV1`、`HomeworkGradesPublishedV1`；发布 `CourseGradesPublishedV1`、`CourseGradeChangedV1`。事件消费者按 eventId 幂等，找不到学生或教学班时进入死信而不是丢弃。
+第一片只发布 `CourseGradesPublishedV1`，不消费尚不存在的上游事件。后续考试、作业适配完成后再消费 `ExamScoresConfirmedV1`、`HomeworkGradesPublishedV1`；成绩更正切片再发布 `CourseGradeChangedV1`。事件消费者按 eventId 幂等，找不到学生或教学班时进入死信而不是丢弃。
 
 ### 6.9 验收标准
 
@@ -485,4 +558,3 @@ API请求响应样例
 Copilot收到本文后，应只启动“成绩中心第一交付切片”。在写代码前先输出当前实体、表、路由、菜单、权限和迁移版本审计结果，并列出将复用的 `CourseOffering`、`TeachingClassMember`、考试逐题得分、作业评分、Workflow、File、Message和Audit能力。审计确认不存在领域冲突后，再提交成绩中心第一片的字段、API和迁移计划。
 
 第一片验收通过之前，不得开始家校、督导、数据、集成或移动端。
-
