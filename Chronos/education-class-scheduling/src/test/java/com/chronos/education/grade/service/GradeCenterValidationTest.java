@@ -53,7 +53,7 @@ class GradeCenterValidationTest {
 		SchemeCommand command = new SchemeCommand(
 				"offering-1", "方案", BigDecimal.valueOf(100), BigDecimal.valueOf(60),
 				List.of(new ComponentCommand("final", "期末", "MANUAL",
-						BigDecimal.valueOf(60), BigDecimal.valueOf(100), 1)));
+						BigDecimal.valueOf(60), BigDecimal.valueOf(100), 1)), null);
 
 		assertThrows(IllegalArgumentException.class, () -> service.createScheme(command, "teacher"));
 	}
@@ -63,7 +63,7 @@ class GradeCenterValidationTest {
 		SchemeCommand command = new SchemeCommand(
 				"offering-1", "方案", BigDecimal.valueOf(100), BigDecimal.valueOf(60),
 				List.of(new ComponentCommand("exam", "考试", "EXAM",
-						BigDecimal.valueOf(100), BigDecimal.valueOf(100), 1)));
+						BigDecimal.valueOf(100), BigDecimal.valueOf(100), 1)), null);
 
 		assertThrows(IllegalArgumentException.class, () -> service.createScheme(command, "teacher"));
 	}
