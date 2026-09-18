@@ -187,7 +187,7 @@ POST /resources/{id}/archive    归档
 
 ### 5.5 集成事件
 
-- 消费 `ExamScoresConfirmed` 和 `HomeworkGradesPublished`。
+- 第一片只支持人工录入；考试和作业中心完成正式确认事件后，再消费 `ExamScoresConfirmedV1` 和 `HomeworkGradesPublishedV1`。
 - 发布 `CourseGradesPublished`、`CourseGradeChanged`、`StudentFailedCourseDetected`。
 - 数据中心消费发布快照，不直接扫描可变草稿表。
 
