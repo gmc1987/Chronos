@@ -371,6 +371,20 @@ public class EducationDataScopeService {
 		return scope.schoolIds().iterator().next();
 	}
 
+	public String requireSchoolForCampus(EducationDataScope scope, String campusId) {
+		if (!scope.fullAccess()) {
+			assertCampusAccess(scope, campusId);
+			return requireSingleSchool(scope);
+		}
+		if (organizations != null) {
+			return organizations.findById(campusId)
+					.map(Organization::getParentOrgId)
+					.map(Organization::getId)
+					.orElseThrow(() -> new AccessDeniedException("校区未关联学校"));
+		}
+		throw new AccessDeniedException("当前数据范围无法解析学校");
+	}
+
 	public List<CourseOffering> visibleOfferings(
 			EducationDataScope scope,
 			List<CourseOffering> values) {

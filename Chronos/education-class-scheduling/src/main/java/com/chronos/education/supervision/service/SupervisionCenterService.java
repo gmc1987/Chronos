@@ -69,7 +69,7 @@ public class SupervisionCenterService {
 	public SupervisionPlan createPlan(String actor, String name,
 			java.time.LocalDate startDate, java.time.LocalDate endDate, String campusId) {
 		EducationDataScope scope = dataScopes.resolve(actor);
-		String schoolId = dataScopes.requireSingleSchool(scope);
+		String schoolId = dataScopes.requireSchoolForCampus(scope, campusId);
 		dataScopes.assertCampusAccess(scope, campusId);
 		if (endDate.isBefore(startDate)) {
 			throw new IllegalArgumentException("督导计划结束日期不能早于开始日期");
