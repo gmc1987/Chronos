@@ -40,3 +40,8 @@ export const portalGrades = (params = {}) => http.get(`/portal/education/grades?
   Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
 )}`)
 export const portalGradeDetail = (id) => http.get(`/portal/education/grades/${id}`)
+export const portalFamilyChildren = () => http.get('/portal/education/family/children')
+export const portalFamilyNotices = () => http.get('/portal/education/family/notices')
+export const portalFamilyReceipt = (id, payload = {}) => http.post(
+  `/portal/education/family/notices/${id}/receipt`, payload,
+)

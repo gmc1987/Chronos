@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.edu_parent_account_binding (
     create_time timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_update_by varchar(128),
     last_update_time timestamp,
-    CONSTRAINT uk_edu_parent_account_binding UNIQUE (parent_id, username)
+    CONSTRAINT uk_edu_parent_account_binding_username UNIQUE (username)
 );
 CREATE INDEX IF NOT EXISTS idx_edu_parent_account_binding_username
     ON public.edu_parent_account_binding (username, status);

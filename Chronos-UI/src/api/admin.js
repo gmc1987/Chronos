@@ -192,6 +192,17 @@ export const pageMeetings = (params = {}) => http.get(
   `/admin/education/meetings/page?${qs(params)}`,
 )
 export const createMeeting = (payload) => http.post('/admin/education/meetings', payload)
+export const listHomeSchoolBindings = (params = {}) => http.get(`/admin/education/home-school/parent-bindings?${new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+)}`)
+export const createHomeSchoolBinding = (payload) => http.post('/admin/education/home-school/parent-bindings', payload)
+export const invalidateHomeSchoolBinding = (id) => http.post(`/admin/education/home-school/parent-bindings/${id}/invalidate`)
+export const listHomeSchoolNotices = (params = {}) => http.get(`/admin/education/home-school/notices?${new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+)}`)
+export const createHomeSchoolNotice = (payload) => http.post('/admin/education/home-school/notices', payload)
+export const publishHomeSchoolNotice = (id) => http.post(`/admin/education/home-school/notices/${id}/publish`)
+export const homeSchoolNoticeReceipts = (id) => http.get(`/admin/education/home-school/notices/${id}/receipts`)
 export const updateMeeting = (id, payload) => http.put(`/admin/education/meetings/${id}`, payload)
 export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id}`)
 export const publishMeeting = (id) => http.post(`/admin/education/meetings/${id}/publish`)

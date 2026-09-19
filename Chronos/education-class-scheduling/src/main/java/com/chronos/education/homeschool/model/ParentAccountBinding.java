@@ -10,7 +10,7 @@ import lombok.Setter;
 @Entity
 @Getter @Setter @NoArgsConstructor
 @Table(name = "edu_parent_account_binding",
-		uniqueConstraints = @UniqueConstraint(name = "uk_edu_parent_account_binding", columnNames = {"parent_id", "username"}))
+		uniqueConstraints = @UniqueConstraint(name = "uk_edu_parent_account_binding_username", columnNames = {"username"}))
 public class ParentAccountBinding extends BaseEntity {
 	@Column(name = "parent_id", length = 64, nullable = false) private String parentId;
 	@Column(name = "username", length = 100, nullable = false) private String username;

@@ -45,9 +45,14 @@ public class HomeSchoolService {
 		ParentProfile parent = parents.findById(command.parentId())
 				.orElseThrow(() -> new IllegalArgumentException("家长档案不存在"));
 		if (!"ACTIVE".equals(parent.getStatus())) throw new IllegalStateException("家长档案已失效");
-		ParentAccountBinding value = new ParentAccountBinding();
+		ParentAccountBinding value = bindings.findByUsername(command.username())
+				.orElseGet(ParentAccountBinding::new);
+		if ("ACTIVE".equals(value.getStatus())
+				&& !Objects.equals(value.getParentId(), parent.getId())) {
+			throw new IllegalStateException("登录账号已绑定其他家长");
+		}
 		value.setParentId(parent.getId()); value.setUsername(command.username());
-		value.setVerifiedAt(LocalDateTime.now()); value.setStatus("ACTIVE");
+		value.setVerifiedAt(LocalDateTime.now()); value.setInvalidatedAt(null); value.setStatus("ACTIVE");
 		return binding(bindings.save(value));
 	}
 
