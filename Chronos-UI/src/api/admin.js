@@ -218,6 +218,7 @@ export const listGradebooks = (params = {}) => http.get(
 )
 export const createGradebook = (payload) => http.post('/admin/education/grades/gradebooks', payload)
 export const getGradebook = (id) => http.get(`/admin/education/grades/gradebooks/${id}`)
+export const listGradebookSnapshots = (id) => http.get(`/admin/education/grades/gradebooks/${id}/snapshots`)
 export const updateGradebookItems = (id, payload) => http.put(
   `/admin/education/grades/gradebooks/${id}/items`, payload,
 )
