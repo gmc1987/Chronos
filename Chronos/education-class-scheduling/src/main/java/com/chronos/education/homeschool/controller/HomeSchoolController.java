@@ -42,6 +42,9 @@ public class HomeSchoolController {
 	@GetMapping("/portal/education/family/notices")
 	@PreAuthorize("hasAuthority('education:home-school:notice:view')")
 	public ResultData<List<FamilyNoticeResponse>> familyNotices(Authentication authentication) { return ok(service.familyNotices(authentication.getName())); }
+	@GetMapping("/portal/education/family/grades")
+	@PreAuthorize("hasAuthority('education:home-school:grade:view')")
+	public ResultData<?> grades(Authentication authentication) { return ok(service.familyGrades(authentication.getName())); }
 	@PostMapping("/portal/education/family/notices/{id}/receipt")
 	@PreAuthorize("hasAuthority('education:home-school:notice:update')")
 	public ResultData<NoticeTargetResponse> receipt(@PathVariable String id, @RequestBody(required = false) ReceiptCommand command, Authentication authentication) { return ok(service.receipt(id, command, authentication.getName())); }
