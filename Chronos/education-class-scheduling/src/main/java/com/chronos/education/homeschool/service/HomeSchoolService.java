@@ -135,6 +135,7 @@ public class HomeSchoolService {
 			if (target.getReadAt() == null) { target.setReadAt(LocalDateTime.now()); targets.save(target); }
 			result.add(new FamilyNoticeResponse(notice.getId(), target.getStudentId(), notice.getTitle(),
 					notice.getContent(), notice.getReceiptRequired(), notice.getPublishAt(), notice.getExpireAt(),
+					notice.getExpireAt() != null && notice.getExpireAt().isBefore(LocalDateTime.now()),
 					target.getReadAt(), target.getReceiptStatus(), target.getReceiptAt(), target.getReceiptComment()));
 		}
 		return result;
@@ -175,7 +176,20 @@ public class HomeSchoolService {
 	private boolean canClass(EducationDataScope scope, String classId) {
 		try { scopeService.assertClassAccess(scope, classId); return true; } catch (AccessDeniedException ex) { return false; }
 	}
-	private ParentBindingResponse binding(ParentAccountBinding v) { return new ParentBindingResponse(v.getId(), v.getParentId(), v.getUsername(), v.getStatus(), v.getVerifiedAt(), v.getInvalidatedAt()); }
-	private NoticeResponse notice(HomeNotice v) { return new NoticeResponse(v.getId(), v.getSchoolId(), v.getClassId(), v.getTitle(), v.getContent(), v.getReceiptRequired(), v.getPublishAt(), v.getExpireAt(), v.getStatus(), v.getPublisherUsername()); }
-	private NoticeTargetResponse target(HomeNoticeTarget v) { return new NoticeTargetResponse(v.getId(), v.getNoticeId(), v.getStudentId(), v.getParentId(), v.getDeliveryStatus(), v.getReadAt(), v.getReceiptStatus(), v.getReceiptAt(), v.getReceiptComment()); }
+	private ParentBindingResponse binding(ParentAccountBinding v) {
+		String parentName = parents.findById(v.getParentId()).map(ParentProfile::getParentName).orElse(null);
+		return new ParentBindingResponse(v.getId(), v.getParentId(), parentName, v.getUsername(), v.getStatus(), v.getVerifiedAt(), v.getInvalidatedAt());
+	}
+	private NoticeResponse notice(HomeNotice v) {
+		String className = classes.findById(v.getClassId()).map(AdministrativeClass::getClassName).orElse(null);
+		boolean expired = v.getExpireAt() != null && v.getExpireAt().isBefore(LocalDateTime.now());
+		return new NoticeResponse(v.getId(), v.getSchoolId(), v.getClassId(), className, v.getTitle(), v.getContent(),
+				v.getReceiptRequired(), v.getPublishAt(), v.getExpireAt(), v.getStatus(), expired, v.getPublisherUsername());
+	}
+	private NoticeTargetResponse target(HomeNoticeTarget v) {
+		String parentName = parents.findById(v.getParentId()).map(ParentProfile::getParentName).orElse(null);
+		String studentName = students.findById(v.getStudentId()).map(StudentProfile::getStudentName).orElse(null);
+		return new NoticeTargetResponse(v.getId(), v.getNoticeId(), v.getStudentId(), v.getParentId(), parentName,
+				studentName, v.getDeliveryStatus(), v.getReadAt(), v.getReceiptStatus(), v.getReceiptAt(), v.getReceiptComment());
+	}
 }
