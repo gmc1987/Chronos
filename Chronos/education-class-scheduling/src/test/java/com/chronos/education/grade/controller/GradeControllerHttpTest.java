@@ -117,8 +117,11 @@ class GradeControllerHttpTest {
 		mockMvc.perform(post("/admin/education/grades/gradebooks/book-1/publish"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("PUBLISHED"));
+		mockMvc.perform(post("/admin/education/grades/gradebooks/book-1/publish"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
-		verify(service).publish("book-1", "teacher-1");
+		verify(service, org.mockito.Mockito.times(2)).publish("book-1", "teacher-1");
 	}
 
 	@Test
