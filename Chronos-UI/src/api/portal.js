@@ -40,3 +40,7 @@ export const checkInMeeting = (id) => http.post(`/portal/education/meetings/${id
 export const updateMeetingActionStatus = (id, itemId, payload) => http.put(
   `/portal/education/meetings/${id}/action-items/${itemId}/status`, payload,
 )
+export const portalGrades = (params = {}) => http.get(`/portal/education/grades?${new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+)}`)
+export const portalGradeDetail = (id) => http.get(`/portal/education/grades/${id}`)

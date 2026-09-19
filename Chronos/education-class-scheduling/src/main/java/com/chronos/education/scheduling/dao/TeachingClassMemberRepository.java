@@ -18,5 +18,6 @@ public interface TeachingClassMemberRepository extends JpaRepository<TeachingCla
 	List<TeachingClassMember> findByStudentIdInAndEnrollmentStatus(
 			List<String> studentIds,
 			String enrollmentStatus);
+	List<TeachingClassMember> findByOfferingIdAndEnrollmentStatus(String offeringId, String enrollmentStatus);
 	Optional<TeachingClassMember> findByOfferingIdAndStudentId(String offeringId, String studentId);
 }

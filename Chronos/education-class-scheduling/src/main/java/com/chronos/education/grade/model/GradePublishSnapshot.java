@@ -1,0 +1,4 @@
+package com.chronos.education.grade.model;
+import com.chronos.model.pojo.BaseEntity; import jakarta.persistence.*; import lombok.*; import java.time.LocalDateTime;
+@Entity @Getter @Setter @NoArgsConstructor @Table(name="edu_grade_publish_snapshot",uniqueConstraints=@UniqueConstraint(name="uk_edu_grade_publish_snapshot",columnNames={"gradebook_id","version_no"}))
+public class GradePublishSnapshot extends BaseEntity { @Column(name="gradebook_id",nullable=false,length=64) private String gradebookId; @Column(name="version_no",nullable=false) private Integer versionNo; @Column(name="snapshot_json",nullable=false,columnDefinition="text") private String snapshotJson; @Column(name="published_by",nullable=false,length=128) private String publishedBy; @Column(name="published_at",nullable=false) private LocalDateTime publishedAt; @Column(name="snapshot_hash",nullable=false,length=64) private String snapshotHash; }

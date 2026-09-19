@@ -203,6 +203,30 @@ export const saveMeetingMinutes = (id, payload) => http.put(`/admin/education/me
 export const publishMeetingMinutes = (id) => http.post(`/admin/education/meetings/${id}/minutes/publish`)
 export const addMeetingActionItem = (id, payload) => http.post(`/admin/education/meetings/${id}/action-items`, payload)
 export const updateMeetingActionItem = (id, itemId, payload) => http.put(`/admin/education/meetings/${id}/action-items/${itemId}`, payload)
+
+// 成绩中心使用独立 score 路由，避免与年级管理的 grades 路由冲突。
+export const listAssessmentSchemes = (params = {}) => http.get(
+  `/admin/education/grades/schemes?${qs(params)}`,
+)
+export const createAssessmentScheme = (payload) => http.post('/admin/education/grades/schemes', payload)
+export const updateAssessmentScheme = (id, payload) => http.put(`/admin/education/grades/schemes/${id}`, payload)
+export const publishAssessmentScheme = (id, payload = {}) => http.post(
+  `/admin/education/grades/schemes/${id}/publish`, payload,
+)
+export const listGradebooks = (params = {}) => http.get(
+  `/admin/education/grades/gradebooks?${qs(params)}`,
+)
+export const createGradebook = (payload) => http.post('/admin/education/grades/gradebooks', payload)
+export const getGradebook = (id) => http.get(`/admin/education/grades/gradebooks/${id}`)
+export const updateGradebookItems = (id, payload) => http.put(
+  `/admin/education/grades/gradebooks/${id}/items`, payload,
+)
+export const submitGradebook = (id, payload = {}) => http.post(
+  `/admin/education/grades/gradebooks/${id}/submit`, payload,
+)
+export const publishGradebook = (id, payload = {}) => http.post(
+  `/admin/education/grades/gradebooks/${id}/publish`, payload,
+)
 export const returnWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/return`, payload)
 export const withdrawWorkflowInstance = (id, payload) => http.post(`/workflow-instances/${id}/withdraw`, payload)
 export const remindWorkflowTask = (id) => http.post(`/workflow-tasks/${id}/remind`)
@@ -219,6 +243,7 @@ export const readAllWorkflowNotifications = () => http.post('/workflow-notificat
 export const listDeadWorkflowOutbox = (params) => http.get(`/admin/workflow-outbox/dead?${qs(params)}`)
 export const retryWorkflowOutbox = (id) => http.post(`/admin/workflow-outbox/${id}/retry`)
 export const ignoreWorkflowOutbox = (id) => http.post(`/admin/workflow-outbox/${id}/ignore`)
+// 教育领域事件使用独立 Outbox；管理入口与流程消息并列展示，但不能混用重试接口。
 export const listDeadEducationOutbox = (params) => http.get(`/admin/education/domain-outbox/dead?${qs(params)}`)
 export const retryEducationOutbox = (id) => http.post(`/admin/education/domain-outbox/${id}/retry`)
 export const ignoreEducationOutbox = (id) => http.post(`/admin/education/domain-outbox/${id}/ignore`)
