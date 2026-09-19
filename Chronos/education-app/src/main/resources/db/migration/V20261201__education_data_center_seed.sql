@@ -1,20 +1,32 @@
-INSERT INTO edu_data_metric_definition(id,create_by,create_time,metric_code,metric_name,category,unit,definition)
-VALUES
-(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'STUDENT_COUNT','在籍学生数','ACADEMIC','人','按日报时点统计在籍学生'),
-(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'ACTIVE_CLASS_COUNT','有效行政班数','ACADEMIC','班','按日报时点统计有效行政班'),
-(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'SCHEDULE_UTILIZATION','课表资源利用率','SCHEDULING','%','已占用教学时段/可用教学时段'),
-(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'EXAM_SESSION_COUNT','考试场次','EXAM','场','已发布考试场次')
-ON CONFLICT(metric_code) DO NOTHING;
-INSERT INTO data_metric_definition(id,create_by,create_time,metric_code,metric_name,category,unit,definition,refresh_policy,owner,dimension_schema,source_version)
+INSERT INTO data_metric_definition(
+    id, create_by, create_time, metric_code, metric_name, category, unit, definition,
+    refresh_policy, owner, dimension_schema, source_version
+)
 VALUES
 (gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'STUDENT_COUNT','在籍学生数','ACADEMIC','人','按日报时点统计在籍学生','DAILY','education-admin','{}','v1'),
 (gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'ACTIVE_CLASS_COUNT','有效行政班数','ACADEMIC','班','按日报时点统计有效行政班','DAILY','education-admin','{}','v1'),
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'TEACHER_COUNT','启用教师数','ACADEMIC','人','按日报时点统计启用教师','DAILY','education-admin','{}','v1'),
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'OFFERING_COUNT','有效开课数','ACADEMIC','门','按日报时点统计有效课程开设','DAILY','education-admin','{}','v1'),
 (gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'SCHEDULE_UTILIZATION','课表资源利用率','SCHEDULING','%','排课利用率数据源尚未接入','DAILY','scheduling-admin','{}','unavailable'),
-(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'EXAM_SESSION_COUNT','考试场次','EXAM','场','已发布考试场次','DAILY','exam-admin','{}','v1')
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'SCHEDULE_CONFLICT_COUNT','排课冲突数','SCHEDULING','项','按已发布课表质量结果统计冲突','DAILY','scheduling-admin','{}','v1'),
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'COURSE_ADJUSTMENT_COUNT','调课次数','SCHEDULING','次','按日报时点统计调课记录','DAILY','scheduling-admin','{}','v1'),
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'EXAM_SESSION_COUNT','考试场次','EXAM','场','已发布考试场次','DAILY','exam-admin','{}','v1'),
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'INVIGILATION_LOAD','监考负荷','EXAM','人次','按日报时点统计监考安排','DAILY','exam-admin','{}','v1')
 ON CONFLICT(metric_code) DO NOTHING;
-INSERT INTO data_dashboard(id,create_by,create_time,dashboard_code,dashboard_name,category)
+
+INSERT INTO data_dashboard(
+    id, create_by, create_time, dashboard_code, dashboard_name, category
+)
 VALUES
-(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'academic-overview','学业概览','ACADEMIC'),
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'academic-overview','教务总览','ACADEMIC'),
 (gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'scheduling-resources','排课资源','SCHEDULING'),
-(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'exams','考试驾驶舱','EXAM')
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'exams','考试考务','EXAM')
 ON CONFLICT(dashboard_code) DO NOTHING;
+
+INSERT INTO data_quality_rule(
+    id, create_by, create_time, rule_code, rule_name, metric_code, expression, severity
+)
+VALUES
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'DATA_STUDENT_CLASS_REF','学生行政班关联完整性','STUDENT_COUNT','student.administrativeClassId must reference an active class','HIGH'),
+(gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'DATA_EXAM_SESSION_STATUS','已发布考试场次具备有效日期','EXAM_SESSION_COUNT','published exam session must have an exam date','MEDIUM')
+ON CONFLICT(rule_code) DO NOTHING;

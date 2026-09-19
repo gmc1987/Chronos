@@ -7,7 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity @Getter @Setter @Table(name="data_report_task",
- uniqueConstraints=@UniqueConstraint(columnNames={"report_type","requested_date","campus_id"}))
+ uniqueConstraints=@UniqueConstraint(columnNames={"report_type","requested_date","campus_id","requested_by"}))
 public class DataReportTask extends BaseEntity {
  @Column(name="report_type",nullable=false,length=32) private String reportType;
  @Column(name="requested_date",nullable=false) private LocalDate requestedDate;

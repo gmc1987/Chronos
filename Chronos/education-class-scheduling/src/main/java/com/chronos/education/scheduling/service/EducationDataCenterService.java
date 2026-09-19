@@ -67,12 +67,13 @@ public class EducationDataCenterService {
      .orElseGet(DataDailySnapshot::new);
    value.setSnapshotDate(date); value.setCampusId(campusId); value.setMetricCode(definition.getMetricCode());
    // Producers may supply richer dimensions later; the persisted daily value is deliberately stable and repeatable.
-   if (value.getMetricValue() == null) value.setMetricValue(measure(definition.getMetricCode(), campusId));
+   if (value.getMetricValue() == null) value.setMetricValue(measure(definition.getMetricCode(), campusId, date));
+   value.setSourceVersion(definition.getSourceVersion());
    result.add(snapshots.save(value));
   }
    return result;
   }
-  private java.math.BigDecimal measure(String code, String campusId) {
+  private java.math.BigDecimal measure(String code, String campusId, LocalDate date) {
    if ("STUDENT_COUNT".equals(code)) {
     if (campusId.isBlank()) return java.math.BigDecimal.valueOf(students.count());
     var ids=classes.findByCampusIdIn(List.of(campusId)).stream().map(AdministrativeClass::getId).toList();
@@ -80,7 +81,7 @@ public class EducationDataCenterService {
    }
    if ("ACTIVE_CLASS_COUNT".equals(code)) return java.math.BigDecimal.valueOf(campusId.isBlank() ? classes.count() : classes.findByCampusIdIn(List.of(campusId)).size());
    if ("EXAM_SESSION_COUNT".equals(code)) return java.math.BigDecimal.valueOf(exams.findByExamDateBetweenAndStatus(
-     LocalDate.now(), LocalDate.now(), "PUBLISHED").size());
+     date, date, "PUBLISHED").size());
    return java.math.BigDecimal.ZERO;
   }
  public DataReportTask requestReport(String type, LocalDate date, String campusId, Authentication user) {
