@@ -29,6 +29,7 @@ const AdminWorkflowNodes = () => import('../modules/workflow/pages/AdminWorkflow
 const AdminForms = () => import('../modules/workflow/pages/AdminForms.vue')
 const AdminWorkflowOutbox = () => import('../modules/workflow/pages/AdminWorkflowOutbox.vue')
 const AdminWorkflowIncidents = () => import('../modules/workflow/pages/AdminWorkflowIncidents.vue')
+const AdminIntegrationCenter = () => import('../modules/integration/pages/AdminIntegrationCenter.vue')
 const PortalWorkflowStart = () => import('../modules/workflow/pages/PortalWorkflowStart.vue')
 const PortalWorkflowForms = () => import('../modules/workflow/pages/PortalWorkflowForms.vue')
 const PortalWorkflowTasks = () => import('../modules/workflow/pages/PortalWorkflowTasks.vue')
@@ -129,6 +130,7 @@ const router = createRouter({
         { path: 'workflows', name: 'admin-workflows', component: AdminWorkflows },
         { path: 'workflow/outbox', name: 'admin-workflow-outbox', component: AdminWorkflowOutbox },
         { path: 'workflow/incidents', name: 'admin-workflow-incidents', component: AdminWorkflowIncidents },
+        { path: 'integration', name: 'admin-integration-center', component: AdminIntegrationCenter },
         { path: 'publications', name: 'admin-publications', component: AdminPublications },
         { path: 'message-settings', name: 'admin-message-settings', component: AdminNotificationSettings },
         { path: 'education/teaching-center/plan', name: 'admin-education-teaching-plan', component: AdminTeachingPlan },
