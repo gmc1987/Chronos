@@ -6,10 +6,11 @@ import java.time.*;
 import lombok.Getter;
 import lombok.Setter;
 
-@Entity @Getter @Setter @Table(name="edu_data_quality_issue")
+@Entity @Getter @Setter @Table(name="data_quality_issue")
 public class DataQualityIssue extends BaseEntity {
  @Column(name="campus_id",length=64) private String campusId;
  @Column(name="metric_code",length=80) private String metricCode;
+ @Column(name="rule_id",length=64) private String ruleId;
  @Column(nullable=false,length=200) private String title;
  @Column(columnDefinition="text") private String description;
  @Column(nullable=false,length=16) private String severity="MEDIUM";

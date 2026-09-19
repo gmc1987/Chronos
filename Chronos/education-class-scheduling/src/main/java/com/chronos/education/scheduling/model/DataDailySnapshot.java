@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import lombok.Getter;
 import lombok.Setter;
 
-@Entity @Getter @Setter @Table(name="edu_data_daily_snapshot",
+@Entity @Getter @Setter @Table(name="data_metric_snapshot",
  uniqueConstraints=@UniqueConstraint(columnNames={"snapshot_date","campus_id","metric_code"}))
 public class DataDailySnapshot extends BaseEntity {
  @Column(name="snapshot_date",nullable=false) private LocalDate snapshotDate;
@@ -15,4 +15,5 @@ public class DataDailySnapshot extends BaseEntity {
  @Column(name="metric_code",nullable=false,length=80) private String metricCode;
  @Column(name="metric_value",nullable=false,precision=18,scale=4) private BigDecimal metricValue;
  @Column(name="dimension_json",columnDefinition="text") private String dimensionJson;
+ @Column(name="source_version",length=64) private String sourceVersion;
 }

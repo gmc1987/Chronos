@@ -501,6 +501,7 @@ export const createEducationDataSnapshot = (date, campusId) =>
   http.post(`/admin/education/data-center/snapshots?date=${encodeURIComponent(date)}${campusId ? `&campusId=${encodeURIComponent(campusId)}` : ''}`)
 export const requestEducationDataReport = (payload) => http.post('/admin/education/data-center/reports', payload)
 export const listEducationDataReports = () => http.get('/admin/education/data-center/reports')
+export const retryEducationDataReport = (id) => http.post(`/admin/education/data-center/reports/${id}/retry`)
 export const listEducationQualityIssues = (status) => http.get(`/admin/education/data-center/quality-issues${status ? `?status=${encodeURIComponent(status)}` : ''}`)
 export const createEducationQualityIssue = (payload) => http.post('/admin/education/data-center/quality-issues', payload)
 export const transitionEducationQualityIssue = (id, status, resolution) =>
