@@ -13,6 +13,12 @@
       </div>
     </header>
     <main class="portal-main"><RouterView @context="setContext" /></main>
+    <nav class="portal-mobile-nav" aria-label="移动端主导航">
+      <RouterLink to="/portal"><span aria-hidden="true">⌂</span><small>工作台</small></RouterLink>
+      <RouterLink to="/portal/apps"><span aria-hidden="true">▦</span><small>应用</small></RouterLink>
+      <RouterLink to="/portal/tasks"><span aria-hidden="true">✓</span><small>待办</small></RouterLink>
+      <button type="button" @click="logout"><span aria-hidden="true">{{ avatarText }}</span><small>退出</small></button>
+    </nav>
   </div>
 </template>
 

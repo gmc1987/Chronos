@@ -5,6 +5,20 @@
       <button @click="editing = !editing">{{ editing ? '完成设置' : '个性化设置' }}</button>
     </section>
 
+    <section v-if="personaCards.length" class="portal-persona-workbench" aria-labelledby="persona-workbench-title">
+      <div class="portal-section-heading">
+        <div><span>ROLE WORKBENCH</span><h2 id="persona-workbench-title">我的工作台</h2></div>
+        <small>按账号权限展示</small>
+      </div>
+      <div class="portal-persona-grid">
+        <RouterLink v-for="card in personaCards" :key="card.code" class="portal-persona-card" :to="card.route">
+          <i :class="`portal-persona-card__icon portal-persona-card__icon--${card.tone}`" aria-hidden="true">{{ card.icon }}</i>
+          <span><strong>{{ card.title }}</strong><small>{{ card.description }}</small></span>
+          <b aria-hidden="true">›</b>
+        </RouterLink>
+      </div>
+    </section>
+
     <section v-if="error" class="portal-state portal-state--error">{{ error }} <button @click="load">重新加载</button></section>
     <section v-else-if="loading" class="portal-state">正在加载工作台…</section>
     <template v-else>
@@ -157,6 +171,16 @@ const greeting = computed(() => new Date().getHours() < 12 ? '早上好' : new D
 const quickApps = computed(() => bootstrap.value.favorites?.length ? bootstrap.value.favorites : bootstrap.value.applications?.filter(a => a.recommended).slice(0, 6))
 const visibleWidgets = computed(() => draftLayout.value.map(code => bootstrap.value.widgets.find(w => w.code === code)).filter(Boolean))
 const canRemind = computed(() => (bootstrap.value.user?.permissions || []).includes('workflow:task:remind'))
+const personaCards = computed(() => {
+  const roles = (bootstrap.value.user?.roles || []).map(role => String(role).toUpperCase())
+  const hasRole = (...names) => names.some(name => roles.some(role => role.includes(name)))
+  return [
+    hasRole('TEACHER', '教师') && { code: 'teacher', title: '教师工作台', description: '查看课表与教学安排', route: '/portal/education/schedule', icon: '师', tone: 'teal' },
+    hasRole('STUDENT', '学生') && { code: 'student', title: '学生学习台', description: '查看成绩与学习安排', route: '/portal/education/grades', icon: '学', tone: 'blue' },
+    hasRole('PARENT', '家长', 'GUARDIAN', '监护') && { code: 'parent', title: '家校沟通', description: '查看孩子通知与回执', route: '/portal/education/family', icon: '家', tone: 'orange' },
+    hasRole('SUPERVISOR', '督导', 'SUPERVISION') && { code: 'supervisor', title: '督导工作台', description: '处理已分配的督导任务', route: '/portal/education/supervision', icon: '督', tone: 'purple' },
+  ].filter(Boolean)
+})
 const contribution = (widget) => bootstrap.value.contributions?.[widget.provider] || { available: false, message: '模块接口已预留' }
 const weekday = value => ['一', '二', '三', '四', '五', '六', '日'][Number(value) - 1] ? `星期${['一', '二', '三', '四', '五', '六', '日'][Number(value) - 1]}` : '未排时间'
 const load = async () => {
