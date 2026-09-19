@@ -23,6 +23,28 @@ VALUES
 (gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,'exams','考试考务','EXAM')
 ON CONFLICT(dashboard_code) DO NOTHING;
 
+INSERT INTO data_dashboard_widget(
+    id, create_by, create_time, dashboard_id, widget_code, metric_code, title, position_no, config_json
+)
+SELECT
+    gen_random_uuid()::text, 'SYSTEM', CURRENT_TIMESTAMP, d.id, v.widget_code, v.metric_code,
+    v.title, v.position_no, v.config_json
+FROM data_dashboard d
+JOIN (
+    VALUES
+        ('academic-overview','student-count','STUDENT_COUNT','在籍学生数',10,'{"chartType":"number"}'),
+        ('academic-overview','class-count','ACTIVE_CLASS_COUNT','有效行政班数',20,'{"chartType":"number"}'),
+        ('academic-overview','teacher-count','TEACHER_COUNT','启用教师数',30,'{"chartType":"number"}'),
+        ('academic-overview','offering-count','OFFERING_COUNT','有效开课数',40,'{"chartType":"number"}'),
+        ('scheduling-resources','utilization','SCHEDULE_UTILIZATION','课表资源利用率',10,'{"chartType":"number","unavailable":true}'),
+        ('scheduling-resources','conflicts','SCHEDULE_CONFLICT_COUNT','排课冲突数',20,'{"chartType":"number"}'),
+        ('scheduling-resources','adjustments','COURSE_ADJUSTMENT_COUNT','调课次数',30,'{"chartType":"number"}'),
+        ('exams','sessions','EXAM_SESSION_COUNT','考试场次',10,'{"chartType":"number"}'),
+        ('exams','invigilation-load','INVIGILATION_LOAD','监考负荷',20,'{"chartType":"number"}')
+) AS v(dashboard_code, widget_code, metric_code, title, position_no, config_json)
+ON d.dashboard_code = v.dashboard_code
+ON CONFLICT(dashboard_id, widget_code) DO NOTHING;
+
 INSERT INTO data_quality_rule(
     id, create_by, create_time, rule_code, rule_name, metric_code, expression, severity
 )
