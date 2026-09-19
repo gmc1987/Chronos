@@ -494,6 +494,17 @@ export const listEducationParents = (params) => http.get(`/admin/education/paren
 export const createEducationParent = (payload) => http.post('/admin/education/parents', payload)
 export const updateEducationParent = (id, payload) => http.put(`/admin/education/parents/${id}`, payload)
 export const deleteEducationParent = (id) => http.delete(`/admin/education/parents/${id}`)
+export const listEducationDataMetrics = () => http.get('/admin/education/data-center/metrics')
+export const getEducationDataDashboard = (dashboard, date, campusId) =>
+  http.get(`/admin/education/data-center/dashboards/${dashboard}?date=${encodeURIComponent(date)}${campusId ? `&campusId=${encodeURIComponent(campusId)}` : ''}`)
+export const createEducationDataSnapshot = (date, campusId) =>
+  http.post(`/admin/education/data-center/snapshots?date=${encodeURIComponent(date)}${campusId ? `&campusId=${encodeURIComponent(campusId)}` : ''}`)
+export const requestEducationDataReport = (payload) => http.post('/admin/education/data-center/reports', payload)
+export const listEducationDataReports = () => http.get('/admin/education/data-center/reports')
+export const listEducationQualityIssues = (status) => http.get(`/admin/education/data-center/quality-issues${status ? `?status=${encodeURIComponent(status)}` : ''}`)
+export const createEducationQualityIssue = (payload) => http.post('/admin/education/data-center/quality-issues', payload)
+export const transitionEducationQualityIssue = (id, status, resolution) =>
+  http.put(`/admin/education/data-center/quality-issues/${id}?status=${encodeURIComponent(status)}`, { resolution })
 export const listStudentGuardians = (params) => http.get(`/admin/education/student-guardians?${qs(params)}`)
 export const createStudentGuardian = (payload) => http.post('/admin/education/student-guardians', payload)
 export const updateStudentGuardian = (id, payload) => http.put(`/admin/education/student-guardians/${id}`, payload)

@@ -46,6 +46,7 @@ const PortalGrades = () => import('../modules/education/pages/PortalGrades.vue')
 const PortalFamily = () => import('../modules/education/pages/PortalFamily.vue')
 const AdminHomeSchool = () => import('../modules/education/pages/AdminHomeSchool.vue')
 const AdminSupervision = () => import('../modules/education/pages/AdminSupervision.vue')
+const AdminDataCenter = () => import('../modules/education/pages/AdminDataCenter.vue')
 const PortalSupervision = () => import('../modules/education/pages/PortalSupervision.vue')
 const AdminTeachingPlan = () => import('../modules/education/pages/AdminTeachingPlan.vue')
 const AdminLessonPlans = () => import('../modules/education/pages/AdminLessonPlans.vue')
@@ -143,6 +144,7 @@ const router = createRouter({
         { path: 'education/score-center', name: 'admin-education-score-center', component: AdminScoreCenter },
         { path: 'education/home-school', name: 'admin-education-home-school', component: AdminHomeSchool },
         { path: 'education/supervision', name: 'admin-education-supervision', component: AdminSupervision },
+        { path: 'education/data-center', name: 'admin-education-data-center', component: AdminDataCenter },
         { path: 'education/materials', redirect: { name: 'admin-education-material' } },
         { path: 'teaching/resources', name: 'teaching-resources', component: TeachingResourceWorkbench },
         { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminHomework },
