@@ -150,19 +150,22 @@ public class HomeSchoolService {
 	public NoticeTargetResponse receipt(String id, ReceiptCommand command, String username) {
 		String parentId = activeParent(username).getParentId();
 		HomeNotice notice = notices.findById(id).orElseThrow(() -> new IllegalArgumentException("通知不存在"));
-		HomeNoticeTarget target = targets.findByNoticeIdAndStudentIdAndParentId(id,
-				studentIdsFor(parentId).stream().findFirst().orElse(""), parentId).orElse(null);
-		if (target == null) {
-			target = targets.findByNoticeIdOrderByCreateTime(id).stream()
-					.filter(t -> parentId.equals(t.getParentId()) && studentIdsFor(parentId).contains(t.getStudentId()))
-					.findFirst().orElseThrow(() -> new AccessDeniedException("无权回执该通知"));
-		}
+		Set<String> currentStudents = studentIdsFor(parentId);
+		List<HomeNoticeTarget> matchingTargets = targets.findByNoticeIdOrderByCreateTime(id).stream()
+				.filter(t -> parentId.equals(t.getParentId()) && currentStudents.contains(t.getStudentId()))
+				.toList();
+		HomeNoticeTarget target = matchingTargets.stream().findFirst()
+				.orElseThrow(() -> new AccessDeniedException("无权回执该通知"));
 		if (notice.getExpireAt() != null && notice.getExpireAt().isBefore(LocalDateTime.now()))
 			throw new IllegalStateException("通知已过期，只读不可回执");
-		if (!"RECEIVED".equals(target.getReceiptStatus())) {
-			target.setReceiptStatus("RECEIVED"); target.setReceiptAt(LocalDateTime.now());
-			target.setReceiptComment(command == null ? null : command.comment());
-			target = targets.save(target);
+		for (HomeNoticeTarget current : matchingTargets) {
+			if (!"RECEIVED".equals(current.getReceiptStatus())) {
+				current.setReceiptStatus("RECEIVED");
+				current.setReceiptAt(LocalDateTime.now());
+				current.setReadAt(current.getReadAt() == null ? LocalDateTime.now() : current.getReadAt());
+				current.setReceiptComment(command == null ? null : command.comment());
+				targets.save(current);
+			}
 		}
 		return target(target);
 	}
