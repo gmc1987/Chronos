@@ -23,14 +23,19 @@ public class DomainEventOutboxService {
 
 	@Transactional
 	public void enqueue(CourseGradesPublishedV1 event) {
-		if (outbox.existsByDeduplicationKey(event.eventId())) {
+		enqueue(event.eventType(), event.gradebookId(), event.eventId(), event);
+	}
+
+	@Transactional
+	public void enqueue(String eventType, String aggregateId, String deduplicationKey, Object event) {
+		if (outbox.existsByDeduplicationKey(deduplicationKey)) {
 			return;
 		}
 		DomainEventOutbox record = new DomainEventOutbox();
-		record.setEventType(event.eventType());
-		record.setAggregateId(event.gradebookId());
+		record.setEventType(eventType);
+		record.setAggregateId(aggregateId);
 		record.setPayloadJson(write(event));
-		record.setDeduplicationKey(event.eventId());
+		record.setDeduplicationKey(deduplicationKey);
 		record.setNextAttemptAt(LocalDateTime.now());
 		outbox.save(record);
 	}

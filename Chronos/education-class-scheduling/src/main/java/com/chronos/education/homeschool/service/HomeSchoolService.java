@@ -5,14 +5,18 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.chronos.education.homeschool.dao.*;
 import com.chronos.education.homeschool.dto.HomeSchoolDtos.*;
+import com.chronos.education.homeschool.dto.HomeNoticeEventContracts.HomeNoticePublishedV1;
 import com.chronos.education.homeschool.model.*;
 import com.chronos.education.scheduling.dao.*;
 import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.education.grade.service.DomainEventOutboxService;
+import com.chronos.service.iService.IAuditLogService;
 
 @Service
 public class HomeSchoolService {
@@ -24,6 +28,8 @@ public class HomeSchoolService {
 	private final StudentGuardianRepository guardians;
 	private final AdministrativeClassRepository classes;
 	private final EducationDataScopeService scopeService;
+	private final IAuditLogService audit;
+	private final DomainEventOutboxService domainEvents;
 
 	public HomeSchoolService(ParentAccountBindingRepository bindings, HomeNoticeRepository notices,
 			HomeNoticeTargetRepository targets, ParentProfileRepository parents,
@@ -32,6 +38,19 @@ public class HomeSchoolService {
 		this.bindings = bindings; this.notices = notices; this.targets = targets; this.parents = parents;
 		this.students = students; this.guardians = guardians; this.classes = classes;
 		this.scopeService = scopeService;
+		this.audit = null;
+		this.domainEvents = null;
+	}
+
+	@Autowired
+	public HomeSchoolService(ParentAccountBindingRepository bindings, HomeNoticeRepository notices,
+			HomeNoticeTargetRepository targets, ParentProfileRepository parents,
+			StudentProfileRepository students, StudentGuardianRepository guardians,
+			AdministrativeClassRepository classes, EducationDataScopeService scopeService,
+			IAuditLogService audit, DomainEventOutboxService domainEvents) {
+		this.bindings = bindings; this.notices = notices; this.targets = targets; this.parents = parents;
+		this.students = students; this.guardians = guardians; this.classes = classes;
+		this.scopeService = scopeService; this.audit = audit; this.domainEvents = domainEvents;
 	}
 
 	public List<ParentBindingResponse> listBindings() {
@@ -47,13 +66,17 @@ public class HomeSchoolService {
 		if (!"ACTIVE".equals(parent.getStatus())) throw new IllegalStateException("家长档案已失效");
 		ParentAccountBinding value = bindings.findByUsername(command.username())
 				.orElseGet(ParentAccountBinding::new);
-		if ("ACTIVE".equals(value.getStatus())
+		if (value.getId() != null && "ACTIVE".equals(value.getStatus())
 				&& !Objects.equals(value.getParentId(), parent.getId())) {
 			throw new IllegalStateException("登录账号已绑定其他家长");
 		}
 		value.setParentId(parent.getId()); value.setUsername(command.username());
 		value.setVerifiedAt(LocalDateTime.now()); value.setInvalidatedAt(null); value.setStatus("ACTIVE");
-		return binding(bindings.save(value));
+		value = bindings.save(value);
+		ParentBindingResponse response = binding(value);
+		if (audit != null) audit.log(command.username(), "EDU_HOME_PARENT_BINDING_CREATE",
+				"bindingId=" + value.getId() + ",parentId=" + value.getParentId());
+		return response;
 	}
 
 	@Transactional
@@ -61,7 +84,10 @@ public class HomeSchoolService {
 		ParentAccountBinding value = bindings.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("家长账号绑定不存在"));
 		value.setStatus("INVALIDATED"); value.setInvalidatedAt(LocalDateTime.now());
-		return binding(bindings.save(value));
+		ParentBindingResponse response = binding(bindings.save(value));
+		if (audit != null) audit.log(value.getUsername(), "EDU_HOME_PARENT_BINDING_INVALIDATE",
+				"bindingId=" + value.getId() + ",parentId=" + value.getParentId());
+		return response;
 	}
 
 	public List<NoticeResponse> listNotices(String username) {
@@ -108,7 +134,17 @@ public class HomeSchoolService {
 			}
 		}
 		notice.setStatus("PUBLISHED"); notice.setPublishAt(LocalDateTime.now()); notice.setPublisherUsername(username);
-		return notice(notices.save(notice));
+		NoticeResponse response = notice(notices.save(notice));
+		if (audit != null) audit.log(username, "EDU_HOME_NOTICE_PUBLISH",
+				"noticeId=" + notice.getId() + ",targetCount=" + relations.size());
+		if (domainEvents != null) {
+			HomeNoticePublishedV1 event = new HomeNoticePublishedV1(
+					"HOME_NOTICE_PUBLISHED:" + notice.getId(),
+					"HomeNoticePublishedV1", java.time.OffsetDateTime.now(), 1,
+					notice.getId(), notice.getClassId(), relations.size(), username);
+			domainEvents.enqueue(event.eventType(), notice.getId(), event.eventId(), event);
+		}
+		return response;
 	}
 
 	@Transactional(readOnly = true)
@@ -167,6 +203,8 @@ public class HomeSchoolService {
 				targets.save(current);
 			}
 		}
+		if (audit != null) audit.log(username, "EDU_HOME_NOTICE_RECEIPT",
+				"noticeId=" + id + ",parentId=" + parentId + ",targetCount=" + matchingTargets.size());
 		return target(target);
 	}
 
