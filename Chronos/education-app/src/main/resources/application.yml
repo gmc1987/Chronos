@@ -79,6 +79,13 @@ minio:
 chronos:
   industry:
     active: EDUCATION
+  domain-events:
+    # Leave blank to retain events durably without external delivery.
+    webhook-url: ${CHRONOS_DOMAIN_EVENTS_WEBHOOK_URL:}
+    batch-size: ${CHRONOS_DOMAIN_EVENTS_BATCH_SIZE:50}
+    max-attempts: ${CHRONOS_DOMAIN_EVENTS_MAX_ATTEMPTS:10}
+    lease-seconds: ${CHRONOS_DOMAIN_EVENTS_LEASE_SECONDS:120}
+    dispatch-delay-ms: ${CHRONOS_DOMAIN_EVENTS_DISPATCH_DELAY_MS:5000}
   file:
     storage-type: ${CHRONOS_FILE_STORAGE_TYPE:MINIO}
     storage-path: ${CHRONOS_FILE_STORAGE_PATH:./data/files}
