@@ -13,7 +13,10 @@ import com.chronos.education.grade.model.DomainEventOutbox;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.OffsetDateTime;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.Test;
 
 class DomainEventOutboxServiceTest {
@@ -54,6 +57,59 @@ class DomainEventOutboxServiceTest {
 		assertThat(record.getStatus()).isEqualTo("DEAD");
 		assertThat(record.getAttempts()).isEqualTo(10);
 		assertThat(record.getLastError()).isEqualTo("webhook unavailable");
+	}
+
+	@Test
+	void replayMakesDeadEventImmediatelyPendingWithoutChangingIdentity() {
+		DomainEventOutboxRepository repository = mock(DomainEventOutboxRepository.class);
+		DomainEventOutbox record = new DomainEventOutbox();
+		record.setId("outbox-1");
+		record.setStatus("DEAD");
+		record.setDeduplicationKey("event-1");
+		record.setAttempts(10);
+		record.setLastError("failed");
+		when(repository.findById("outbox-1")).thenReturn(Optional.of(record));
+		DomainEventOutboxService service = new DomainEventOutboxService(repository, new ObjectMapper());
+
+		service.replay("outbox-1");
+
+		assertThat(record.getStatus()).isEqualTo("PENDING");
+		assertThat(record.getDeduplicationKey()).isEqualTo("event-1");
+		assertThat(record.getLeaseUntil()).isNull();
+		assertThat(record.getLastError()).isNull();
+	}
+
+	@Test
+	void operatorCanMarkAnyEventDeadWithBoundedReason() {
+		DomainEventOutboxRepository repository = mock(DomainEventOutboxRepository.class);
+		DomainEventOutbox record = new DomainEventOutbox();
+		record.setId("outbox-1");
+		when(repository.findById("outbox-1")).thenReturn(Optional.of(record));
+		DomainEventOutboxService service = new DomainEventOutboxService(repository, new ObjectMapper());
+
+		service.markDead("outbox-1", "x".repeat(1200));
+
+		assertThat(record.getStatus()).isEqualTo("DEAD");
+		assertThat(record.getLastError()).hasSize(1000);
+		assertThat(record.getLeaseUntil()).isNull();
+	}
+
+	@Test
+	void expiredProcessingLeaseIsClaimedAgainWithFreshLease() {
+		DomainEventOutboxRepository repository = mock(DomainEventOutboxRepository.class);
+		DomainEventOutbox record = new DomainEventOutbox();
+		record.setId("outbox-1");
+		record.setStatus("PROCESSING");
+		when(repository.findDispatchCandidates(any(LocalDateTime.class), any(PageRequest.class)))
+				.thenReturn(List.of(record));
+		DomainEventOutboxService service = new DomainEventOutboxService(repository, new ObjectMapper());
+
+		List<DomainEventOutbox> claimed = service.claimBatch(10, LocalDateTime.now(), 120);
+
+		assertThat(claimed).containsExactly(record);
+		assertThat(record.getStatus()).isEqualTo("PROCESSING");
+		assertThat(record.getLeaseUntil()).isAfter(LocalDateTime.now());
+		verify(repository).save(record);
 	}
 
 	private CourseGradesPublishedV1 event(String id) {

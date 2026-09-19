@@ -48,7 +48,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
       probes:
@@ -57,8 +57,12 @@ management:
         liveness:
           include: ping
         readiness:
-          include: db
+          include: db,domainEventOutbox
       show-details: never
+  metrics:
+    export:
+      prometheus:
+        enabled: ${CHRONOS_METRICS_PROMETHEUS_ENABLED:false}
   data:
     redis:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}
