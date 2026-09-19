@@ -2,6 +2,7 @@ package com.chronos.education.grade.dao;
 
 import com.chronos.education.grade.model.DomainEventOutbox;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,8 @@ import jakarta.persistence.LockModeType;
 
 public interface DomainEventOutboxRepository extends JpaRepository<DomainEventOutbox, String> {
 	boolean existsByDeduplicationKey(String deduplicationKey);
+
+	List<DomainEventOutbox> findByEventTypeInOrderByCreateTimeAsc(Collection<String> eventTypes);
 
 	@Query("""
 			select event from DomainEventOutbox event
