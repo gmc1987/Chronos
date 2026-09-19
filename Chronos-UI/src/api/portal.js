@@ -36,3 +36,7 @@ export const notificationChannelPreferences = () => http.get('/message/channel-p
 export const saveNotificationChannelPreference = (channel, payload) => http.put(`/message/channel-preferences/${channel}`, payload)
 export const portalMeetings = () => http.get('/portal/education/meetings')
 export const respondToMeeting = (id, payload) => http.post(`/portal/education/meetings/${id}/response`, payload)
+export const checkInMeeting = (id) => http.post(`/portal/education/meetings/${id}/check-in`)
+export const updateMeetingActionStatus = (id, itemId, payload) => http.put(
+  `/portal/education/meetings/${id}/action-items/${itemId}/status`, payload,
+)

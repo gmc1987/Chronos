@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { portalMeetings, respondToMeeting } from '../../../api/portal'
+import { portalMeetings, respondToMeeting, checkInMeeting, updateMeetingActionStatus } from '../../../api/portal'
+import { downloadManagedFile } from '../../../api/admin'
 
 const meetings = ref([])
 const loading = ref(false)
@@ -58,6 +59,43 @@ async function respond(view, status) {
   }
 }
 
+async function checkIn(view) {
+  try {
+    await checkInMeeting(view.meeting.id)
+    ElMessage.success('签到成功')
+    await load()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '签到失败')
+  }
+}
+
+async function updateAction(view, item, status) {
+  try {
+    await updateMeetingActionStatus(view.meeting.id, item.id, {
+      status,
+      recordVersion: item.recordVersion,
+    })
+    ElMessage.success('行动项状态已更新')
+    await load()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '状态更新失败')
+  }
+}
+
+async function downloadMaterial(item) {
+  try {
+    const blob = await downloadManagedFile(item.fileId)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = item.title
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '材料下载失败')
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -95,8 +133,33 @@ onMounted(load)
           <el-button type="success" @click="respond(view, 'ACCEPTED')">接受</el-button>
           <el-button @click="respond(view, 'DECLINED')">谢绝</el-button>
           <el-button type="warning" @click="respond(view, 'LEAVE')">请假</el-button>
+          <el-button :disabled="!!myParticipant(view)?.checkedInAt" @click="checkIn(view)">{{ myParticipant(view)?.checkedInAt ? '已签到' : '签到' }}</el-button>
         </template>
       </div>
+      <el-collapse v-if="view.materials?.length || view.minutes || view.actionItems?.length" class="archive">
+        <el-collapse-item v-if="view.materials?.length" title="会议材料">
+          <el-button v-for="item in view.materials" :key="item.id" link type="primary" @click="downloadMaterial(item)">{{ item.title }}</el-button>
+        </el-collapse-item>
+        <el-collapse-item v-if="view.minutes" title="会议纪要与决议">
+          <p class="minutes">{{ view.minutes.content }}</p>
+          <p v-if="view.minutes.decisionsText" class="minutes"><strong>会议决议：</strong>{{ view.minutes.decisionsText }}</p>
+        </el-collapse-item>
+        <el-collapse-item v-if="view.actionItems?.length" title="行动项">
+          <el-table :data="view.actionItems" border>
+            <el-table-column prop="title" label="行动项" />
+            <el-table-column prop="assigneeUsername" label="责任人" width="140" />
+            <el-table-column prop="dueAt" label="截止时间" width="180" />
+            <el-table-column label="状态" width="190">
+              <template #default="scope">
+                <el-select v-if="scope.row.assigneeUsername === view.currentUsername || view.meeting.organizerUsername === view.currentUsername" :model-value="scope.row.status" @change="value => updateAction(view, scope.row, value)">
+                  <el-option label="待处理" value="OPEN" /><el-option label="处理中" value="IN_PROGRESS" /><el-option label="已完成" value="DONE" />
+                </el-select>
+                <span v-else>{{ scope.row.status }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-collapse-item>
+      </el-collapse>
       <el-alert v-if="view.meeting.status === 'CANCELLED'" :title="`取消原因：${view.meeting.cancelReason}`" type="warning" :closable="false" />
     </el-card>
   </div>
@@ -112,5 +175,7 @@ p { margin: 0; color: #84909a; }
 .meeting-card { margin-bottom: 14px; }
 .card-header, .card-header > div, .actions { gap: 10px; }
 .actions { margin-top: 14px; justify-content: flex-end; }
+.archive { margin-top: 14px; }
+.minutes { white-space: pre-wrap; color: #4f5b66; }
 a { text-decoration: none; }
 </style>

@@ -1,8 +1,10 @@
 package com.chronos.education.scheduling.service;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -34,6 +36,7 @@ import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.BatchGradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
+import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
 
 @Service
 @Transactional
@@ -50,13 +53,15 @@ public class HomeworkService {
 	private final LessonPlanRepository lessonPlans;
 	private final QuestionRepository questions;
 	private final QuestionVersionRepository questionVersions;
+	private final EducationDomainEventService domainEvents;
 
 	public HomeworkService(HomeworkAssignmentRepository assignments,
 			HomeworkSubmissionRepository submissions, TeachingClassMemberRepository members,
 			CourseOfferingRepository offerings, EducationDataScopeService scopes,
 			TeachingPlanItemRepository planItems, TeachingPlanRepository plans,
 			PreparationRepository preparations, LessonPlanRepository lessonPlans,
-			QuestionRepository questions, QuestionVersionRepository questionVersions) {
+			QuestionRepository questions, QuestionVersionRepository questionVersions,
+			EducationDomainEventService domainEvents) {
 		this.assignments = assignments;
 		this.submissions = submissions;
 		this.members = members;
@@ -65,6 +70,7 @@ public class HomeworkService {
 		this.planItems = planItems; this.plans = plans;
 		this.preparations = preparations; this.lessonPlans = lessonPlans;
 		this.questions = questions; this.questionVersions = questionVersions;
+		this.domainEvents = domainEvents;
 	}
 
 	private EducationDataScope scope(Authentication auth) {
@@ -415,7 +421,74 @@ public class HomeworkService {
 			throw new IllegalStateException("只有已发布或已关闭作业可以发布成绩");
 		}
 		List<HomeworkSubmission> values = submissions.findByAssignmentIdOrderByCreateTimeAsc(assignmentId);
-		values.stream().filter(s -> "GRADED".equals(s.getStatus())).forEach(s -> s.setGradesPublished(true));
-		return (int) values.stream().filter(s -> "GRADED".equals(s.getStatus())).count();
+		CourseOffering offering = offering(homework.getOfferingId());
+		List<HomeworkSubmission> pending = values.stream()
+				.filter(submission -> "GRADED".equals(submission.getStatus()))
+				.filter(submission -> !submission.isGradesPublished())
+				.toList();
+		pending.forEach(submission -> {
+					// 成绩发布才是作业评分的业务确认点；草稿评分不能提前污染错题本。
+					publishWrongAnswers(homework, offering, submission, auth);
+					submission.setGradesPublished(true);
+				});
+		// 返回本次新发布数量，重复点击时返回 0，便于前端准确反馈幂等结果。
+		return pending.size();
+	}
+
+	private void publishWrongAnswers(
+			HomeworkAssignment homework,
+			CourseOffering offering,
+			HomeworkSubmission submission,
+			Authentication authentication) {
+		try {
+			JsonNode refs = JSON.readTree(homework.getQuestionVersionRefsJson());
+			JsonNode scoreMap = JSON.readTree(submission.getQuestionScoresJson());
+			if (refs == null || !refs.isArray() || scoreMap == null || !scoreMap.isObject()) {
+				return;
+			}
+			for (JsonNode ref : refs) {
+				String questionId = ref.path("questionId").asText(null);
+				String versionId = ref.path("versionId").asText(null);
+				JsonNode score = questionId == null ? null : scoreMap.get(questionId);
+				if (score == null && versionId != null) {
+					score = scoreMap.get(versionId);
+				}
+				if (!isConfirmedWrongAnswer(ref, score)) {
+					continue;
+				}
+				String sourceItemId = UUID.nameUUIDFromBytes((submission.getId() + ":" + questionId)
+						.getBytes(StandardCharsets.UTF_8)).toString();
+				domainEvents.enqueueWrongAnswer(
+						new WrongAnswerConfirmed(
+								"HOMEWORK_GRADE_PUBLISHED:" + sourceItemId,
+								submission.getStudentId(),
+								offering.getCourseCode(),
+								offering.getSemesterCode(),
+								questionId,
+								sourceItemId,
+								homework.getId(),
+								submission.getTeacherFeedback(),
+								"HOMEWORK",
+								versionId,
+								submission.getGradedAt()),
+						authentication.getName());
+			}
+		} catch (IllegalArgumentException exception) {
+			throw exception;
+		} catch (Exception exception) {
+			throw new IllegalStateException("发布作业错题事件失败", exception);
+		}
+	}
+
+	private boolean isConfirmedWrongAnswer(JsonNode reference, JsonNode score) {
+		if (score == null || !score.isNumber()) {
+			return false;
+		}
+		JsonNode maxScore = reference.get("maxScore");
+		if (maxScore != null && maxScore.isNumber()) {
+			return score.decimalValue().compareTo(maxScore.decimalValue()) < 0;
+		}
+		// 旧数据没有题目满分时只能确认零分题，避免把部分得分误判为错题。
+		return score.decimalValue().signum() == 0;
 	}
 }

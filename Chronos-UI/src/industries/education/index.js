@@ -55,6 +55,16 @@ export const educationIndustry = {
     { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },
     { path: '/admin/education/teaching-center', name: 'admin-education-teaching-center', component: AdminTeachingCenter },
     { path: '/portal/education/teaching-center', name: 'portal-education-teaching-center', component: PortalTeachingCenter },
+    // 教师门户复用已经完成业务校验的领域页面，不再走早期通用 CRUD 页面。
+    { path: '/portal/education/teaching/plans', name: 'portal-education-teaching-plans', component: AdminTeachingPlan },
+    { path: '/portal/education/teaching/lessons', name: 'portal-education-teaching-lessons', component: AdminLessonPlans },
+    { path: '/portal/education/teaching/preparations', name: 'portal-education-teaching-preparations', component: AdminPreparation },
+    { path: '/portal/education/teaching/courseware', name: 'portal-education-teaching-courseware', component: AdminCourseware },
+    { path: '/portal/education/teaching/materials', name: 'portal-education-teaching-materials', component: AdminMaterials },
+    { path: '/portal/education/teaching/questions', name: 'portal-education-teaching-questions', component: AdminQuestionBank },
+    { path: '/portal/education/teaching/knowledge-points', name: 'portal-education-teaching-knowledge-points', component: AdminKnowledgePoints },
+    { path: '/portal/education/teaching/research', name: 'portal-education-teaching-research', component: AdminResearch },
+    { path: '/portal/education/teaching/mistakes', name: 'portal-education-teaching-mistakes', component: AdminMistakes },
     {
       path: '/admin/education/scheduling',
       name: 'admin-education-class-scheduling',

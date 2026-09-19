@@ -8,6 +8,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.Index;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -72,4 +73,9 @@ public class HomeworkAssignment extends BaseEntity {
 
 	@Column(nullable = false, length = 24)
 	private String status = "DRAFT";
+
+	/** 作业发布、关闭和归档是不可逆状态迁移，使用版本号拒绝并发覆盖。 */
+	@Version
+	@Column(name = "row_version", nullable = false)
+	private Long rowVersion = 0L;
 }

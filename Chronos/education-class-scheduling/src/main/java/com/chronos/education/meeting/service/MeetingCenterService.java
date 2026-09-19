@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
@@ -16,15 +17,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.meeting.dao.MeetingParticipantRepository;
+import com.chronos.education.meeting.dao.MeetingMaterialRepository;
+import com.chronos.education.meeting.dao.MeetingMinutesRepository;
+import com.chronos.education.meeting.dao.MeetingActionItemRepository;
 import com.chronos.education.meeting.dao.MeetingRepository;
 import com.chronos.education.meeting.dao.MeetingRoomRepository;
 import com.chronos.education.meeting.model.Meeting;
 import com.chronos.education.meeting.model.MeetingCommands;
 import com.chronos.education.meeting.model.MeetingParticipant;
+import com.chronos.education.meeting.model.MeetingMaterial;
+import com.chronos.education.meeting.model.MeetingMinutes;
+import com.chronos.education.meeting.model.MeetingActionItem;
 import com.chronos.education.meeting.model.MeetingRoom;
 import com.chronos.education.meeting.model.MeetingView;
 import com.chronos.model.pojo.AdminUser;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.file.service.ManagedFileService;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +46,11 @@ public class MeetingCenterService {
 	private final MeetingRoomRepository rooms;
 	private final MeetingRepository meetings;
 	private final MeetingParticipantRepository participants;
+	private final MeetingMaterialRepository materials;
+	private final MeetingMinutesRepository minutes;
+	private final MeetingActionItemRepository actionItems;
 	private final IAdminUserRepository users;
+	private final ManagedFileService managedFiles;
 	private final MeetingNotificationService notifications;
 	private final IAuditLogService auditLogs;
 	private final EntityManager entityManager;
@@ -277,6 +289,180 @@ public class MeetingCenterService {
 	}
 
 	@Transactional
+	public MeetingView checkIn(String id, String username) {
+		Meeting meeting = requireMeeting(id);
+		if (!"PUBLISHED".equals(meeting.getStatus())) {
+			throw new IllegalStateException("会议当前不能签到");
+		}
+		LocalDateTime now = LocalDateTime.now();
+		if (now.isBefore(meeting.getStartTime().minusMinutes(30))
+				|| now.isAfter(meeting.getEndTime().plusHours(2))) {
+			throw new IllegalStateException("签到仅在会议开始前30分钟至结束后2小时开放");
+		}
+		MeetingParticipant participant = participants
+				.findByMeetingIdAndUsername(id, username)
+				.orElseThrow(() -> new AccessDeniedException("您不是该会议的受邀人员"));
+		if (participant.getCheckedInAt() == null) {
+			participant.setCheckedInAt(now);
+			participant.setCheckInMethod("PORTAL");
+			participants.save(participant);
+			auditLogs.log("MEETING_CHECK_IN", "MEETING", id);
+		}
+		return view(meeting, username);
+	}
+
+	@Transactional
+	public MeetingMaterial addMaterial(
+			String meetingId,
+			MeetingCommands.Material command,
+			String username) {
+		Meeting meeting = requireOrganizer(meetingId, username);
+		if (!Set.of("PUBLISHED", "COMPLETED").contains(meeting.getStatus())) {
+			throw new IllegalStateException("会议发布后才能添加材料");
+		}
+		MeetingMaterial material = new MeetingMaterial();
+		material.setMeetingId(meetingId);
+		material.setTitle(command.title().trim());
+		material.setFileId(command.fileId().trim());
+		material = materials.save(material);
+		// 文件先以草稿上传，保存材料时再原子绑定到材料记录，避免裸MinIO地址进入业务表。
+		managedFiles.bind(
+				List.of(material.getFileId()),
+				"EDUCATION_MEETING",
+				material.getId(),
+				username);
+		auditLogs.log("MEETING_MATERIAL_ADD", "MEETING", meetingId);
+		return material;
+	}
+
+	@Transactional
+	public void deleteMaterial(
+			String meetingId,
+			String materialId,
+			Authentication authentication) {
+		requireOrganizer(meetingId, authentication.getName());
+		MeetingMaterial material = materials.findById(materialId)
+				.filter(value -> meetingId.equals(value.getMeetingId()))
+				.orElseThrow(() -> new IllegalArgumentException("会议材料不存在"));
+		// 必须在删除领域引用前删除文件，否则文件策略将无法再判断材料归属。
+		managedFiles.delete(material.getFileId(), authentication);
+		materials.delete(material);
+		auditLogs.log("MEETING_MATERIAL_DELETE", "MEETING", meetingId);
+	}
+
+	@Transactional
+	public MeetingMinutes saveMinutes(
+			String meetingId,
+			MeetingCommands.Minutes command,
+			String username) {
+		Meeting meeting = requireOrganizer(meetingId, username);
+		if (!Set.of("PUBLISHED", "COMPLETED").contains(meeting.getStatus())) {
+			throw new IllegalStateException("会议发布后才能维护纪要");
+		}
+		MeetingMinutes value = minutes.findByMeetingId(meetingId)
+				.orElseGet(MeetingMinutes::new);
+		if (value.getId() != null && "PUBLISHED".equals(value.getStatus())) {
+			throw new IllegalStateException("已发布纪要不能直接修改");
+		}
+		if (value.getId() != null
+				&& !Objects.equals(value.getRecordVersion(), command.recordVersion())) {
+			throw new IllegalStateException("会议纪要已被其他用户更新，请刷新后重试");
+		}
+		value.setMeetingId(meetingId);
+		value.setContent(command.content().trim());
+		value.setDecisionsText(trim(command.decisionsText()));
+		value.setStatus("DRAFT");
+		value = minutes.save(value);
+		auditLogs.log("MEETING_MINUTES_SAVE", "MEETING", meetingId);
+		return value;
+	}
+
+	@Transactional
+	public MeetingMinutes publishMinutes(String meetingId, String username) {
+		requireOrganizer(meetingId, username);
+		MeetingMinutes value = minutes.findByMeetingId(meetingId)
+				.orElseThrow(() -> new IllegalArgumentException("请先保存会议纪要"));
+		if (!"PUBLISHED".equals(value.getStatus())) {
+			value.setStatus("PUBLISHED");
+			value.setPublishedAt(LocalDateTime.now());
+			minutes.save(value);
+			for (MeetingParticipant participant : participants
+					.findByMeetingIdOrderByCreateTimeAsc(meetingId)) {
+				notifications.minutesPublished(
+						requireMeeting(meetingId),
+						value,
+						participant.getUsername());
+			}
+			auditLogs.log("MEETING_MINUTES_PUBLISH", "MEETING", meetingId);
+		}
+		return value;
+	}
+
+	@Transactional
+	public MeetingActionItem saveActionItem(
+			String meetingId,
+			String itemId,
+			MeetingCommands.ActionItem command,
+			String username) {
+		Meeting meeting = requireOrganizer(meetingId, username);
+		if (!Set.of("PUBLISHED", "COMPLETED").contains(meeting.getStatus())) {
+			throw new IllegalStateException("会议发布后才能维护行动项");
+		}
+		requireActiveUser(command.assigneeUsername(), "责任人");
+		if (!isMeetingMember(meeting, command.assigneeUsername())) {
+			throw new IllegalArgumentException("行动项责任人必须是会议组织者或参会人");
+		}
+		MeetingActionItem value = itemId == null
+				? new MeetingActionItem()
+				: requireActionItem(meetingId, itemId);
+		if (itemId != null
+				&& !Objects.equals(value.getRecordVersion(), command.recordVersion())) {
+			throw new IllegalStateException("行动项已被其他用户更新，请刷新后重试");
+		}
+		if ("DONE".equals(value.getStatus()) || "CANCELLED".equals(value.getStatus())) {
+			throw new IllegalStateException("已完成或已取消行动项不能修改");
+		}
+		value.setMeetingId(meetingId);
+		value.setTitle(command.title().trim());
+		value.setDescription(trim(command.description()));
+		value.setAssigneeUsername(command.assigneeUsername().trim());
+		value.setDueAt(command.dueAt());
+		boolean created = itemId == null;
+		value = actionItems.save(value);
+		if (created) {
+			notifications.actionAssigned(meeting, value);
+		}
+		auditLogs.log("MEETING_ACTION_SAVE", "MEETING", meetingId);
+		return value;
+	}
+
+	@Transactional
+	public MeetingActionItem updateActionStatus(
+			String meetingId,
+			String itemId,
+			MeetingCommands.ActionStatus command,
+			String username) {
+		Meeting meeting = requireMeeting(meetingId);
+		MeetingActionItem value = requireActionItem(meetingId, itemId);
+		if (!username.equals(meeting.getOrganizerUsername())
+				&& !username.equals(value.getAssigneeUsername())) {
+			throw new AccessDeniedException("只有会议组织者或行动项责任人可以更新状态");
+		}
+		if (!Objects.equals(value.getRecordVersion(), command.recordVersion())) {
+			throw new IllegalStateException("行动项已被其他用户更新，请刷新后重试");
+		}
+		String status = upper(command.status());
+		if (!Set.of("OPEN", "IN_PROGRESS", "DONE", "CANCELLED").contains(status)) {
+			throw new IllegalArgumentException("行动项状态无效");
+		}
+		value.setStatus(status);
+		value.setCompletedAt("DONE".equals(status) ? LocalDateTime.now() : null);
+		value = actionItems.save(value);
+		auditLogs.log("MEETING_ACTION_STATUS", "MEETING", meetingId);
+		return value;
+	}
+
+	@Transactional
 	public MeetingView cancel(
 			String id,
 			MeetingCommands.Cancellation command,
@@ -475,7 +661,34 @@ public class MeetingCenterService {
 						.filter(value -> currentUsername.equals(value.getUsername()))
 						.findFirst()
 						.orElse(null);
-		return new MeetingView(meeting, room, meetingParticipants, currentParticipant);
+		MeetingMinutes meetingMinutes = minutes.findByMeetingId(meeting.getId())
+				.orElse(null);
+		if (meetingMinutes != null
+				&& currentUsername != null
+				&& !currentUsername.equals(meeting.getOrganizerUsername())
+				&& !"PUBLISHED".equals(meetingMinutes.getStatus())) {
+			meetingMinutes = null;
+		}
+		return new MeetingView(
+				meeting,
+				room,
+				meetingParticipants,
+				currentParticipant,
+				currentUsername,
+				materials.findByMeetingIdOrderByCreateTimeAsc(meeting.getId()),
+				meetingMinutes,
+				actionItems.findByMeetingIdOrderByCreateTimeAsc(meeting.getId()));
+	}
+
+	private boolean isMeetingMember(Meeting meeting, String username) {
+		return username.equals(meeting.getOrganizerUsername())
+				|| participants.findByMeetingIdAndUsername(meeting.getId(), username).isPresent();
+	}
+
+	private MeetingActionItem requireActionItem(String meetingId, String itemId) {
+		return actionItems.findById(itemId)
+				.filter(value -> meetingId.equals(value.getMeetingId()))
+				.orElseThrow(() -> new IllegalArgumentException("会议行动项不存在"));
 	}
 
 	private Meeting requireOrganizer(String id, String username) {

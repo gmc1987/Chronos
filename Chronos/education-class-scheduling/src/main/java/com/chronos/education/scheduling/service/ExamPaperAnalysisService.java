@@ -4,18 +4,24 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
+import java.nio.charset.StandardCharsets;
+
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.education.scheduling.dao.ExamCandidateRepository;
 import com.chronos.education.scheduling.dao.ExamItemScoreRepository;
 import com.chronos.education.scheduling.dao.ExamPaperItemRepository;
+import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
 import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
+import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
 
 import lombok.RequiredArgsConstructor;
 
@@ -31,6 +37,8 @@ public class ExamPaperAnalysisService {
 	private final ExamCandidateRepository candidates;
 	private final ExamPaperItemRepository items;
 	private final ExamItemScoreRepository scores;
+	private final ExamPlanRepository plans;
+	private final EducationDomainEventService domainEvents;
 
 	@Transactional(readOnly = true)
 	public List<ExamPaperItem> items(String sessionId) {
@@ -40,7 +48,7 @@ public class ExamPaperAnalysisService {
 
 	@Transactional
 	public ExamPaperItem addItem(String sessionId, ItemCommand command) {
-		requireSession(sessionId);
+		requireDraftScores(sessionId);
 		if (command == null || blank(command.questionNo()) || blank(command.title())
 				|| command.maxScore() == null || command.maxScore().signum() <= 0
 				|| command.maxScore().scale() > 2) {
@@ -60,6 +68,7 @@ public class ExamPaperAnalysisService {
 
 	@Transactional
 	public void deleteItem(String sessionId, String itemId) {
+		requireDraftScores(sessionId);
 		ExamPaperItem item = requireItem(sessionId, itemId);
 		if (scores.existsByItemId(itemId)) {
 			throw new IllegalArgumentException("该题已有评分，不能删除");
@@ -75,6 +84,7 @@ public class ExamPaperAnalysisService {
 
 	@Transactional
 	public ExamItemScore saveScore(String sessionId, String itemId, ScoreCommand command) {
+		requireDraftScores(sessionId);
 		ExamPaperItem item = requireItem(sessionId, itemId);
 		if (!"PUBLISHED".equals(sessions.findById(sessionId).orElseThrow().getStatus())) {
 			throw new IllegalStateException("考试发布后才能录入逐题成绩");
@@ -98,6 +108,76 @@ public class ExamPaperAnalysisService {
 		value.setCandidateId(candidate.getId());
 		value.setScore(command.score());
 		return scores.save(value);
+	}
+
+	@Transactional
+	public com.chronos.education.scheduling.model.ExamSession confirmScores(String sessionId) {
+		var session = requireSessionEntity(sessionId);
+		if ("CONFIRMED".equals(session.getScoreStatus()) || "PUBLISHED".equals(session.getScoreStatus())) {
+			return session;
+		}
+		List<ExamPaperItem> paperItems = items.findBySessionIdOrderByQuestionNoAsc(sessionId);
+		if (paperItems.isEmpty()) {
+			throw new IllegalStateException("请先维护试卷题目并完成评分");
+		}
+		long candidateCount = candidatesForSession(sessionId).size();
+		if (candidateCount == 0) {
+			throw new IllegalStateException("当前场次没有考生，不能确认成绩");
+		}
+		for (ExamPaperItem item : paperItems) {
+			if (scores.findByItemId(item.getId()).size() != candidateCount) {
+				throw new IllegalStateException("所有题目必须完成全部考生评分后才能确认");
+			}
+		}
+		// 确认动作冻结逐题得分，避免审核、统计与错题沉淀读取到不同版本。
+		session.setScoreStatus("CONFIRMED");
+		session.setScoresConfirmedAt(java.time.LocalDateTime.now());
+		return sessions.save(session);
+	}
+
+	@Transactional
+	public com.chronos.education.scheduling.model.ExamSession publishScores(
+			String sessionId,
+			Authentication authentication) {
+		var session = requireSessionEntity(sessionId);
+		if ("PUBLISHED".equals(session.getScoreStatus())) {
+			return session;
+		}
+		if (!"CONFIRMED".equals(session.getScoreStatus())) {
+			throw new IllegalStateException("逐题成绩确认后才能发布");
+		}
+		var plan = plans.findById(session.getPlanId())
+				.orElseThrow(() -> new IllegalStateException("考试计划不存在"));
+		for (ExamPaperItem item : items.findBySessionIdOrderByQuestionNoAsc(sessionId)) {
+			for (ExamItemScore score : scores.findByItemId(item.getId())) {
+				if (score.getScore().compareTo(item.getMaxScore()) >= 0) {
+					continue;
+				}
+				ExamCandidate candidate = candidates.findById(score.getCandidateId())
+						.orElseThrow(() -> new IllegalStateException("逐题成绩关联考生不存在"));
+				String sourceItemId = UUID.nameUUIDFromBytes((item.getId() + ":" + candidate.getId())
+						.getBytes(StandardCharsets.UTF_8)).toString();
+				// 同一场次同一考生同一题使用稳定来源键，重复发布不会重复生成错题。
+				domainEvents.enqueueWrongAnswer(
+						new WrongAnswerConfirmed(
+								"EXAM_SCORE_PUBLISHED:" + sourceItemId,
+								candidate.getStudentId(),
+								session.getSubjectId(),
+								plan.getSemesterCode(),
+								null,
+								sourceItemId,
+								sessionId,
+								item.getTitle(),
+								"EXAM",
+								null,
+								java.time.LocalDateTime.now()),
+						authentication.getName());
+			}
+		}
+		// 错题事实与发布状态在同一事务提交，任一写入失败都会整体回滚。
+		session.setScoreStatus("PUBLISHED");
+		session.setScoresPublishedAt(java.time.LocalDateTime.now());
+		return sessions.save(session);
 	}
 
 	@Transactional(readOnly = true)
@@ -154,9 +234,24 @@ public class ExamPaperAnalysisService {
 	}
 
 	private void requireSession(String sessionId) {
-		if (!sessions.existsById(sessionId)) {
-			throw new IllegalArgumentException("考试场次不存在");
+		requireSessionEntity(sessionId);
+	}
+
+	private com.chronos.education.scheduling.model.ExamSession requireSessionEntity(String sessionId) {
+		return sessions.findById(sessionId)
+				.orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
+	}
+
+	private void requireDraftScores(String sessionId) {
+		if (!"DRAFT".equals(requireSessionEntity(sessionId).getScoreStatus())) {
+			throw new IllegalStateException("逐题成绩已确认，不能继续修改");
 		}
+	}
+
+	private List<ExamCandidate> candidatesForSession(String sessionId) {
+		return rooms.findBySessionId(sessionId).stream()
+				.flatMap(room -> candidates.findByRoomIdOrderBySeatNoAsc(room.getId()).stream())
+				.toList();
 	}
 
 	private boolean blank(String value) {

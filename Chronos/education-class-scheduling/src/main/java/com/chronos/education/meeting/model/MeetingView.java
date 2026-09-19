@@ -6,5 +6,9 @@ public record MeetingView(
 		Meeting meeting,
 		MeetingRoom room,
 		List<MeetingParticipant> participants,
-		MeetingParticipant currentParticipant) {
+		MeetingParticipant currentParticipant,
+		String currentUsername,
+		List<MeetingMaterial> materials,
+		MeetingMinutes minutes,
+		List<MeetingActionItem> actionItems) {
 }

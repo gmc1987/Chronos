@@ -22,7 +22,7 @@
       <el-table-column label="状态" width="110"><template #default="{ row }">{{ dictLabel(statusOptions, row.status) }}</template></el-table-column>
       <el-table-column label="操作" width="210" fixed="right"><template #default="{ row }">
         <el-button link type="primary" @click="openQuestion(row)">编辑</el-button>
-        <el-button link type="success" :disabled="!canSubmit(row)" @click="publish(row)">发布</el-button>
+        <el-button link type="success" :disabled="!canSubmit(row)" @click="publish(row)">提交审核</el-button>
         <el-button link @click="showVersions(row)">版本</el-button>
       </template></el-table-column>
     </el-table>
@@ -62,7 +62,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
 import { listCourseCatalog } from '../../../api/admin'
-import { teachingCenterOfferings, questionBanks, createQuestionBank, updateQuestionBank, questions, createQuestion, updateQuestion, submitQuestion, approveQuestion, publishQuestion, questionVersions, questionImportTemplate, validateQuestionImport, commitQuestionImport, knowledgePointTree } from '../api/teachingCenter'
+import { teachingCenterOfferings, questionBanks, createQuestionBank, updateQuestionBank, questions, createQuestion, updateQuestion, submitQuestion, questionVersions, questionImportTemplate, validateQuestionImport, commitQuestionImport, knowledgePointTree } from '../api/teachingCenter'
 const courses = ref([]); const banks = ref([]); const rows = ref([]); const points = ref([]); const loading = ref(false)
 const courseId = ref(''); const bankId = ref(''); const offerings = ref([])
 const typeOptions = ref([]); const difficultyOptions = ref([]); const statusOptions = ref([]); const visibilityOptions = ref([])
@@ -81,8 +81,8 @@ const saveBank = async () => { try { bankForm.id ? await updateQuestionBank(bank
 const openQuestion = (row) => { reset(questionForm, row ? { ...row, options: row.options || [], knowledgePointIds: row.knowledgePointIds || [] } : { bankId: bankId.value, questionType: typeOptions.value[0]?.value || '', difficulty: difficultyOptions.value[0]?.value || '', stem: '', score: 1, answer: '', analysis: '', options: [], knowledgePointIds: [] }); questionDialog.value = true }
 const addOption = () => questionForm.options.push({ key: String.fromCharCode(65 + questionForm.options.length), text: '', correct: false })
 const saveQuestion = async () => { if (!questionForm.stem || !questionForm.answer || !questionForm.knowledgePointIds?.length) return ElMessage.warning('请填写题干、答案并选择知识点'); try { const body = { ...questionForm, options: isChoice.value ? questionForm.options : [] }; questionForm.id ? await updateQuestion(questionForm.id, body) : await createQuestion(body); questionDialog.value = false; await loadQuestions(); ElMessage.success('草稿已保存') } catch (e) { ElMessage.error(e.message) } }
-const canSubmit = row => row.capabilities?.submit !== false
-const publish = async row => { await ElMessageBox.confirm('题目将按审核流程提交，是否继续？', '确认发布'); try { if (row.status === 'DRAFT' || row.status === 'REVISED') await submitQuestion(row.id); else if (row.status === 'REVIEW') { await approveQuestion(row.id); await publishQuestion(row.id) } await loadQuestions(); ElMessage.success(row.status === 'REVIEW' ? '已发布' : '已提交审核') } catch (e) { ElMessage.error(e.message) } }
+const canSubmit = row => ['DRAFT','REVISED'].includes(row.status) && row.capabilities?.submit !== false
+const publish = async row => { await ElMessageBox.confirm('题目将提交到流程中心审核，审核通过后自动发布，是否继续？', '确认提交'); try { if (!['DRAFT','REVISED'].includes(row.status)) throw new Error('只有草稿或修订题目可以提交审核'); await submitQuestion(row.id); await loadQuestions(); ElMessage.success('已提交审核') } catch (e) { ElMessage.error(e.message) } }
 const showVersions = async row => { try { versions.value = (await questionVersions(row.id)).data || []; versionsDialog.value = true } catch (e) { ElMessage.error(e.message) } }
 const downloadTemplate = async () => { const blob = await questionImportTemplate(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'question-import-template.csv'; a.click(); URL.revokeObjectURL(url) }
 const importHash = ref('')

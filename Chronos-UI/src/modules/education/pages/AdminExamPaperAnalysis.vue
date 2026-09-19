@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createExamPaperItem,
+  confirmExamScores,
   deleteExamPaperItem,
   getExamPaperAnalysis,
   listAcademicTerms,
@@ -15,6 +16,7 @@ import {
   listExamRooms,
   listExamSessions,
   saveExamItemScore,
+  publishExamScores,
 } from '../../../api/admin'
 
 const terms = ref([])
@@ -155,6 +157,27 @@ async function saveScore(candidate) {
   }, '得分已保存')
 }
 
+async function transitionScores(action) {
+  const publishing = action === 'publish'
+  try {
+    await ElMessageBox.confirm(
+      publishing
+        ? '发布后将生成正式错题记录，且不能再修改逐题得分。是否继续？'
+        : '确认后将冻结当前场次全部逐题得分。是否继续？',
+      publishing ? '确认发布成绩' : '确认逐题成绩',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  await run(async () => {
+    const response = publishing
+      ? await publishExamScores(selectedSession.value.id)
+      : await confirmExamScores(selectedSession.value.id)
+    Object.assign(selectedSession.value, response?.data || {})
+  }, publishing ? '成绩已发布并完成错题沉淀' : '逐题成绩已确认')
+}
+
 onMounted(() => run(async () => {
   const [termResult, subjectResult, studentResult] = await Promise.all([
     listAcademicTerms(),
@@ -189,8 +212,17 @@ onMounted(() => run(async () => {
     <div class="section-heading">
       <h3>逐题统计</h3>
       <div class="selector-row">
+        <el-tag v-if="selectedSession">成绩状态：{{ selectedSession.scoreStatus || 'DRAFT' }}</el-tag>
         <el-button
-          v-if="selectedSession"
+          v-if="selectedSession && (!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT')"
+          v-permission="['education:exam:paper-analysis:manage']"
+          type="warning" @click="transitionScores('confirm')">确认成绩</el-button>
+        <el-button
+          v-if="selectedSession?.scoreStatus === 'CONFIRMED'"
+          v-permission="['education:exam:paper-analysis:manage']"
+          type="success" @click="transitionScores('publish')">发布成绩</el-button>
+        <el-button
+          v-if="selectedSession && (!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT')"
           v-permission="['education:exam:paper-analysis:export']"
           @click="exportAnalysis">导出统计</el-button>
         <el-button
@@ -210,7 +242,7 @@ onMounted(() => run(async () => {
       <el-table-column prop="zeroScoreCount" label="零分人数" width="110" />
       <el-table-column label="操作" width="90">
         <template #default="scope">
-          <el-button v-permission="['education:exam:paper-analysis:manage']" link type="danger" @click.stop="removeItem(scope.row)">删除</el-button>
+            <el-button v-if="!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT'" v-permission="['education:exam:paper-analysis:manage']" link type="danger" @click.stop="removeItem(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -222,12 +254,12 @@ onMounted(() => run(async () => {
         <el-table-column label="考生" min-width="160"><template #default="scope">{{ studentName(scope.row.studentId) }}</template></el-table-column>
         <el-table-column label="得分" width="180">
           <template #default="scope">
-            <el-input-number v-model="scoreByCandidate[scope.row.id]" :min="0" :max="Number(selectedItem.maxScore)" :precision="2" :step="0.5" />
+            <el-input-number v-model="scoreByCandidate[scope.row.id]" :disabled="selectedSession.scoreStatus && selectedSession.scoreStatus !== 'DRAFT'" :min="0" :max="Number(selectedItem.maxScore)" :precision="2" :step="0.5" />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="100">
           <template #default="scope">
-            <el-button v-permission="['education:exam:paper-analysis:manage']" link type="primary" @click="saveScore(scope.row)">保存</el-button>
+            <el-button v-if="!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT'" v-permission="['education:exam:paper-analysis:manage']" link type="primary" @click="saveScore(scope.row)">保存</el-button>
           </template>
         </el-table-column>
       </el-table>

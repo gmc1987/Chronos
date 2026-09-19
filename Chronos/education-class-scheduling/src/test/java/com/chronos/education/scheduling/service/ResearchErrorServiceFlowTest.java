@@ -22,6 +22,7 @@ class ResearchErrorServiceFlowTest {
 	private ResearchActivityMemberRepository activityMembers;
 	private ResearchMaterialRepository materials;
 	private ResearchResultRepository results;
+	private TeachingReviewService reviews;
 	private EducationDataScopeService scopes;
 	private Authentication auth;
 	private ResearchErrorService service;
@@ -34,6 +35,7 @@ class ResearchErrorServiceFlowTest {
 		activityMembers = mock(ResearchActivityMemberRepository.class);
 		materials = mock(ResearchMaterialRepository.class);
 		results = mock(ResearchResultRepository.class);
+		reviews = mock(TeachingReviewService.class);
 		scopes = mock(EducationDataScopeService.class);
 		auth = mock(Authentication.class);
 		when(auth.getName()).thenReturn("teacher-1");
@@ -41,7 +43,7 @@ class ResearchErrorServiceFlowTest {
 				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
 		service = new ResearchErrorService(groups, groupMembers, activities, activityMembers,
 				materials, results, mock(ErrorBookRepository.class), mock(ErrorItemRepository.class),
-				scopes, mock(ManagedFileRepository.class), mock(TeachingReviewService.class),
+				scopes, mock(ManagedFileRepository.class), reviews,
 				mock(QuestionRepository.class), mock(KnowledgePointRepository.class),
 				mock(QuestionKnowledgePointRepository.class), mock(QuestionBankRepository.class));
 	}
@@ -102,6 +104,50 @@ class ResearchErrorServiceFlowTest {
 		assertThatThrownBy(() -> service.transitionResult("result-1", "ARCHIVED", auth))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("只有已发布成果可以归档");
+	}
+
+	@Test
+	void reusesIdempotentResearchResultSubmission() {
+		ResearchResult result = new ResearchResult();
+		result.setId("result-1");
+		result.setActivityId("activity-1");
+		result.setStatus("SUBMITTED");
+		ResearchActivity activity = new ResearchActivity();
+		activity.setId("activity-1");
+		activity.setGroupId("group-1");
+		TeachingReviewRecord review = new TeachingReviewRecord();
+		review.setId("review-1");
+		when(results.findById("result-1")).thenReturn(Optional.of(result));
+		when(activities.findById("activity-1")).thenReturn(Optional.of(activity));
+		when(groups.findById("group-1")).thenReturn(Optional.of(new ResearchGroup()));
+		when(reviews.findIdempotent("RESEARCH_RESULT", "result-1", "retry-key", auth))
+				.thenReturn(review);
+		when(results.save(result)).thenReturn(result);
+
+		ResearchResult saved = service.submitResult("result-1", "retry-key", auth);
+
+		assertThat(saved.getReviewRecordId()).isEqualTo("review-1");
+		verify(reviews, never()).submit(anyString(), anyString(), any(), anyMap(), any());
+	}
+
+	@Test
+	void rejectsManualSourceOnTrustedWrongAnswerEndpoint() {
+		WrongAnswerConfirmed event = new WrongAnswerConfirmed(
+				"event-1",
+				"student-1",
+				"course-1",
+				"semester-1",
+				null,
+				"manual-1",
+				null,
+				null,
+				"MANUAL",
+				null,
+				null);
+
+		assertThatThrownBy(() -> service.onWrongAnswerConfirmed(event, auth))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("错题确认事件来源只能是作业或考试");
 	}
 
 	@Test
