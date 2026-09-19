@@ -51,6 +51,56 @@ public class SupervisionCenterService {
 		return plans.save(plan);
 	}
 
+	@Transactional(readOnly = true)
+	public List<SupervisionPlan> listPlans(String schoolId) {
+		return plans.findBySchoolIdOrderByCreateTimeDesc(schoolId);
+	}
+
+	@Transactional
+	public SupervisionPlan createPlan(String schoolId, String actor, String name,
+			java.time.LocalDate startDate, java.time.LocalDate endDate, String campusId) {
+		if (endDate.isBefore(startDate)) {
+			throw new IllegalArgumentException("督导计划结束日期不能早于开始日期");
+		}
+		SupervisionPlan plan = new SupervisionPlan();
+		plan.setSchoolId(schoolId);
+		plan.setName(name);
+		plan.setStartDate(startDate);
+		plan.setEndDate(endDate);
+		plan.setCampusId(campusId);
+		audit.log(actor, "EDU_SUPERVISION_PLAN_CREATE", "name=" + name);
+		return plans.save(plan);
+	}
+
+	@Transactional
+	public SupervisionAssignment createAssignment(String schoolId, String actor, String planId,
+			String supervisorId, String teacherId, String scheduleEntryId, String campusId) {
+		SupervisionPlan plan = plans.findById(planId).orElseThrow();
+		if (!schoolId.equals(plan.getSchoolId()) || !"PUBLISHED".equals(plan.getStatus())) {
+			throw new IllegalStateException("仅可向本校已发布计划分配任务");
+		}
+		SupervisionAssignment assignment = new SupervisionAssignment();
+		assignment.setPlanId(planId);
+		assignment.setSchoolId(schoolId);
+		assignment.setCampusId(campusId);
+		assignment.setSupervisorId(supervisorId);
+		assignment.setTeacherId(teacherId);
+		assignment.setScheduleEntryId(scheduleEntryId);
+		audit.log(actor, "EDU_SUPERVISION_ASSIGNMENT_CREATE", "planId=" + planId);
+		return assignments.save(assignment);
+	}
+
+	@Transactional(readOnly = true)
+	public List<SupervisionAssignment> myAssignments(String supervisorId) {
+		return assignments.findBySupervisorIdOrderByCreateTimeDesc(supervisorId);
+	}
+
+	@Transactional(readOnly = true)
+	public SupervisionRecord getRecordForSupervisor(String assignmentId, String supervisorId) {
+		assigned(assignmentId, supervisorId);
+		return records.findByAssignmentId(assignmentId).orElseThrow();
+	}
+
 	@Transactional
 	public SupervisionPlan startPlan(String id, String actor) {
 		SupervisionPlan plan = plans.findById(id).orElseThrow();
@@ -152,6 +202,11 @@ public class SupervisionCenterService {
 		issue.setStatus(approved ? "CLOSED" : "RECTIFYING");
 		issues.save(issue);
 		return issue;
+	}
+
+	@Transactional(readOnly = true)
+	public SupervisionIssue getIssue(String issueId) {
+		return issues.findById(issueId).orElseThrow();
 	}
 
 	@Transactional
