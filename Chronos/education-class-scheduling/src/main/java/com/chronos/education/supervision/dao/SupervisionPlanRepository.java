@@ -4,4 +4,5 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 public interface SupervisionPlanRepository extends JpaRepository<SupervisionPlan, String> {
 	List<SupervisionPlan> findBySchoolIdOrderByCreateTimeDesc(String schoolId);
+	List<SupervisionPlan> findBySchoolIdInOrderByCreateTimeDesc(java.util.Collection<String> schoolIds);
 }

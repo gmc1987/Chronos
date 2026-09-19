@@ -5,6 +5,7 @@ import java.util.Set;
 /** 教育领域将平台通用数据范围解析为可用于数据库过滤的资源集合。 */
 public record EducationDataScope(
 		boolean fullAccess,
+		Set<String> schoolIds,
 		Set<String> campusIds,
 		Set<String> gradeIds,
 		Set<String> administrativeClassIds,
@@ -15,7 +16,17 @@ public record EducationDataScope(
 			Set<String> campusIds,
 			Set<String> gradeIds,
 			Set<String> administrativeClassIds,
+			Set<String> teacherIds,
+			Set<String> studentIds) {
+		this(fullAccess, Set.of(), campusIds, gradeIds, administrativeClassIds, teacherIds, studentIds);
+	}
+
+	public EducationDataScope(
+			boolean fullAccess,
+			Set<String> campusIds,
+			Set<String> gradeIds,
+			Set<String> administrativeClassIds,
 			Set<String> teacherIds) {
-		this(fullAccess, campusIds, gradeIds, administrativeClassIds, teacherIds, Set.of());
+		this(fullAccess, Set.of(), campusIds, gradeIds, administrativeClassIds, teacherIds, Set.of());
 	}
 }

@@ -3,6 +3,8 @@ package com.chronos.education.supervision.service;
 import com.chronos.education.grade.service.DomainEventOutboxService;
 import com.chronos.education.supervision.dao.*;
 import com.chronos.education.supervision.model.*;
+import com.chronos.education.scheduling.model.EducationDataScope;
+import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,6 +26,7 @@ public class SupervisionCenterService {
 	private final SupervisionRectificationRepository rectifications;
 	private final DomainEventOutboxService events;
 	private final IAuditLogService audit;
+	private final EducationDataScopeService dataScopes;
 
 	public SupervisionCenterService(
 			SupervisionPlanRepository plans,
@@ -32,7 +35,8 @@ public class SupervisionCenterService {
 			SupervisionIssueRepository issues,
 			SupervisionRectificationRepository rectifications,
 			DomainEventOutboxService events,
-			IAuditLogService audit) {
+			IAuditLogService audit,
+			EducationDataScopeService dataScopes) {
 		this.plans = plans;
 		this.assignments = assignments;
 		this.records = records;
@@ -40,11 +44,13 @@ public class SupervisionCenterService {
 		this.rectifications = rectifications;
 		this.events = events;
 		this.audit = audit;
+		this.dataScopes = dataScopes;
 	}
 
 	@Transactional
 	public SupervisionPlan publishPlan(String id, String actor) {
 		SupervisionPlan plan = plans.findById(id).orElseThrow();
+		assertSchool(dataScopes.resolve(actor), plan.getSchoolId());
 		requireState(plan.getStatus(), "DRAFT");
 		plan.setStatus("PUBLISHED");
 		audit.log(actor, "EDU_SUPERVISION_PLAN_PUBLISH", "planId=" + id);
@@ -52,13 +58,19 @@ public class SupervisionCenterService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<SupervisionPlan> listPlans(String schoolId) {
-		return plans.findBySchoolIdOrderByCreateTimeDesc(schoolId);
+	public List<SupervisionPlan> listPlans(String actor) {
+		EducationDataScope scope = dataScopes.resolve(actor);
+		return scope.fullAccess()
+				? plans.findAll()
+				: plans.findBySchoolIdInOrderByCreateTimeDesc(scope.schoolIds());
 	}
 
 	@Transactional
-	public SupervisionPlan createPlan(String schoolId, String actor, String name,
+	public SupervisionPlan createPlan(String actor, String name,
 			java.time.LocalDate startDate, java.time.LocalDate endDate, String campusId) {
+		EducationDataScope scope = dataScopes.resolve(actor);
+		String schoolId = dataScopes.requireSingleSchool(scope);
+		dataScopes.assertCampusAccess(scope, campusId);
 		if (endDate.isBefore(startDate)) {
 			throw new IllegalArgumentException("督导计划结束日期不能早于开始日期");
 		}
@@ -73,15 +85,20 @@ public class SupervisionCenterService {
 	}
 
 	@Transactional
-	public SupervisionAssignment createAssignment(String schoolId, String actor, String planId,
+	public SupervisionAssignment createAssignment(String actor, String planId,
 			String supervisorId, String teacherId, String scheduleEntryId, String campusId) {
+		EducationDataScope scope = dataScopes.resolve(actor);
 		SupervisionPlan plan = plans.findById(planId).orElseThrow();
-		if (!schoolId.equals(plan.getSchoolId()) || !"PUBLISHED".equals(plan.getStatus())) {
+		assertSchool(scope, plan.getSchoolId());
+		if (!"PUBLISHED".equals(plan.getStatus())) {
 			throw new IllegalStateException("仅可向本校已发布计划分配任务");
 		}
+		dataScopes.assertCampusAccess(scope, campusId);
+		dataScopes.assertTeacherAccess(scope, supervisorId);
+		dataScopes.assertTeacherAccess(scope, teacherId);
 		SupervisionAssignment assignment = new SupervisionAssignment();
 		assignment.setPlanId(planId);
-		assignment.setSchoolId(schoolId);
+		assignment.setSchoolId(plan.getSchoolId());
 		assignment.setCampusId(campusId);
 		assignment.setSupervisorId(supervisorId);
 		assignment.setTeacherId(teacherId);
@@ -99,6 +116,10 @@ public class SupervisionCenterService {
 	public SupervisionRecord getRecordForSupervisor(String assignmentId, String supervisorId) {
 		assigned(assignmentId, supervisorId);
 		return records.findByAssignmentId(assignmentId).orElseThrow();
+	}
+
+	private void assertSchool(EducationDataScope scope, String schoolId) {
+		dataScopes.assertSchoolAccess(scope, schoolId);
 	}
 
 	@Transactional

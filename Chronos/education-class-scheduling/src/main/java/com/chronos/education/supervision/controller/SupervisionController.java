@@ -28,7 +28,7 @@ public class SupervisionController {
 	@PostMapping("/admin/education/supervision/plans")
 	@PreAuthorize("hasAuthority('education:supervision:plan:create')")
 	public ResultData<PlanResponse> createPlan(@Valid @RequestBody PlanCommand command, Authentication auth) {
-		return ok(plan(service.createPlan(auth.getName(), auth.getName(), command.name(), command.startDate(),
+		return ok(plan(service.createPlan(auth.getName(), command.name(), command.startDate(),
 				command.endDate(), command.campusId())));
 	}
 
@@ -47,7 +47,7 @@ public class SupervisionController {
 	@PostMapping("/admin/education/supervision/assignments")
 	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
 	public ResultData<AssignmentResponse> assign(@Valid @RequestBody AssignmentCommand command, Authentication auth) {
-		return ok(assignment(service.createAssignment(auth.getName(), auth.getName(), command.planId(),
+		return ok(assignment(service.createAssignment(auth.getName(), command.planId(),
 				command.supervisorId(), command.teacherId(), command.scheduleEntryId(), command.campusId())));
 	}
 

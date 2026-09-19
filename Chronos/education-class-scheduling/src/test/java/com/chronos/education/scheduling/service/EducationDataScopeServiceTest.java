@@ -80,6 +80,7 @@ class EducationDataScopeServiceTest {
 
 		EducationDataScope scope = service.resolve("campus.manager");
 
+		assertThat(scope.schoolIds()).containsExactly("campus-1");
 		assertThat(scope.campusIds()).containsExactly("campus-1");
 		assertThat(scope.administrativeClassIds()).containsExactly("class-campus-1");
 	}
