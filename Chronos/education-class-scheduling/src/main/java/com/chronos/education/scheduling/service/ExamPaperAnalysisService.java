@@ -18,9 +18,11 @@ import com.chronos.education.scheduling.dao.ExamPaperItemRepository;
 import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
+import com.chronos.education.scheduling.dao.ExamSessionOfferingRepository;
 import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
+import com.chronos.education.grade.dto.GradeSourceEventContracts.ExamScoresConfirmedV1;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
 
 import lombok.RequiredArgsConstructor;
@@ -33,12 +35,24 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ExamPaperAnalysisService {
 	private final ExamSessionRepository sessions;
+	private final ExamSessionOfferingRepository sessionOfferings;
 	private final ExamRoomRepository rooms;
 	private final ExamCandidateRepository candidates;
 	private final ExamPaperItemRepository items;
 	private final ExamItemScoreRepository scores;
 	private final ExamPlanRepository plans;
 	private final EducationDomainEventService domainEvents;
+
+	public ExamPaperAnalysisService(
+			ExamSessionRepository sessions,
+			ExamRoomRepository rooms,
+			ExamCandidateRepository candidates,
+			ExamPaperItemRepository items,
+			ExamItemScoreRepository scores,
+			ExamPlanRepository plans,
+			EducationDomainEventService domainEvents) {
+		this(sessions, null, rooms, candidates, items, scores, plans, domainEvents);
+	}
 
 	@Transactional(readOnly = true)
 	public List<ExamPaperItem> items(String sessionId) {
@@ -135,6 +149,33 @@ public class ExamPaperAnalysisService {
 				throw new IllegalStateException("所有题目必须完成全部考生评分后才能确认");
 			}
 		}
+		if (sessionOfferings == null) {
+			throw new IllegalStateException("考试场次映射存储不可用，不能确认成绩");
+		}
+		List<String> offeringIds = sessionOfferings.findBySessionId(sessionId).stream()
+				.map(mapping -> mapping.getOfferingId()).distinct().toList();
+		if (offeringIds.isEmpty()) {
+			throw new IllegalStateException("考试场次缺少课程开设映射，不能确认成绩");
+		}
+		var confirmedAt = java.time.OffsetDateTime.now();
+		var plan = plans.findById(session.getPlanId())
+				.orElseThrow(() -> new IllegalStateException("考试计划不存在"));
+		for (ExamCandidate candidate : candidatesForSession(sessionId)) {
+			BigDecimal rawScore = paperItems.stream()
+					.map(item -> scores.findByItemIdAndCandidateId(item.getId(), candidate.getId())
+							.orElseThrow(() -> new IllegalStateException("考生逐题成绩不存在")).getScore())
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
+			BigDecimal maxScore = paperItems.stream()
+					.map(ExamPaperItem::getMaxScore)
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
+			for (String offeringId : offeringIds) {
+				ExamScoresConfirmedV1 event = new ExamScoresConfirmedV1(
+						"EXAM_SCORES_CONFIRMED:" + sessionId + ":" + offeringId + ":" + candidate.getStudentId(),
+						"ExamScoresConfirmedV1", confirmedAt, 1, plan.getId(), sessionId, offeringId,
+						candidate.getStudentId(), rawScore, maxScore, null, confirmedAt);
+				domainEvents.enqueueGradeEvent(event.eventType(), sessionId, event.eventId(), event, actor);
+			}
+		}
 		// 确认动作冻结逐题得分，避免审核、统计与错题沉淀读取到不同版本。
 		session.setScoreStatus("CONFIRMED");
 		session.setScoresConfirmedAt(java.time.LocalDateTime.now());
@@ -170,7 +211,7 @@ public class ExamPaperAnalysisService {
 						new WrongAnswerConfirmed(
 								"EXAM_SCORE_PUBLISHED:" + sourceItemId,
 								candidate.getStudentId(),
-								session.getSubjectId(),
+								null,
 								plan.getSemesterCode(),
 								null,
 								sourceItemId,

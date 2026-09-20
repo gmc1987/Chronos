@@ -4,6 +4,7 @@ import com.chronos.education.grade.dto.GradeSourceEventContracts.CourseGradesPub
 import com.chronos.education.grade.dto.GradeSourceEventContracts.ExamScoresConfirmedV1;
 import com.chronos.education.grade.dto.GradeSourceEventContracts.HomeworkGradesPublishedV1;
 import com.chronos.education.scheduling.dao.DataGradeEventFactRepository;
+import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.model.DataGradeEventFact;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
@@ -14,10 +15,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class EducationGradeEventConsumer {
 	private final DataGradeEventFactRepository facts;
 	private final ObjectMapper json;
+	private final CourseOfferingRepository offerings;
 
 	public EducationGradeEventConsumer(DataGradeEventFactRepository facts, ObjectMapper json) {
+		this(facts, json, null);
+	}
+
+	public EducationGradeEventConsumer(DataGradeEventFactRepository facts, ObjectMapper json,
+			CourseOfferingRepository offerings) {
 		this.facts = facts;
 		this.json = json;
+		this.offerings = offerings;
 	}
 
 	@Transactional
@@ -40,6 +48,10 @@ public class EducationGradeEventConsumer {
 	private void consumeExam(ExamScoresConfirmedV1 event) {
 		require("GRADE_EVENT_UNAVAILABLE_OFFERING", event.eventId(), event.eventType(),
 				event.sessionId(), event.offeringId(), event.studentId());
+		if (offerings != null && !offerings.existsById(event.offeringId())) {
+			throw new GradeEventUnavailableException("GRADE_EVENT_UNAVAILABLE_OFFERING",
+					"课程开设不存在：" + event.offeringId());
+		}
 		save(event.eventId(), event.eventType(), event.sessionId(), event.occurredAt().toLocalDateTime(),
 				event.offeringId(), event.studentId(), event.rawScore(), event.maxScore());
 	}
