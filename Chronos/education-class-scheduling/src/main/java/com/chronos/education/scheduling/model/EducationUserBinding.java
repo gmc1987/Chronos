@@ -17,9 +17,14 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(
 		name = "edu_user_profile_binding",
-		uniqueConstraints = @UniqueConstraint(
-				name = "uk_edu_user_profile_binding",
-				columnNames = { "username", "profile_type" }))
+		uniqueConstraints = {
+				@UniqueConstraint(
+						name = "uk_edu_user_profile_binding",
+						columnNames = { "username", "profile_type" }),
+				@UniqueConstraint(
+						name = "uk_edu_profile_account_binding",
+						columnNames = { "profile_type", "profile_id" })
+		})
 public class EducationUserBinding extends BaseEntity {
 	@Column(name = "username", length = 100, nullable = false)
 	private String username;
