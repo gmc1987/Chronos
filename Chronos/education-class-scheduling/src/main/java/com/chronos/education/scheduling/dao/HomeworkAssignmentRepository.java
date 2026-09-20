@@ -10,4 +10,6 @@ public interface HomeworkAssignmentRepository extends JpaRepository<HomeworkAssi
 	List<HomeworkAssignment> findByOfferingIdOrderByDueAtDescCreateTimeDesc(String offeringId);
 	List<HomeworkAssignment> findByOfferingIdInAndStatusOrderByDueAtDescCreateTimeDesc(
 			List<String> offeringIds, String status);
+	List<HomeworkAssignment> findByOfferingIdInAndStatusInOrderByDueAtDescCreateTimeDesc(
+			List<String> offeringIds, List<String> statuses);
 }
