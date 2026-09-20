@@ -134,6 +134,23 @@ class GradeControllerHttpTest {
 				.andExpect(jsonPath("$.code").value("403"));
 	}
 
+	@Test
+	void analysisEndpointsExposeRealRowsAndSupportedStatus() throws Exception {
+		GradeDtos.AnalysisResult result = new GradeDtos.AnalysisResult(
+				"class", true, "SUPPORTED", "published snapshot aggregate",
+				List.of("PUBLISHED 成绩册"), List.of(new GradeDtos.AnalysisRow(
+						"class-1", "一班", 2, 2, 1, new java.math.BigDecimal("72.50"),
+						new java.math.BigDecimal("50.00"), null)));
+		when(service.analysis("class", "teacher-1")).thenReturn(result);
+
+		mockMvc.perform(get("/admin/education/grades/analysis/class"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.dimension").value("class"))
+				.andExpect(jsonPath("$.data.supported").value(true))
+				.andExpect(jsonPath("$.data.rows[0].averageScore").value(72.50));
+		verify(service).analysis("class", "teacher-1");
+	}
+
 	private static final class GradebookControllerFixtures {
 		private GradeDtos.GradebookDetailResponse detail() {
 			return new GradeDtos.GradebookDetailResponse(
