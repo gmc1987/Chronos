@@ -1,12 +1,7 @@
-# 补考/重修切片二：当前不可用边界
+# 补考/重修切片二：最小真实闭环
 
-截至 2026-09-20，仓库中已经存在真实的课程开设、教学班成员、成绩册、已发布成绩快照，以及考试场次逐题评分确认/发布模型。但补考/重修闭环仍缺少以下生产基础设施：
+补考/重修现在仅允许基于真实已发布数据创建：原课程成绩必须来自已发布成绩册，考试场次必须为 `PUBLISHED` 且逐题成绩为 `PUBLISHED`，考生必须通过 `ExamCandidate.studentId` 关联到同一学生，试卷每一道题都必须存在逐题成绩。任何来源不完整的请求都会失败，不接受客户端提交分数。
 
-- `edu_makeup_exam_record` 或等价的结果模型，且必须关联已发布原成绩、考试场次和学生；
-- 补考/重修课程开设与数据范围授权；
-- 成绩中心对 `ExamScoresConfirmedV1` 的幂等消费和来源绑定。当前 `GradeSourceEventContracts` 只有预留契约，考试中心发布成绩时只沉淀错题事实；
-- 补考/重修结果的审核、版本快照、审计和学生/家长已发布可见性闭环。
+`V20261215__education_makeup_retake_closure.sql` 新增 `edu_makeup_retake_record`，以考试场次、考生和类型作为幂等键，保存原成绩/课程开设、真实考试结果、来源哈希、状态和发布快照。状态为 `DRAFT -> SUBMITTED -> APPROVED -> PUBLISHED`，拒绝进入 `REJECTED`；乐观锁和已发布幂等发布防止并发覆盖。策略沿用已发布成绩规则集的 `OVERWRITE`、`HIGHEST`、`PASS_CAP` 或 `SEPARATE_RECORD`，但永不更新原 `edu_course_grade`。
 
-因此本切片**不新增迁移、不创建补考/重修记录、不生成伪造成绩，也不覆盖已发布原成绩**。`MakeupRetakeReadiness.unavailable()` 是机器可读的 fail-closed 能力闸门，稳定 `reasonCode` 为 `MAKEUP_RETAKE_UNAVAILABLE`，并声明管理权限 `education:score:makeup-retake:manage`；当前学生和家长可见性为 `false`。任何未来的补考/重修写入口都必须先调用 `requireAvailable()`，再校验该权限和课程/学生数据范围，并在上述依赖完成后补充幂等来源键、审批、审计和新版本快照。不可用状态优先于权限判断，避免高权限账号绕过依赖闸门。
-
-现有成绩中心仍按第一切片安全运行：只接受 `MANUAL` 成绩项目；已发布成绩册不可原位编辑；学生门户只返回已发布成绩。`MakeupRetakeReadinessTest` 锁定依赖缺失时必须拒绝启用的行为。
+管理接口受独立补考/重修权限保护；学生端和家长端只返回 `PUBLISHED` 记录，家长身份必须存在有效监护关系。审计覆盖创建、提交、审批、拒绝和发布。`MakeupRetakeReadiness.unavailable()` 仍保留用于其他尚未接入确认事件的调用方，禁止绕过本服务直接伪造结果。
