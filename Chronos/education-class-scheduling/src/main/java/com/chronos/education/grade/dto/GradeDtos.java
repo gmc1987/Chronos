@@ -51,4 +51,11 @@ public final class GradeDtos {
 	public record SnapshotMetadata(Integer versionNo, String snapshotHash, String publishedBy,
 			LocalDateTime publishedAt) {
 	}
+
+	public record KnowledgeAnalysisResponse(boolean available, String reasonCode, String reason,
+			List<KnowledgeAnalysisDependency> dependencies) {
+	}
+
+	public record KnowledgeAnalysisDependency(String code, String status, String description) {
+	}
 }
