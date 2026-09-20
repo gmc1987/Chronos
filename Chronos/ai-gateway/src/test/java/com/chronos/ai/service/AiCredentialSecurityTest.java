@@ -17,7 +17,10 @@ class AiCredentialSecurityTest {
 
 		assertThat(ciphertext).startsWith("v1:").doesNotContain("secret-api-key");
 		assertThat(provider.decrypt(ciphertext)).isEqualTo("secret-api-key");
-		assertThatThrownBy(() -> provider.decrypt(ciphertext.substring(0, ciphertext.length() - 1) + "x"))
+		String tampered = ciphertext.substring(0, 4)
+				+ (ciphertext.charAt(4) == 'A' ? 'B' : 'A')
+				+ ciphertext.substring(5);
+		assertThatThrownBy(() -> provider.decrypt(tampered))
 				.isInstanceOf(IllegalStateException.class);
 	}
 
