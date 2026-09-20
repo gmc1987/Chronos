@@ -23,6 +23,8 @@ import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.chronos.model.vo.DataScopeContext;
+import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.model.pojo.Organization;
 import com.chronos.service.iService.IDataScopeService;
 import java.util.HashSet;
 import java.util.List;
@@ -56,6 +58,7 @@ public class EducationDataScopeService {
 	private final TeachingClassMemberRepository members;
 	private final ClassroomRepository classrooms;
 	private final ScheduleEntryRepository scheduleEntries;
+	private final IOrganizationRepository organizations;
 
 	@Autowired
 	public EducationDataScopeService(
@@ -69,7 +72,8 @@ public class EducationDataScopeService {
 			CourseOfferingRepository offerings,
 			TeachingClassMemberRepository members,
 			ClassroomRepository classrooms,
-			ScheduleEntryRepository scheduleEntries) {
+			ScheduleEntryRepository scheduleEntries,
+			IOrganizationRepository organizations) {
 		this.platformScopes = platformScopes;
 		this.teachers = teachers;
 		this.assignments = assignments;
@@ -81,6 +85,7 @@ public class EducationDataScopeService {
 		this.members = members;
 		this.classrooms = classrooms;
 		this.scheduleEntries = scheduleEntries;
+		this.organizations = organizations;
 	}
 
 	public EducationDataScopeService(
@@ -94,7 +99,23 @@ public class EducationDataScopeService {
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository scheduleEntries) {
 		this(platformScopes, teachers, assignments, classes, students, guardians, null,
-				offerings, null, classrooms, scheduleEntries);
+				offerings, null, classrooms, scheduleEntries, null);
+	}
+
+	public EducationDataScopeService(
+			IDataScopeService platformScopes,
+			TeacherAcademicProfileRepository teachers,
+			TeacherTeachingAssignmentRepository assignments,
+			AdministrativeClassRepository classes,
+			StudentProfileRepository students,
+			StudentGuardianRepository guardians,
+			EducationUserBindingRepository bindings,
+			CourseOfferingRepository offerings,
+			TeachingClassMemberRepository members,
+			ClassroomRepository classrooms,
+			ScheduleEntryRepository scheduleEntries) {
+		this(platformScopes, teachers, assignments, classes, students, guardians, bindings,
+				offerings, members, classrooms, scheduleEntries, null);
 	}
 
 	public EducationDataScope resolve(String username) {
@@ -106,9 +127,31 @@ public class EducationDataScopeService {
 					Set.of(),
 					Set.of(),
 					Set.of(),
+					Set.of(),
 					Set.of());
 		}
-		Set<String> campusIds = new HashSet<>(platform.organizationIds());
+		Set<String> schoolIds = new HashSet<>();
+		Set<String> campusIds = new HashSet<>();
+		for (String organizationId : platform.organizationIds()) {
+			Organization organization = organizations == null
+					? null
+					: organizations.findById(organizationId).orElse(null);
+			if (organization == null) {
+				schoolIds.add(organizationId);
+				campusIds.add(organizationId);
+			} else if ("CAMPUS".equals(organization.getOrganizationType())) {
+				campusIds.add(organizationId);
+				if (organization != null && organization.getParentOrgId() != null) {
+					schoolIds.add(organization.getParentOrgId().getId());
+				}
+			} else {
+				schoolIds.add(organizationId);
+				campusIds.addAll(organizations.findByParentOrgId_Id(organizationId).stream()
+						.filter(child -> "CAMPUS".equals(child.getOrganizationType()))
+						.map(Organization::getId)
+						.toList());
+			}
+		}
 		Set<String> gradeIds = new HashSet<>(platform.resourceIds()
 				.getOrDefault(GRADE_RESOURCE, Set.of()));
 		Set<String> classIds = new HashSet<>(platform.resourceIds()
@@ -131,6 +174,7 @@ public class EducationDataScopeService {
 		if (currentTeacher == null) {
 			return new EducationDataScope(
 					false,
+					Set.copyOf(schoolIds),
 					Set.copyOf(campusIds),
 					Set.copyOf(gradeIds),
 					Set.copyOf(classIds),
@@ -173,6 +217,7 @@ public class EducationDataScopeService {
 		}
 		return new EducationDataScope(
 				false,
+				Set.copyOf(schoolIds),
 				Set.copyOf(campusIds),
 				Set.copyOf(gradeIds),
 				Set.copyOf(classIds),
@@ -303,6 +348,41 @@ public class EducationDataScopeService {
 		if (!scope.fullAccess()) {
 			throw new AccessDeniedException("该操作需要全校数据权限");
 		}
+	}
+
+	public void assertSchoolAccess(EducationDataScope scope, String schoolId) {
+		if (scope.fullAccess() || scope.schoolIds().contains(schoolId)) {
+			return;
+		}
+		throw new AccessDeniedException("无权访问该学校督导数据");
+	}
+
+	public void assertCampusAccess(EducationDataScope scope, String campusId) {
+		if (scope.fullAccess() || scope.campusIds().contains(campusId)) {
+			return;
+		}
+		throw new AccessDeniedException("无权访问该校区督导数据");
+	}
+
+	public String requireSingleSchool(EducationDataScope scope) {
+		if (scope.fullAccess() || scope.schoolIds().size() != 1) {
+			throw new AccessDeniedException("当前数据范围无法确定唯一学校");
+		}
+		return scope.schoolIds().iterator().next();
+	}
+
+	public String requireSchoolForCampus(EducationDataScope scope, String campusId) {
+		if (!scope.fullAccess()) {
+			assertCampusAccess(scope, campusId);
+			return requireSingleSchool(scope);
+		}
+		if (organizations != null) {
+			return organizations.findById(campusId)
+					.map(Organization::getParentOrgId)
+					.map(Organization::getId)
+					.orElseThrow(() -> new AccessDeniedException("校区未关联学校"));
+		}
+		throw new AccessDeniedException("当前数据范围无法解析学校");
 	}
 
 	public List<CourseOffering> visibleOfferings(

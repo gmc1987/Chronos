@@ -189,6 +189,25 @@ export const deleteMeetingRoom = (id) => http.delete(`/admin/education/meeting/r
 export const listMeetings = () => http.get('/admin/education/meetings')
 export const pageMeetings = (params = {}) => http.get(`/admin/education/meetings/page?${qs(params)}`)
 export const createMeeting = (payload) => http.post('/admin/education/meetings', payload)
+export const listHomeSchoolBindings = (params = {}) => http.get(`/admin/education/home-school/parent-bindings?${new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+)}`)
+export const createHomeSchoolBinding = (payload) => http.post('/admin/education/home-school/parent-bindings', payload)
+export const invalidateHomeSchoolBinding = (id) => http.post(`/admin/education/home-school/parent-bindings/${id}/invalidate`)
+export const listHomeSchoolNotices = (params = {}) => http.get(`/admin/education/home-school/notices?${new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+)}`)
+export const createHomeSchoolNotice = (payload) => http.post('/admin/education/home-school/notices', payload)
+export const publishHomeSchoolNotice = (id) => http.post(`/admin/education/home-school/notices/${id}/publish`)
+
+export const listSupervisionPlans = () => http.get('/admin/education/supervision/plans')
+export const createSupervisionPlan = (payload) => http.post('/admin/education/supervision/plans', payload)
+export const publishSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/publish`)
+export const startSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/start`)
+export const createSupervisionAssignment = (payload) => http.post('/admin/education/supervision/assignments', payload)
+export const createSupervisionIssue = (recordId, payload) => http.post(`/admin/education/supervision/records/${recordId}/issues`, payload)
+export const reviewSupervisionIssue = (id, payload) => http.post(`/admin/education/supervision/issues/${id}/review`, payload)
+export const homeSchoolNoticeReceipts = (id) => http.get(`/admin/education/home-school/notices/${id}/receipts`)
 export const updateMeeting = (id, payload) => http.put(`/admin/education/meetings/${id}`, payload)
 export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id}`)
 export const publishMeeting = (id) => http.post(`/admin/education/meetings/${id}/publish`)
@@ -457,6 +476,18 @@ export const listEducationParents = (params) => http.get(`/admin/education/paren
 export const createEducationParent = (payload) => http.post('/admin/education/parents', payload)
 export const updateEducationParent = (id, payload) => http.put(`/admin/education/parents/${id}`, payload)
 export const deleteEducationParent = (id) => http.delete(`/admin/education/parents/${id}`)
+export const listEducationDataMetrics = () => http.get('/admin/education/data-center/metrics')
+export const getEducationDataDashboard = (dashboard, date, campusId) =>
+  http.get(`/admin/education/data-center/dashboards/${dashboard}?date=${encodeURIComponent(date)}${campusId ? `&campusId=${encodeURIComponent(campusId)}` : ''}`)
+export const createEducationDataSnapshot = (date, campusId) =>
+  http.post(`/admin/education/data-center/snapshots?date=${encodeURIComponent(date)}${campusId ? `&campusId=${encodeURIComponent(campusId)}` : ''}`)
+export const requestEducationDataReport = (payload) => http.post('/admin/education/data-center/reports', payload)
+export const listEducationDataReports = () => http.get('/admin/education/data-center/reports')
+export const retryEducationDataReport = (id) => http.post(`/admin/education/data-center/reports/${id}/retry`)
+export const listEducationQualityIssues = (status) => http.get(`/admin/education/data-center/quality-issues${status ? `?status=${encodeURIComponent(status)}` : ''}`)
+export const createEducationQualityIssue = (payload) => http.post('/admin/education/data-center/quality-issues', payload)
+export const transitionEducationQualityIssue = (id, status, resolution) =>
+  http.put(`/admin/education/data-center/quality-issues/${id}?status=${encodeURIComponent(status)}`, { resolution })
 export const listStudentGuardians = (params) => http.get(`/admin/education/student-guardians?${qs(params)}`)
 export const createStudentGuardian = (payload) => http.post('/admin/education/student-guardians', payload)
 export const updateStudentGuardian = (id, payload) => http.put(`/admin/education/student-guardians/${id}`, payload)

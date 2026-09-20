@@ -25,14 +25,19 @@ public class DomainEventOutboxService {
 
 	@Transactional
 	public void enqueue(CourseGradesPublishedV1 event) {
-		if (outbox.existsByDeduplicationKey(event.eventId())) {
+		enqueue(event.eventType(), event.gradebookId(), event.eventId(), event);
+	}
+
+	@Transactional
+	public void enqueue(String eventType, String aggregateId, String deduplicationKey, Object event) {
+		if (outbox.existsByDeduplicationKey(deduplicationKey)) {
 			return;
 		}
 		DomainEventOutbox record = new DomainEventOutbox();
-		record.setEventType(event.eventType());
-		record.setAggregateId(event.gradebookId());
+		record.setEventType(eventType);
+		record.setAggregateId(aggregateId);
 		record.setPayloadJson(write(event));
-		record.setDeduplicationKey(event.eventId());
+		record.setDeduplicationKey(deduplicationKey);
 		record.setNextAttemptAt(LocalDateTime.now());
 		outbox.save(record);
 	}
@@ -144,6 +149,42 @@ public class DomainEventOutboxService {
 			throw new IllegalStateException("只有死信事件可以执行该操作");
 		}
 		return event;
+	}
+
+	@Transactional
+	public DomainEventOutbox replay(String id) {
+		DomainEventOutbox event = outbox.findById(id).orElseThrow();
+		if ("SENT".equals(event.getStatus())) {
+			throw new IllegalStateException("已成功投递的领域事件不可重放");
+		}
+		event.setStatus("PENDING");
+		event.setNextAttemptAt(LocalDateTime.now());
+		event.setLeaseUntil(null);
+		event.setSentAt(null);
+		event.setLastError(null);
+		return event;
+	}
+
+	@Transactional
+	public DomainEventOutbox markDead(String id, String reason) {
+		DomainEventOutbox event = outbox.findById(id).orElseThrow();
+		event.setStatus("DEAD");
+		event.setLeaseUntil(null);
+		event.setLastError(limit(reason, 1000));
+		return event;
+	}
+
+	@Transactional(readOnly = true)
+	public List<DomainEventOutbox> list(String status, int page, int size) {
+		PageRequest request = PageRequest.of(page, size);
+		return status == null || status.isBlank()
+				? outbox.findAllByOrderByCreateTimeDesc(request)
+				: outbox.findByStatusOrderByCreateTimeAsc(status, request);
+	}
+
+	@Transactional(readOnly = true)
+	public long countByStatus(String status) {
+		return outbox.countByStatus(status);
 	}
 
 	private String write(Object event) {

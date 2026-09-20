@@ -24,4 +24,10 @@ public interface DomainEventOutboxRepository extends JpaRepository<DomainEventOu
 			""")
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	List<DomainEventOutbox> findDispatchCandidates(@Param("now") LocalDateTime now, Pageable pageable);
+
+	List<DomainEventOutbox> findByStatusOrderByCreateTimeAsc(String status, Pageable pageable);
+
+	List<DomainEventOutbox> findAllByOrderByCreateTimeDesc(Pageable pageable);
+
+	long countByStatus(String status);
 }

@@ -1,3 +1,4 @@
+-- 教师任职生命周期顺延，保留已经执行的 V20261134 督导中心迁移校验和。
 ALTER TABLE edu_teacher_profile
     ADD COLUMN IF NOT EXISTS employment_status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
     ADD COLUMN IF NOT EXISTS row_version BIGINT NOT NULL DEFAULT 0;
