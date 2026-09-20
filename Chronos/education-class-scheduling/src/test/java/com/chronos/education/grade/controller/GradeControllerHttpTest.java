@@ -135,18 +135,20 @@ class GradeControllerHttpTest {
 	}
 
 	@Test
-	void analysisCapabilityEndpointsExposeUnavailableStatusWithoutFakeMetrics() throws Exception {
-		GradeDtos.AnalysisCapability capability = new GradeDtos.AnalysisCapability(
-				"class", false, "UNAVAILABLE", "analysis data source is not available", List.of("published snapshots"));
-		when(service.analysisCapability("class")).thenReturn(capability);
+	void analysisEndpointsExposeRealRowsAndSupportedStatus() throws Exception {
+		GradeDtos.AnalysisResult result = new GradeDtos.AnalysisResult(
+				"class", true, "SUPPORTED", "published snapshot aggregate",
+				List.of("PUBLISHED 成绩册"), List.of(new GradeDtos.AnalysisRow(
+						"class-1", "一班", 2, 2, 1, new java.math.BigDecimal("72.50"),
+						new java.math.BigDecimal("50.00"), null)));
+		when(service.analysis("class", "teacher-1")).thenReturn(result);
 
 		mockMvc.perform(get("/admin/education/grades/analysis/class"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.dimension").value("class"))
-				.andExpect(jsonPath("$.data.supported").value(false))
-				.andExpect(jsonPath("$.data.status").value("UNAVAILABLE"))
-				.andExpect(jsonPath("$.data.dependencies[0]").value("published snapshots"));
-		verify(service).analysisCapability("class");
+				.andExpect(jsonPath("$.data.supported").value(true))
+				.andExpect(jsonPath("$.data.rows[0].averageScore").value(72.50));
+		verify(service).analysis("class", "teacher-1");
 	}
 
 	private static final class GradebookControllerFixtures {
