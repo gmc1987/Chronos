@@ -11,21 +11,32 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
+import com.chronos.security.SecretEncryptionProvider;
+import com.chronos.service.iService.IAuditLogService;
 
 /** AI 模型配置管理，不负责模型调用或供应商连接。 */
 @Service
 public class AiModelService {
 	private final AiModelRepository models;
 	private final AiModelChatService runtime;
+	private final SecretEncryptionProvider encryption;
+	private final IAuditLogService audit;
 
 	public AiModelService(AiModelRepository models) {
-		this(models, null);
+		this(models, null, null, null);
+	}
+
+	public AiModelService(AiModelRepository models, AiModelChatService runtime) {
+		this(models, runtime, null, null);
 	}
 
 	@Autowired
-	public AiModelService(AiModelRepository models, AiModelChatService runtime) {
+	public AiModelService(AiModelRepository models, AiModelChatService runtime,
+			SecretEncryptionProvider encryption, IAuditLogService audit) {
 		this.models = models;
 		this.runtime = runtime;
+		this.encryption = encryption;
+		this.audit = audit;
 	}
 
 	@Transactional(readOnly = true)
@@ -55,6 +66,7 @@ public class AiModelService {
 		applyDefault(target, Boolean.TRUE.equals(target.getIsDefault()), null);
 		if (Boolean.TRUE.equals(target.getEmbeddingDefault())) models.clearEmbeddingDefaults();
 		AiModel saved = models.save(target);
+		audit("AI_MODEL_CREATE", saved, null);
 		invalidate(saved.getId());
 		return saved;
 	}
@@ -65,6 +77,7 @@ public class AiModelService {
 			throw new IllegalArgumentException("AI 模型 ID 不能为空");
 		}
 		AiModel target = get(command.getId());
+		String previousFingerprint = target.getApiKeyFingerprint();
 		boolean explicitlyDefault = Boolean.TRUE.equals(command.getIsDefault());
 		boolean requestedDefault = command.getIsDefault() == null
 				? Boolean.TRUE.equals(target.getIsDefault())
@@ -79,6 +92,7 @@ public class AiModelService {
 		applyDefault(target, requestedDefault, target.getId());
 		if (Boolean.TRUE.equals(target.getEmbeddingDefault())) models.clearEmbeddingDefaults();
 		AiModel saved = models.save(target);
+		audit("AI_MODEL_UPDATE", saved, previousFingerprint);
 		invalidate(saved.getId());
 		return saved;
 	}
@@ -89,7 +103,16 @@ public class AiModelService {
 			throw new IllegalArgumentException("AI 模型不存在");
 		}
 		models.deleteById(id);
+		audit.log(currentUsername(), "AI_MODEL_DELETE", "modelId=" + id);
 		invalidate(id);
+	}
+
+	@Transactional
+	public AiModel rotateApiKey(String id, String apiKey) {
+		AiModel command = new AiModel();
+		command.setId(id);
+		command.setApiKey(apiKey);
+		return update(command);
 	}
 
 	private AiModel normalize(AiModel source, AiModel target, boolean creating) {
@@ -106,6 +129,15 @@ public class AiModelService {
 			target.setApiKey(requiredApiKey(apiKey));
 		} else if (apiKey != null && !isMaskedApiKey(apiKey)) {
 			target.setApiKey(apiKey);
+		}
+		if (target.getApiKey() != null && !target.getApiKey().isBlank()) {
+			requireProvider();
+			target.setApiKeyCiphertext(encryption.encrypt(target.getApiKey()));
+			target.setApiKeyKeyVersion(encryption.keyVersion());
+			target.setApiKeyFingerprint(encryption.fingerprint(target.getApiKey()));
+			target.setApiKey(null);
+		} else if (creating || target.getApiKeyCiphertext() == null) {
+			throw new AiModelConfigurationException("API Key 未配置或无法安全存储");
 		}
 		target.setSignatureHandler(trimToNull(source.getSignatureHandler()));
 		target.setAdapterClass(trimToNull(source.getAdapterClass()));
@@ -158,7 +190,7 @@ public class AiModelService {
 		if (!"CHAT".equalsIgnoreCase(target.getModelType())) {
 			throw new IllegalArgumentException("只有聊天模型才能设为默认模型");
 		}
-		if (target.getApiKey() == null || target.getApiKey().isBlank()) {
+		if (target.getApiKeyCiphertext() == null || target.getApiKeyCiphertext().isBlank()) {
 			throw new IllegalArgumentException("只有已配置 API Key 的模型才能设为默认模型");
 		}
 		if (existingId == null) {
@@ -209,7 +241,7 @@ public class AiModelService {
 		} catch (IllegalArgumentException exception) {
 			throw new AiModelConfigurationException("Base URL 必须是有效的 HTTP(S) 地址");
 		}
-		return baseUrl;
+		return AiEndpointSecurity.validate(baseUrl);
 	}
 
 	private Integer normalizeTimeout(Integer value, Integer current, String label) {
@@ -243,5 +275,28 @@ public class AiModelService {
 		if (runtime != null) {
 			runtime.invalidate(id);
 		}
+	}
+
+	private void requireProvider() {
+			if (encryption == null) {
+				throw new IllegalStateException("平台加密 provider 未配置，拒绝处理 API Key");
+			}
+		}
+
+		private void audit(String action, AiModel model, String previousFingerprint) {
+			if (audit == null) {
+				throw new IllegalStateException("平台审计 provider 未配置，拒绝处理 AI 模型凭证");
+			}
+			String detail = "modelId=" + model.getId() + ",provider=" + model.getProvider()
+					+ ",keyVersion=" + model.getApiKeyKeyVersion()
+					+ ",keyFingerprint=" + model.getApiKeyFingerprint();
+			if (previousFingerprint != null && !previousFingerprint.equals(model.getApiKeyFingerprint())) {
+				detail += ",rotatedFrom=" + previousFingerprint;
+			}
+			audit.log(currentUsername(), action, detail);
+		}
+
+		private String currentUsername() {
+			return "system";
 	}
 }

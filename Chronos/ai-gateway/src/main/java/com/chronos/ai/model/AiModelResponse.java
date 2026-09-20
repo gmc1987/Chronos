@@ -61,8 +61,8 @@ public class AiModelResponse {
 		this.temperature = model.getTemperature();
 		this.maxTokens = model.getMaxTokens();
 		this.topP = model.getTopP();
-		this.maskedApiKey = mask(model.getApiKey());
-		this.hasApiKey = model.getApiKey() != null && !model.getApiKey().isBlank();
+		this.maskedApiKey = mask(model.getApiKeyFingerprint());
+		this.hasApiKey = model.getApiKeyCiphertext() != null && !model.getApiKeyCiphertext().isBlank();
 		this.embeddingDimension = model.getEmbeddingDimension();
 		this.embeddingDefault = Boolean.TRUE.equals(model.getEmbeddingDefault());
 	}
@@ -76,12 +76,6 @@ public class AiModelResponse {
 			return null;
 		}
 		String value = apiKey.trim();
-		if (value.length() <= 4) {
-			return "****";
-		}
-		if (value.length() <= 8) {
-			return value.substring(0, 1) + "****" + value.substring(value.length() - 1);
-		}
-		return value.substring(0, 3) + "****" + value.substring(value.length() - 3);
+		return "********";
 	}
 }
