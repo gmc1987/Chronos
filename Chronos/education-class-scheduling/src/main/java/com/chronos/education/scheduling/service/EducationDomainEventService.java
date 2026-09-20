@@ -21,14 +21,46 @@ public class EducationDomainEventService {
 	private final EducationDomainOutboxRepository outbox;
 	private final ResearchErrorService errorRecords;
 	private final ObjectMapper json;
+	private final EducationGradeEventConsumer gradeEvents;
+
+	public EducationDomainEventService(
+			EducationDomainOutboxRepository outbox,
+			ResearchErrorService errorRecords,
+			ObjectMapper json,
+			EducationGradeEventConsumer gradeEvents) {
+		this.outbox = outbox;
+		this.errorRecords = errorRecords;
+		this.json = json;
+		this.gradeEvents = gradeEvents;
+	}
 
 	public EducationDomainEventService(
 			EducationDomainOutboxRepository outbox,
 			ResearchErrorService errorRecords,
 			ObjectMapper json) {
-		this.outbox = outbox;
-		this.errorRecords = errorRecords;
-		this.json = json;
+		this(outbox, errorRecords, json, null);
+	}
+
+	@Transactional
+	public EducationDomainOutbox enqueueGradeEvent(String eventType, String aggregateId,
+			String eventId, Object event, String actor) {
+		return outbox.findByEventId(eventId).orElseGet(() -> {
+			try {
+				EducationDomainOutbox value = new EducationDomainOutbox();
+				LocalDateTime now = LocalDateTime.now();
+				value.setCreateBy(actor);
+				value.setCreateTime(now);
+				value.setEventId(eventId);
+				value.setEventType(eventType);
+				value.setAggregateId(aggregateId);
+				value.setPayloadJson(json.writeValueAsString(event));
+				value.setActor(actor);
+				value.setNextAttemptAt(now);
+				return outbox.save(value);
+			} catch (Exception exception) {
+				throw new IllegalStateException("成绩事件写入 Outbox 失败", exception);
+			}
+		});
 	}
 
 	@Transactional
@@ -115,7 +147,11 @@ public class EducationDomainEventService {
 
 	private void deliver(EducationDomainOutbox event) throws Exception {
 		if (!WRONG_ANSWER_CONFIRMED.equals(event.getEventType())) {
-			throw new IllegalArgumentException("不支持的教育领域事件：" + event.getEventType());
+			if (gradeEvents == null) {
+				throw new IllegalArgumentException("不支持的教育领域事件：" + event.getEventType());
+			}
+			gradeEvents.consume(event.getEventType(), event.getPayloadJson());
+			return;
 		}
 		WrongAnswerConfirmed payload = json.readValue(
 				event.getPayloadJson(),

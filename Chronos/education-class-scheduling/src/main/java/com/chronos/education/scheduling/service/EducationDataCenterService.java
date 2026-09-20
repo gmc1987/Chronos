@@ -27,13 +27,20 @@ public class EducationDataCenterService {
  private final StudentProfileRepository students;
  private final AdministrativeClassRepository classes;
  private final ExamSessionRepository exams;
+ private final DataGradeEventFactRepository gradeEvents;
 
  public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
    DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
    ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
-   ExamSessionRepository exams) {
+   ExamSessionRepository exams, DataGradeEventFactRepository gradeEvents) {
   this.definitions=definitions; this.snapshots=snapshots; this.reports=reports; this.issues=issues;
-  this.scopes=scopes; this.files=files; this.students=students; this.classes=classes; this.exams=exams;
+  this.scopes=scopes; this.files=files; this.students=students; this.classes=classes; this.exams=exams; this.gradeEvents=gradeEvents;
+ }
+ public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
+   DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
+   ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
+   ExamSessionRepository exams) {
+  this(definitions, snapshots, reports, issues, scopes, files, students, classes, exams, null);
  }
  public List<DataMetricDefinition> metricDefinitions() { return definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc(); }
  public List<DataDailySnapshot> dashboard(String dashboard, LocalDate date, String campusId, Authentication user) {
@@ -54,6 +61,7 @@ public class EducationDataCenterService {
    if (!categories.contains(definition.getCategory()) || values.containsKey(definition.getMetricCode())) continue;
    DataDailySnapshot empty=new DataDailySnapshot(); empty.setSnapshotDate(date); empty.setCampusId(requestedCampus);
    empty.setMetricCode(definition.getMetricCode()); empty.setMetricValue(java.math.BigDecimal.ZERO);
+   empty.setDimensionJson("{\"availability\":\"UNAVAILABLE\",\"reason\":\"snapshot not materialized\"}");
    empty.setSourceVersion(definition.getSourceVersion()); values.put(definition.getMetricCode(), empty);
   }
   return new ArrayList<>(values.values());
@@ -68,6 +76,9 @@ public class EducationDataCenterService {
    value.setSnapshotDate(date); value.setCampusId(campusId); value.setMetricCode(definition.getMetricCode());
    // Producers may supply richer dimensions later; the persisted daily value is deliberately stable and repeatable.
    if (value.getMetricValue() == null) value.setMetricValue(measure(definition.getMetricCode(), campusId, date));
+   if (!campusId.isBlank() && isGradeEventMetric(definition.getMetricCode())) {
+    value.setDimensionJson("{\"availability\":\"UNAVAILABLE\",\"reason\":\"source event has no campusId\"}");
+   }
    value.setSourceVersion(definition.getSourceVersion());
    result.add(snapshots.save(value));
   }
@@ -82,7 +93,22 @@ public class EducationDataCenterService {
    if ("ACTIVE_CLASS_COUNT".equals(code)) return java.math.BigDecimal.valueOf(campusId.isBlank() ? classes.count() : classes.findByCampusIdIn(List.of(campusId)).size());
    if ("EXAM_SESSION_COUNT".equals(code)) return java.math.BigDecimal.valueOf(exams.findByExamDateBetweenAndStatus(
      date, date, "PUBLISHED").size());
+   if (campusId.isBlank() && gradeEvents != null) {
+    String eventType = switch (code) {
+     case "COURSE_GRADES_PUBLISHED_COUNT" -> "CourseGradesPublishedV1";
+     case "EXAM_SCORES_CONFIRMED_COUNT" -> "ExamScoresConfirmedV1";
+     case "HOMEWORK_GRADES_PUBLISHED_COUNT" -> "HomeworkGradesPublishedV1";
+     default -> null;
+    };
+    if (eventType != null) return java.math.BigDecimal.valueOf(
+      gradeEvents.countByEventTypeAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(
+        eventType, date.atStartOfDay(), date.plusDays(1).atStartOfDay()));
+   }
    return java.math.BigDecimal.ZERO;
+  }
+  private boolean isGradeEventMetric(String code) {
+   return Set.of("COURSE_GRADES_PUBLISHED_COUNT", "EXAM_SCORES_CONFIRMED_COUNT",
+     "HOMEWORK_GRADES_PUBLISHED_COUNT").contains(code);
   }
  public DataReportTask requestReport(String type, LocalDate date, String campusId, Authentication user) {
   assertCampus(campusId,user);

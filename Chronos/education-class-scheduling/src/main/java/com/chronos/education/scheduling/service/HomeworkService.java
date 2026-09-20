@@ -37,6 +37,7 @@ import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.BatchGradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
+import com.chronos.education.grade.dto.GradeSourceEventContracts.HomeworkGradesPublishedV1;
 
 @Service
 @Transactional
@@ -430,6 +431,24 @@ public class HomeworkService {
 					// 成绩发布才是作业评分的业务确认点；草稿评分不能提前污染错题本。
 					publishWrongAnswers(homework, offering, submission, auth);
 					submission.setGradesPublished(true);
+					domainEvents.enqueueGradeEvent(
+							"HomeworkGradesPublishedV1",
+							homework.getId(),
+							"HOMEWORK_GRADES_PUBLISHED:" + submission.getId(),
+							new HomeworkGradesPublishedV1(
+									"HOMEWORK_GRADES_PUBLISHED:" + submission.getId(),
+									"HomeworkGradesPublishedV1",
+									java.time.OffsetDateTime.now(),
+									1,
+									homework.getId(),
+									homework.getOfferingId(),
+									submission.getStudentId(),
+									submission.getScore() == null
+											? null
+											: java.math.BigDecimal.valueOf(submission.getScore()),
+									java.math.BigDecimal.valueOf(homework.getMaxScore()),
+									java.time.OffsetDateTime.now()),
+							auth.getName());
 				});
 		// 返回本次新发布数量，重复点击时返回 0，便于前端准确反馈幂等结果。
 		return pending.size();
