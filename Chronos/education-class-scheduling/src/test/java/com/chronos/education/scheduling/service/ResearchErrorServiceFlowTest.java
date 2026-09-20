@@ -184,4 +184,27 @@ class ResearchErrorServiceFlowTest {
 		assertThatThrownBy(() -> service.groupMembers("group-1", auth))
 				.isInstanceOf(AccessDeniedException.class);
 	}
+
+	@Test
+	void failsClosedWhenTeacherIdentityBindingIsUnavailable() {
+		ResearchGroup group = new ResearchGroup();
+		group.setId("group-1");
+		when(groups.findById("group-1")).thenReturn(Optional.of(group));
+		when(activities.save(any(ResearchActivity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThatThrownBy(() -> service.createActivity("group-1",
+				new ActivityRequest("活动", null, null, null, null), auth))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("教师身份绑定服务未配置");
+	}
+
+	@Test
+	void deniesTeacherPersonalErrorBookRows() {
+		when(scopes.resolve("teacher-1")).thenReturn(new EducationDataScope(
+				false, Set.of(), Set.of(), Set.of(), Set.of("teacher-1"), Set.of()));
+
+		assertThatThrownBy(() -> service.items(null, auth))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("教师只能查看错题聚合统计");
+	}
 }
