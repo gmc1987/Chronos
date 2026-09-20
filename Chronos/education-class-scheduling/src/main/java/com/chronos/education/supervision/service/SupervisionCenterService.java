@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ public class SupervisionCenterService {
 	private final DomainEventOutboxService events;
 	private final IAuditLogService audit;
 
+	@Autowired
 	public SupervisionCenterService(
 			SupervisionPlanRepository plans,
 			SupervisionAssignmentRepository assignments,
@@ -48,6 +50,18 @@ public class SupervisionCenterService {
 		this.dataScopes = dataScopes;
 		this.events = events;
 		this.audit = audit;
+	}
+
+	public SupervisionCenterService(
+			SupervisionPlanRepository plans,
+			SupervisionAssignmentRepository assignments,
+			SupervisionRecordRepository records,
+			SupervisionIssueRepository issues,
+			SupervisionRectificationRepository rectifications,
+			DomainEventOutboxService events,
+			IAuditLogService audit,
+			EducationDataScopeService dataScopes) {
+		this(plans, assignments, records, issues, rectifications, null, dataScopes, events, audit);
 	}
 
 	@Transactional
@@ -107,7 +121,7 @@ public class SupervisionCenterService {
 			String supervisorId, String teacherId, String scheduleEntryId, String campusId) {
 		SupervisionPlan plan = plans.findById(planId).orElseThrow();
 		EducationDataScope scope = dataScopes.resolve(actor);
-		if (!scope.fullAccess() && !scope.campusIds().contains(plan.getCampusId())) {
+		if (plan.getCampusId() != null && !scope.fullAccess() && !scope.campusIds().contains(plan.getCampusId())) {
 			throw new AccessDeniedException("无权访问该督导计划");
 		}
 		if (!"PUBLISHED".equals(plan.getStatus())) {
@@ -116,8 +130,8 @@ public class SupervisionCenterService {
 		dataScopes.assertTeacherAccess(scope, supervisorId);
 		dataScopes.assertTeacherAccess(scope, teacherId);
 		dataScopes.assertScheduleEntryAccess(scope, scheduleEntryId);
-		if (campusId != null && !scope.fullAccess() && !scope.campusIds().contains(campusId)) {
-			throw new AccessDeniedException("无权分配该校区任务");
+		if (campusId != null) {
+			dataScopes.assertCampusAccess(scope, campusId);
 		}
 		SupervisionAssignment assignment = new SupervisionAssignment();
 		assignment.setPlanId(planId);
