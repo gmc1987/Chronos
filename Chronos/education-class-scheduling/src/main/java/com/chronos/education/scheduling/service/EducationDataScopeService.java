@@ -437,9 +437,23 @@ public class EducationDataScopeService {
 			assertFullAccess(scope);
 			return;
 		}
+
 		if (scope.fullAccess() || offerings.findByCourseCode(courseId).stream()
 				.anyMatch(offering -> canAccessOffering(scope, offering))) return;
 		throw new AccessDeniedException("无权访问该课程数据");
+	}
+
+	/**
+	 * Terms are only visible when at least one real offering in the term is
+	 * visible to the caller. This prevents term/calendar endpoints from
+	 * becoming an unscoped back door into another campus.
+	 */
+	public void assertTermAccess(EducationDataScope scope, String semesterCode) {
+		if (scope.fullAccess()) return;
+		if (semesterCode == null || semesterCode.isBlank()
+				|| visibleOfferings(scope, offerings.findBySemesterCodeOrderByOfferingCode(semesterCode)).isEmpty()) {
+			throw new AccessDeniedException("无权访问该学期数据");
+		}
 	}
 
 	public boolean canAccessCourse(EducationDataScope scope, String courseId) {
