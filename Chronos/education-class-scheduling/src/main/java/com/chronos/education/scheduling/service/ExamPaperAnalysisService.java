@@ -22,7 +22,6 @@ import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
-import com.chronos.education.grade.dto.GradeSourceEventContracts.ExamScoresConfirmedV1;
 
 import lombok.RequiredArgsConstructor;
 
@@ -139,35 +138,8 @@ public class ExamPaperAnalysisService {
 		// 确认动作冻结逐题得分，避免审核、统计与错题沉淀读取到不同版本。
 		session.setScoreStatus("CONFIRMED");
 		session.setScoresConfirmedAt(java.time.LocalDateTime.now());
-		java.time.OffsetDateTime occurredAt = java.time.OffsetDateTime.now();
-		for (ExamCandidate candidate : candidatesForSession(sessionId)) {
-			BigDecimal total = BigDecimal.ZERO;
-			BigDecimal maximum = BigDecimal.ZERO;
-			for (ExamPaperItem item : paperItems) {
-				maximum = maximum.add(item.getMaxScore());
-				total = total.add(scores.findByItemIdAndCandidateId(item.getId(), candidate.getId())
-						.orElseThrow().getScore());
-			}
-			String eventId = "EXAM_SCORES_CONFIRMED:" + sessionId + ":" + candidate.getId();
-			domainEvents.enqueueGradeEvent(
-					"ExamScoresConfirmedV1",
-					sessionId,
-					eventId,
-					new ExamScoresConfirmedV1(
-							eventId,
-							"ExamScoresConfirmedV1",
-							occurredAt,
-							1,
-							session.getPlanId(),
-							sessionId,
-							null,
-							candidate.getStudentId(),
-							total,
-							maximum,
-							null,
-							occurredAt),
-					actor);
-		}
+		// ExamSession has no persisted offering mapping. Do not emit an event with
+		// an invented offeringId; the future mapping migration owns this boundary.
 		return sessions.save(session);
 	}
 

@@ -31,18 +31,37 @@ public class EducationGradeEventConsumer {
 	}
 
 	private void consumeCourse(CourseGradesPublishedV1 event) {
+		require("GRADE_EVENT_INVALID", event.eventId(), event.eventType(), event.gradebookId(),
+				event.offeringId(), null);
 		save(event.eventId(), event.eventType(), event.gradebookId(), event.occurredAt().toLocalDateTime(),
 				event.offeringId(), null, null, null);
 	}
 
 	private void consumeExam(ExamScoresConfirmedV1 event) {
+		require("GRADE_EVENT_UNAVAILABLE_OFFERING", event.eventId(), event.eventType(),
+				event.sessionId(), event.offeringId(), event.studentId());
 		save(event.eventId(), event.eventType(), event.sessionId(), event.occurredAt().toLocalDateTime(),
 				event.offeringId(), event.studentId(), event.rawScore(), event.maxScore());
 	}
 
 	private void consumeHomework(HomeworkGradesPublishedV1 event) {
+		require("GRADE_EVENT_INVALID", event.eventId(), event.eventType(), event.assignmentId(),
+				event.offeringId(), event.studentId());
 		save(event.eventId(), event.eventType(), event.assignmentId(), event.publishedAt().toLocalDateTime(),
 				event.offeringId(), event.studentId(), event.score(), event.maxScore());
+	}
+
+	private void require(String code, String eventId, String eventType, String aggregateId,
+			String offeringId, String studentId) {
+		if (blank(eventId) || blank(eventType) || blank(aggregateId)
+				|| blank(offeringId) || ("ExamScoresConfirmedV1".equals(eventType) && blank(studentId))) {
+			throw new GradeEventUnavailableException(code,
+					code + ": eventId=" + eventId + ", eventType=" + eventType);
+		}
+	}
+
+	private boolean blank(String value) {
+		return value == null || value.isBlank();
 	}
 
 	private void save(String eventId, String eventType, String aggregateId, LocalDateTime occurredAt,
