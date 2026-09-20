@@ -26,6 +26,22 @@ public final class GradeDtos {
 	public record ItemsCommand(List<GradeItemCommand> items, Long rowVersion) {
 	}
 
+	public record ImportRowError(int rowNumber, String studentNo, String componentCode, String message) {
+	}
+
+	public record ImportResult(int totalRows, int importedRows, List<ImportRowError> errors) {
+	}
+
+	public record CorrectionItemCommand(String studentId, String componentId, BigDecimal correctedScore) {
+	}
+
+	public record CorrectionCommand(List<CorrectionItemCommand> items, String reason) {
+	}
+
+	public record CorrectionResponse(String id, String gradebookId, Integer baseVersion, Integer targetVersion,
+			String status, String requestedBy, String publishedBy, String reason) {
+	}
+
 	public record RejectCommand(String comment) {
 	}
 

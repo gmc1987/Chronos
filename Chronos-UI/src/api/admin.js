@@ -237,6 +237,9 @@ export const getScoreGradeAnalysisCapability = () => http.get('/admin/education/
 export const getScoreSubjectAnalysisCapability = () => http.get('/admin/education/grades/analysis/subject')
 export const getScoreTrendAnalysisCapability = () => http.get('/admin/education/grades/analysis/trend')
 export const getScoreKnowledgeAnalysisCapability = () => http.get('/admin/education/grades/analysis/knowledge')
+export const importGradebook = (id, file) => { const form = new FormData(); form.append('file', file); return http.post(`/admin/education/grades/gradebooks/${id}/import`, form) }
+export const requestGradeCorrection = (id, payload) => http.post(`/admin/education/grades/gradebooks/${id}/corrections`, payload)
+export const publishGradeCorrection = (id) => http.post(`/admin/education/grades/corrections/${id}/publish`)
 export const returnWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/return`, payload)
 export const withdrawWorkflowInstance = (id, payload) => http.post(`/workflow-instances/${id}/withdraw`, payload)
 export const remindWorkflowTask = (id) => http.post(`/workflow-tasks/${id}/remind`)

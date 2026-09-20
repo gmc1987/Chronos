@@ -18,5 +18,8 @@ import com.chronos.commons.model.ResultData; import com.chronos.education.grade.
  @GetMapping("/analysis/subject") @PreAuthorize("hasAuthority('education:score:subject-analysis:view')") public ResultData<AnalysisCapability> subjectAnalysis(){return ok(service.analysisCapability("subject"));}
  @GetMapping("/analysis/trend") @PreAuthorize("hasAuthority('education:score:trend-analysis:view')") public ResultData<AnalysisCapability> trendAnalysis(){return ok(service.analysisCapability("trend"));}
  @GetMapping("/analysis/knowledge") @PreAuthorize("hasAuthority('education:score:knowledge-analysis:view')") public ResultData<AnalysisCapability> knowledgeAnalysis(){return ok(service.analysisCapability("knowledge"));}
+ @PostMapping("/gradebooks/{id}/import") @PreAuthorize("hasAuthority('education:score:gradebook:import')") public ResultData<ImportResult> importItems(@PathVariable String id,@RequestPart("file") org.springframework.web.multipart.MultipartFile file,Authentication a){return ok(service.importItems(id,file,a.getName()));}
+ @PostMapping("/gradebooks/{id}/corrections") @PreAuthorize("hasAuthority('education:score:gradebook:correction:request')") public ResultData<CorrectionResponse> requestCorrection(@PathVariable String id,@RequestBody CorrectionCommand c,Authentication a){return ok(service.requestCorrection(id,c,a.getName()));}
+ @PostMapping("/corrections/{correctionId}/publish") @PreAuthorize("hasAuthority('education:score:gradebook:correction:publish')") public ResultData<CorrectionResponse> publishCorrection(@PathVariable String correctionId,Authentication a){return ok(service.publishCorrection(correctionId,a.getName()));}
  private <T> ResultData<T> ok(T data){return ResultData.<T>builder().code("200").msg("ok").data(data).build();}
 }
