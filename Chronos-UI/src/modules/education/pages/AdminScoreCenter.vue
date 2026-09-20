@@ -5,6 +5,7 @@ import {
   createAssessmentScheme,
   createGradebook,
   getGradebook,
+  importGradebook,
   listAssessmentSchemes,
   listGradebookSnapshots,
   listGradebooks,
@@ -31,6 +32,8 @@ const snapshots = ref([])
 const activeTab = ref('gradebooks')
 const dirty = ref(false)
 const snapshotLoading = ref(false)
+const importInput = ref(null)
+const importResult = ref(null)
 const statusLabel = {
   DRAFT: '草稿',
   EDITING: '录入中',
@@ -210,6 +213,25 @@ async function saveItems() {
   await selectGradebook(selected.value)
 }
 
+function chooseImportFile() {
+  if (!selected.value || !canEdit.value) return
+  importInput.value?.click()
+}
+
+async function importFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !selected.value) return
+  const response = await importGradebook(selected.value.id, file)
+  importResult.value = response?.data || null
+  if (importResult.value?.errors?.length) {
+    ElMessage.warning(`导入完成：${importResult.value.importedRows} 行成功，${importResult.value.errors.length} 项错误`)
+  } else {
+    ElMessage.success(`导入成功：${importResult.value?.importedRows || 0} 行`)
+  }
+  await selectGradebook(selected.value)
+}
+
 async function submit() {
   if (!selected.value || dirty.value) {
     ElMessage.warning('请先保存成绩')
@@ -282,6 +304,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               <span class="editor-actions">
                 <el-tag v-if="dirty" type="warning">有未保存修改</el-tag>
                 <el-button :disabled="!canEdit" @click="saveItems">批量保存</el-button>
+                <el-button :disabled="!canEdit" @click="chooseImportFile">导入 Excel</el-button>
+                <input ref="importInput" type="file" accept=".xlsx" hidden @change="importFile">
                 <el-button type="warning" :disabled="dirty || !['EDITING', 'REJECTED'].includes(selected.status)" @click="submit">提交审核</el-button>
                 <el-button type="success" :disabled="selected.status !== 'APPROVED'" @click="publish">发布</el-button>
               </span>
@@ -331,6 +355,20 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               </el-table-column>
             </el-table>
           </div>
+          <el-alert
+            v-if="importResult?.errors?.length"
+            type="warning"
+            :closable="false"
+            title="逐行校验错误（有效行已导入）"
+            class="import-errors"
+          >
+            <el-table :data="importResult.errors" size="small" border>
+              <el-table-column prop="rowNumber" label="行号" width="80" />
+              <el-table-column prop="studentNo" label="学号" width="140" />
+              <el-table-column prop="componentCode" label="项目" width="140" />
+              <el-table-column prop="message" label="错误" />
+            </el-table>
+          </el-alert>
 
           <el-divider />
           <div class="snapshot-header">

@@ -1,6 +1,7 @@
 package com.chronos.education.grade.service;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -47,6 +48,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 @ExtendWith(MockitoExtension.class)
 class GradeCenterValidationTest {
@@ -184,6 +187,48 @@ class GradeCenterValidationTest {
 
 		assertThrows(IllegalStateException.class, () -> service.saveItems("gradebook-1",
 				new ItemsCommand(List.of(), 0L), "teacher"));
+	}
+
+	@Test
+	void importsValidRowsAndReportsInvalidRowsWithoutChangingPublishedState() throws Exception {
+		Gradebook gradebook = gradebook("gradebook-1", "EDITING");
+		gradebook.setSchemeId("scheme-1");
+		gradebook.setTeacherId("teacher-1");
+		AssessmentComponent component = component("component-1");
+		component.setCode("final");
+		component.setMaxScore(BigDecimal.valueOf(100));
+		GradebookStudent student = student("student-1");
+		student.setStudentNo("S001");
+		when(gradebooks.findById("gradebook-1")).thenReturn(Optional.of(gradebook));
+		when(dataScopes.resolve("teacher")).thenReturn(new EducationDataScope(
+				false, Set.of(), Set.of(), Set.of(), Set.of("teacher-1"), Set.of()));
+		when(students.findByGradebookId("gradebook-1")).thenReturn(List.of(student));
+		when(components.findBySchemeIdOrderBySortOrder("scheme-1")).thenReturn(List.of(component));
+		when(items.findByGradebookId("gradebook-1")).thenReturn(List.of());
+
+		MockMultipartFile file = new MockMultipartFile("file", "grades.xlsx",
+				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				excel());
+
+		var result = service.importItems("gradebook-1", file, "teacher");
+		assertEquals(2, result.totalRows());
+		assertEquals(1, result.importedRows());
+		assertEquals(1, result.errors().size());
+	}
+
+	private byte[] excel() throws Exception {
+		try (XSSFWorkbook workbook = new XSSFWorkbook();
+				java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+			var sheet = workbook.createSheet();
+			sheet.createRow(0).createCell(0).setCellValue("studentNo");
+			sheet.getRow(0).createCell(1).setCellValue("final");
+			sheet.createRow(1).createCell(0).setCellValue("S001");
+			sheet.getRow(1).createCell(1).setCellValue(88);
+			sheet.createRow(2).createCell(0).setCellValue("UNKNOWN");
+			sheet.getRow(2).createCell(1).setCellValue(90);
+			workbook.write(output);
+			return output.toByteArray();
+		}
 	}
 
 	@Test

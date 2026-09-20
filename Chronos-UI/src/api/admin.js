@@ -232,6 +232,9 @@ export const listGradebookSnapshots = (id) => http.get(`/admin/education/grades/
 export const updateGradebookItems = (id, payload) => http.put(`/admin/education/grades/gradebooks/${id}/items`, payload)
 export const submitGradebook = (id, payload = {}) => http.post(`/admin/education/grades/gradebooks/${id}/submit`, payload)
 export const publishGradebook = (id, payload = {}) => http.post(`/admin/education/grades/gradebooks/${id}/publish`, payload)
+export const importGradebook = (id, file) => { const form = new FormData(); form.append('file', file); return http.post(`/admin/education/grades/gradebooks/${id}/import`, form) }
+export const requestGradeCorrection = (id, payload) => http.post(`/admin/education/grades/gradebooks/${id}/corrections`, payload)
+export const publishGradeCorrection = (id) => http.post(`/admin/education/grades/corrections/${id}/publish`)
 export const returnWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/return`, payload)
 export const withdrawWorkflowInstance = (id, payload) => http.post(`/workflow-instances/${id}/withdraw`, payload)
 export const remindWorkflowTask = (id) => http.post(`/workflow-tasks/${id}/remind`)
