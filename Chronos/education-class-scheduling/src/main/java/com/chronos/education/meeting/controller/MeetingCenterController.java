@@ -18,6 +18,9 @@ import com.chronos.commons.model.PageView;
 import com.chronos.education.meeting.model.MeetingCommands;
 import com.chronos.education.meeting.model.MeetingRoom;
 import com.chronos.education.meeting.model.MeetingView;
+import com.chronos.education.meeting.model.MeetingMaterial;
+import com.chronos.education.meeting.model.MeetingMinutes;
+import com.chronos.education.meeting.model.MeetingActionItem;
 import com.chronos.education.meeting.service.MeetingCenterService;
 import com.chronos.security.IamAuthorization;
 
@@ -155,6 +158,82 @@ public class MeetingCenterController {
 			@RequestBody MeetingCommands.Response command,
 			Authentication authentication) {
 		return ok(service.respond(id, command, authentication.getName()));
+	}
+
+	@PostMapping("/portal/education/meetings/{id}/check-in")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<MeetingView> checkIn(
+			@PathVariable String id,
+			Authentication authentication) {
+		return ok(service.checkIn(id, authentication.getName()));
+	}
+
+	@PostMapping("/admin/education/meetings/{id}/materials")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:update','education:meeting:manage')")
+	public ResultData<MeetingMaterial> addMaterial(
+			@PathVariable String id,
+			@RequestBody @Valid MeetingCommands.Material command,
+			Authentication authentication) {
+		return ok(service.addMaterial(id, command, authentication.getName()));
+	}
+
+	@DeleteMapping("/admin/education/meetings/{id}/materials/{materialId}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:update','education:meeting:manage')")
+	public ResultData<Void> deleteMaterial(
+			@PathVariable String id,
+			@PathVariable String materialId,
+			Authentication authentication) {
+		service.deleteMaterial(id, materialId, authentication);
+		return ok(null);
+	}
+
+	@PutMapping("/admin/education/meetings/{id}/minutes")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:update','education:meeting:manage')")
+	public ResultData<MeetingMinutes> saveMinutes(
+			@PathVariable String id,
+			@RequestBody @Valid MeetingCommands.Minutes command,
+			Authentication authentication) {
+		return ok(service.saveMinutes(id, command, authentication.getName()));
+	}
+
+	@PostMapping("/admin/education/meetings/{id}/minutes/publish")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:update','education:meeting:manage')")
+	public ResultData<MeetingMinutes> publishMinutes(
+			@PathVariable String id,
+			Authentication authentication) {
+		return ok(service.publishMinutes(id, authentication.getName()));
+	}
+
+	@PostMapping("/admin/education/meetings/{id}/action-items")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:update','education:meeting:manage')")
+	public ResultData<MeetingActionItem> addActionItem(
+			@PathVariable String id,
+			@RequestBody @Valid MeetingCommands.ActionItem command,
+			Authentication authentication) {
+		return ok(service.saveActionItem(
+				id, null, command, authentication.getName()));
+	}
+
+	@PutMapping("/admin/education/meetings/{id}/action-items/{itemId}")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<MeetingActionItem> updateActionItem(
+			@PathVariable String id,
+			@PathVariable String itemId,
+			@RequestBody @Valid MeetingCommands.ActionItem command,
+			Authentication authentication) {
+		return ok(service.saveActionItem(
+				id, itemId, command, authentication.getName()));
+	}
+
+	@PutMapping("/portal/education/meetings/{id}/action-items/{itemId}/status")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<MeetingActionItem> updateActionStatus(
+			@PathVariable String id,
+			@PathVariable String itemId,
+			@RequestBody @Valid MeetingCommands.ActionStatus command,
+			Authentication authentication) {
+		return ok(service.updateActionStatus(
+				id, itemId, command, authentication.getName()));
 	}
 
 	private <T> ResultData<T> ok(T value) {

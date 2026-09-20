@@ -1,3 +1,4 @@
+-- 数据中心权限迁移顺延，避免覆盖已经执行的成绩 Outbox 运维版本。
 INSERT INTO t_permission(id,create_by,create_time,permission_code,permission_name,permission_type,action_type,built_in,status,resource_type,scope_type,description)
 SELECT gen_random_uuid()::text,'SYSTEM',CURRENT_TIMESTAMP,x.code,x.name,'MENU_ACTION',x.action,true,1,'EDUCATION_DATA_CENTER','ROLE',x.description
 FROM (VALUES

@@ -7,6 +7,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,31 +44,44 @@ public class DomainEventOutboxService {
 
 	@Transactional
 	public List<DomainEventOutbox> claimBatch(int batchSize, LocalDateTime now, long leaseSeconds) {
-		List<DomainEventOutbox> claimed = outbox.findDispatchCandidates(now, PageRequest.of(0, batchSize));
-		LocalDateTime leaseUntil = now.plusSeconds(leaseSeconds);
+		int normalizedBatchSize = Math.min(Math.max(1, batchSize), 200);
+		List<DomainEventOutbox> claimed = outbox.findDispatchCandidates(
+				now,
+				PageRequest.of(0, normalizedBatchSize));
+		LocalDateTime leaseUntil = now.plusSeconds(Math.max(1, leaseSeconds));
 		for (DomainEventOutbox event : claimed) {
 			event.setStatus("PROCESSING");
 			event.setLeaseUntil(leaseUntil);
+			event.setClaimToken(UUID.randomUUID().toString());
 			outbox.save(event);
 		}
 		return claimed;
 	}
 
 	@Transactional
-	public void markSent(String id) {
-		DomainEventOutbox event = outbox.findById(id).orElseThrow();
+	public boolean markSent(String id, String claimToken) {
+		DomainEventOutbox event = activeClaim(id, claimToken);
+		if (event == null) {
+			return false;
+		}
 		event.setStatus("SENT");
 		event.setSentAt(LocalDateTime.now());
 		event.setLeaseUntil(null);
+		event.setClaimToken(null);
 		event.setLastError(null);
+		return true;
 	}
 
 	@Transactional
-	public void markFailed(String id, Exception failure, int maxAttempts) {
-		DomainEventOutbox event = outbox.findById(id).orElseThrow();
+	public boolean markFailed(String id, String claimToken, Exception failure, int maxAttempts) {
+		DomainEventOutbox event = activeClaim(id, claimToken);
+		if (event == null) {
+			return false;
+		}
 		int attempts = event.getAttempts() + 1;
 		event.setAttempts(attempts);
 		event.setLeaseUntil(null);
+		event.setClaimToken(null);
 		event.setLastError(limit(failure.getMessage(), 1000));
 		if (attempts >= maxAttempts) {
 			event.setStatus("DEAD");
@@ -74,6 +89,66 @@ public class DomainEventOutboxService {
 			event.setStatus("PENDING");
 			event.setNextAttemptAt(LocalDateTime.now().plusMinutes(Math.min(60, 1L << Math.min(attempts, 6))));
 		}
+		return true;
+	}
+
+	/** 返回最终失败事件，供统一运维死信中心分页查看。 */
+	@Transactional(readOnly = true)
+	public Page<DomainEventOutbox> deadEvents(int page, int size) {
+		return outbox.findByStatusOrderByCreateTimeDesc(
+				"DEAD",
+				PageRequest.of(
+						Math.max(0, page),
+						Math.min(Math.max(1, size), 100)));
+	}
+
+	/**
+	 * 人工重试会清理租约和错误信息，让调度器立即重新领取事件。
+	 * 只允许 DEAD 状态，避免管理员干扰正在投递的记录。
+	 */
+	@Transactional
+	public DomainEventOutbox retry(String id) {
+		DomainEventOutbox event = requireDead(id);
+		event.setStatus("PENDING");
+		event.setAttempts(0);
+		event.setNextAttemptAt(LocalDateTime.now());
+		event.setLeaseUntil(null);
+		event.setClaimToken(null);
+		event.setLastError(null);
+		return outbox.save(event);
+	}
+
+	/** 忽略操作保留完整事件和失败原因，仅停止后续自动投递。 */
+	@Transactional
+	public DomainEventOutbox ignore(String id) {
+		DomainEventOutbox event = requireDead(id);
+		event.setStatus("IGNORED");
+		event.setLeaseUntil(null);
+		event.setClaimToken(null);
+		return outbox.save(event);
+	}
+
+	/**
+	 * 投递完成结果必须匹配当前租约令牌。租约过期后被重新领取的事件会获得新令牌，
+	 * 原工作线程即使迟到返回，也不能覆盖新一轮投递结果。
+	 */
+	private DomainEventOutbox activeClaim(String id, String claimToken) {
+		DomainEventOutbox event = outbox.findById(id).orElseThrow();
+		if (!"PROCESSING".equals(event.getStatus())
+				|| claimToken == null
+				|| !claimToken.equals(event.getClaimToken())) {
+			return null;
+		}
+		return event;
+	}
+
+	private DomainEventOutbox requireDead(String id) {
+		DomainEventOutbox event = outbox.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("成绩领域死信不存在"));
+		if (!"DEAD".equals(event.getStatus())) {
+			throw new IllegalStateException("只有死信事件可以执行该操作");
+		}
+		return event;
 	}
 
 	@Transactional

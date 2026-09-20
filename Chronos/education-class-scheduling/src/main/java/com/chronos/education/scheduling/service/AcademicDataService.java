@@ -302,6 +302,23 @@ public class AcademicDataService {
 
 	@Transactional
 	public StudentProfile saveStudent(String id, StudentProfile command) {
+		if (id != null) {
+			StudentProfile existing = students.findLockedById(id)
+					.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+			if (!java.util.Objects.equals(existing.getEnrollmentStatus(), command.getEnrollmentStatus())
+					|| !java.util.Objects.equals(existing.getAdministrativeClassId(), command.getAdministrativeClassId())
+					|| !java.util.Objects.equals(existing.getGradeId(), command.getGradeId())
+					|| !java.util.Objects.equals(existing.getMajorId(), command.getMajorId())) {
+				throw new IllegalStateException("学籍状态、年级、专业和行政班必须通过学籍异动功能修改");
+			}
+			// 普通档案编辑只更新非学籍字段，防止绕过异动审批覆盖历史关系。
+			existing.setStudentNo(command.getStudentNo());
+			existing.setStudentName(command.getStudentName());
+			existing.setGender(command.getGender());
+			existing.setGradeYear(command.getGradeYear());
+			existing.setPhone(command.getPhone());
+			return students.save(existing);
+		}
 		majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
 		if (command.getGradeId() != null && !command.getGradeId().isBlank()) {
 			grades.findById(command.getGradeId())
@@ -309,7 +326,10 @@ public class AcademicDataService {
 		}
 		administrativeClasses.findById(command.getAdministrativeClassId())
 				.orElseThrow(() -> new IllegalArgumentException("行政班不存在"));
-		return students.save(entity(id, command, students));
+		if (!"ACTIVE".equals(command.getEnrollmentStatus())) {
+			throw new IllegalArgumentException("新建学生的初始学籍状态必须为在读");
+		}
+		return students.save(command);
 	}
 
 	public List<TeacherAcademicProfile> teachers() {
@@ -361,9 +381,29 @@ public class AcademicDataService {
 			throw new IllegalArgumentException("教师档案必须绑定 IAM 员工");
 		}
 		TeacherAccountProvisioning account = teacherAccounts.provision(command.getEmployeeId(), command.getTeacherName());
-		TeacherAcademicProfile value = entity(id, command, teachers);
-		if (id != null && !id.equals(value.getId())) {
-			throw new IllegalArgumentException("教师档案不存在");
+		TeacherAcademicProfile value;
+		if (id != null) {
+			value = teachers.findLockedById(id)
+					.orElseThrow(() -> new IllegalArgumentException("教师档案不存在"));
+			if (!java.util.Objects.equals(value.getDepartmentId(), command.getDepartmentId())
+					|| !java.util.Objects.equals(value.getEnabled(), command.getEnabled())
+					|| command.getEmploymentStatus() != null
+					&& !java.util.Objects.equals(
+							value.getEmploymentStatus(),
+							command.getEmploymentStatus())) {
+				throw new IllegalArgumentException("所属单位及任职状态必须通过教师任职异动办理");
+			}
+			value.setEmployeeId(command.getEmployeeId());
+			value.setTeacherNo(command.getTeacherNo());
+			value.setTeacherName(command.getTeacherName());
+			value.setSpecialty(command.getSpecialty());
+			value.setMaxWeeklyLessons(command.getMaxWeeklyLessons());
+			value.setMaxDailyLessons(command.getMaxDailyLessons());
+			value.setMaxConsecutiveLessons(command.getMaxConsecutiveLessons());
+		} else {
+			value = command;
+			value.setEnabled(true);
+			value.setEmploymentStatus("ACTIVE");
 		}
 		value = teachers.save(value);
 		EducationUserBinding binding = bindings.findByProfileTypeAndProfileId("TEACHER", value.getId())

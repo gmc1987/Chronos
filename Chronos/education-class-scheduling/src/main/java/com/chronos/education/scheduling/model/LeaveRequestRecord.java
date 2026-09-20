@@ -6,6 +6,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -39,4 +41,21 @@ public class LeaveRequestRecord extends BaseEntity {
 	private String status;
 	@Column(name = "approved_by", length = 128)
 	private String approvedBy;
+	@Column(name = "cancellation_status", length = 24, nullable = false)
+	private String cancellationStatus = "NONE";
+	@Column(name = "cancellation_reason", length = 1000)
+	private String cancellationReason;
+	@Column(name = "cancellation_requested_by", length = 128)
+	private String cancellationRequestedBy;
+	@Column(name = "cancellation_requested_at")
+	private LocalDateTime cancellationRequestedAt;
+	@Column(name = "cancellation_decided_by", length = 128)
+	private String cancellationDecidedBy;
+	@Column(name = "cancellation_decided_at")
+	private LocalDateTime cancellationDecidedAt;
+	@Column(name = "cancellation_comment", length = 1000)
+	private String cancellationComment;
+	@Version
+	@Column(name = "row_version", nullable = false)
+	private Long rowVersion = 0L;
 }

@@ -80,6 +80,24 @@ public class ExamPaperAnalysisController {
 		return ok(service.saveScore(sessionId, itemId, command));
 	}
 
+	@PostMapping("/admin/education/exam/sessions/{sessionId}/scores/confirm")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:exam:paper-analysis:manage')")
+	public ResultData<?> confirmScores(
+			@PathVariable String sessionId,
+			Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.confirmScores(sessionId));
+	}
+
+	@PostMapping("/admin/education/exam/sessions/{sessionId}/scores/publish")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:exam:paper-analysis:manage')")
+	public ResultData<?> publishScores(
+			@PathVariable String sessionId,
+			Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.publishScores(sessionId, authentication));
+	}
+
 	@GetMapping("/admin/education/exam/sessions/{sessionId}/paper-analysis")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:exam:paper-analysis:view','education:exam:paper-analysis:manage')")
 	public ResultData<List<ItemAnalysis>> analysis(

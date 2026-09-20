@@ -49,6 +49,30 @@ public final class MeetingCommands {
 	public record Cancellation(String reason) {
 	}
 
+	public record Material(
+			@NotBlank @Size(max = 200) String title,
+			@NotBlank @Size(max = 64) String fileId) {
+	}
+
+	public record Minutes(
+			@NotBlank @Size(max = 50000) String content,
+			@Size(max = 20000) String decisionsText,
+			Long recordVersion) {
+	}
+
+	public record ActionItem(
+			@NotBlank @Size(max = 200) String title,
+			@Size(max = 10000) String description,
+			@NotBlank @Size(max = 128) String assigneeUsername,
+			LocalDateTime dueAt,
+			Long recordVersion) {
+	}
+
+	public record ActionStatus(
+			@NotBlank @Size(max = 24) String status,
+			Long recordVersion) {
+	}
+
 	public record ParticipantOption(String username, String displayName) {
 	}
 }

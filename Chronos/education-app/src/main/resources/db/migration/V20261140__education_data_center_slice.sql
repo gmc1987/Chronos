@@ -1,3 +1,4 @@
+-- 数据中心迁移顺延，避免覆盖已经执行的作业乐观锁版本。
 CREATE TABLE IF NOT EXISTS data_metric_definition (
     id varchar(64) PRIMARY KEY, create_by varchar(128) NOT NULL, create_time timestamp NOT NULL,
     last_update_by varchar(128), last_update_time timestamp, metric_code varchar(80) NOT NULL UNIQUE,

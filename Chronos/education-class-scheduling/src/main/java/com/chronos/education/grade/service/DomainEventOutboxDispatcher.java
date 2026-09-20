@@ -1,7 +1,6 @@
 package com.chronos.education.grade.service;
 
 import com.chronos.education.grade.model.DomainEventOutbox;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -50,11 +49,19 @@ public class DomainEventOutboxDispatcher {
 				client.post().uri(endpoint).contentType(MediaType.APPLICATION_JSON)
 						.header("Idempotency-Key", event.getDeduplicationKey())
 						.body(event.getPayloadJson()).retrieve().toBodilessEntity();
-				service.markSent(event.getId());
-				metrics.counter("chronos.domain_events.dispatch.sent").increment();
+				// 保留租约令牌并发保护；只有本次租约真正完成状态转换时才累计发送指标。
+				if (service.markSent(event.getId(), event.getClaimToken())) {
+					metrics.counter("chronos.domain_events.dispatch.sent").increment();
+				}
 			} catch (Exception failure) {
-				service.markFailed(event.getId(), failure, maxAttempts);
-				metrics.counter("chronos.domain_events.dispatch.failed").increment();
+				// 过期 worker 不得覆盖新 worker 的处理结果，也不能污染失败指标。
+				if (service.markFailed(
+						event.getId(),
+						event.getClaimToken(),
+						failure,
+						maxAttempts)) {
+					metrics.counter("chronos.domain_events.dispatch.failed").increment();
+				}
 			}
 		}
 	}

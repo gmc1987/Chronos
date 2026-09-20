@@ -1,4 +1,4 @@
--- 家校中心第一交付切片。所有对象和权限均可重复执行。
+-- 家校中心第一交付切片。版本顺延以避开已经执行的会议闭环迁移。
 CREATE TABLE IF NOT EXISTS public.edu_parent_account_binding (
     id varchar(64) PRIMARY KEY,
     parent_id varchar(64) NOT NULL,

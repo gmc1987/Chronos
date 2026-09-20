@@ -41,4 +41,5 @@ public class StudentProfile extends BaseEntity {
 
 	@Column(name = "phone", length = 32)
 	private String phone;
+
 }

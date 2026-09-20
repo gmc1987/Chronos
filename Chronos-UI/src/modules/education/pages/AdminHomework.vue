@@ -24,12 +24,13 @@
       <el-table-column prop="dueAt" label="截止时间" width="180" />
       <el-table-column prop="maxScore" label="总分" width="80" />
       <el-table-column prop="status" label="状态" width="120" />
-      <el-table-column label="操作" width="330" fixed="right">
+      <el-table-column label="操作" width="410" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="edit(row)">编辑</el-button>
           <el-button link @click="showSubmissions(row)">提交情况</el-button>
           <el-button v-if="row.status === 'DRAFT'" link type="success" @click="publish(row)">发布</el-button>
           <el-button v-if="row.status === 'PUBLISHED'" link type="warning" @click="close(row)">关闭</el-button>
+          <el-button v-if="['PUBLISHED','CLOSED'].includes(row.status)" link type="success" @click="publishGrades(row)">发布成绩</el-button>
           <el-button v-if="row.status === 'CLOSED'" link type="info" @click="archive(row)">归档</el-button>
         </template>
       </el-table-column>
@@ -50,7 +51,7 @@
         <el-form-item label="备课记录"><el-select v-model="form.preparationId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班备课"><el-option v-for="item in preparations" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item label="教案"><el-select v-model="form.lessonPlanId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班教案"><el-option v-for="item in lessonPlans" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item label="题目/附件快照"><el-input v-model="form.questionSnapshotJson" type="textarea" :rows="6" placeholder="可填写题目、要求或附件引用 JSON；发布后形成快照" /></el-form-item>
-        <el-form-item label="已发布题目版本"><el-input v-model="form.questionVersionRefsJson" type="textarea" :rows="3" placeholder='必须填写 [{"questionId":"...","versionId":"..."}]' /></el-form-item>
+        <el-form-item label="已发布题目版本"><el-input v-model="form.questionVersionRefsJson" type="textarea" :rows="3" placeholder='必须填写 [{"questionId":"...","versionId":"...","maxScore":10}]' /></el-form-item>
         <el-form-item label="允许迟交"><el-switch v-model="form.allowLate" /></el-form-item>
         <el-form-item label="发布对象"><el-select v-model="form.publishAudience" style="width:100%"><el-option label="有效选课学生" value="ENROLLED_STUDENTS" /><el-option label="全体学生" value="ALL_STUDENTS" /></el-select></el-form-item>
         <el-form-item label="附件快照"><el-input v-model="form.attachmentSnapshotJson" type="textarea" :rows="2" placeholder="附件引用 JSON" /></el-form-item>
@@ -75,6 +76,7 @@
         <el-form-item label="学生"><el-input :model-value="grading?.studentId || '-'" disabled /></el-form-item>
         <el-form-item label="答案"><el-input :model-value="grading?.answerSnapshotJson || '-'" type="textarea" :rows="6" disabled /></el-form-item>
         <el-form-item label="得分"><el-input-number v-model="gradeForm.score" :min="0" :max="selectedHomework?.maxScore || 100" :precision="2" /></el-form-item>
+        <el-form-item label="逐题得分"><el-input v-model="gradeForm.questionScoresJson" type="textarea" :rows="3" placeholder='按题目 ID 填写，例如 {"question-id":8}' /></el-form-item>
         <el-form-item label="评语"><el-input v-model="gradeForm.feedback" type="textarea" :rows="4" /></el-form-item>
         <el-form-item label="处理"><el-radio-group v-model="gradeForm.result"><el-radio value="GRADED">完成评分</el-radio><el-radio value="RETURNED_FOR_REVISION">退回重做</el-radio></el-radio-group></el-form-item>
       </el-form>
@@ -86,7 +88,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, closeHomework, archiveHomework, teachingCenterOfferings, teachingProduction, teachingPlanDetail, updateHomework } from '../api/teachingCenter'
+import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, publishHomeworkGrades, closeHomework, archiveHomework, teachingCenterOfferings, teachingProduction, teachingPlanDetail, updateHomework } from '../api/teachingCenter'
 
 const offerings = ref([])
 const rows = ref([])
@@ -106,7 +108,7 @@ const preparations = ref([])
 const lessonPlans = ref([])
 const filters = reactive({ offeringId: '' })
 const form = reactive({ type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', questionVersionRefsJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' })
-const gradeForm = reactive({ score: 0, feedback: '', result: 'GRADED' })
+const gradeForm = reactive({ score: 0, feedback: '', questionScoresJson: '{}', result: 'GRADED' })
 const rules = { title: [{ required: true, message: '请输入作业名称' }], dueAt: [{ required: true, message: '请选择截止时间' }] }
 const unwrap = response => response?.data?.content || response?.data || []
 const offeringLabel = item => item ? [item.semesterCode, item.courseName, item.teachingClassName].filter(Boolean).join(' · ') : '-'
@@ -155,6 +157,14 @@ const close = async row => {
   await ElMessageBox.confirm('关闭后不再接受新的提交，是否继续？', '确认关闭')
   try { await closeHomework(row.id); ElMessage.success('作业已关闭'); await load() } catch (error) { ElMessage.error(error.message) }
 }
+const publishGrades = async row => {
+  await ElMessageBox.confirm('发布后学生可以查看成绩，并按逐题得分沉淀错题，是否继续？', '确认发布成绩')
+  try {
+    const response = await publishHomeworkGrades(row.id)
+    ElMessage.success(`已发布 ${response?.data || 0} 份成绩`)
+    await load()
+  } catch (error) { ElMessage.error(error.message || '成绩发布失败') }
+}
 const archive = async row => {
   await ElMessageBox.confirm('归档后将从默认列表隐藏，是否继续？', '确认归档')
   try { await archiveHomework(row.id); ElMessage.success('作业已归档'); await load() } catch (error) { ElMessage.error(error.message) }
@@ -164,9 +174,9 @@ const showSubmissions = async row => {
   try { submissions.value = unwrap(await homeworkSubmissions(row.id, { page: 0, size: 200 })) } catch (error) { ElMessage.error(error.message) }
   finally { submissionLoading.value = false }
 }
-const openGrade = row => { grading.value = row; Object.assign(gradeForm, { score: row.score || 0, feedback: row.teacherFeedback || '', result: 'GRADED' }); gradeDialog.value = true }
+const openGrade = row => { grading.value = row; Object.assign(gradeForm, { score: row.score || 0, feedback: row.teacherFeedback || '', questionScoresJson: row.questionScoresJson || '{}', result: 'GRADED' }); gradeDialog.value = true }
 const grade = async () => {
-  try { await gradeHomeworkSubmission(grading.value.id, { score: gradeForm.score, teacherFeedback: gradeForm.feedback, returnForRevision: gradeForm.result === 'RETURNED_FOR_REVISION' }); gradeDialog.value = false; ElMessage.success('批改结果已保存'); await showSubmissions(selectedHomework.value) }
+  try { await gradeHomeworkSubmission(grading.value.id, { score: gradeForm.score, teacherFeedback: gradeForm.feedback, questionScoresJson: gradeForm.questionScoresJson, returnForRevision: gradeForm.result === 'RETURNED_FOR_REVISION' }); gradeDialog.value = false; ElMessage.success('批改结果已保存'); await showSubmissions(selectedHomework.value) }
   catch (error) { ElMessage.error(error.message || '保存批改失败') }
 }
 onMounted(async () => {

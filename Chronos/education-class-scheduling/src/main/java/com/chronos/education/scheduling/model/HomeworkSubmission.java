@@ -8,6 +8,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -58,4 +59,9 @@ public class HomeworkSubmission extends BaseEntity {
 
 	@Column(name = "graded_at")
 	private LocalDateTime gradedAt;
+
+	/** 防止学生提交与教师评分、成绩发布同时写入造成状态或答案丢失。 */
+	@Version
+	@Column(name = "row_version", nullable = false)
+	private Long rowVersion = 0L;
 }

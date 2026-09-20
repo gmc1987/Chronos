@@ -8,6 +8,29 @@ export const portalEducationSchedule = (studentId, date) => http.get(
     Object.entries({ studentId, date }).filter(([, value]) => value),
   )}`,
 )
+export const portalEducationScheduleCalendar = (studentId, startDate, endDate) => http.get(
+  `/portal/education/schedule/calendar?${new URLSearchParams(
+    Object.entries({ studentId, startDate, endDate }).filter(([, value]) => value),
+  )}`,
+)
+export const portalHeadTeacherClasses = () => http.get(
+  '/portal/education/head-teacher/classes',
+)
+export const portalHeadTeacherClassDetail = classId => http.get(
+  `/portal/education/head-teacher/classes/${classId}`,
+)
+export const portalClassNotices = classId => http.get(`/portal/education/head-teacher/classes/${classId}/notices`)
+export const createPortalClassNotice = (classId, payload) => http.post(`/portal/education/head-teacher/classes/${classId}/notices`, payload)
+export const publishPortalClassNotice = id => http.post(`/portal/education/head-teacher/notices/${id}/publish`)
+export const portalParentClassNotices = () => http.get('/portal/education/class-notices')
+export const acknowledgePortalClassNotice = (id, comment) => http.post(`/portal/education/class-notices/${id}/acknowledge`, { comment })
+export const portalLeaveRecords = () => http.get('/portal/education/leaves')
+export const requestLeaveCancellation = (id, reason) => http.post(`/portal/education/leaves/${id}/cancellation`, { reason })
+export const portalClassroomReservations = () => http.get('/portal/education/classroom-reservations')
+export const cancelPortalClassroomReservation = (id, reason) => http.post(
+  `/portal/education/classroom-reservations/${id}/cancel`,
+  { reason },
+)
 export const portalMyInvigilations = () => http.get('/portal/education/exam/my-invigilations')
 export const portalAcknowledgeInvigilation = (id) => http.post(
   `/portal/education/exam/my-invigilations/${id}/acknowledge`,
@@ -36,6 +59,10 @@ export const notificationChannelPreferences = () => http.get('/message/channel-p
 export const saveNotificationChannelPreference = (channel, payload) => http.put(`/message/channel-preferences/${channel}`, payload)
 export const portalMeetings = () => http.get('/portal/education/meetings')
 export const respondToMeeting = (id, payload) => http.post(`/portal/education/meetings/${id}/response`, payload)
+export const checkInMeeting = (id) => http.post(`/portal/education/meetings/${id}/check-in`)
+export const updateMeetingActionStatus = (id, itemId, payload) => http.put(
+  `/portal/education/meetings/${id}/action-items/${itemId}/status`, payload,
+)
 export const portalGrades = (params = {}) => http.get(`/portal/education/grades?${new URLSearchParams(
   Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
 )}`)

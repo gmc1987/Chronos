@@ -11,6 +11,13 @@ import {
   pageMeetings,
   publishMeeting,
   updateMeeting,
+  uploadManagedFile,
+  downloadManagedFile,
+  addMeetingMaterial,
+  deleteMeetingMaterial,
+  saveMeetingMinutes,
+  publishMeetingMinutes,
+  addMeetingActionItem,
 } from '../../../api/admin'
 
 const meetings = ref([])
@@ -23,6 +30,10 @@ const size = ref(20)
 const total = ref(0)
 const filters = reactive({ keyword: '', status: '' })
 const form = reactive({})
+const executionVisible = ref(false)
+const activeMeeting = ref(null)
+const minutesForm = reactive({ content: '', decisionsText: '', recordVersion: null })
+const actionForm = reactive({ title: '', description: '', assigneeUsername: '', dueAt: null })
 const unwrap = response => response?.data?.content || response?.data || []
 const typeLabels = { ONSITE: '线下会议', ONLINE: '线上会议', HYBRID: '混合会议' }
 const statusLabels = {
@@ -53,6 +64,82 @@ function resetForm(view) {
 function openDialog(view) {
   resetForm(view)
   dialogVisible.value = true
+}
+
+function openExecution(view) {
+  activeMeeting.value = view
+  Object.assign(minutesForm, {
+    content: view.minutes?.content || '',
+    decisionsText: view.minutes?.decisionsText || '',
+    recordVersion: view.minutes?.recordVersion ?? null,
+  })
+  Object.assign(actionForm, { title: '', description: '', assigneeUsername: '', dueAt: null })
+  executionVisible.value = true
+}
+
+async function uploadMaterial(file) {
+  if (!activeMeeting.value) return false
+  try {
+    const uploaded = await uploadManagedFile(file)
+    await addMeetingMaterial(activeMeeting.value.meeting.id, {
+      title: file.name,
+      fileId: uploaded?.data?.id,
+    })
+    ElMessage.success('会议材料已上传')
+    await load()
+    openExecution(meetings.value.find(item => item.meeting.id === activeMeeting.value.meeting.id))
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '材料上传失败')
+  }
+  return false
+}
+
+async function downloadMaterial(item) {
+  try {
+    const blob = await downloadManagedFile(item.fileId)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = item.title
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '材料下载失败')
+  }
+}
+
+async function removeMaterial(item) {
+  await execute(
+    () => deleteMeetingMaterial(activeMeeting.value.meeting.id, item.id),
+    '会议材料已删除',
+  )
+  openExecution(meetings.value.find(row => row.meeting.id === activeMeeting.value.meeting.id))
+}
+
+async function saveMinutes(publishAfter = false) {
+  try {
+    await saveMeetingMinutes(activeMeeting.value.meeting.id, { ...minutesForm })
+    if (publishAfter) await publishMeetingMinutes(activeMeeting.value.meeting.id)
+    ElMessage.success(publishAfter ? '会议纪要已发布' : '会议纪要草稿已保存')
+    await load()
+    openExecution(meetings.value.find(item => item.meeting.id === activeMeeting.value.meeting.id))
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '纪要保存失败')
+  }
+}
+
+async function saveAction() {
+  if (!actionForm.title || !actionForm.assigneeUsername) {
+    return ElMessage.warning('请填写行动项和责任人')
+  }
+  try {
+    await addMeetingActionItem(activeMeeting.value.meeting.id, { ...actionForm })
+    ElMessage.success('行动项已添加')
+    await load()
+    openExecution(meetings.value.find(item => item.meeting.id === activeMeeting.value.meeting.id))
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '行动项保存失败')
+  }
 }
 
 async function load() {
@@ -204,6 +291,7 @@ onMounted(load)
       <el-table-column label="操作" width="300" fixed="right">
         <template #default="scope">
           <el-button v-if="['DRAFT', 'REJECTED', 'PUBLISHED'].includes(scope.row.meeting.status)" link type="primary" @click="openDialog(scope.row)">编辑</el-button>
+          <el-button v-if="['PUBLISHED', 'COMPLETED'].includes(scope.row.meeting.status)" link type="primary" @click="openExecution(scope.row)">会议执行</el-button>
           <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.meeting.status)" link type="success" @click="publish(scope.row)">发布</el-button>
           <template v-if="scope.row.meeting.status === 'PENDING_ROOM'">
             <el-button v-permission="['education:meeting:approve', 'education:meeting:room:manage']" link type="success" @click="decide(scope.row, true)">批准</el-button>
@@ -255,6 +343,62 @@ onMounted(load)
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="busy" @click="save">保存</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="executionVisible" title="会议执行与归档" width="900px">
+      <el-tabs v-if="activeMeeting">
+        <el-tab-pane label="会议材料">
+          <el-upload :show-file-list="false" :before-upload="uploadMaterial">
+            <el-button type="primary">上传材料</el-button>
+          </el-upload>
+          <el-table :data="activeMeeting.materials || []" border class="execution-table">
+            <el-table-column prop="title" label="材料名称" min-width="260" />
+            <el-table-column label="操作" width="150">
+              <template #default="scope">
+                <el-button link type="primary" @click="downloadMaterial(scope.row)">下载</el-button>
+                <el-button link type="danger" @click="removeMaterial(scope.row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="会议纪要">
+          <el-form label-width="90px">
+            <el-form-item label="会议纪要"><el-input v-model="minutesForm.content" type="textarea" :rows="8" /></el-form-item>
+            <el-form-item label="会议决议"><el-input v-model="minutesForm.decisionsText" type="textarea" :rows="5" /></el-form-item>
+          </el-form>
+          <div class="execution-actions">
+            <el-button :disabled="activeMeeting.minutes?.status === 'PUBLISHED'" @click="saveMinutes(false)">保存草稿</el-button>
+            <el-button type="primary" :disabled="activeMeeting.minutes?.status === 'PUBLISHED'" @click="saveMinutes(true)">保存并发布</el-button>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="行动项">
+          <el-form :model="actionForm" inline>
+            <el-form-item label="行动项"><el-input v-model="actionForm.title" /></el-form-item>
+            <el-form-item label="责任人">
+              <el-select v-model="actionForm.assigneeUsername" filterable style="width:180px">
+                <el-option :label="activeMeeting.meeting.organizerUsername" :value="activeMeeting.meeting.organizerUsername" />
+                <el-option v-for="item in activeMeeting.participants" :key="item.username" :label="item.username" :value="item.username" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="截止时间"><el-date-picker v-model="actionForm.dueAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
+            <el-button type="primary" @click="saveAction">添加</el-button>
+          </el-form>
+          <el-table :data="activeMeeting.actionItems || []" border>
+            <el-table-column prop="title" label="行动项" min-width="220" />
+            <el-table-column prop="assigneeUsername" label="责任人" width="150" />
+            <el-table-column prop="dueAt" label="截止时间" width="180" />
+            <el-table-column prop="status" label="状态" width="120" />
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="签到记录">
+          <el-table :data="activeMeeting.participants || []" border>
+            <el-table-column prop="username" label="参会人" />
+            <el-table-column prop="responseStatus" label="参会反馈" />
+            <el-table-column prop="checkedInAt" label="签到时间" />
+            <el-table-column prop="checkInMethod" label="签到方式" />
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </div>
 </template>
 
@@ -266,5 +410,7 @@ p, .muted { margin: 0; color: #84909a; }
 .el-alert { margin-bottom: 14px; }
 .filters { margin-bottom: 6px; }
 .pagination { justify-content: flex-end; margin-top: 16px; }
+.execution-table { margin-top: 12px; }
+.execution-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .el-select { width: 100%; }
 </style>

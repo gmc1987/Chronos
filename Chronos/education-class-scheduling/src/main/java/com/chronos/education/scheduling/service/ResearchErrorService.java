@@ -4,6 +4,7 @@ import com.chronos.education.scheduling.dao.*;
 import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.*;
 import com.chronos.file.dao.ManagedFileRepository;
+import com.chronos.file.service.ManagedFileService;
 import java.time.LocalDateTime;
 import java.util.*;
 import org.springframework.security.core.Authentication;
@@ -26,6 +27,7 @@ public class ResearchErrorService {
 	private final ErrorItemRepository items;
 	private final EducationDataScopeService scopes;
 	private final ManagedFileRepository files;
+	private ManagedFileService managedFiles;
 	private final TeachingReviewService reviews;
 	private final QuestionRepository questions;
 	private final KnowledgePointRepository points;
@@ -33,6 +35,8 @@ public class ResearchErrorService {
 	private final QuestionBankRepository questionBanks;
 	private QuestionVersionRepository questionVersions;
 	private ErrorReviewRepository errorReviews;
+	private EducationIdentityService identities;
+	private TeachingCollaborationNotificationService notifications;
 
 	public ResearchErrorService(ResearchGroupRepository groups, ResearchGroupMemberRepository groupMembers,
 			ResearchActivityRepository activities, ResearchActivityMemberRepository activityMembers,
@@ -56,11 +60,16 @@ public class ResearchErrorService {
 			ErrorItemRepository items, EducationDataScopeService scopes, ManagedFileRepository files,
 			TeachingReviewService reviews, QuestionRepository questions, KnowledgePointRepository points,
 			QuestionKnowledgePointRepository questionPoints, QuestionBankRepository questionBanks,
-			ErrorReviewRepository errorReviews, QuestionVersionRepository questionVersions) {
+			ErrorReviewRepository errorReviews, QuestionVersionRepository questionVersions,
+			ManagedFileService managedFiles, EducationIdentityService identities,
+			TeachingCollaborationNotificationService notifications) {
 		this(groups, groupMembers, activities, activityMembers, materials, results, books, items, scopes, files,
 				reviews, questions, points, questionPoints, questionBanks);
 		this.errorReviews = errorReviews;
 		this.questionVersions = questionVersions;
+		this.managedFiles = managedFiles;
+		this.identities = identities;
+		this.notifications = notifications;
 	}
 
 	private void validateQuestionVersion(String questionId, String questionVersionId) {
@@ -122,6 +131,7 @@ public class ResearchErrorService {
 	}
 	public ResearchGroup updateGroup(String id, GroupRequest r, Authentication a) {
 		ResearchGroup g = group(id, a);
+		assertGroupLeader(g, a);
 		teacher(a, r.leaderTeacherId());
 		g.setName(r.name()); g.setSubjectId(r.subjectId()); g.setCampusId(r.campusId());
 		g.setLeaderTeacherId(r.leaderTeacherId()); g.setCourseScopeJson(r.courseScopeJson());
@@ -130,6 +140,7 @@ public class ResearchErrorService {
 	public ResearchActivity updateActivity(String id, ActivityRequest r, Authentication a) {
 		ResearchActivity x = activities.findById(id).orElseThrow(() -> new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(), a);
+		assertActivityOrganizer(x, a);
 		if (r.endTime() != null && r.activityTime() != null && r.endTime().isBefore(r.activityTime()))
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime());
@@ -139,13 +150,22 @@ public class ResearchErrorService {
 		ResearchActivity x = activities.findById(id)
 				.orElseThrow(() -> new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(), a);
+		assertActivityOrganizer(x, a);
 		if (!Set.of("SCHEDULED", "IN_PROGRESS").contains(x.getStatus()))
 			throw new IllegalStateException("当前活动状态不能取消");
 		if (request == null || request.reason() == null || request.reason().isBlank())
 			throw new IllegalArgumentException("取消活动必须填写原因");
 		x.setStatus("CANCELLED");
 		x.setCancelReason(request.reason().trim());
-		return activities.save(x);
+		ResearchActivity saved = activities.save(x);
+		if (notifications != null) {
+			notifications.researchCancelled(
+					saved,
+					activityMembers.findByActivityId(id).stream()
+							.map(ResearchActivityMember::getTeacherId)
+							.toList());
+		}
+		return saved;
 	}
 	public ResearchResult updateResult(String id, ResultRequest r, Authentication a) {
 		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
@@ -157,10 +177,18 @@ public class ResearchErrorService {
 		return results.save(z);
 	}
 	private void file(String id, Authentication a) {
-		if (id==null || id.isBlank() || id.contains("/") || id.contains("\\")) throw new IllegalArgumentException("fileId无效");
-		var f=files.findById(id).orElseThrow(()->new IllegalArgumentException("文件不存在"));
-		if (!a.getName().equals(f.getOwnerUsername()) && !Set.of("ACTIVE","PENDING_BIND").contains(f.getStatus()))
+		if (id == null || id.isBlank() || id.contains("/") || id.contains("\\")) {
+			throw new IllegalArgumentException("fileId无效");
+		}
+		var managedFile = files.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("文件不存在"));
+		if (!a.getName().equals(managedFile.getOwnerUsername())) {
+			throw new AccessDeniedException("只能绑定本人上传的文件");
+		}
+		if (!"ACTIVE".equals(managedFile.getStatus())
+				|| !"PENDING_BIND".equals(managedFile.getBindState())) {
 			throw new IllegalArgumentException("文件不可绑定");
+		}
 	}
 	public ResearchGroup createGroup(GroupRequest r, Authentication a) {
 		teacher(a,r.leaderTeacherId()); ResearchGroup g=new ResearchGroup();
@@ -169,36 +197,39 @@ public class ResearchErrorService {
 		g.setSchoolId("CURRENT"); g.setCreateBy(a.getName()); return groups.save(g);
 	}
 	public ResearchGroupMember addMember(String id, MemberRequest r, Authentication a) {
-		group(id,a); teacher(a,r.teacherId());
+		ResearchGroup current = group(id,a);assertGroupLeader(current,a);teacher(a,r.teacherId());
 		if (groupMembers.existsByGroupIdAndTeacherId(id,r.teacherId())) throw new IllegalStateException("教师已在教研组");
 		ResearchGroupMember m=new ResearchGroupMember(); m.setId(UUID.randomUUID().toString()); m.setGroupId(id);
 		m.setTeacherId(r.teacherId()); m.setRole(r.role()); return groupMembers.save(m);
 	}
 	public void removeMember(String id, String teacherId, Authentication a) {
-		group(id, a);
+		ResearchGroup current = group(id, a);assertGroupLeader(current,a);
 		if (!groupMembers.existsByGroupIdAndTeacherId(id, teacherId))
 			throw new NoSuchElementException("教师不是教研组成员");
 		groupMembers.deleteByGroupIdAndTeacherId(id, teacherId);
 	}
 	public ResearchActivity createActivity(String groupId, ActivityRequest r, Authentication a) {
-		group(groupId,a); if (r.endTime()!=null && r.activityTime()!=null && r.endTime().isBefore(r.activityTime()))
+		ResearchGroup current=group(groupId,a);assertGroupLeader(current,a);if (r.endTime()!=null && r.activityTime()!=null && r.endTime().isBefore(r.activityTime()))
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
 		ResearchActivity x=new ResearchActivity(); x.setGroupId(groupId); x.setStatus("SCHEDULED");
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime()); x.setLocation(r.location());
 		x.setAgenda(r.agenda()); x.setCourseId(r.courseId()); x.setTopicId(r.topicId());
-		x.setOrganizerId(a.getName()); x.setCreateBy(a.getName()); return activities.save(x);
+		x.setOrganizerId(currentTeacherId(a));x.setCreateBy(a.getName());return activities.save(x);
 	}
 	public ResearchActivityMember inviteActivityMember(String activityId, MemberRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));
-		group(x.getGroupId(),a); teacher(a,r.teacherId());
+		group(x.getGroupId(),a);assertActivityOrganizer(x,a);teacher(a,r.teacherId());
 		if (activityMembers.findByActivityIdAndTeacherId(activityId,r.teacherId()).isPresent())
 			throw new IllegalStateException("教师已在活动成员中");
 		ResearchActivityMember m=new ResearchActivityMember(); m.setId(UUID.randomUUID().toString());
-		m.setActivityId(activityId); m.setTeacherId(r.teacherId()); m.setRole(r.role()); return activityMembers.save(m);
+		m.setActivityId(activityId);m.setTeacherId(r.teacherId());m.setRole(r.role());
+		ResearchActivityMember saved=activityMembers.save(m);
+		if(notifications!=null)notifications.researchInvited(x,r.teacherId());
+		return saved;
 	}
 	public void removeActivityMember(String activityId, String teacherId, Authentication a) {
 		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
-		group(x.getGroupId(), a);
+		group(x.getGroupId(), a);assertActivityOrganizer(x,a);
 		if (activityMembers.findByActivityIdAndTeacherId(activityId, teacherId).isEmpty())
 			throw new NoSuchElementException("教师不是活动成员");
 		activityMembers.deleteByActivityIdAndTeacherId(activityId, teacherId);
@@ -207,32 +238,135 @@ public class ResearchErrorService {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(),a); ResearchActivityMember m=activityMembers.findByActivityIdAndTeacherId(activityId,r.teacherId()).orElse(null);
 		if (m==null) throw new IllegalArgumentException("活动成员不存在");
-		if (!a.getName().equals(r.teacherId()) && !scope(a).fullAccess()) throw new AccessDeniedException("只能为本人签到或请假");
+		if (!currentTeacherIds(a).contains(r.teacherId()) && !scope(a).fullAccess()) throw new AccessDeniedException("只能为本人签到或请假");
 		if (!Set.of("SIGNED_IN","LEAVE","ABSENT").contains(r.status())) throw new IllegalArgumentException("签到状态无效");
 		if ("LEAVE".equals(r.status()) && (r.leaveReason()==null || r.leaveReason().isBlank())) throw new IllegalArgumentException("请假必须填写原因");
 		m.setAttendanceStatus(r.status()); m.setLeaveReason(r.leaveReason()); m.setRespondedAt(LocalDateTime.now());
 		if ("SIGNED_IN".equals(r.status())) m.setAttendanceAt(LocalDateTime.now()); return activityMembers.save(m);
 	}
 	public ResearchActivity updateMinutes(String activityId, MinutesRequest r, Authentication a) {
-		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a);
-		if (!Set.of("SCHEDULED","IN_PROGRESS","COMPLETED").contains(x.getStatus())) throw new IllegalStateException("当前活动状态不能记录纪要");
+		ResearchActivity x=activities.findById(activityId).orElseThrow();group(x.getGroupId(),a);assertActivityOrganizer(x,a);
+		if (!Set.of("IN_PROGRESS","COMPLETED").contains(x.getStatus())) throw new IllegalStateException("活动开始后才能记录纪要");
 		x.setMinutes(r.minutes()); x.setStatus("COMPLETED"); return activities.save(x);
+	}
+	public ResearchActivity transitionActivity(String activityId,String action,Authentication a){
+		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));
+		group(x.getGroupId(),a);assertActivityOrganizer(x,a);
+		if("start".equals(action)){
+			if(!"SCHEDULED".equals(x.getStatus()))throw new IllegalStateException("只有已安排活动可以开始");
+			x.setStatus("IN_PROGRESS");
+		}else if("archive".equals(action)){
+			if(!Set.of("COMPLETED","CANCELLED").contains(x.getStatus()))throw new IllegalStateException("只有已完成或已取消活动可以归档");
+			x.setStatus("ARCHIVED");x.setArchived(true);
+		}else throw new IllegalArgumentException("不支持的活动操作");
+		return activities.save(x);
 	}
 	public ResearchMaterial addMaterial(String activityId, MaterialRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a); file(r.fileId(),a);
 		ResearchMaterial m=new ResearchMaterial(); m.setId(UUID.randomUUID().toString()); m.setActivityId(activityId);
-		m.setTitle(r.title()); m.setFileId(r.fileId()); return materials.save(m);
+		m.setTitle(r.title()); m.setFileId(r.fileId());
+		ResearchMaterial saved = materials.save(m);
+		bindFile(r.fileId(), "EDUCATION_RESEARCH_MATERIAL", saved.getId(), a);
+		return saved;
 	}
 	public ResearchResult addResult(String activityId, ResultRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a);
 		if (r.fileId()!=null) file(r.fileId(),a); ResearchResult z=new ResearchResult(); z.setId(UUID.randomUUID().toString());
 		z.setActivityId(activityId); z.setTitle(r.title()); z.setResultType(r.resultType()); z.setContent(r.content()); z.setFileId(r.fileId());
-		return results.save(z);
+		ResearchResult saved = results.save(z);
+		if (r.fileId() != null && !r.fileId().isBlank()) {
+			bindFile(r.fileId(), "EDUCATION_RESEARCH_RESULT", saved.getId(), a);
+		}
+		return saved;
 	}
-	public ResearchResult submitResult(String id, Authentication a) {
-		ResearchResult z=results.findById(id).orElseThrow(); ResearchActivity x=activities.findById(z.getActivityId()).orElseThrow();
-		group(x.getGroupId(),a); var review=reviews.submit("RESEARCH_RESULT",id,null,Map.of("resultType",z.getResultType()),a);
-		z.setReviewRecordId(review.getId()); z.setStatus("SUBMITTED"); return results.save(z);
+
+	/**
+	 * 业务数据先落库，再由文件中心将本人草稿绑定到受权访问的业务记录。
+	 * 整个服务位于同一事务，绑定失败时研讨资料/成果也会回滚。
+	 */
+	private void bindFile(
+			String fileId,
+			String businessType,
+			String businessId,
+			Authentication authentication) {
+		if (managedFiles == null) {
+			throw new IllegalStateException("文件绑定服务未配置");
+		}
+		managedFiles.bind(
+				List.of(fileId),
+				businessType,
+				businessId,
+				authentication.getName());
+	}
+
+	private Set<String> currentTeacherIds(Authentication authentication) {
+		return identities == null
+				? Set.of(authentication.getName())
+				: identities.teacherIds(authentication.getName());
+	}
+
+	private String currentTeacherId(Authentication authentication) {
+		return currentTeacherIds(authentication).stream()
+				.findFirst()
+				.orElseThrow(() -> new AccessDeniedException("当前账号未绑定教师档案"));
+	}
+
+	private void assertGroupLeader(ResearchGroup group, Authentication authentication) {
+		if (!scope(authentication).fullAccess()
+				&& !currentTeacherIds(authentication).contains(group.getLeaderTeacherId())) {
+			throw new AccessDeniedException("只有教研组长可以执行该操作");
+		}
+	}
+
+	private void assertActivityOrganizer(
+			ResearchActivity activity,
+			Authentication authentication) {
+		if (!scope(authentication).fullAccess()
+				&& !authentication.getName().equals(activity.getCreateBy())
+				&& !authentication.getName().equals(activity.getOrganizerId())
+				&& !currentTeacherIds(authentication).contains(activity.getOrganizerId())) {
+			throw new AccessDeniedException("只有活动主持人可以执行该操作");
+		}
+	}
+	public ResearchResult submitResult(
+			String id,
+			String idempotencyKey,
+			Authentication authentication) {
+		ResearchResult result = results.findById(id)
+				.orElseThrow(() -> new NoSuchElementException("成果不存在"));
+		ResearchActivity activity = activities.findById(result.getActivityId())
+				.orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		group(activity.getGroupId(), authentication);
+		assertActivityOrganizer(activity, authentication);
+
+		// 网络重试必须返回第一次提交的审核记录，不能重复启动工作流实例。
+		var existing = reviews.findIdempotent(
+				"RESEARCH_RESULT",
+				id,
+				idempotencyKey,
+				authentication);
+		if (existing != null) {
+			result.setReviewRecordId(existing.getId());
+			result.setStatus("SUBMITTED");
+			return results.save(result);
+		}
+		if (!Set.of("DRAFT", "REJECTED").contains(result.getStatus())) {
+			throw new IllegalStateException("只有草稿或驳回成果可以提交审核");
+		}
+		Map<String, Object> form = new java.util.LinkedHashMap<>();
+		form.put("resultType", Objects.toString(result.getResultType(), ""));
+		if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+			form.put("idempotencyKey", idempotencyKey);
+		}
+		var review = reviews.submit(
+				"RESEARCH_RESULT",
+				id,
+				null,
+				form,
+				authentication);
+		result.setReviewRecordId(review.getId());
+		result.setStatus("SUBMITTED");
+		return results.save(result);
 	}
 	public ResearchResult transitionResult(String id, String status, Authentication a) {
 		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
@@ -279,11 +413,31 @@ public class ResearchErrorService {
 		i.setLastWrongAt(i.getOccurredAt()); return items.save(i);
 	}
 	public ErrorItem onWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
-		if (!Set.of("HOMEWORK", "EXAM", "MANUAL", "STUDENT_SELF").contains(r.sourceType()))
-			throw new IllegalArgumentException("错题来源无效");
+		return recordConfirmedWrongAnswer(r, a, true);
+	}
+
+	/**
+	 * 仅供已完成自身数据范围校验的作业、考试领域服务调用。
+	 * 生产者已校验教学班或考试管理权限，这里不再要求操作者直接拥有学生行政班范围，
+	 * 否则任课教师可能能批改本教学班作业，却无法为同一学生沉淀错题。
+	 */
+	ErrorItem onTrustedWrongAnswerConfirmed(WrongAnswerConfirmed r, Authentication a) {
+		return recordConfirmedWrongAnswer(r, a, false);
+	}
+
+	private ErrorItem recordConfirmedWrongAnswer(
+			WrongAnswerConfirmed r,
+			Authentication a,
+			boolean enforceStudentScope) {
+		// 此入口只接收作业、考试模块产生的可信事件；人工录入必须走 manual 接口。
+		if (!Set.of("HOMEWORK", "EXAM").contains(r.sourceType())) {
+			throw new IllegalArgumentException("错题确认事件来源只能是作业或考试");
+		}
 		validateQuestionVersion(r.questionId(), r.questionVersionId());
 		var replay=items.findByEventId(r.eventId()); if (replay.isPresent()) return replay.get();
-		ErrorBook b=book(r.studentId(),r.courseId(),r.semesterId(),a);
+		ErrorBook b = enforceStudentScope
+				? book(r.studentId(), r.courseId(), r.semesterId(), a)
+				: trustedBook(r.studentId(), r.courseId(), r.semesterId(), a);
 		ErrorItem i=items.findByBookIdAndSourceTypeAndSourceItemId(b.getId(),r.sourceType(),r.sourceItemId()).orElse(null);
 		// sourceItemId is the producer's idempotency key. Replayed delivery must
 		// not inflate the student's error count.
@@ -294,6 +448,28 @@ public class ResearchErrorService {
 		i.setAnalysis(r.analysis()); i.setCreateTime(LocalDateTime.now());
 		i.setOccurredAt(r.occurredAt() == null ? i.getCreateTime() : r.occurredAt());
 		i.setLastWrongAt(i.getOccurredAt()); return items.save(i);
+	}
+
+	private ErrorBook trustedBook(
+			String studentId,
+			String courseId,
+			String semesterId,
+			Authentication authentication) {
+		return books.findAll().stream()
+				.filter(book -> studentId.equals(book.getStudentId())
+						&& Objects.equals(courseId, book.getCourseId())
+						&& Objects.equals(semesterId, book.getSemesterId())
+						&& !book.isArchived())
+				.findFirst()
+				.orElseGet(() -> {
+					ErrorBook book = new ErrorBook();
+					book.setStudentId(studentId);
+					book.setName("错题沉淀");
+					book.setCourseId(courseId);
+					book.setSemesterId(semesterId);
+					book.setCreateBy(authentication.getName());
+					return books.save(book);
+				});
 	}
 	public ErrorItem mastery(String id, MasteryRequest r, Authentication a) {
 		ErrorItem i=items.findById(id).orElseThrow(); ErrorBook b=books.findById(i.getBookId()).orElseThrow();
