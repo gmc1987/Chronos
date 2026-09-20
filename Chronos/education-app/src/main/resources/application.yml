@@ -81,6 +81,9 @@ minio:
   secretKey: ${CHRONOS_MINIO_SECRET_KEY:minioadmin}
 
 chronos:
+  security:
+    # Required in every deployment; provide a Base64 AES-128/192/256 key via the secret manager.
+    encryption-key: ${CHRONOS_ENCRYPTION_KEY:}
   industry:
     active: EDUCATION
   domain-events:

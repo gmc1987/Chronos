@@ -4,6 +4,7 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -23,5 +24,6 @@ public class Credential extends BaseEntity {
 	private String keyName;
 
 	@Column(name = "secret_ciphertext", nullable = false, columnDefinition = "text")
+	@JsonIgnore
 	private String secretCiphertext;
 }

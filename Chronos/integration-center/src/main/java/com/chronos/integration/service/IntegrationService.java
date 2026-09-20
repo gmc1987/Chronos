@@ -3,7 +3,8 @@ package com.chronos.integration.service;
 import java.net.URI;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.UUID;
+import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -17,13 +18,36 @@ import com.chronos.service.iService.IAuditLogService;
 @Service
 public class IntegrationService {
  private final ConnectorRepository connectors; private final SyncJobRepository jobs; private final SyncRunRepository runs;
- private final SyncItemErrorRepository errors; private final DeadLetterRepository deadLetters; private final PlatformSecretCipher cipher; private final IAuditLogService audit;
+ private final SyncItemErrorRepository errors; private final DeadLetterRepository deadLetters; private final CredentialRepository credentials; private final PlatformSecretCipher cipher; private final IAuditLogService audit;
  private final WebClient client;
- public IntegrationService(ConnectorRepository connectors, SyncJobRepository jobs, SyncRunRepository runs, SyncItemErrorRepository errors, DeadLetterRepository deadLetters, PlatformSecretCipher cipher, IAuditLogService audit, WebClient.Builder builder) { this.connectors=connectors;this.jobs=jobs;this.runs=runs;this.errors=errors;this.deadLetters=deadLetters;this.cipher=cipher;this.audit=audit;this.client=builder.build(); }
+ public IntegrationService(ConnectorRepository connectors, SyncJobRepository jobs, SyncRunRepository runs, SyncItemErrorRepository errors, DeadLetterRepository deadLetters, CredentialRepository credentials, PlatformSecretCipher cipher, IAuditLogService audit, WebClient.Builder builder) { this.connectors=connectors;this.jobs=jobs;this.runs=runs;this.errors=errors;this.deadLetters=deadLetters;this.credentials=credentials;this.cipher=cipher;this.audit=audit;this.client=builder.build(); }
  @Transactional public Connector saveConnector(Connector connector, String actor) { validateUrl(connector.getBaseUrl()); connector.setType("HTTP"); Connector saved=connectors.save(connector); audit.log(actor,"INTEGRATION_CONNECTOR_SAVE",saved.getId()); return saved; }
- /** Secrets are intentionally not accepted as a plain connector field. This operation fails until KMS is supplied. */
- public void configureCredential(String connectorId, String keyName, String plaintext, String actor) { if (plaintext==null || plaintext.isBlank()) throw new IllegalArgumentException("secret is required"); cipher.encrypt(plaintext); throw new IllegalStateException("credential persistence requires a configured platform cipher"); }
- public Connector test(String id) { Connector c=connectors.findById(id).orElseThrow(); validateUrl(c.getBaseUrl()); client.get().uri(URI.create(c.getBaseUrl())).retrieve().toBodilessEntity().timeout(Duration.ofMillis(Math.max(1000,c.getTimeoutMs()))).block(); return c; }
+ @Transactional
+ public Credential configureCredential(String connectorId, String keyName, String plaintext, String actor) {
+  if (!connectors.existsById(connectorId)) throw new IllegalArgumentException("connector not found");
+  if (keyName == null || keyName.isBlank()) throw new IllegalArgumentException("credential key is required");
+  if (plaintext == null || plaintext.isBlank()) throw new IllegalArgumentException("secret is required");
+  Credential credential = credentials.findByConnectorIdAndKeyName(connectorId, keyName.trim()).orElseGet(Credential::new);
+  credential.setConnectorId(connectorId);
+  credential.setKeyName(keyName.trim());
+  credential.setSecretCiphertext(cipher.encrypt(plaintext));
+  Credential saved = credentials.save(credential);
+  audit.log(actor, "INTEGRATION_CREDENTIAL_SAVE", connectorId);
+  return saved;
+ }
+ public List<Credential> listCredentials(String connectorId) {
+  if (!connectors.existsById(connectorId)) throw new IllegalArgumentException("connector not found");
+  return credentials.findAllByConnectorIdOrderByKeyName(connectorId);
+ }
+ public Connector test(String id) {
+  Connector c=connectors.findById(id).orElseThrow();
+  validateUrl(c.getBaseUrl());
+  Map<String, String> headers = credentials.findAllByConnectorIdOrderByKeyName(id).stream()
+    .collect(java.util.stream.Collectors.toMap(Credential::getKeyName, value -> cipher.decrypt(value.getSecretCiphertext()), (first, ignored) -> first));
+  client.get().uri(URI.create(c.getBaseUrl())).headers(target -> headers.forEach(target::set)).retrieve()
+    .toBodilessEntity().timeout(Duration.ofMillis(Math.max(1000,c.getTimeoutMs()))).block();
+  return c;
+ }
  @Transactional public SyncJob saveJob(SyncJob job, String actor) { if (!connectors.existsById(job.getConnectorId())) throw new IllegalArgumentException("connector not found"); if (job.getCronExpression()==null || job.getCronExpression().isBlank()) throw new IllegalArgumentException("cron expression is required"); job.setStatus(job.getStatus()==null?"ENABLED":job.getStatus()); SyncJob saved=jobs.save(job); audit.log(actor,"INTEGRATION_SYNC_JOB_SAVE",saved.getId()); return saved; }
  /** Claims a lease in a short transaction; all network I/O happens after this method returns. */
  public SyncRun startRun(String jobId, String owner) { LocalDateTime now=LocalDateTime.now(); if(jobs.claimLease(jobId,owner,now,now.plusMinutes(5))!=1) throw new IllegalStateException("sync job is leased"); SyncRun run=new SyncRun();run.setJobId(jobId);run.setStartedAt(now);return runs.save(run); }

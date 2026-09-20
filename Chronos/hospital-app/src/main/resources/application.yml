@@ -75,6 +75,9 @@ flowable:
   async-executor-activate: true
   history-level: audit
 chronos:
+  security:
+    # Required in every deployment; provide a Base64 AES-128/192/256 key via the secret manager.
+    encryption-key: ${CHRONOS_ENCRYPTION_KEY:}
   industry:
     # 医院部署包仅包含医院模板，错误的行业值会在启动时直接失败。
     active: ${CHRONOS_INDUSTRY:HOSPITAL}
