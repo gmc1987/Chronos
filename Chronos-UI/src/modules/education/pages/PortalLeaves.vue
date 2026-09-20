@@ -3,7 +3,23 @@
     <el-page-header @back="$router.push('/portal')"
       ><template #content><strong>我的请假</strong></template></el-page-header
     >
-    <el-alert title="新请假仍从流程中心发起；这里展示审批完成的业务台账并办理销假。" type="info" :closable="false" />
+    <el-alert title="请假提交后进入真实审批流程；审批完成后生成业务台账并发送通知。" type="info" :closable="false" />
+    <el-card shadow="never">
+      <template #header><strong>发起请假</strong></template>
+      <el-form :model="form" label-width="90px" inline>
+        <el-form-item v-if="children.length" label="学生">
+          <el-select v-model="form.studentId" placeholder="选择学生" style="width: 180px">
+            <el-option v-for="child in children" :key="child.studentId" :label="child.studentName" :value="child.studentId" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型"><el-select v-model="form.leaveType" placeholder="选择类型" style="width: 140px">
+          <el-option label="事假" value="PERSONAL" /><el-option label="病假" value="SICK" /><el-option label="公假" value="OFFICIAL" />
+        </el-select></el-form-item>
+        <el-form-item label="日期"><el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" /></el-form-item>
+        <el-form-item label="原因"><el-input v-model="form.reason" type="textarea" placeholder="填写请假原因" /></el-form-item>
+        <el-form-item><el-button type="primary" :loading="submitting" @click="submitLeave">提交审批</el-button></el-form-item>
+      </el-form>
+    </el-card>
     <el-skeleton v-if="loading" :rows="6" animated />
     <el-empty v-else-if="!rows.length" description="暂无已审批请假记录" />
     <el-table v-else :data="rows" border>
@@ -35,15 +51,43 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { portalLeaveRecords, requestLeaveCancellation } from '../../../api/portal'
+import { portalFamilyChildren, portalLeaveRecords, requestLeaveCancellation, startPortalLeave } from '../../../api/portal'
 const rows = ref([]),
-  loading = ref(true)
+  loading = ref(true),
+  children = ref([]),
+  submitting = ref(false),
+  dates = ref([]),
+  form = ref({ leaveType: '', reason: '', studentId: '' })
 const load = async () => {
   loading.value = true
   try {
-    rows.value = (await portalLeaveRecords()).data || []
+    const [records, family] = await Promise.all([
+      portalLeaveRecords(),
+      portalFamilyChildren().catch(() => ({ data: [] })),
+    ])
+    rows.value = records.data || []
+    children.value = family.data || []
   } finally {
     loading.value = false
+  }
+}
+const submitLeave = async () => {
+  if (!form.value.leaveType || dates.value.length !== 2 || !form.value.reason?.trim()) {
+    return ElMessage.warning('请完整填写请假类型、日期和原因')
+  }
+  submitting.value = true
+  try {
+    await startPortalLeave({
+      ...form.value,
+      startDate: dates.value[0],
+      endDate: dates.value[1],
+    })
+    ElMessage.success('请假申请已提交审批')
+    form.value.reason = ''
+    dates.value = []
+    await load()
+  } finally {
+    submitting.value = false
   }
 }
 const canCancel = (row) => row.status === 'APPROVED' && row.cancellationStatus === 'NONE'
