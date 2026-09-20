@@ -90,7 +90,7 @@ com.chronos.education.<domain>.dao
 
 ## 5 数据库与Flyway规则
 
-当前 `V20261121` 已由 Codex 用于会议中心执行闭环。Copilot 开工时必须重新扫描迁移目录，不得再使用该版本；后续版本仍以实际目录和 `flyway_schema_history` 为准。
+当前教育迁移目录已经使用到 `V20261137`。`V20261122` 至 `V20261126` 为成绩中心迁移，`V20261127` 至 `V20261137` 分别用于会议闭环、考试成绩确认、教学错题事件 Outbox、作业乐观锁、成绩发布事件死信运维、成绩 Outbox 租约令牌、学生学籍异动、教师任职生命周期、家校通知回执、请假销假和教室申请闭环。Copilot 开工时必须同时扫描迁移目录和 `flyway_schema_history`，不得复用任何已执行版本。
 
 1. 修改前查询迁移目录和 `flyway_schema_history`，选择下一个未占用版本。
 2. 不得修改已经执行的迁移文件。
@@ -114,7 +114,7 @@ com.chronos.education.<domain>.dao
 6. `CourseOffering` 已包含 `offeringMode` 和 `campusId`，并通过 `TeachingClassMember` 表达实际学生范围，足以支持第一片普通班、走班、合班和校区数据范围。它目前只支持一名主教师；协同教师不在成绩中心第一片扩展。
 7. 成绩册成员以规范化的 `edu_gradebook_student` 表作为事实来源，同时保存不可变快照和SHA-256。不能只用一个可变JSON字段承载全部成员。
 8. 学生成绩使用独立门户路由 `/portal/education/grades`，后端增加独立 `GradePortalContributionProvider`，providerCode 为 `GRADE`；不要把成绩逻辑继续塞入现有 `DATA` provider。
-9. `V20261121` 已分配给会议中心。仓库级为成绩中心预留 `V20261122` 至 `V20261124`，分别用于领域结构、菜单权限字典、审核流程初始化。真正执行前仍须核对实际 `flyway_schema_history`；如果数据库已有冲突，整体顺延，禁止修改已执行脚本。
+9. `V20261122` 至 `V20261133` 已在当前数据库执行，禁止修改或复用；仓库目录另已占用至 `V20261137`。新增迁移必须从实际未占用版本开始，并先核对目标数据库 `flyway_schema_history`。
 10. 成绩通知不使用 Publication API。Publication 面向人工发布的通知公告；成绩发布使用 `WorkflowNotificationService.enqueueUserEvent` 封装成独立 `GradeNotificationService`，通过现有Outbox可靠投递。
 
 考试事件的课程归属不能仅从 `ExamSession.subjectId` 推断。后续考试集成新增 `edu_exam_session_offering(session_id, offering_id)` 多对多映射，因为同一考试场次可能覆盖多个课程开设或行政班。事件按 offeringId 分组，至少包含：

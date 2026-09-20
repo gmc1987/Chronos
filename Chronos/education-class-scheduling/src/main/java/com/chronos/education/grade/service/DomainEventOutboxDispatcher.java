@@ -45,9 +45,13 @@ public class DomainEventOutboxDispatcher {
 				client.post().uri(endpoint).contentType(MediaType.APPLICATION_JSON)
 						.header("Idempotency-Key", event.getDeduplicationKey())
 						.body(event.getPayloadJson()).retrieve().toBodilessEntity();
-				service.markSent(event.getId());
+				service.markSent(event.getId(), event.getClaimToken());
 			} catch (Exception failure) {
-				service.markFailed(event.getId(), failure, maxAttempts);
+				service.markFailed(
+						event.getId(),
+						event.getClaimToken(),
+						failure,
+						maxAttempts);
 			}
 		}
 	}

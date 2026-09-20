@@ -10,7 +10,8 @@
 
     <el-tabs v-model="source" @tab-change="changeSource">
       <el-tab-pane label="流程消息" name="WORKFLOW" />
-      <el-tab-pane label="教育领域事件" name="EDUCATION" />
+      <el-tab-pane label="教学错题事件" name="EDUCATION" />
+      <el-tab-pane label="成绩发布事件" name="GRADE" />
     </el-tabs>
 
     <el-table :data="events" v-loading="loading" row-key="id" border>
@@ -44,9 +45,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ignoreWorkflowOutbox,
   ignoreEducationOutbox,
+  ignoreGradeOutbox,
   listDeadEducationOutbox,
+  listDeadGradeOutbox,
   listDeadWorkflowOutbox,
   retryEducationOutbox,
+  retryGradeOutbox,
   retryWorkflowOutbox
 } from '../../../api/admin'
 
@@ -63,7 +67,9 @@ const load = async () => {
     const query = { page: page.value - 1, size: pageSize.value }
     const response = source.value === 'EDUCATION'
       ? await listDeadEducationOutbox(query)
-      : await listDeadWorkflowOutbox(query)
+      : source.value === 'GRADE'
+        ? await listDeadGradeOutbox(query)
+        : await listDeadWorkflowOutbox(query)
     events.value = response?.data?.content || response?.data || []
     total.value = response?.data?.totalElements ?? events.value.length
   } finally {
@@ -83,6 +89,7 @@ const changePageSize = () => {
 
 const retry = async row => {
   if (source.value === 'EDUCATION') await retryEducationOutbox(row.id)
+  else if (source.value === 'GRADE') await retryGradeOutbox(row.id)
   else await retryWorkflowOutbox(row.id)
   ElMessage.success('事件已重新进入投递队列')
   await load()
@@ -91,6 +98,7 @@ const retry = async row => {
 const ignore = async row => {
   await ElMessageBox.confirm('忽略后事件不会再次自动投递，确认继续？', '忽略死信', { type: 'warning' })
   if (source.value === 'EDUCATION') await ignoreEducationOutbox(row.id)
+  else if (source.value === 'GRADE') await ignoreGradeOutbox(row.id)
   else await ignoreWorkflowOutbox(row.id)
   ElMessage.success('事件已忽略')
   await load()

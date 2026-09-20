@@ -6,6 +6,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -42,6 +43,13 @@ public class TeacherAcademicProfile extends BaseEntity {
 
 	@Column(name = "enabled", nullable = false)
 	private Boolean enabled = true;
+
+	@Column(name = "employment_status", length = 24, nullable = false)
+	private String employmentStatus = "ACTIVE";
+
+	@Version
+	@Column(name = "row_version", nullable = false)
+	private Long rowVersion = 0L;
 
 	@Transient
 	private String accountUsername;

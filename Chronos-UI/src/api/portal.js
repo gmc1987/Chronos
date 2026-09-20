@@ -8,6 +8,29 @@ export const portalEducationSchedule = (studentId, date) => http.get(
     Object.entries({ studentId, date }).filter(([, value]) => value),
   )}`,
 )
+export const portalEducationScheduleCalendar = (studentId, startDate, endDate) => http.get(
+  `/portal/education/schedule/calendar?${new URLSearchParams(
+    Object.entries({ studentId, startDate, endDate }).filter(([, value]) => value),
+  )}`,
+)
+export const portalHeadTeacherClasses = () => http.get(
+  '/portal/education/head-teacher/classes',
+)
+export const portalHeadTeacherClassDetail = classId => http.get(
+  `/portal/education/head-teacher/classes/${classId}`,
+)
+export const portalClassNotices = classId => http.get(`/portal/education/head-teacher/classes/${classId}/notices`)
+export const createPortalClassNotice = (classId, payload) => http.post(`/portal/education/head-teacher/classes/${classId}/notices`, payload)
+export const publishPortalClassNotice = id => http.post(`/portal/education/head-teacher/notices/${id}/publish`)
+export const portalParentClassNotices = () => http.get('/portal/education/class-notices')
+export const acknowledgePortalClassNotice = (id, comment) => http.post(`/portal/education/class-notices/${id}/acknowledge`, { comment })
+export const portalLeaveRecords = () => http.get('/portal/education/leaves')
+export const requestLeaveCancellation = (id, reason) => http.post(`/portal/education/leaves/${id}/cancellation`, { reason })
+export const portalClassroomReservations = () => http.get('/portal/education/classroom-reservations')
+export const cancelPortalClassroomReservation = (id, reason) => http.post(
+  `/portal/education/classroom-reservations/${id}/cancel`,
+  { reason },
+)
 export const portalMyInvigilations = () => http.get('/portal/education/exam/my-invigilations')
 export const portalAcknowledgeInvigilation = (id) => http.post(
   `/portal/education/exam/my-invigilations/${id}/acknowledge`,

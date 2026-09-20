@@ -1,5 +1,6 @@
 package com.chronos.education.scheduling.controller;
 
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.EducationDomainOutbox;
 import com.chronos.education.scheduling.service.EducationDomainEventService;
@@ -23,10 +24,11 @@ public class EducationDomainOutboxController {
 
 	@GetMapping("/dead")
 	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:monitor:view','workflow:manage')")
-	public ResultData<?> dead(
+	public ResultData<PageView<EducationDomainOutbox>> dead(
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		return ok(events.deadEvents(page, size));
+		// 三类死信列表共用平台分页契约，前端切换标签时不需要兼容不同结构。
+		return ok(PageView.from(events.deadEvents(page, size)));
 	}
 
 	@PostMapping("/{id}/retry")
@@ -42,6 +44,10 @@ public class EducationDomainOutboxController {
 	}
 
 	private <T> ResultData<T> ok(T data) {
-		return ResultData.<T>builder().code("200").msg("success").data(data).build();
+		return ResultData.<T>builder()
+				.code("200")
+				.msg("success")
+				.data(data)
+				.build();
 	}
 }

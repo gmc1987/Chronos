@@ -39,6 +39,11 @@ const PortalLogin = () => import('../app/pages/PortalLogin.vue')
 const PortalHome = () => import('../modules/portal/pages/PortalHome.vue')
 const PortalApplications = () => import('../modules/portal/pages/PortalApplications.vue')
 const PortalEducationSchedule = () => import('../modules/education/pages/PortalEducationSchedule.vue')
+const PortalHeadTeacherWorkbench = () => import('../modules/education/pages/PortalHeadTeacherWorkbench.vue')
+const PortalClassNotices = () => import('../modules/education/pages/PortalClassNotices.vue')
+const PortalLeaves = () => import('../modules/education/pages/PortalLeaves.vue')
+const PortalClassroomReservations = () => import('../modules/education/pages/PortalClassroomReservations.vue')
+const AdminLeaveManagement = () => import('../modules/education/pages/AdminLeaveManagement.vue')
 const PortalExamInvigilation = () => import('../modules/education/pages/PortalExamInvigilation.vue')
 const PortalMyExams = () => import('../modules/education/pages/PortalMyExams.vue')
 const PortalMeetings = () => import('../modules/education/pages/PortalMeetings.vue')
@@ -76,6 +81,10 @@ const router = createRouter({
         { path: '', name: 'portal-home', component: PortalHome },
         { path: 'apps', name: 'portal-apps', component: PortalApplications },
         { path: 'education/schedule', name: 'portal-education-schedule', component: PortalEducationSchedule },
+        { path: 'education/head-teacher', name: 'portal-education-head-teacher', component: PortalHeadTeacherWorkbench },
+        { path: 'education/class-notices', name: 'portal-education-class-notices', component: PortalClassNotices },
+        { path: 'education/leaves', name: 'portal-education-leaves', component: PortalLeaves },
+        { path: 'education/classroom-reservations', name: 'portal-education-classroom-reservations', component: PortalClassroomReservations },
         { path: 'education/exam/invigilation', name: 'portal-education-exam-invigilation', component: PortalExamInvigilation },
         { path: 'education/exam/my-exams', name: 'portal-education-my-exams', component: PortalMyExams },
         { path: 'education/meetings', name: 'portal-education-meetings', component: PortalMeetings },
@@ -135,6 +144,7 @@ const router = createRouter({
         { path: 'education/teaching-center/material', name: 'admin-education-material', component: AdminMaterials },
         { path: 'education/teaching-center/materials', redirect: { name: 'admin-education-material' } },
         { path: 'education/score-center', name: 'admin-education-score-center', component: AdminScoreCenter },
+        { path: 'education/leaves', name: 'admin-education-leaves', component: AdminLeaveManagement },
         { path: 'education/materials', redirect: { name: 'admin-education-material' } },
         { path: 'teaching/resources', name: 'teaching-resources', component: TeachingResourceWorkbench },
         { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminHomework },

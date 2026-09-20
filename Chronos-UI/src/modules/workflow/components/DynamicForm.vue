@@ -34,6 +34,7 @@
 <script setup>
 import { reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { http } from '../../../api/http'
 import {
 	deleteManagedFile,
 	dictionaryOptions,
@@ -50,6 +51,7 @@ const props = defineProps({
 
 const uploading = reactive({})
 const dictionaryData = reactive({})
+const remoteOptionData = reactive({})
 let pendingUploadCount = 0
 const readonly = (field) => field.permission && field.permission !== 'EDIT'
 const optionConfig = (field) => {
@@ -63,6 +65,9 @@ const options = (field) => {
   const config = optionConfig(field)
   if (Array.isArray(config)) {
     return config
+  }
+  if (config?.source === 'REMOTE' && config.url) {
+    return remoteOptionData[config.url] || []
   }
   return config?.dictCode ? dictionaryData[config.dictCode] || [] : []
 }
@@ -84,6 +89,29 @@ const loadDictionaries = async (fields) => {
     } catch (error) {
       dictionaryData[code] = []
       ElMessage.warning(`字典 ${code} 加载失败，请联系管理员检查字典配置`)
+    }
+  }))
+
+  const urls = [...new Set((fields || [])
+    .map((field) => optionConfig(field))
+    .filter((config) => config?.source === 'REMOTE' && config.url)
+    .map((config) => config.url))]
+  await Promise.all(urls.map(async (url) => {
+    if (remoteOptionData[url]) {
+      return
+    }
+    // 表单配置只能访问当前系统的相对 API，避免配置被滥用为跨域请求入口。
+    if (!url.startsWith('/')) {
+      remoteOptionData[url] = []
+      ElMessage.warning('远程选项地址必须使用站内相对路径')
+      return
+    }
+    try {
+      const response = await http.get(url)
+      remoteOptionData[url] = Array.isArray(response?.data) ? response.data : []
+    } catch (error) {
+      remoteOptionData[url] = []
+      ElMessage.warning('表单远程选项加载失败，请联系管理员检查资源权限')
     }
   }))
 }
