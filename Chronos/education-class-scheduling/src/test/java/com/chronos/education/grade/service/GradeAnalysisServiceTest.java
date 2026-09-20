@@ -77,7 +77,8 @@ class GradeAnalysisServiceTest {
 					mock(StudentProfileRepository.class), mock(SubjectRepository.class), mock(WorkflowService.class),
 					mock(IWorkflowTaskRepository.class), mock(IWorkflowInstanceRepository.class), scopes,
 					mock(GradeNotificationService.class), mock(IAuditLogService.class), new ObjectMapper(),
-					mock(DomainEventOutboxService.class), mock(EducationDomainEventService.class));
+					mock(DomainEventOutboxService.class), mock(EducationDomainEventService.class),
+					mock(GradeRuleEvaluationService.class));
 		}
 	}
 
