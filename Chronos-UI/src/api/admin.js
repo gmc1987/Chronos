@@ -228,6 +228,7 @@ export const publishAssessmentScheme = (id, payload = {}) => http.post(`/admin/e
 export const listGradebooks = (params = {}) => http.get(`/admin/education/grades/gradebooks?${qs(params)}`)
 export const createGradebook = (payload) => http.post('/admin/education/grades/gradebooks', payload)
 export const getGradebook = (id) => http.get(`/admin/education/grades/gradebooks/${id}`)
+export const getKnowledgeScoreAnalysis = () => http.get('/admin/education/grades/analysis/knowledge')
 export const listGradebookSnapshots = (id) => http.get(`/admin/education/grades/gradebooks/${id}/snapshots`)
 export const updateGradebookItems = (id, payload) => http.put(`/admin/education/grades/gradebooks/${id}/items`, payload)
 export const submitGradebook = (id, payload = {}) => http.post(`/admin/education/grades/gradebooks/${id}/submit`, payload)

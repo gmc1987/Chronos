@@ -79,4 +79,11 @@ public final class GradeDtos {
 	public record AnalysisResult(String dimension, boolean supported, String status, String reason,
 			List<String> dependencies, List<AnalysisRow> rows) {
 	}
+
+	public record KnowledgeAnalysisResponse(boolean available, String reasonCode, String reason,
+			List<KnowledgeAnalysisDependency> dependencies) {
+	}
+
+	public record KnowledgeAnalysisDependency(String code, String status, String description) {
+	}
 }

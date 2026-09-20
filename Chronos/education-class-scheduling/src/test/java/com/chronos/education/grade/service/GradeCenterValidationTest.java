@@ -84,6 +84,18 @@ class GradeCenterValidationTest {
 	}
 
 	@Test
+	void knowledgeAnalysisFailsClosedWithMachineReadableDependencies() {
+		var response = service.knowledgeAnalysis("teacher");
+
+		org.junit.jupiter.api.Assertions.assertFalse(response.available());
+		org.junit.jupiter.api.Assertions.assertEquals("KNOWLEDGE_LINKAGE_UNAVAILABLE", response.reasonCode());
+		org.junit.jupiter.api.Assertions.assertTrue(response.dependencies().stream()
+				.anyMatch(dependency -> "GRADE_ITEM_QUESTION_REFERENCE".equals(dependency.code())
+						&& "MISSING".equals(dependency.status())));
+		org.mockito.Mockito.verify(dataScopes).resolve("teacher");
+	}
+
+	@Test
 	void rejectsNonManualSourcesInFirstSlice() {
 		SchemeCommand command = new SchemeCommand(
 				"offering-1", "方案", BigDecimal.valueOf(100), BigDecimal.valueOf(60),

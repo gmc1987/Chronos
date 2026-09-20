@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createAssessmentScheme,
   createGradebook,
   getGradebook,
   importGradebook,
+  getKnowledgeScoreAnalysis,
   listAssessmentSchemes,
   listGradebookSnapshots,
   listGradebooks,
@@ -29,6 +31,9 @@ const componentDraft = ref({ code: '', name: '', weight: 0, maxScore: 100, sourc
 const selected = ref(null)
 const draftItems = ref([])
 const snapshots = ref([])
+const knowledgeAnalysis = ref(null)
+const route = useRoute()
+const isKnowledgeAnalysis = computed(() => route.name === 'admin-education-score-knowledge-analysis')
 const activeTab = ref('gradebooks')
 const dirty = ref(false)
 const snapshotLoading = ref(false)
@@ -104,6 +109,11 @@ function normalizeGradebook(book) {
 }
 
 async function refresh() {
+  if (isKnowledgeAnalysis.value) {
+    const response = await getKnowledgeScoreAnalysis()
+    knowledgeAnalysis.value = response?.data || null
+    return
+  }
   loading.value = true
   try {
     const [schemeResponse, gradebookResponse] = await Promise.all([
@@ -283,7 +293,25 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
       <el-button :loading="loading" @click="refresh">刷新</el-button>
     </header>
 
-    <el-tabs v-model="activeTab">
+    <el-alert
+      v-if="isKnowledgeAnalysis"
+      type="info"
+      :closable="false"
+      show-icon
+      class="knowledge-empty-state"
+    >
+      <template #title>知识点成绩分析暂不可用</template>
+      <p>{{ knowledgeAnalysis?.reason || '正在检查知识点分析依赖。' }}</p>
+      <div v-if="knowledgeAnalysis?.dependencies?.length" class="knowledge-dependencies">
+        <div v-for="dependency in knowledgeAnalysis.dependencies" :key="dependency.code">
+          <strong>{{ dependency.code }}</strong>
+          <el-tag size="small" effect="plain">{{ dependency.status }}</el-tag>
+          <span>{{ dependency.description }}</span>
+        </div>
+      </div>
+    </el-alert>
+
+    <el-tabs v-else v-model="activeTab">
       <el-tab-pane label="成绩册" name="gradebooks">
         <div class="toolbar">
           <el-button type="primary" @click="createNewGradebook">新建成绩册</el-button>
@@ -448,4 +476,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 .invalid { color: var(--el-color-danger); }
 .snapshot-header { margin: 12px 0; }
 .snapshot-json { max-height: 360px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-all; }
+.knowledge-empty-state { max-width: 900px; }
+.knowledge-empty-state p { margin: 8px 0 0; }
+.knowledge-dependencies { display: grid; gap: 8px; margin-top: 12px; }
+.knowledge-dependencies > div { display: flex; align-items: center; gap: 8px; }
 </style>
