@@ -10,7 +10,7 @@ public struct ChronosAPIConfiguration: Sendable {
 }
 public struct ResultData<T: Decodable>: Decodable { public let code: String; public let msg: String?; public let data: T? }
 public struct SessionTokens: Codable, Sendable { public let accessToken: String; public let refreshToken: String? }
-public struct Role: Codable, Sendable { public let roleName: String?; public let roleCode: String? }
+public struct Role: Codable, Hashable, Sendable { public let roleName: String?; public let roleCode: String? }
 public struct LoginPayload: Codable, Sendable { public let accessToken: String; public let refreshToken: String?; public let roles: [Role]?; public let permissions: [Permission]? }
 public struct Permission: Codable, Sendable { public let permissionCode: String? }
 public enum ChronosAPIError: Error, LocalizedError {
@@ -22,13 +22,21 @@ public actor ChronosSession {
     private var tokens: SessionTokens?
     private let decoder = JSONDecoder()
     public init(configuration: ChronosAPIConfiguration = .fromEnvironment) { self.configuration = configuration }
-    public func restore(_ tokens: SessionTokens) { self.tokens = tokens }
-    public func clear() { tokens = nil }
+    private let tokenStoreKey = "chronos.mobile.session.tokens"
+    public func restore(_ tokens: SessionTokens) { self.tokens = tokens; persist(tokens) }
+    public func restorePersisted() -> SessionTokens? {
+        guard let data = UserDefaults.standard.data(forKey: tokenStoreKey),
+              let saved = try? JSONDecoder().decode(SessionTokens.self, from: data) else { return nil }
+        tokens = saved
+        return saved
+    }
+    public func clear() { tokens = nil; UserDefaults.standard.removeObject(forKey: tokenStoreKey) }
     public func login(username: String, password: String, consumer: Bool = true) async throws -> LoginPayload {
         let path = consumer ? "/consumer/users/login" : "/auth/login"
         let data = try await request(path: path, method: "POST", body: ["username": username, "password": password], authenticated: false)
         guard let result = try decode(LoginPayload.self, from: data) else { throw ChronosAPIError.server("登录响应缺少令牌") }
         tokens = SessionTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
+        persist(tokens!)
         return result
     }
     public func refresh() async throws {
@@ -36,6 +44,12 @@ public actor ChronosSession {
         let data = try await request(path: "/auth/refresh", method: "POST", body: ["refreshToken": refresh], authenticated: false)
         guard let result = try decode(SessionTokens.self, from: data) else { throw ChronosAPIError.server("刷新响应无效") }
         tokens = SessionTokens(accessToken: result.accessToken, refreshToken: refresh)
+        persist(tokens!)
+    }
+    public func revoke() async {
+        guard tokens != nil else { return }
+        _ = try? await request(path: "/auth/revoke", method: "POST", body: nil, authenticated: true, retry: false)
+        clear()
     }
     public func get<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
         let data = try await request(path: path, method: "GET", body: nil, authenticated: true)
@@ -54,6 +68,11 @@ public actor ChronosSession {
         if http.statusCode == 401 && authenticated && retry { try await refresh(); return try await request(path: path, method: method, body: body, authenticated: true, retry: false) }
         guard (200..<300).contains(http.statusCode) else { throw ChronosAPIError.server((try? decoder.decode(ResultData<Empty>.self, from: data))?.msg ?? "请求失败（\(http.statusCode)）") }
         return data
+    }
+    private func persist(_ tokens: SessionTokens) {
+        if let data = try? JSONEncoder().encode(tokens) {
+            UserDefaults.standard.set(data, forKey: tokenStoreKey)
+        }
     }
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T? {
         let result = try decoder.decode(ResultData<T>.self, from: data)
