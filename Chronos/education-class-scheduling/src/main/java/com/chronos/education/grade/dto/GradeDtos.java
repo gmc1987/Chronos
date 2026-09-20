@@ -51,4 +51,8 @@ public final class GradeDtos {
 	public record SnapshotMetadata(Integer versionNo, String snapshotHash, String publishedBy,
 			LocalDateTime publishedAt) {
 	}
+
+	public record AnalysisCapability(String dimension, boolean supported, String status, String reason,
+			List<String> dependencies) {
+	}
 }

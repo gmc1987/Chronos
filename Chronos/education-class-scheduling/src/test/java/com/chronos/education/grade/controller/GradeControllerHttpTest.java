@@ -134,6 +134,21 @@ class GradeControllerHttpTest {
 				.andExpect(jsonPath("$.code").value("403"));
 	}
 
+	@Test
+	void analysisCapabilityEndpointsExposeUnavailableStatusWithoutFakeMetrics() throws Exception {
+		GradeDtos.AnalysisCapability capability = new GradeDtos.AnalysisCapability(
+				"class", false, "UNAVAILABLE", "analysis data source is not available", List.of("published snapshots"));
+		when(service.analysisCapability("class")).thenReturn(capability);
+
+		mockMvc.perform(get("/admin/education/grades/analysis/class"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.dimension").value("class"))
+				.andExpect(jsonPath("$.data.supported").value(false))
+				.andExpect(jsonPath("$.data.status").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.data.dependencies[0]").value("published snapshots"));
+		verify(service).analysisCapability("class");
+	}
+
 	private static final class GradebookControllerFixtures {
 		private GradeDtos.GradebookDetailResponse detail() {
 			return new GradeDtos.GradebookDetailResponse(

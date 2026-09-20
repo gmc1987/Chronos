@@ -59,6 +59,11 @@ const AdminPreparation = () => import('../modules/education/pages/AdminPreparati
 const AdminCourseware = () => import('../modules/education/pages/AdminCourseware.vue')
 const AdminMaterials = () => import('../modules/education/pages/AdminMaterials.vue')
 const AdminScoreCenter = () => import('../modules/education/pages/AdminScoreCenter.vue')
+const AdminScoreClassAnalysis = () => import('../modules/education/pages/AdminScoreClassAnalysis.vue')
+const AdminScoreGradeAnalysis = () => import('../modules/education/pages/AdminScoreGradeAnalysis.vue')
+const AdminScoreSubjectAnalysis = () => import('../modules/education/pages/AdminScoreSubjectAnalysis.vue')
+const AdminScoreTrendAnalysis = () => import('../modules/education/pages/AdminScoreTrendAnalysis.vue')
+const AdminScoreKnowledgeAnalysis = () => import('../modules/education/pages/AdminScoreKnowledgeAnalysis.vue')
 const TeachingResourceWorkbench = () => import('../modules/education/pages/TeachingResourceWorkbench.vue')
 const AdminHomework = () => import('../modules/education/pages/AdminHomework.vue')
 const PortalHomework = () => import('../modules/education/pages/PortalHomework.vue')
@@ -151,11 +156,11 @@ const router = createRouter({
         { path: 'education/teaching-center/material', name: 'admin-education-material', component: AdminMaterials },
         { path: 'education/teaching-center/materials', redirect: { name: 'admin-education-material' } },
         { path: 'education/score-center', name: 'admin-education-score-center', component: AdminScoreCenter },
-        { path: 'education/score-center/class-analysis', name: 'admin-education-score-class-analysis', component: AdminScoreCenter },
-        { path: 'education/score-center/grade-analysis', name: 'admin-education-score-grade-analysis', component: AdminScoreCenter },
-        { path: 'education/score-center/subject-analysis', name: 'admin-education-score-subject-analysis', component: AdminScoreCenter },
-        { path: 'education/score-center/trend-analysis', name: 'admin-education-score-trend-analysis', component: AdminScoreCenter },
-        { path: 'education/score-center/knowledge-analysis', name: 'admin-education-score-knowledge-analysis', component: AdminScoreCenter },
+        { path: 'education/score-center/class-analysis', name: 'admin-education-score-class-analysis', component: AdminScoreClassAnalysis },
+        { path: 'education/score-center/grade-analysis', name: 'admin-education-score-grade-analysis', component: AdminScoreGradeAnalysis },
+        { path: 'education/score-center/subject-analysis', name: 'admin-education-score-subject-analysis', component: AdminScoreSubjectAnalysis },
+        { path: 'education/score-center/trend-analysis', name: 'admin-education-score-trend-analysis', component: AdminScoreTrendAnalysis },
+        { path: 'education/score-center/knowledge-analysis', name: 'admin-education-score-knowledge-analysis', component: AdminScoreKnowledgeAnalysis },
         { path: 'education/leaves', name: 'admin-education-leaves', component: AdminLeaveManagement },
         { path: 'education/home-school', name: 'admin-education-home-school', component: AdminHomeSchool },
         { path: 'education/supervision', name: 'admin-education-supervision', component: AdminSupervision },
