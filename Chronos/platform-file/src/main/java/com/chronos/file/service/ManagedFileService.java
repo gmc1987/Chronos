@@ -286,9 +286,7 @@ public class ManagedFileService {
 			}
 			return;
 		}
-		if (!"WORKFLOW_FORM".equals(businessType)
-				|| businessId == null
-				|| businessId.isBlank()) {
+		if (businessId == null || businessId.isBlank()) {
 			throw new IllegalArgumentException("不支持的文件业务类型");
 		}
 		boolean writable = accessPolicies.stream()
@@ -303,6 +301,9 @@ public class ManagedFileService {
 				.orElseThrow(() -> new IllegalArgumentException("文件不存在"));
 		if (!"ACTIVE".equals(file.getStatus())) {
 			throw new IllegalArgumentException("文件已删除");
+		}
+		if (file.getExpiresAt() != null && file.getExpiresAt().isBefore(LocalDateTime.now())) {
+			throw new IllegalArgumentException("文件已过期");
 		}
 		return file;
 	}

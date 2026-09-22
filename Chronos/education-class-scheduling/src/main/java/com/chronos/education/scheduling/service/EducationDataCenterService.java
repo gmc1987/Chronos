@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.multipart.MultipartFile;
 
 /** Data-center application boundary. Dashboards read persisted snapshots, never live cross-table joins. */
@@ -22,18 +23,26 @@ public class EducationDataCenterService {
  private final DataDailySnapshotRepository snapshots;
  private final DataReportTaskRepository reports;
  private final DataQualityIssueRepository issues;
+ private final DataQualityRuleRepository rules;
  private final EducationDataScopeService scopes;
  private final ManagedFileService files;
  private final StudentProfileRepository students;
  private final AdministrativeClassRepository classes;
  private final ExamSessionRepository exams;
 
+ @org.springframework.beans.factory.annotation.Autowired
+ public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
+   DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
+   ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
+   ExamSessionRepository exams, DataQualityRuleRepository rules) {
+  this.definitions=definitions; this.snapshots=snapshots; this.reports=reports; this.issues=issues;
+  this.rules=rules; this.scopes=scopes; this.files=files; this.students=students; this.classes=classes; this.exams=exams;
+ }
  public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
    DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
    ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
    ExamSessionRepository exams) {
-  this.definitions=definitions; this.snapshots=snapshots; this.reports=reports; this.issues=issues;
-  this.scopes=scopes; this.files=files; this.students=students; this.classes=classes; this.exams=exams;
+  this(definitions, snapshots, reports, issues, scopes, files, students, classes, exams, null);
  }
  public List<DataMetricDefinition> metricDefinitions() { return definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc(); }
  public List<DataDailySnapshot> dashboard(String dashboard, LocalDate date, String campusId, Authentication user) {
@@ -124,6 +133,10 @@ public class EducationDataCenterService {
   assertCampus(campusId,user);
   campusId = normalizedCampus(campusId);
   DataReportTask task = reports.findByReportTypeAndRequestedDateAndCampusIdAndRequestedBy(type,date,campusId,user.getName()).orElseGet(DataReportTask::new);
+  if ("COMPLETED".equals(task.getStatus()) && task.getFileId() != null
+    && (task.getExpiresAt() == null || task.getExpiresAt().isAfter(LocalDateTime.now()))) {
+   return task;
+  }
   task.setReportType(type); task.setRequestedDate(date); task.setCampusId(campusId); task.setStatus("PENDING");
   task.setRequestedBy(user.getName()); task.setProgress(0); task.setExpiresAt(LocalDateTime.now().plusDays(7));
   task = reports.save(task); generateReport(task.getId(), user.getName()); return task;
@@ -132,7 +145,8 @@ public class EducationDataCenterService {
  public void scheduledDailySnapshot() { takeSnapshot(LocalDate.now().minusDays(1), "", systemAuthentication()); }
  public DataReportTask retryReport(String id, Authentication user) {
   DataReportTask task=reports.findById(id).orElseThrow(() -> new IllegalArgumentException("报告任务不存在"));
-  if (!"FAILED".equals(task.getStatus()) || (!task.getRequestedBy().equals(user.getName()) && !isPrivileged(user)))
+  if (!"FAILED".equals(task.getStatus()) || task.getRetryCount() >= 3
+    || (!task.getRequestedBy().equals(user.getName()) && !isPrivileged(user)))
    throw new org.springframework.security.access.AccessDeniedException("报告不可重试");
   task.setStatus("PENDING"); task.setRetryCount(task.getRetryCount()+1); task.setProgress(0); task.setErrorMessage(null);
   task=reports.save(task); generateReport(task.getId(),user.getName()); return task;
@@ -141,6 +155,7 @@ public class EducationDataCenterService {
  public void generateReport(String taskId, String actor) {
   reports.findById(taskId).ifPresent(task -> {
    try {
+    if (!"PENDING".equals(task.getStatus())) return;
     task.setStatus("RUNNING"); task.setProgress(10); reports.save(task);
     List<DataDailySnapshot> rows = snapshots.findBySnapshotDateAndCampusIdOrderByMetricCode(task.getRequestedDate(),task.getCampusId());
     StringBuilder csv = new StringBuilder("metricCode,value,date,campusId\n");
@@ -155,20 +170,99 @@ public class EducationDataCenterService {
  }
  public List<DataReportTask> reports(Authentication user) {
   return reports.findTop50ByOrderByCreateTimeDesc().stream()
-    .filter(t -> isPrivileged(user) || user.getName().equals(t.getRequestedBy())).toList();
+    .filter(t -> isPrivileged(user) || user.getName().equals(t.getRequestedBy())
+      || canReadCampus(t.getCampusId(), user))
+    .peek(this::expireIfNeeded).toList();
  }
- public List<DataQualityIssue> issues(String status) { return status == null ? issues.findAll() : issues.findByStatusOrderByDueDateAsc(status); }
- public DataQualityIssue createIssue(DataQualityIssue issue) { if (issue.getStatus()==null) issue.setStatus("OPEN"); return issues.save(issue); }
- public DataQualityIssue transitionIssue(String id,String status,String resolution) {
+ public com.chronos.file.service.ManagedFileService.FileContent downloadReport(
+   String id, Authentication user) {
+  DataReportTask task = reports.findById(id).orElseThrow(() -> new IllegalArgumentException("报告任务不存在"));
+  expireIfNeeded(task);
+  if (!"COMPLETED".equals(task.getStatus()) || task.getFileId() == null) {
+   throw new IllegalStateException("报告尚未完成");
+  }
+  assertCampus(task.getCampusId(), user);
+  return files.read(task.getFileId(), user);
+ }
+ public List<DataQualityIssue> issues(String status, Authentication user) {
+  List<DataQualityIssue> values = status == null ? issues.findAll() : issues.findByStatusOrderByDueDateAsc(status);
+  return values.stream().filter(issue -> canReadCampus(issue.getCampusId(), user)).toList();
+ }
+ public List<DataQualityIssue> issues(String status) {
+  return status == null ? issues.findAll() : issues.findByStatusOrderByDueDateAsc(status);
+ }
+ public DataQualityIssue createIssue(DataQualityIssue issue, Authentication user) {
+  assertCampus(issue.getCampusId(), user);
+  if (issue.getStatus()==null) issue.setStatus("OPEN");
+  return issues.save(issue);
+ }
+ public DataQualityIssue createIssue(DataQualityIssue issue) {
+  if (issue.getStatus() == null) issue.setStatus("OPEN");
+  return issues.save(issue);
+ }
+ public DataQualityIssue transitionIssue(String id,String status,String resolution, Authentication user) {
   DataQualityIssue issue=issues.findById(id).orElseThrow(() -> new IllegalArgumentException("质量问题不存在"));
-  if (!Set.of("OPEN","IN_PROGRESS","RESOLVED","REJECTED").contains(status)) throw new IllegalArgumentException("无效问题状态");
+  if (!canReadCampus(issue.getCampusId(), user)) throw new AccessDeniedException("无权访问该质量问题");
+  if (!Set.of("OPEN","ASSIGNED","IN_PROGRESS","RESOLVED","CLOSED","REJECTED").contains(status))
+   throw new IllegalArgumentException("无效问题状态");
+  if ("CLOSED".equals(status) && !"RESOLVED".equals(issue.getStatus()))
+   throw new IllegalStateException("只有已解决的问题才能关闭");
   issue.setStatus(status); issue.setResolution(resolution); if ("RESOLVED".equals(status)) issue.setResolvedAt(LocalDateTime.now());
   return issues.save(issue);
+ }
+ public DataQualityIssue transitionIssue(String id, String status, String resolution) {
+  DataQualityIssue issue = issues.findById(id).orElseThrow(() -> new IllegalArgumentException("质量问题不存在"));
+  if (!Set.of("OPEN","ASSIGNED","IN_PROGRESS","RESOLVED","CLOSED","REJECTED").contains(status))
+   throw new IllegalArgumentException("无效问题状态");
+  issue.setStatus(status);
+  issue.setResolution(resolution);
+  if ("RESOLVED".equals(status)) issue.setResolvedAt(LocalDateTime.now());
+  return issues.save(issue);
+ }
+ public List<DataQualityIssue> scanQuality(LocalDate date, String campusId, Authentication user) {
+  assertCampus(campusId, user);
+  if (rules == null) return List.of();
+  String normalized = normalizedCampus(campusId);
+  List<DataQualityIssue> found = new ArrayList<>();
+  for (DataQualityRule rule : rules.findByEnabledTrueOrderByRuleCode()) {
+   if (rule.getMetricCode() == null) continue;
+   snapshots.findBySnapshotDateAndCampusIdAndMetricCode(date, normalized, rule.getMetricCode())
+    .filter(snapshot -> matches(rule.getExpression(), snapshot.getMetricValue()))
+    .ifPresent(snapshot -> {
+     if (issues.findFirstByRuleIdAndCampusIdAndMetricCodeAndStatusIn(
+       rule.getId(), normalized, rule.getMetricCode(), List.of("OPEN","ASSIGNED","IN_PROGRESS","RESOLVED")).isEmpty()) {
+      DataQualityIssue issue = new DataQualityIssue();
+      issue.setRuleId(rule.getId()); issue.setCampusId(normalized); issue.setMetricCode(rule.getMetricCode());
+      issue.setTitle(rule.getRuleName()); issue.setDescription(rule.getExpression());
+      issue.setSeverity(rule.getSeverity()); issue.setStatus("OPEN"); issue.setDetectedDate(date);
+      found.add(issues.save(issue));
+     }
+    });
+  }
+  return found;
+ }
+ private boolean matches(String expression, java.math.BigDecimal value) {
+  java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^\\s*(<=|>=|=|<|>)\\s*(-?\\d+(?:\\.\\d+)?)\\s*$").matcher(expression);
+  if (!matcher.matches()) throw new IllegalArgumentException("不支持的质量规则表达式");
+  int comparison = value.compareTo(new java.math.BigDecimal(matcher.group(2)));
+  return switch (matcher.group(1)) { case "<" -> comparison < 0; case "<=" -> comparison <= 0;
+   case ">" -> comparison > 0; case ">=" -> comparison >= 0; default -> comparison == 0; };
  }
  private void assertCampus(String campusId, Authentication user) {
   if (campusId == null || campusId.isBlank()) return;
   EducationDataScope scope=scopes.resolve(user.getName());
   if (!scope.fullAccess() && !scope.campusIds().contains(campusId)) throw new org.springframework.security.access.AccessDeniedException("无权访问校区数据");
+ }
+ private boolean canReadCampus(String campusId, Authentication user) {
+  return campusId == null || campusId.isBlank() || scopes.resolve(user.getName()).fullAccess()
+    || scopes.resolve(user.getName()).campusIds().contains(campusId)
+    || (user.getName().equals("SYSTEM"));
+ }
+ private void expireIfNeeded(DataReportTask task) {
+  if ("COMPLETED".equals(task.getStatus()) && task.getExpiresAt() != null
+    && task.getExpiresAt().isBefore(LocalDateTime.now())) {
+   task.setStatus("EXPIRED"); reports.save(task);
+  }
  }
  private static String normalizedCampus(String campusId) { return campusId == null ? "" : campusId.trim(); }
  private boolean isPrivileged(Authentication user) {
