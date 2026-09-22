@@ -94,7 +94,7 @@ public class ExamPaperAnalysisController {
 			@PathVariable String sessionId,
 			Authentication authentication) {
 		requireFullAccess(authentication);
-		return ok(service.confirmScores(sessionId));
+		return ok(service.confirmScores(sessionId, authentication.getName()));
 	}
 
 	@PostMapping("/admin/education/exam/sessions/{sessionId}/scores/publish")

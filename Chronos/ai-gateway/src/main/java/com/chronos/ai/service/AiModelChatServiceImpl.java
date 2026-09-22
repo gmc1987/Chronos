@@ -1,6 +1,5 @@
 package com.chronos.ai.service;
 
-import java.net.URI;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,6 +11,7 @@ import org.springframework.web.client.RestClientException;
 
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
+import com.chronos.security.SecretEncryptionProvider;
 
 /**
  * Public runtime for all database-backed model calls. The cache is keyed by
@@ -27,13 +27,20 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 
 	private final AiModelRepository models;
 	private final DeepSeekChatModelFactory modelFactory;
+	private final SecretEncryptionProvider encryption;
 	private final ConcurrentHashMap<String, CachedModel> cache = new ConcurrentHashMap<>();
 
 	public AiModelChatServiceImpl(
 			AiModelRepository models,
-			DeepSeekChatModelFactory modelFactory) {
+			DeepSeekChatModelFactory modelFactory,
+			SecretEncryptionProvider encryption) {
 		this.models = models;
 		this.modelFactory = modelFactory;
+		this.encryption = encryption;
+	}
+
+	public AiModelChatServiceImpl(AiModelRepository models, DeepSeekChatModelFactory modelFactory) {
+		this(models, modelFactory, null);
 	}
 
 	@Override
@@ -90,7 +97,13 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 			throw new AiModelConfigurationException(label + "不是聊天模型");
 		}
 		if (model.getApiKey() == null || model.getApiKey().isBlank()) {
-			throw new AiModelConfigurationException(label + "未配置 API Key");
+			if (model.getApiKeyCiphertext() == null || model.getApiKeyCiphertext().isBlank()) {
+				throw new AiModelConfigurationException(label + "未配置 API Key");
+			}
+			if (encryption == null) {
+				throw new AiModelConfigurationException(label + "平台加密 provider 未配置");
+			}
+			model.setApiKey(encryption.decrypt(model.getApiKeyCiphertext()));
 		}
 		if (!DEEPSEEK_PROVIDER.equals(normalize(model.getProvider()))) {
 			throw new AiModelConfigurationException(label + "供应商不受支持，当前仅支持 DeepSeek");
@@ -102,14 +115,9 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 			throw new AiModelConfigurationException(label + "Base URL 不能为空");
 		}
 		try {
-			URI baseUrl = URI.create(model.getBaseUrl().trim());
-			if ((!"http".equalsIgnoreCase(baseUrl.getScheme())
-					&& !"https".equalsIgnoreCase(baseUrl.getScheme()))
-					|| baseUrl.getHost() == null) {
-				throw new IllegalArgumentException();
-			}
-		} catch (IllegalArgumentException exception) {
-			throw new AiModelConfigurationException(label + "Base URL 必须是有效的 HTTP(S) 地址");
+			AiEndpointSecurity.validate(model.getBaseUrl().trim());
+		} catch (AiModelConfigurationException exception) {
+			throw new AiModelConfigurationException(label + " Base URL 必须是可信的 HTTPS 公网地址");
 		}
 		validateRange(model.getConnectTimeoutMs(), 100, 120_000, label + "连接超时");
 		validateRange(model.getReadTimeoutMs(), 100, 600_000, label + "读取超时");

@@ -9,15 +9,18 @@ import org.springframework.web.client.RestClient;
 
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
+import com.chronos.security.SecretEncryptionProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /** OpenAI-compatible /v1/embeddings client; works with most cloud providers. */
 @Service
 public class OpenAiCompatibleEmbeddingService implements EmbeddingService {
 	private final AiModelRepository models;
+	private final SecretEncryptionProvider encryption;
 
-	public OpenAiCompatibleEmbeddingService(AiModelRepository models) {
+	public OpenAiCompatibleEmbeddingService(AiModelRepository models, SecretEncryptionProvider encryption) {
 		this.models = models;
+		this.encryption = encryption;
 	}
 
 	@Override
@@ -28,15 +31,18 @@ public class OpenAiCompatibleEmbeddingService implements EmbeddingService {
 		if (!"EMBEDDING".equalsIgnoreCase(model.getModelType()) || !Integer.valueOf(1).equals(model.getStatus())) {
 			throw new AiModelConfigurationException("Embedding 模型未启用");
 		}
-		if (model.getApiKey() == null || model.getApiKey().isBlank()) {
+		if (model.getApiKeyCiphertext() == null || model.getApiKeyCiphertext().isBlank()) {
 			throw new AiModelConfigurationException("Embedding API Key 未配置");
 		}
+		if (encryption == null) throw new AiModelConfigurationException("平台加密 provider 未配置");
+		String apiKey = encryption.decrypt(model.getApiKeyCiphertext());
 		String base = model.getBaseUrl();
 		if (base == null || base.isBlank()) base = "https://api.openai.com";
+		base = AiEndpointSecurity.validate(base);
 		String endpoint = base.replaceAll("/+$", "") + (base.endsWith("/embeddings") ? "" : "/v1/embeddings");
 		try {
 			JsonNode root = RestClient.create().post().uri(endpoint).contentType(MediaType.APPLICATION_JSON)
-					.header("Authorization", "Bearer " + model.getApiKey())
+					.header("Authorization", "Bearer " + apiKey)
 					.body(Map.of("model", model.getModelName(), "input", texts)).retrieve().body(JsonNode.class);
 			if (root == null || !root.has("data")) throw new IllegalStateException("Embedding 响应缺少 data");
 			java.util.ArrayList<float[]> result = new java.util.ArrayList<>();

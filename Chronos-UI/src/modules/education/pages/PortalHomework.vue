@@ -25,7 +25,10 @@
         <el-descriptions-item label="成绩">{{ current?.submission?.score ?? '—' }} / {{ current?.maxScore }}</el-descriptions-item>
         <el-descriptions-item label="教师评语">{{ current?.submission?.teacherFeedback || '—' }}</el-descriptions-item>
       </el-descriptions>
-      <el-form label-width="90px" class="answer-form"><el-form-item label="我的答案"><el-input v-model="answerSnapshotJson" type="textarea" :rows="10" :disabled="!canEdit(current)" placeholder="请输入答案或按题目编号填写" /></el-form-item></el-form>
+      <el-form label-width="90px" class="answer-form">
+        <el-form-item label="我的答案"><el-input v-model="answerSnapshotJson" type="textarea" :rows="10" :disabled="!canEdit(current)" placeholder="请输入答案或按题目编号填写" /></el-form-item>
+        <el-form-item label="附件引用"><el-input v-model="attachmentSnapshotJson" type="textarea" :rows="3" :disabled="!canEdit(current)" placeholder='已上传文件引用 JSON，例如 [{"fileId":"..."}]' /></el-form-item>
+      </el-form>
       <template #footer><el-button @click="dialog=false">关闭</el-button><template v-if="canEdit(current)"><el-button @click="saveDraft">保存草稿</el-button><el-button type="primary" @click="submit">提交作业</el-button></template></template>
     </el-dialog>
   </section>
@@ -43,6 +46,7 @@ const loading = ref(false)
 const loadError = ref('')
 const dialog = ref(false)
 const submissionId = ref('')
+const attachmentSnapshotJson = ref('[]')
 const unwrap = response => response?.data?.content || response?.data || []
 const statusLabels = { NOT_STARTED: '未开始', DRAFT: '草稿', SUBMITTED: '待批改', GRADED: '已评分', RETURNED_FOR_REVISION: '退回重做' }
 const statusLabel = status => statusLabels[status] || '未提交'
@@ -63,12 +67,16 @@ const load = async () => {
 const open = row => {
   current.value = row
   answerSnapshotJson.value = row.submission?.answerSnapshotJson || ''
+  attachmentSnapshotJson.value = row.submission?.attachmentSnapshotJson || '[]'
   submissionId.value = row.submission?.id || ''
   dialog.value = true
 }
 const saveDraft = async () => {
   try {
-    const response = await saveHomeworkSubmission(current.value.id, { answerSnapshotJson: answerSnapshotJson.value || '{}' })
+    const response = await saveHomeworkSubmission(current.value.id, {
+      answerSnapshotJson: answerSnapshotJson.value || '{}',
+      attachmentSnapshotJson: attachmentSnapshotJson.value || '[]',
+    })
     submissionId.value = response?.data?.id || submissionId.value
     current.value.submission = response?.data || current.value.submission
     ElMessage.success('答案草稿已保存')

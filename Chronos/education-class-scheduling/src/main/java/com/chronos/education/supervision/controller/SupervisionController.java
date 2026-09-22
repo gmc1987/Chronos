@@ -44,6 +44,18 @@ public class SupervisionController {
 		return ok(plan(service.startPlan(id, auth.getName())));
 	}
 
+	@PostMapping("/admin/education/supervision/plans/{id}/complete")
+	@PreAuthorize("hasAuthority('education:supervision:plan:update')")
+	public ResultData<PlanResponse> completePlan(@PathVariable String id, Authentication auth) {
+		return ok(plan(service.completePlan(id, auth.getName())));
+	}
+
+	@PostMapping("/admin/education/supervision/plans/{id}/archive")
+	@PreAuthorize("hasAuthority('education:supervision:plan:update')")
+	public ResultData<PlanResponse> archivePlan(@PathVariable String id, Authentication auth) {
+		return ok(plan(service.archivePlan(id, auth.getName())));
+	}
+
 	@PostMapping("/admin/education/supervision/assignments")
 	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
 	public ResultData<AssignmentResponse> assign(@Valid @RequestBody AssignmentCommand command, Authentication auth) {
@@ -67,6 +79,12 @@ public class SupervisionController {
 	@PreAuthorize("hasAuthority('education:supervision:assignment:check-in')")
 	public ResultData<AssignmentResponse> checkIn(@PathVariable String id, Authentication auth) {
 		return ok(assignment(service.checkIn(id, auth.getName())));
+	}
+
+	@PostMapping("/portal/education/supervision/tasks/{id}/complete")
+	@PreAuthorize("hasAuthority('education:supervision:assignment:update')")
+	public ResultData<AssignmentResponse> complete(@PathVariable String id, Authentication auth) {
+		return ok(assignment(service.completeAssignment(id, auth.getName())));
 	}
 
 	@PostMapping("/portal/education/supervision/tasks/{id}/submit")

@@ -16,5 +16,6 @@ public class AssessmentScheme extends BaseEntity {
  @Column(name="pass_score",nullable=false,precision=8,scale=2) private BigDecimal passScore;
  @Column(nullable=false,length=24) private String status="DRAFT";
  @Column(name="published_version_no") private Integer publishedVersionNo;
+ @Column(name="grade_rule_set_id",length=64) private String gradeRuleSetId;
  @Version @Column(name="row_version",nullable=false) private Long rowVersion=0L;
 }

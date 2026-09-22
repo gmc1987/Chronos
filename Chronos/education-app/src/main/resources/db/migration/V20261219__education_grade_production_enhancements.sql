@@ -1,4 +1,5 @@
 -- 成绩中心第二阶段：导入、更正、补考重修及分析权限。
+-- 该脚本在分支合并时与既有 V20261206 冲突，顺延到 V20261219。
 ALTER TABLE edu_exam_paper_item
     ADD COLUMN IF NOT EXISTS question_id varchar(64);
 

@@ -37,6 +37,7 @@ import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.BatchGradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
+import com.chronos.education.grade.dto.GradeSourceEventContracts.HomeworkGradesPublishedV1;
 
 @Service
 @Transactional
@@ -98,7 +99,7 @@ public class HomeworkService {
 	}
 
 	private void studentCan(EducationDataScope scope, HomeworkAssignment assignment, String studentId) {
-		if (!"PUBLISHED".equals(assignment.getStatus())) {
+		if (!"PUBLISHED".equals(assignment.getStatus()) && !"CLOSED".equals(assignment.getStatus())) {
 			throw new AccessDeniedException("作业尚未发布");
 		}
 		boolean enrolled = members.findByOfferingIdAndStudentId(assignment.getOfferingId(), studentId)
@@ -127,8 +128,8 @@ public class HomeworkService {
 				if (enrolled.stream().noneMatch(m -> offeringId.equals(m.getOfferingId()))) {
 					throw new AccessDeniedException("无权访问该教学班");
 				}
-				visible = assignments.findByOfferingIdInAndStatusOrderByDueAtDescCreateTimeDesc(
-						List.of(offeringId), "PUBLISHED");
+				visible = assignments.findByOfferingIdInAndStatusInOrderByDueAtDescCreateTimeDesc(
+						List.of(offeringId), List.of("PUBLISHED", "CLOSED"));
 			} else {
 				teacherCan(value, dummy);
 				visible = assignments.findByOfferingIdOrderByDueAtDescCreateTimeDesc(offeringId);
@@ -138,7 +139,8 @@ public class HomeworkService {
 					studentId(auth), List.of("ACTIVE", "ENROLLED"))
 					.stream().map(TeachingClassMember::getOfferingId).toList();
 			visible = ids.isEmpty() ? List.of()
-					: assignments.findByOfferingIdInAndStatusOrderByDueAtDescCreateTimeDesc(ids, "PUBLISHED");
+					: assignments.findByOfferingIdInAndStatusInOrderByDueAtDescCreateTimeDesc(
+							ids, List.of("PUBLISHED", "CLOSED"));
 		} else {
 			visible = assignments.findAll().stream()
 					.filter(a -> value.fullAccess() || canTeacher(value, a)).toList();
@@ -204,6 +206,8 @@ public class HomeworkService {
 	}
 
 	private void apply(HomeworkAssignment result, AssignmentRequest request) {
+		validateLateRule(request.lateRule(), request.allowLate());
+		validateJsonArray(request.attachmentSnapshotJson(), "作业附件快照");
 		result.setOfferingId(request.offeringId());
 		result.setType(request.type());
 		result.setTeachingPlanItemId(request.teachingPlanItemId());
@@ -221,6 +225,29 @@ public class HomeworkService {
 		result.setLateRule(request.lateRule() == null ? (request.allowLate() ? "ALLOW" : "REJECT") : request.lateRule());
 		result.setPublishAudience(request.publishAudience() == null ? "ENROLLED_STUDENTS" : request.publishAudience());
 		result.setAttachmentSnapshotJson(request.attachmentSnapshotJson() == null ? "[]" : request.attachmentSnapshotJson());
+	}
+
+	private void validateLateRule(String lateRule, boolean allowLate) {
+		String value = lateRule == null ? (allowLate ? "ALLOW" : "REJECT") : lateRule;
+		if (!"REJECT".equals(value) && !"ALLOW".equals(value)) {
+			throw new IllegalArgumentException("当前作业模型仅支持 REJECT 或 ALLOW 迟交策略");
+		}
+		if (!allowLate && "ALLOW".equals(value)) {
+			throw new IllegalArgumentException("允许迟交关闭时不能使用 ALLOW 策略");
+		}
+	}
+
+	private void validateJsonArray(String raw, String field) {
+		try {
+			JsonNode value = JSON.readTree(raw == null ? "[]" : raw);
+			if (value == null || !value.isArray()) {
+				throw new IllegalArgumentException(field + "必须是 JSON 数组");
+			}
+		} catch (IllegalArgumentException ex) {
+			throw ex;
+		} catch (Exception ex) {
+			throw new IllegalArgumentException(field + "格式无效", ex);
+		}
 	}
 
 	private void validateReferences(AssignmentRequest request, String offeringId) {
@@ -284,6 +311,8 @@ public class HomeworkService {
 		HomeworkAssignment assignment = assignment(assignmentId);
 		String student = studentId(auth);
 		studentCan(scope(auth), assignment, student);
+		requireOpenForSubmission(assignment);
+		validateJsonArray(request.attachmentSnapshotJson(), "提交附件快照");
 		HomeworkSubmission result = submissions.findByAssignmentIdAndStudentId(assignmentId, student)
 				.orElseGet(HomeworkSubmission::new);
 		if (result.getId() != null && !"NOT_STARTED".equals(result.getStatus())
@@ -321,6 +350,10 @@ public class HomeworkService {
 		String student = studentId(auth);
 		if (!student.equals(result.getStudentId())) throw new AccessDeniedException("无权提交该答案");
 		studentCan(scope(auth), assignment, student);
+		requireOpenForSubmission(assignment);
+		if (assignment.getStartAt() != null && LocalDateTime.now().isBefore(assignment.getStartAt())) {
+			throw new IllegalStateException("作业尚未开始");
+		}
 		if (!assignment.isAllowLate() && !"ALLOW".equals(assignment.getLateRule())
 				&& assignment.getDueAt() != null
 				&& LocalDateTime.now().isAfter(assignment.getDueAt())) {
@@ -430,6 +463,24 @@ public class HomeworkService {
 					// 成绩发布才是作业评分的业务确认点；草稿评分不能提前污染错题本。
 					publishWrongAnswers(homework, offering, submission, auth);
 					submission.setGradesPublished(true);
+					domainEvents.enqueueGradeEvent(
+							"HomeworkGradesPublishedV1",
+							homework.getId(),
+							"HOMEWORK_GRADES_PUBLISHED:" + submission.getId(),
+							new HomeworkGradesPublishedV1(
+									"HOMEWORK_GRADES_PUBLISHED:" + submission.getId(),
+									"HomeworkGradesPublishedV1",
+									java.time.OffsetDateTime.now(),
+									1,
+									homework.getId(),
+									homework.getOfferingId(),
+									submission.getStudentId(),
+									submission.getScore() == null
+											? null
+											: java.math.BigDecimal.valueOf(submission.getScore()),
+									java.math.BigDecimal.valueOf(homework.getMaxScore()),
+									java.time.OffsetDateTime.now()),
+							auth.getName());
 				});
 		// 返回本次新发布数量，重复点击时返回 0，便于前端准确反馈幂等结果。
 		return pending.size();
@@ -490,5 +541,11 @@ public class HomeworkService {
 		}
 		// 旧数据没有题目满分时只能确认零分题，避免把部分得分误判为错题。
 		return score.decimalValue().signum() == 0;
+	}
+
+	private void requireOpenForSubmission(HomeworkAssignment assignment) {
+		if (!"PUBLISHED".equals(assignment.getStatus())) {
+			throw new IllegalStateException("只有已发布作业可以提交");
+		}
 	}
 }

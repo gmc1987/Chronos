@@ -212,6 +212,18 @@ class EducationDataScopeServiceTest {
 				.containsExactly(enrolled);
 	}
 
+	@Test
+	void rejectsTermWithoutVisibleCourseOffering() {
+		EducationDataScope scope = new EducationDataScope(
+				false, Set.of("campus-1"), Set.of(), Set.of(), Set.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("term-2"))
+				.thenReturn(List.of(offering("offering-2", "campus-2")));
+
+		assertThatThrownBy(() -> service.assertTermAccess(scope, "term-2"))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("无权访问该学期数据");
+	}
+
 	private EducationDataScope scope(Set<String> gradeIds, Set<String> classIds) {
 		return new EducationDataScope(
 				false,

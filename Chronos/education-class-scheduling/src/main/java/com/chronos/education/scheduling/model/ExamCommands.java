@@ -27,7 +27,11 @@ public final class ExamCommands {
 			String subjectId,
 			LocalDate examDate,
 			LocalTime startTime,
-			LocalTime endTime) {
+			LocalTime endTime,
+			List<String> offeringIds) {
+		public Session(String subjectId, LocalDate examDate, LocalTime startTime, LocalTime endTime) {
+			this(subjectId, examDate, startTime, endTime, List.of());
+		}
 	}
 
 	public record Room(String classroomId, Integer requiredInvigilators) {

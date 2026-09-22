@@ -18,11 +18,13 @@ import com.chronos.education.scheduling.dao.ExamPaperItemRepository;
 import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
+import com.chronos.education.scheduling.dao.ExamSessionOfferingRepository;
 import com.chronos.education.scheduling.dao.QuestionKnowledgePointRepository;
 import com.chronos.education.scheduling.dao.QuestionRepository;
 import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
+import com.chronos.education.grade.dto.GradeSourceEventContracts.ExamScoresConfirmedV1;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
 
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ExamPaperAnalysisService {
 	private final ExamSessionRepository sessions;
+	private final ExamSessionOfferingRepository sessionOfferings;
 	private final ExamRoomRepository rooms;
 	private final ExamCandidateRepository candidates;
 	private final ExamPaperItemRepository items;
@@ -43,6 +46,32 @@ public class ExamPaperAnalysisService {
 	private final EducationDomainEventService domainEvents;
 	private final QuestionRepository questions;
 	private final QuestionKnowledgePointRepository questionKnowledgePoints;
+
+	/**
+	 * 保留原有单元测试和独立调用方使用的构造入口。生产环境由 Spring 注入包含
+	 * ExamSessionOfferingRepository 的完整构造器；缺少映射仓储时禁止确认成绩。
+	 */
+	ExamPaperAnalysisService(
+			ExamSessionRepository sessions,
+			ExamRoomRepository rooms,
+			ExamCandidateRepository candidates,
+			ExamPaperItemRepository items,
+			ExamItemScoreRepository scores,
+			ExamPlanRepository plans,
+			EducationDomainEventService domainEvents,
+			QuestionRepository questions,
+			QuestionKnowledgePointRepository questionKnowledgePoints) {
+		this.sessions = sessions;
+		this.sessionOfferings = null;
+		this.rooms = rooms;
+		this.candidates = candidates;
+		this.items = items;
+		this.scores = scores;
+		this.plans = plans;
+		this.domainEvents = domainEvents;
+		this.questions = questions;
+		this.questionKnowledgePoints = questionKnowledgePoints;
+	}
 
 	@Transactional(readOnly = true)
 	public List<ExamPaperItem> items(String sessionId) {
@@ -142,6 +171,13 @@ public class ExamPaperAnalysisService {
 
 	@Transactional
 	public com.chronos.education.scheduling.model.ExamSession confirmScores(String sessionId) {
+		return confirmScores(sessionId, "SYSTEM");
+	}
+
+	@Transactional
+	public com.chronos.education.scheduling.model.ExamSession confirmScores(
+			String sessionId,
+			String actor) {
 		var session = requireSessionEntity(sessionId);
 		if ("CONFIRMED".equals(session.getScoreStatus()) || "PUBLISHED".equals(session.getScoreStatus())) {
 			return session;
@@ -157,6 +193,50 @@ public class ExamPaperAnalysisService {
 		for (ExamPaperItem item : paperItems) {
 			if (scores.findByItemId(item.getId()).size() != candidateCount) {
 				throw new IllegalStateException("所有题目必须完成全部考生评分后才能确认");
+			}
+		}
+		if (sessionOfferings == null) {
+			throw new IllegalStateException("考试场次映射存储不可用，不能确认成绩");
+		}
+		List<String> offeringIds = sessionOfferings.findBySessionId(sessionId).stream()
+				.map(mapping -> mapping.getOfferingId())
+				.distinct()
+				.toList();
+		if (offeringIds.isEmpty()) {
+			throw new IllegalStateException("考试场次缺少课程开设映射，不能确认成绩");
+		}
+		var confirmedAt = java.time.OffsetDateTime.now();
+		var plan = plans.findById(session.getPlanId())
+				.orElseThrow(() -> new IllegalStateException("考试计划不存在"));
+		for (ExamCandidate candidate : candidatesForSession(sessionId)) {
+			BigDecimal rawScore = paperItems.stream()
+					.map(item -> scores.findByItemIdAndCandidateId(item.getId(), candidate.getId())
+							.orElseThrow(() -> new IllegalStateException("考生逐题成绩不存在"))
+							.getScore())
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
+			BigDecimal maxScore = paperItems.stream()
+					.map(ExamPaperItem::getMaxScore)
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
+			for (String offeringId : offeringIds) {
+				ExamScoresConfirmedV1 event = new ExamScoresConfirmedV1(
+						"EXAM_SCORES_CONFIRMED:" + sessionId + ":" + offeringId + ":" + candidate.getStudentId(),
+						"ExamScoresConfirmedV1",
+						confirmedAt,
+						1,
+						plan.getId(),
+						sessionId,
+						offeringId,
+						candidate.getStudentId(),
+						rawScore,
+						maxScore,
+						null,
+						confirmedAt);
+				domainEvents.enqueueGradeEvent(
+						event.eventType(),
+						sessionId,
+						event.eventId(),
+						event,
+						actor);
 			}
 		}
 		// 确认动作冻结逐题得分，避免审核、统计与错题沉淀读取到不同版本。

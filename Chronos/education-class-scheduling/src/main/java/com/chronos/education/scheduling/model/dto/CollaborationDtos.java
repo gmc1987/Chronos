@@ -2,7 +2,7 @@ package com.chronos.education.scheduling.model.dto;
 import jakarta.validation.constraints.*; import java.util.*;
 public final class CollaborationDtos {
  private CollaborationDtos(){}
- public record PreparationCreateRequest(@NotBlank String offeringId,@NotBlank String title,@NotBlank String preparationType,String scheduleEntryId){}
+ public record PreparationCreateRequest(@NotBlank String offeringId,@NotBlank String title,@NotBlank String preparationType,String scheduleEntryId,String location,String agenda,java.time.LocalDateTime scheduledAt){}
  public record MemberInviteRequest(@NotBlank String teacherId,String role){}
  public record MemberResponseRequest(@NotBlank String response,String comment){}
  public record MaterialRequest(@NotBlank String title,@NotBlank String fileId,String metadataJson){}

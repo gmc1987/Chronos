@@ -48,41 +48,77 @@ public class EducationDataCenterService {
   };
   List<DataDailySnapshot> existing = snapshots.findBySnapshotDateAndCampusIdOrderByMetricCode(date,campusId).stream()
     .filter(s -> definitions.findByMetricCode(s.getMetricCode()).map(d -> categories.contains(d.getCategory())).orElse(false)).toList();
-  Map<String,DataDailySnapshot> values = new LinkedHashMap<>();
-  existing.forEach(s -> values.put(s.getMetricCode(),s));
-  for (DataMetricDefinition definition : definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc()) {
-   if (!categories.contains(definition.getCategory()) || values.containsKey(definition.getMetricCode())) continue;
-   DataDailySnapshot empty=new DataDailySnapshot(); empty.setSnapshotDate(date); empty.setCampusId(requestedCampus);
-   empty.setMetricCode(definition.getMetricCode()); empty.setMetricValue(java.math.BigDecimal.ZERO);
-   empty.setSourceVersion(definition.getSourceVersion()); values.put(definition.getMetricCode(), empty);
-  }
-  return new ArrayList<>(values.values());
+  return existing;
  }
  public List<DataDailySnapshot> takeSnapshot(LocalDate date, String campusId, Authentication user) {
   assertCampus(campusId,user);
   campusId = normalizedCampus(campusId);
+  EducationDataScope scope = scopes.resolve(user.getName());
   List<DataDailySnapshot> result = new ArrayList<>();
   for (DataMetricDefinition definition : metricDefinitions()) {
+   Optional<java.math.BigDecimal> measured = measure(definition.getMetricCode(), campusId, date, scope);
+   if (measured.isEmpty()) {
+    continue;
+   }
    DataDailySnapshot value = snapshots.findBySnapshotDateAndCampusIdAndMetricCode(date,campusId,definition.getMetricCode())
      .orElseGet(DataDailySnapshot::new);
    value.setSnapshotDate(date); value.setCampusId(campusId); value.setMetricCode(definition.getMetricCode());
-   // Producers may supply richer dimensions later; the persisted daily value is deliberately stable and repeatable.
-   if (value.getMetricValue() == null) value.setMetricValue(measure(definition.getMetricCode(), campusId, date));
+   value.setMetricValue(measured.get());
    value.setSourceVersion(definition.getSourceVersion());
    result.add(snapshots.save(value));
   }
    return result;
   }
-  private java.math.BigDecimal measure(String code, String campusId, LocalDate date) {
+  private Optional<java.math.BigDecimal> measure(
+    String code,
+    String campusId,
+    LocalDate date,
+    EducationDataScope scope) {
    if ("STUDENT_COUNT".equals(code)) {
-    if (campusId.isBlank()) return java.math.BigDecimal.valueOf(students.count());
-    var ids=classes.findByCampusIdIn(List.of(campusId)).stream().map(AdministrativeClass::getId).toList();
-    return java.math.BigDecimal.valueOf(students.findAll().stream().filter(s -> ids.contains(s.getAdministrativeClassId())).count());
+    List<String> classIds = visibleClassIds(campusId, scope);
+    return Optional.of(java.math.BigDecimal.valueOf(students.findAll().stream()
+      .filter(s -> classIds.contains(s.getAdministrativeClassId()))
+      .filter(s -> "ACTIVE".equals(s.getEnrollmentStatus()))
+      .count()));
    }
-   if ("ACTIVE_CLASS_COUNT".equals(code)) return java.math.BigDecimal.valueOf(campusId.isBlank() ? classes.count() : classes.findByCampusIdIn(List.of(campusId)).size());
-   if ("EXAM_SESSION_COUNT".equals(code)) return java.math.BigDecimal.valueOf(exams.findByExamDateBetweenAndStatus(
-     date, date, "PUBLISHED").size());
-   return java.math.BigDecimal.ZERO;
+   if ("ACTIVE_CLASS_COUNT".equals(code)) {
+    return Optional.of(java.math.BigDecimal.valueOf(visibleClassIds(campusId, scope).stream()
+      .map(classes::findById)
+      .flatMap(Optional::stream)
+      .filter(value -> "ACTIVE".equals(value.getStatus()))
+      .count()));
+   }
+   if ("EXAM_SESSION_COUNT".equals(code) && scope.fullAccess() && campusId.isBlank()) {
+    return Optional.of(java.math.BigDecimal.valueOf(exams.findByExamDateBetweenAndStatus(
+      date, date, "PUBLISHED").size()));
+   }
+   return Optional.empty();
+  }
+
+  private List<String> visibleClassIds(String campusId, EducationDataScope scope) {
+   if (!campusId.isBlank()) {
+    return classes.findByCampusIdIn(List.of(campusId)).stream()
+      .map(AdministrativeClass::getId)
+      .toList();
+   }
+   if (scope.fullAccess()) {
+    return classes.findAll().stream()
+      .filter(value -> "ACTIVE".equals(value.getStatus()))
+      .map(AdministrativeClass::getId)
+      .toList();
+   }
+   if (scope.administrativeClassIds().isEmpty()
+     && scope.gradeIds().isEmpty()
+     && scope.campusIds().isEmpty()) {
+    return List.of();
+   }
+   return classes.findVisible(
+     scope.administrativeClassIds().stream().toList(),
+     scope.gradeIds().stream().toList(),
+     scope.campusIds().stream().toList()).stream()
+     .filter(value -> "ACTIVE".equals(value.getStatus()))
+     .map(AdministrativeClass::getId)
+     .toList();
   }
  public DataReportTask requestReport(String type, LocalDate date, String campusId, Authentication user) {
   assertCampus(campusId,user);
