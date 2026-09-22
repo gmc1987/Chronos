@@ -17,6 +17,21 @@ Flyway 历史”的数据库，不会修复 checksum mismatch，也不会补齐�
 
 脚本只接受明确隔离的数据库名（必须包含 `test` 或 `verify`），并且需要显式确认：
 
+本地可重复证据入口（不连接数据库、不生成业务数据）：
+
+```bash
+cd Chronos
+./scripts/education-acceptance-evidence.sh local
+```
+
+该入口依次执行迁移文件名/版本冲突扫描、空库/已有库配置静态门，以及教育模块中
+普通角色与跨校区范围、事故失败恢复/重放的定向单测。`CourseAdjustmentRecoveryControllerTest`
+明确证明受限角色不能调用事故重放，`EducationDataScopeServiceTest` 覆盖已知主键跨校区
+读取、课程/教室列表过滤和学期反向入口，重放单测覆盖部分成功、失败计数和并发成功不被
+旧错误覆盖。
+
+迁移部署证据仍须在明确隔离的 PostgreSQL 环境运行（脚本会拒绝非 `test`/`verify` 数据库）：
+
 ```bash
 cd Chronos
 CHRONOS_FLYWAY_VERIFY_DB=chronos_education_verify \
@@ -36,6 +51,19 @@ CHRONOS_FLYWAY_VERIFY_PSQL_OPTIONS='-h 127.0.0.1 -p 5433 -U chronos' \
 脚本会先运行静态门，然后只读输出 `flyway_schema_history`、失败迁移、重复成功版本
 和 SQL 迁移的空 checksum，并要求隔离库已成功迁移到仓库最高版本。它不会调用
 Flyway `repair`/`baseline`，也不会执行 DDL、清理数据或修改历史。
+
+## 第14/15节证据边界
+
+| 证据 | 本提交可自动完成 | 仍需部署环境完成 |
+| --- | --- | --- |
+| 教育空库入口与迁移版本/文件名冲突 | `education-acceptance-evidence.sh local` | 空 PostgreSQL 实际顺序迁移、启动 readiness |
+| 已有教育库入口与历史完整性 | 配置静态门、只读脚本入口 | 脱敏已有库副本的 Flyway history、checksum、缺表/缺列核对 |
+| 普通角色越权/跨校区 | 定向 JUnit 单测 | 真实双角色 API/浏览器、目标学校组织授权和 403 响应 |
+| 失败恢复/重放 | 定向 JUnit 单测 | 部署库中的真实失败事故、管理员重放、通知/审计和清理复核 |
+| 前端生产构建 | 不在本地证据入口中代替后端验收 | 目标部署环境执行生产构建并保存产物/日志 |
+
+本次提交没有连接或修改真实数据库，没有创建业务样例，也没有修改任何既有 Flyway
+迁移文件。
 
 ## 补偿迁移/基线方案
 
