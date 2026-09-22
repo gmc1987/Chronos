@@ -6,6 +6,7 @@ import {
   confirmExamScores,
   deleteExamPaperItem,
   getExamPaperAnalysis,
+  listAvailableExamPaperQuestions,
   listAcademicTerms,
   listEducationStudents,
   listEducationSubjects,
@@ -32,7 +33,8 @@ const selectedPlan = ref(null)
 const selectedSession = ref(null)
 const selectedItem = ref(null)
 const itemDialog = ref(false)
-const itemForm = reactive({ questionNo: '', title: '', maxScore: 10 })
+const availableQuestions = ref([])
+const itemForm = reactive({ questionNo: '', questionId: '', title: '', maxScore: 10 })
 const scoreByCandidate = reactive({})
 const busy = ref(false)
 
@@ -90,9 +92,18 @@ async function selectItem(item) {
   saved.forEach((value) => { scoreByCandidate[value.candidateId] = Number(value.score) })
 }
 
-function openItem() {
-  Object.assign(itemForm, { questionNo: '', title: '', maxScore: 10 })
+async function openItem() {
+  const response = await listAvailableExamPaperQuestions()
+  availableQuestions.value = unwrap(response)
+  Object.assign(itemForm, { questionNo: '', questionId: '', title: '', maxScore: 10 })
   itemDialog.value = true
+}
+
+function selectQuestion(questionId) {
+  const question = availableQuestions.value.find((item) => item.id === questionId)
+  if (!question) return
+  itemForm.title = question.stem
+  itemForm.maxScore = Number(question.score || 10)
 }
 
 function exportAnalysis() {
@@ -120,8 +131,9 @@ function exportAnalysis() {
 }
 
 async function saveItem() {
-  if (!itemForm.questionNo.trim() || !itemForm.title.trim() || Number(itemForm.maxScore) <= 0) {
-    return ElMessage.warning('请填写题号、题目和有效满分')
+  if (!itemForm.questionNo.trim() || !itemForm.questionId
+    || !itemForm.title.trim() || Number(itemForm.maxScore) <= 0) {
+    return ElMessage.warning('请选择题库题目并填写题号和有效满分')
   }
   await run(async () => {
     await createExamPaperItem(selectedSession.value.id, itemForm)
@@ -268,7 +280,12 @@ onMounted(() => run(async () => {
     <el-dialog v-model="itemDialog" title="新增试卷题目" width="500px">
       <el-form label-width="80px">
         <el-form-item label="题号"><el-input v-model="itemForm.questionNo" maxlength="32" /></el-form-item>
-        <el-form-item label="题目"><el-input v-model="itemForm.title" maxlength="200" /></el-form-item>
+        <el-form-item label="题库题目">
+          <el-select v-model="itemForm.questionId" filterable placeholder="选择已发布题目" @change="selectQuestion">
+            <el-option v-for="question in availableQuestions" :key="question.id" :label="question.stem" :value="question.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="题目快照"><el-input v-model="itemForm.title" maxlength="200" /></el-form-item>
         <el-form-item label="满分"><el-input-number v-model="itemForm.maxScore" :min="0.01" :precision="2" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="itemDialog = false">取消</el-button><el-button type="primary" @click="saveItem">保存</el-button></template>

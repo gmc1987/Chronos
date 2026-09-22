@@ -16,6 +16,27 @@ public final class GradeDtos {
 			BigDecimal maxScore, Integer sortOrder) {
 	}
 
+	public record SchemeDetailResponse(
+			String id,
+			String offeringId,
+			String name,
+			BigDecimal totalScore,
+			BigDecimal passScore,
+			String status,
+			Integer publishedVersionNo,
+			Long rowVersion,
+			List<ComponentDetail> components) {
+	}
+
+	public record OfferingOption(
+			String id,
+			String semesterCode,
+			String offeringCode,
+			String courseName,
+			String teachingClassName,
+			String teacherName) {
+	}
+
 	public record GradebookCommand(String offeringId, String schemeId) {
 	}
 
@@ -49,6 +70,22 @@ public final class GradeDtos {
 	}
 
 	public record SnapshotMetadata(Integer versionNo, String snapshotHash, String publishedBy,
+			LocalDateTime publishedAt) {
+	}
+
+	public record PortalGradeView(
+			String id,
+			String studentId,
+			String offeringId,
+			String semesterCode,
+			String courseCode,
+			String courseName,
+			String offeringName,
+			BigDecimal totalScore,
+			String gradeLevel,
+			BigDecimal gradePoint,
+			Boolean passed,
+			Integer versionNo,
 			LocalDateTime publishedAt) {
 	}
 }

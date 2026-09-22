@@ -22,6 +22,13 @@ public class ExamPaperItem extends BaseEntity {
 	@Column(name = "question_no", nullable = false, length = 32)
 	private String questionNo;
 
+	/**
+	 * 关联题库主记录。试卷仍保存题干和满分快照，题库后续修订不会改变已发布试卷；
+	 * 此字段仅用于追溯知识点映射。
+	 */
+	@Column(name = "question_id", length = 64)
+	private String questionId;
+
 	@Column(name = "title", nullable = false, length = 200)
 	private String title;
 

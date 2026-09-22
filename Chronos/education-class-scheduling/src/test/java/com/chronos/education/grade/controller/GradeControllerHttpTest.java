@@ -31,7 +31,7 @@ class GradeControllerHttpTest {
 	private final UsernamePasswordAuthenticationToken authentication =
 			new UsernamePasswordAuthenticationToken("teacher-1", "n/a");
 	private final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
-			new GradeCenterController(service, mock(org.springframework.context.ApplicationEventPublisher.class)),
+			new GradeCenterController(service),
 			new GradePortalController(service, bindings))
 			.setControllerAdvice(new GradeApiExceptionHandler())
 			.defaultRequest(get("/").principal(authentication))

@@ -91,6 +91,58 @@ class GradeCenterValidationTest {
 	}
 
 	@Test
+	void rejectsDuplicateComponentCodesBeforeWritingScheme() {
+		SchemeCommand command = new SchemeCommand(
+				"offering-1",
+				"方案",
+				BigDecimal.valueOf(100),
+				BigDecimal.valueOf(60),
+				List.of(
+						new ComponentCommand(
+								"FINAL",
+								"期末笔试",
+								"MANUAL",
+								BigDecimal.valueOf(60),
+								BigDecimal.valueOf(100),
+								1),
+						new ComponentCommand(
+								"final",
+								"期末实践",
+								"MANUAL",
+								BigDecimal.valueOf(40),
+								BigDecimal.valueOf(100),
+								2)),
+				null);
+
+		assertThrows(IllegalArgumentException.class, () -> service.createScheme(command, "teacher"));
+	}
+
+	@Test
+	void publishingPublishedSchemeIsIdempotent() {
+		AssessmentScheme scheme = new AssessmentScheme();
+		scheme.setId("scheme-1");
+		scheme.setOfferingId("offering-1");
+		scheme.setStatus("PUBLISHED");
+		CourseOffering offering = new CourseOffering();
+		offering.setId("offering-1");
+		offering.setTeacherId("teacher-1");
+		when(schemes.findById("scheme-1")).thenReturn(Optional.of(scheme));
+		when(offerings.findById("offering-1")).thenReturn(Optional.of(offering));
+		when(dataScopes.resolve("teacher")).thenReturn(new EducationDataScope(
+				false,
+				Set.of(),
+				Set.of(),
+				Set.of(),
+				Set.of("teacher-1"),
+				Set.of()));
+
+		org.junit.jupiter.api.Assertions.assertSame(
+				scheme,
+				service.publishScheme("scheme-1", "teacher"));
+		verify(schemes, org.mockito.Mockito.never()).save(any());
+	}
+
+	@Test
 	void persistsGradebookWhenSavingItems() {
 		Gradebook gradebook = new Gradebook();
 		gradebook.setId("gradebook-1");

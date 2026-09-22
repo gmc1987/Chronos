@@ -18,6 +18,8 @@ import com.chronos.education.scheduling.dao.ExamPaperItemRepository;
 import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
+import com.chronos.education.scheduling.dao.QuestionKnowledgePointRepository;
+import com.chronos.education.scheduling.dao.QuestionRepository;
 import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
@@ -39,11 +41,27 @@ public class ExamPaperAnalysisService {
 	private final ExamItemScoreRepository scores;
 	private final ExamPlanRepository plans;
 	private final EducationDomainEventService domainEvents;
+	private final QuestionRepository questions;
+	private final QuestionKnowledgePointRepository questionKnowledgePoints;
 
 	@Transactional(readOnly = true)
 	public List<ExamPaperItem> items(String sessionId) {
 		requireSession(sessionId);
 		return items.findBySessionIdOrderByQuestionNoAsc(sessionId);
+	}
+
+	@Transactional(readOnly = true)
+	public List<AvailableQuestion> availableQuestions() {
+		// 考试中心只暴露组卷所需快照字段，避免考务角色依赖教学中心管理权限。
+		return questions.findByStatusAndArchivedFalseOrderByIdDesc("PUBLISHED").stream()
+				.filter(question -> questionKnowledgePoints.existsByQuestionId(question.getId()))
+				.map(question -> new AvailableQuestion(
+						question.getId(),
+						question.getStem(),
+						question.getScore(),
+						question.getQuestionType(),
+						question.getDifficulty()))
+				.toList();
 	}
 
 	@Transactional
@@ -58,9 +76,21 @@ public class ExamPaperAnalysisService {
 				.anyMatch(item -> item.getQuestionNo().equals(command.questionNo().trim()))) {
 			throw new IllegalArgumentException("同一场次题号不能重复");
 		}
+		if (blank(command.questionId())) {
+			throw new IllegalArgumentException("请选择已发布的题库题目，才能形成知识点分析链路");
+		}
+		var question = questions.findById(command.questionId())
+				.orElseThrow(() -> new IllegalArgumentException("题库题目不存在"));
+		if (!"PUBLISHED".equals(question.getStatus()) || question.isArchived()) {
+			throw new IllegalArgumentException("只能引用已发布且未归档的题库题目");
+		}
+		if (questionKnowledgePoints.findByQuestionId(question.getId()).isEmpty()) {
+			throw new IllegalArgumentException("所选题目尚未关联知识点");
+		}
 		ExamPaperItem item = new ExamPaperItem();
 		item.setSessionId(sessionId);
 		item.setQuestionNo(command.questionNo().trim());
+		item.setQuestionId(question.getId());
 		item.setTitle(command.title().trim());
 		item.setMaxScore(command.maxScore());
 		return items.save(item);
@@ -258,7 +288,15 @@ public class ExamPaperAnalysisService {
 		return value == null || value.isBlank();
 	}
 
-	public record ItemCommand(String questionNo, String title, BigDecimal maxScore) {
+	public record ItemCommand(String questionNo, String questionId, String title, BigDecimal maxScore) {
+	}
+
+	public record AvailableQuestion(
+			String id,
+			String stem,
+			BigDecimal score,
+			String questionType,
+			String difficulty) {
 	}
 
 	public record ScoreCommand(String candidateId, BigDecimal score) {

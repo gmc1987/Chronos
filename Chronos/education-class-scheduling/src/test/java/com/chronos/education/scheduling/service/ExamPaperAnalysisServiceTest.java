@@ -14,12 +14,16 @@ import com.chronos.education.scheduling.dao.ExamPaperItemRepository;
 import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
+import com.chronos.education.scheduling.dao.QuestionKnowledgePointRepository;
+import com.chronos.education.scheduling.dao.QuestionRepository;
 import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
 import com.chronos.education.scheduling.model.ExamPlan;
 import com.chronos.education.scheduling.model.ExamRoom;
 import com.chronos.education.scheduling.model.ExamSession;
+import com.chronos.education.scheduling.model.Question;
+import com.chronos.education.scheduling.model.QuestionKnowledgePoint;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +39,8 @@ class ExamPaperAnalysisServiceTest {
 	private ExamItemScoreRepository scores;
 	private ExamPlanRepository plans;
 	private EducationDomainEventService domainEvents;
+	private QuestionRepository questions;
+	private QuestionKnowledgePointRepository questionKnowledgePoints;
 	private ExamPaperAnalysisService service;
 
 	@BeforeEach
@@ -46,6 +52,8 @@ class ExamPaperAnalysisServiceTest {
 		scores = mock(ExamItemScoreRepository.class);
 		plans = mock(ExamPlanRepository.class);
 		domainEvents = mock(EducationDomainEventService.class);
+		questions = mock(QuestionRepository.class);
+		questionKnowledgePoints = mock(QuestionKnowledgePointRepository.class);
 		service = new ExamPaperAnalysisService(
 				sessions,
 				rooms,
@@ -53,7 +61,9 @@ class ExamPaperAnalysisServiceTest {
 				items,
 				scores,
 				plans,
-				domainEvents);
+				domainEvents,
+				questions,
+				questionKnowledgePoints);
 	}
 
 	@Test
@@ -71,6 +81,51 @@ class ExamPaperAnalysisServiceTest {
 		assertThatThrownBy(() -> service.confirmScores("session-1"))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("所有题目必须完成全部考生评分后才能确认");
+	}
+
+	@Test
+	void addItemRejectsQuestionWithoutKnowledgePoint() {
+		ExamSession session = session("DRAFT");
+		Question question = publishedQuestion();
+		when(sessions.findById("session-1")).thenReturn(Optional.of(session));
+		when(items.findBySessionIdOrderByQuestionNoAsc("session-1")).thenReturn(List.of());
+		when(questions.findById("question-1")).thenReturn(Optional.of(question));
+		when(questionKnowledgePoints.findByQuestionId("question-1")).thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.addItem(
+				"session-1",
+				new ExamPaperAnalysisService.ItemCommand(
+						"1",
+						"question-1",
+						"第一题",
+						BigDecimal.TEN)))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("所选题目尚未关联知识点");
+	}
+
+	@Test
+	void addItemPersistsStableQuestionReference() {
+		ExamSession session = session("DRAFT");
+		Question question = publishedQuestion();
+		QuestionKnowledgePoint mapping = new QuestionKnowledgePoint();
+		mapping.setQuestionId("question-1");
+		mapping.setKnowledgePointId("knowledge-1");
+		when(sessions.findById("session-1")).thenReturn(Optional.of(session));
+		when(items.findBySessionIdOrderByQuestionNoAsc("session-1")).thenReturn(List.of());
+		when(questions.findById("question-1")).thenReturn(Optional.of(question));
+		when(questionKnowledgePoints.findByQuestionId("question-1")).thenReturn(List.of(mapping));
+		when(items.save(any(ExamPaperItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		ExamPaperItem result = service.addItem(
+				"session-1",
+				new ExamPaperAnalysisService.ItemCommand(
+						"1",
+						"question-1",
+						"第一题",
+						BigDecimal.TEN));
+
+		assertThat(result.getQuestionId()).isEqualTo("question-1");
+		assertThat(result.getTitle()).isEqualTo("第一题");
 	}
 
 	@Test
@@ -108,6 +163,14 @@ class ExamPaperAnalysisServiceTest {
 		value.setSubjectId("subject-1");
 		value.setStatus("PUBLISHED");
 		value.setScoreStatus(scoreStatus);
+		return value;
+	}
+
+	private Question publishedQuestion() {
+		Question value = new Question();
+		value.setId("question-1");
+		value.setStatus("PUBLISHED");
+		value.setArchived(false);
 		return value;
 	}
 

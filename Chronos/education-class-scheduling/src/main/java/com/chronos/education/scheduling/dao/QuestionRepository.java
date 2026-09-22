@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface QuestionRepository extends JpaRepository<Question, String> {
 	List<Question> findByBankIdAndArchivedFalseOrderByIdDesc(String bankId);
+
+	List<Question> findByStatusAndArchivedFalseOrderByIdDesc(String status);
 }

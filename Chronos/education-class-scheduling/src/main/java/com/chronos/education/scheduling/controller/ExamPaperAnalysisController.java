@@ -17,6 +17,7 @@ import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.ExamPaperAnalysisService;
+import com.chronos.education.scheduling.service.ExamPaperAnalysisService.AvailableQuestion;
 import com.chronos.education.scheduling.service.ExamPaperAnalysisService.ItemAnalysis;
 import com.chronos.education.scheduling.service.ExamPaperAnalysisService.ItemCommand;
 import com.chronos.education.scheduling.service.ExamPaperAnalysisService.ScoreCommand;
@@ -28,6 +29,13 @@ import lombok.RequiredArgsConstructor;
 public class ExamPaperAnalysisController {
 	private final ExamPaperAnalysisService service;
 	private final EducationDataScopeService scopes;
+
+	@GetMapping("/admin/education/exam/paper-questions")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:exam:paper-analysis:manage')")
+	public ResultData<List<AvailableQuestion>> availableQuestions(Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.availableQuestions());
+	}
 
 	@GetMapping("/admin/education/exam/sessions/{sessionId}/paper-items")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:exam:paper-analysis:view','education:exam:paper-analysis:manage')")
