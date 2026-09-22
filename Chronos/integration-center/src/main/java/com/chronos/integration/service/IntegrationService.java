@@ -5,11 +5,17 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chronos.integration.dao.*;
 import com.chronos.integration.model.*;
 import com.chronos.integration.security.PlatformSecretCipher;
@@ -17,11 +23,18 @@ import com.chronos.service.iService.IAuditLogService;
 
 @Service
 public class IntegrationService {
+ private static final Logger log=LoggerFactory.getLogger(IntegrationService.class);
+ private static final ObjectMapper JSON=new ObjectMapper();
  private final ConnectorRepository connectors; private final SyncJobRepository jobs; private final SyncRunRepository runs;
  private final SyncItemErrorRepository errors; private final DeadLetterRepository deadLetters; private final CredentialRepository credentials; private final PlatformSecretCipher cipher; private final IAuditLogService audit;
  private final WebClient client;
  public IntegrationService(ConnectorRepository connectors, SyncJobRepository jobs, SyncRunRepository runs, SyncItemErrorRepository errors, DeadLetterRepository deadLetters, CredentialRepository credentials, PlatformSecretCipher cipher, IAuditLogService audit, WebClient.Builder builder) { this.connectors=connectors;this.jobs=jobs;this.runs=runs;this.errors=errors;this.deadLetters=deadLetters;this.credentials=credentials;this.cipher=cipher;this.audit=audit;this.client=builder.build(); }
- @Transactional public Connector saveConnector(Connector connector, String actor) { validateUrl(connector.getBaseUrl()); connector.setType("HTTP"); Connector saved=connectors.save(connector); audit.log(actor,"INTEGRATION_CONNECTOR_SAVE",saved.getId()); return saved; }
+ @Transactional public Connector saveConnector(Connector connector, String actor) {
+  validateConnector(connector);
+  Connector saved=connectors.save(connector);
+  audit.log(actor,"INTEGRATION_CONNECTOR_SAVE",saved.getId());
+  return saved;
+ }
  @Transactional
  public Credential configureCredential(String connectorId, String keyName, String plaintext, String actor) {
   if (!connectors.existsById(connectorId)) throw new IllegalArgumentException("connector not found");
@@ -41,14 +54,24 @@ public class IntegrationService {
  }
  public Connector test(String id) {
   Connector c=connectors.findById(id).orElseThrow();
-  validateUrl(c.getBaseUrl());
+  validateConnector(c);
   Map<String, String> headers = credentials.findAllByConnectorIdOrderByKeyName(id).stream()
     .collect(java.util.stream.Collectors.toMap(Credential::getKeyName, value -> cipher.decrypt(value.getSecretCiphertext()), (first, ignored) -> first));
   client.get().uri(URI.create(c.getBaseUrl())).headers(target -> headers.forEach(target::set)).retrieve()
     .toBodilessEntity().timeout(Duration.ofMillis(Math.max(1000,c.getTimeoutMs()))).block();
   return c;
  }
- @Transactional public SyncJob saveJob(SyncJob job, String actor) { if (!connectors.existsById(job.getConnectorId())) throw new IllegalArgumentException("connector not found"); if (job.getCronExpression()==null || job.getCronExpression().isBlank()) throw new IllegalArgumentException("cron expression is required"); job.setStatus(job.getStatus()==null?"ENABLED":job.getStatus()); SyncJob saved=jobs.save(job); audit.log(actor,"INTEGRATION_SYNC_JOB_SAVE",saved.getId()); return saved; }
+ @Transactional public SyncJob saveJob(SyncJob job, String actor) {
+  if (!connectors.existsById(job.getConnectorId())) throw new IntegrationBoundaryException("CONNECTOR_NOT_FOUND","connector not found");
+  if (job.getCronExpression()==null || job.getCronExpression().isBlank()) throw new IntegrationBoundaryException("INVALID_JOB_CRON","cron expression is required");
+  if (job.getRequestPath()==null || job.getRequestPath().isBlank() || !job.getRequestPath().startsWith("/")
+    || job.getRequestPath().contains("\r") || job.getRequestPath().contains("\n")
+    || URI.create(job.getRequestPath()).isAbsolute()) {
+   throw new IntegrationBoundaryException("INVALID_REQUEST_PATH","request path must be a relative HTTP path");
+  }
+  job.setStatus(job.getStatus()==null?"ENABLED":job.getStatus());
+  SyncJob saved=jobs.save(job); audit.log(actor,"INTEGRATION_SYNC_JOB_SAVE",saved.getId()); return saved;
+ }
  /** Claims a lease in a short transaction; all network I/O happens after this method returns. */
  public SyncRun startRun(String jobId, String owner) { LocalDateTime now=LocalDateTime.now(); if(jobs.claimLease(jobId,owner,now,now.plusMinutes(5))!=1) throw new IllegalStateException("sync job is leased"); SyncRun run=new SyncRun();run.setJobId(jobId);run.setStartedAt(now);return runs.save(run); }
  public SyncRun execute(String jobId, String owner) {
@@ -65,6 +88,8 @@ public class IntegrationService {
      run.setSuccessCount(1); run.setStatus("SUCCEEDED"); run.setFinishedAt(LocalDateTime.now()); return runs.save(run);
     } catch(Exception ex) {
      run.setErrorMessage(safeMessage(ex));
+     log.warn("Integration request failed: connectorId={}, jobId={}, attempt={}, error={}",
+       c.getId(), job.getId(), attempt, run.getErrorMessage());
      if(attempt<max) try { Thread.sleep(Math.min(30000L,250L << Math.min(attempt,7))); } catch(InterruptedException interrupted){Thread.currentThread().interrupt();break;}
     }
    }
@@ -102,6 +127,30 @@ public class IntegrationService {
    if(owner.equals(job.getLeaseOwner())) { job.setLeaseOwner(null); job.setLeaseUntil(null); jobs.save(job); }
   });
  }
- private static void validateUrl(String raw){ try { URI u=URI.create(raw); if(!"http".equalsIgnoreCase(u.getScheme())&& !"https".equalsIgnoreCase(u.getScheme())) throw new IllegalArgumentException("only HTTP(S) connectors are supported"); if(u.getHost()==null) throw new IllegalArgumentException("connector URL must include host"); } catch(IllegalArgumentException e){throw new IllegalArgumentException("invalid connector URL",e);} }
- private static String safeMessage(Throwable t){String m=t.getMessage();return m==null? t.getClass().getSimpleName():m.replaceAll("(?i)(authorization|token|password|secret)\\s*[:=]\\s*[^,; ]+","$1=[REDACTED]");}
+ private static void validateConnector(Connector connector) {
+  if (connector==null) throw new IntegrationBoundaryException("INVALID_CONNECTOR","connector is required");
+  String type=connector.getType()==null?"":connector.getType().trim().toUpperCase(Locale.ROOT);
+  if (!"HTTP".equals(type)) {
+   throw new IntegrationBoundaryException("UNSUPPORTED_CONNECTOR_TYPE",
+     "connector type is not supported by an installed provider: "+(type.isBlank()?"<blank>":type));
+  }
+  connector.setType(type);
+  validateUrl(connector.getBaseUrl());
+  validateConfig(connector.getConfigJson());
+  if (connector.getTimeoutMs()==null || connector.getTimeoutMs()<1000 || connector.getTimeoutMs()>120000)
+   throw new IntegrationBoundaryException("INVALID_CONNECTOR_CONFIG","timeoutMs must be between 1000 and 120000");
+  if (connector.getMaxRetries()==null || connector.getMaxRetries()<0 || connector.getMaxRetries()>10)
+   throw new IntegrationBoundaryException("INVALID_CONNECTOR_CONFIG","maxRetries must be between 0 and 10");
+ }
+ private static void validateConfig(String raw) {
+  if (raw==null || raw.isBlank()) throw new IntegrationBoundaryException("INVALID_CONNECTOR_CONFIG","configJson is required");
+  try {
+   JsonNode config=JSON.readTree(raw);
+   if (config==null || !config.isObject()) throw new IntegrationBoundaryException("INVALID_CONNECTOR_CONFIG","configJson must be a JSON object");
+  } catch (JsonProcessingException e) {
+   throw new IntegrationBoundaryException("INVALID_CONNECTOR_CONFIG","configJson must be valid JSON");
+  }
+ }
+ private static void validateUrl(String raw){ try { URI u=URI.create(raw); if(!"http".equalsIgnoreCase(u.getScheme())&& !"https".equalsIgnoreCase(u.getScheme())) throw new IllegalArgumentException(); if(u.getHost()==null) throw new IllegalArgumentException(); } catch(IllegalArgumentException e){throw new IntegrationBoundaryException("INVALID_CONNECTOR_URL","baseUrl must be an HTTP(S) URL with a host");} }
+ static String safeMessage(Throwable t){String m=t.getMessage();if(m==null)return t.getClass().getSimpleName();return m.replaceAll("(?i)(authorization|token|password|secret|api[-_]?key)\\s*[:=]\\s*[^,;]+","$1=[REDACTED]").replaceAll("(?i)bearer\\s+[^,;\\s]+","Bearer [REDACTED]").replaceAll("https?://[^\\s]+","[URL_REDACTED]");}
 }
