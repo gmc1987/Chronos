@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
@@ -127,6 +128,17 @@ public class SchedulePlanVersionService {
 		return versions.findFirstBySemesterCodeOrderByVersionNoDesc(semesterCode)
 				.map(value -> read(value.getSnapshotJson()))
 				.orElseGet(List::of);
+	}
+
+	@Transactional(readOnly = true)
+	public ScheduleEntry requirePublishedEntry(String entryId) {
+		ScheduleEntry current = entries.findById(entryId)
+				.orElseThrow(() -> new IllegalArgumentException("课表项不存在"));
+		return latestPublishedEntries(current.getSemesterCode()).stream()
+				.filter(entry -> entryId.equals(entry.getId()))
+				.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
+				.findFirst()
+				.orElseThrow(() -> new IllegalStateException("课表项未包含在最新发布版本"));
 	}
 
 	/** 版本回滚走原生 SQL，须在恢复前单独校验考试资源占用。 */

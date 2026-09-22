@@ -77,8 +77,9 @@ public class SupervisionController {
 
 	@PostMapping("/portal/education/supervision/tasks/{id}/check-in")
 	@PreAuthorize("hasAuthority('education:supervision:assignment:check-in')")
-	public ResultData<AssignmentResponse> checkIn(@PathVariable String id, Authentication auth) {
-		return ok(assignment(service.checkIn(id, auth.getName())));
+	public ResultData<AssignmentResponse> checkIn(@PathVariable String id,
+			@RequestBody(required = false) CheckInCommand command, Authentication auth) {
+		return ok(assignment(service.checkIn(id, auth.getName(), command == null ? null : command.proof())));
 	}
 
 	@PostMapping("/portal/education/supervision/tasks/{id}/complete")
@@ -91,8 +92,7 @@ public class SupervisionController {
 	@PreAuthorize("hasAuthority('education:supervision:record:create')")
 	public ResultData<RecordResponse> submit(@PathVariable String id, @Valid @RequestBody EvaluationCommand command,
 			Authentication auth) {
-		return ok(record(service.submit(id, auth.getName(), command.formSnapshotJson(),
-				command.scheduleContextSnapshotJson(), command.formTemplateId())));
+		return ok(record(service.submit(id, auth.getName(), null, null, command.formTemplateId())));
 	}
 
 	@GetMapping("/portal/education/supervision/tasks/{id}/record")

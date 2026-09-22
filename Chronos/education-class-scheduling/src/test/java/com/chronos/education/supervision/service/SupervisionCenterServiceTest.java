@@ -43,14 +43,14 @@ class SupervisionCenterServiceTest {
 	}
 
 	@Test
-	void checkInUsesServerTimeAndRequiresAssignment() {
+	void checkInFailsClosedWithoutTrustedProofProvider() {
 		SupervisionAssignment assignment = assignment("a", "supervisor");
 		when(assignments.findByIdAndSupervisorId("a", "supervisor")).thenReturn(Optional.of(assignment));
 
-		service.checkIn("a", "supervisor");
-
-		assertThat(assignment.getCheckedInAt()).isNotNull();
-		verify(audit).log("supervisor", "EDU_SUPERVISION_ASSIGNMENT_CHECK_IN", "assignmentId=a");
+		assertThatThrownBy(() -> service.checkIn("a", "supervisor"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("SUPERVISION_CHECK_IN_PROVIDER_UNAVAILABLE");
+		verifyNoInteractions(audit);
 	}
 
 	@Test

@@ -21,9 +21,9 @@ public final class SupervisionDtos {
 			@Size(max = 64) String campusId) {}
 
 	public record EvaluationCommand(
-			@NotBlank String formTemplateId,
-			@NotBlank String formSnapshotJson,
-			@NotBlank String scheduleContextSnapshotJson) {}
+			@NotBlank String formTemplateId) {}
+
+	public record CheckInCommand(@NotBlank String proof) {}
 
 	public record IssueCommand(
 			@NotBlank @Size(max = 16) String severity,
