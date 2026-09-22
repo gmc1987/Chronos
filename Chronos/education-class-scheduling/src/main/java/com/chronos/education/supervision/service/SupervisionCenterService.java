@@ -366,7 +366,7 @@ public class SupervisionCenterService {
 	}
 
 	private String scopeSchool(EducationDataScope scope) {
-		return scope.fullAccess() ? "ALL" : scope.campusIds().stream().sorted().findFirst().orElse("DEFAULT");
+		return scope.fullAccess() ? "ALL" : dataScopes.requireSingleSchool(scope);
 	}
 
 	private String snapshot(FormInstance instance) {

@@ -104,8 +104,11 @@ public class HomeSchoolService {
 				|| command.content() == null) throw new IllegalArgumentException("通知内容不完整");
 		EducationDataScope scope = scopeService.resolve(username);
 		scopeService.assertClassAccess(scope, command.classId());
+		AdministrativeClass administrativeClass = classes.findById(command.classId())
+				.orElseThrow(() -> new IllegalArgumentException("行政班不存在"));
+		String schoolId = scopeService.requireSchoolForCampus(scope, administrativeClass.getCampusId());
 		HomeNotice value = new HomeNotice();
-		value.setSchoolId(command.schoolId()); value.setClassId(command.classId());
+		value.setSchoolId(schoolId); value.setClassId(command.classId());
 		value.setTitle(command.title()); value.setContent(command.content());
 		value.setReceiptRequired(Boolean.TRUE.equals(command.receiptRequired()));
 		value.setExpireAt(command.expireAt()); value.setPublisherUsername(username);

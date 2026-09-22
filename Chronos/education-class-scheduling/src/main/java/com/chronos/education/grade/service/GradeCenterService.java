@@ -215,7 +215,7 @@ public class GradeCenterService {
 		}
 		return gradebook;
 	}
- private String serverSchoolId(String actor){return dataScopes.resolve(actor).campusIds().stream().findFirst().orElse("DEFAULT");}
+ private String serverSchoolId(String actor){return dataScopes.requireSingleSchool(dataScopes.resolve(actor));}
 	private void saveComponents(String schemeId, List<ComponentCommand> commands) {
 		int defaultOrder = 0;
 		for (ComponentCommand command : commands) {

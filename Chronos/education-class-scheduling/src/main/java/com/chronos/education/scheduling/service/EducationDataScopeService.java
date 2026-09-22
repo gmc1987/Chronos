@@ -137,8 +137,9 @@ public class EducationDataScopeService {
 					? null
 					: organizations.findById(organizationId).orElse(null);
 			if (organization == null) {
-				schoolIds.add(organizationId);
-				campusIds.add(organizationId);
+				// An organization id without a resolvable organization record is not
+				// sufficient evidence of a school or campus boundary.
+				continue;
 			} else if ("CAMPUS".equals(organization.getOrganizationType())) {
 				campusIds.add(organizationId);
 				if (organization != null && organization.getParentOrgId() != null) {
