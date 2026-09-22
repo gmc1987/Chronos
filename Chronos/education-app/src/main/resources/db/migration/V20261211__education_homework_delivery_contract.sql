@@ -15,6 +15,14 @@ ALTER TABLE edu_homework_assignment
 
 ALTER TABLE edu_homework_assignment
   DROP CONSTRAINT IF EXISTS ck_edu_homework_assignment_publish_audience;
+
+-- 兼容旧版本使用的 STUDENT 值及历史空值。新模型统一使用教学班在籍学生范围，
+-- 先归一化历史数据再增加约束，避免生产库升级被已有作业记录阻断。
+UPDATE edu_homework_assignment
+SET publish_audience = 'ENROLLED_STUDENTS'
+WHERE publish_audience IS NULL
+   OR publish_audience NOT IN ('ENROLLED_STUDENTS', 'ALL_STUDENTS');
+
 ALTER TABLE edu_homework_assignment
   ADD CONSTRAINT ck_edu_homework_assignment_publish_audience
   CHECK (publish_audience IN ('ENROLLED_STUDENTS', 'ALL_STUDENTS'));

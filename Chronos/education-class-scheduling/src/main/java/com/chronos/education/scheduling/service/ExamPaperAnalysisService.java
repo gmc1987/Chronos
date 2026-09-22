@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +35,7 @@ import lombok.RequiredArgsConstructor;
  * 绝不将缺考或未批改考生当作零分参与平均值计算。
  */
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class ExamPaperAnalysisService {
 	private final ExamSessionRepository sessions;
 	private final ExamSessionOfferingRepository sessionOfferings;

@@ -9,6 +9,7 @@ import com.chronos.education.scheduling.model.DataGradeEventFact;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -21,6 +22,7 @@ public class EducationGradeEventConsumer {
 		this(facts, json, null);
 	}
 
+	@Autowired
 	public EducationGradeEventConsumer(DataGradeEventFactRepository facts, ObjectMapper json,
 			CourseOfferingRepository offerings) {
 		this.facts = facts;

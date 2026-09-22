@@ -10,7 +10,7 @@ import lombok.*;
 @NoArgsConstructor
 @Table(name = "edu_grade_rule_set")
 public class GradeRuleSet extends BaseEntity {
-    @Column(nullable = false, length = 64)
+    @Column(name = "school_id", nullable = false, length = 64)
     private String schoolId;
     @Column(nullable = false, length = 128)
     private String name;
@@ -18,13 +18,13 @@ public class GradeRuleSet extends BaseEntity {
     private String code;
     @Column(nullable = false, length = 24)
     private String status = "DRAFT";
-    @Column(nullable = false)
+    @Column(name = "version_no", nullable = false)
     private Integer versionNo = 1;
-    @Column(nullable = false)
+    @Column(name = "platform_default", nullable = false)
     private Boolean platformDefault = false;
-    @Column(nullable = false, length = 24)
+    @Column(name = "makeup_strategy", nullable = false, length = 24)
     private String makeupStrategy = "OVERWRITE";
     @Version
-    @Column(nullable = false)
+    @Column(name = "row_version", nullable = false)
     private Long rowVersion = 0L;
 }

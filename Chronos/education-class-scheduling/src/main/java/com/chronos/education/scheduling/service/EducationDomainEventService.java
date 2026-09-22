@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -23,6 +24,7 @@ public class EducationDomainEventService {
 	private final ObjectMapper json;
 	private final EducationGradeEventConsumer gradeEvents;
 
+	@Autowired
 	public EducationDomainEventService(
 			EducationDomainOutboxRepository outbox,
 			ResearchErrorService errorRecords,

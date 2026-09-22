@@ -6,6 +6,7 @@ import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.model.EducationUserBinding;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -18,6 +19,7 @@ public class EducationApplicantResolver {
 	private final ParentAccountBindingRepository parentBindings;
 	private final StudentGuardianRepository guardians;
 
+	@Autowired
 	public EducationApplicantResolver(
 			EducationUserBindingRepository bindings,
 			IAdminUserRepository users,

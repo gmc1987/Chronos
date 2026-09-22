@@ -17,12 +17,12 @@ public class GradeRule extends BaseEntity {
     private BigDecimal minScore;
     @Column(name = "max_score", nullable = false, precision = 8, scale = 2)
     private BigDecimal maxScore;
-    @Column(nullable = false, length = 16)
+    @Column(name = "grade_level", nullable = false, length = 16)
     private String gradeLevel;
-    @Column(nullable = false, precision = 5, scale = 2)
+    @Column(name = "grade_point", nullable = false, precision = 5, scale = 2)
     private BigDecimal gradePoint;
     @Column(nullable = false)
     private Boolean passed;
-    @Column(nullable = false)
+    @Column(name = "sort_order", nullable = false)
     private Integer sortOrder = 0;
 }

@@ -3,7 +3,6 @@ package com.chronos.education.grade.model;
 import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,8 +20,8 @@ public class GradeCorrection extends BaseEntity {
 	private Integer baseVersion;
 	@Column(name = "target_version", nullable = false)
 	private Integer targetVersion;
-	@Lob
-	@Column(name = "correction_json", nullable = false)
+	// PostgreSQL JSON 文本统一映射为 text，避免 @Lob 被 Hibernate 解释为 oid。
+	@Column(name = "correction_json", nullable = false, columnDefinition = "text")
 	private String correctionJson;
 	@Column(nullable = false, length = 24)
 	private String status;

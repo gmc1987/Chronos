@@ -79,10 +79,10 @@ INSERT INTO wf_node (
 SELECT gen_random_uuid()::text, flow.id, nodes.node_key, nodes.node_name, nodes.node_type,
        '', 0, 0, 0, lo_from_bytea(0, convert_to('{}', 'UTF8')),
        lo_from_bytea(0, convert_to('{}', 'UTF8')),
-       lo_from_bytea(0, convert_to(nodes.properties_json, 'UTF8')),
-       lo_from_bytea(0, convert_to('[]', 'UTF8')),
-       lo_from_bytea(0, convert_to('{"permissions":{},"required":{}}', 'UTF8')),
-       'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', CURRENT_TIMESTAMP
+	       lo_from_bytea(0, convert_to(nodes.properties_json, 'UTF8')),
+	       lo_from_bytea(0, convert_to('[]', 'UTF8')),
+	       lo_from_bytea(0, convert_to('{"permissions":{},"required":{}}', 'UTF8')),
+	       'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', CURRENT_TIMESTAMP
 FROM flow CROSS JOIN nodes
 ON CONFLICT (flow_id, node_key) DO NOTHING;
 

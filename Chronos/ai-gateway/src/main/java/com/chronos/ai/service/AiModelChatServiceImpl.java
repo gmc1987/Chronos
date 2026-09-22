@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.client.RestClientException;
@@ -30,6 +31,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	private final SecretEncryptionProvider encryption;
 	private final ConcurrentHashMap<String, CachedModel> cache = new ConcurrentHashMap<>();
 
+	@Autowired
 	public AiModelChatServiceImpl(
 			AiModelRepository models,
 			DeepSeekChatModelFactory modelFactory,
