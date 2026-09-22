@@ -12,6 +12,7 @@ import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.file.service.ManagedFileService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -96,6 +97,21 @@ class EducationDataCenterServiceTest {
 
   assertThat(service.dashboard("academic", LocalDate.of(2026, 9, 20), null,
     new UsernamePasswordAuthenticationToken("admin", "n/a"))).isEmpty();
+ }
+
+ @Test
+ void courseAdjustmentProviderCountsPersistedRecordsForWholeCampus() {
+  CourseAdjustmentRecordRepository records = mock(CourseAdjustmentRecordRepository.class);
+  when(records.countByCreateTimeBetween(
+    LocalDateTime.of(2026, 9, 20, 0, 0),
+    LocalDateTime.of(2026, 9, 21, 0, 0))).thenReturn(3L);
+  PersistedCourseAdjustmentCountProvider provider = new PersistedCourseAdjustmentCountProvider(records);
+
+  assertThat(provider.measure(LocalDate.of(2026, 9, 20), "",
+    new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of())))
+    .hasValueSatisfying(value -> assertThat(value).isEqualByComparingTo("3"));
+  assertThat(provider.measure(LocalDate.of(2026, 9, 20), "campus-a",
+    new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()))).isEmpty();
  }
 
  private static DataMetricDefinition metric(String code) {

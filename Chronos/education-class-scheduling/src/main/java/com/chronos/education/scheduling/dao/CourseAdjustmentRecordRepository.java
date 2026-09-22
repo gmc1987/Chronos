@@ -3,6 +3,7 @@ package com.chronos.education.scheduling.dao;
 import com.chronos.education.scheduling.model.CourseAdjustmentRecord;
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -22,4 +23,6 @@ public interface CourseAdjustmentRecordRepository extends
 	Optional<CourseAdjustmentRecord> findLockedById(@Param("id") String id);
 
 	List<CourseAdjustmentRecord> findByStatusOrderByCreateTimeDesc(String status);
+
+	long countByCreateTimeBetween(LocalDateTime start, LocalDateTime end);
 }

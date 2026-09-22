@@ -29,20 +29,38 @@ public class EducationDataCenterService {
  private final StudentProfileRepository students;
  private final AdministrativeClassRepository classes;
  private final ExamSessionRepository exams;
+ private final SchedulingUtilizationProvider schedulingUtilization;
+ private final SchedulingConflictProvider schedulingConflicts;
+ private final CourseAdjustmentCountProvider courseAdjustments;
+ private final InvigilationWorkloadProvider invigilationWorkload;
 
  @org.springframework.beans.factory.annotation.Autowired
  public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
    DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
    ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
-   ExamSessionRepository exams, DataQualityRuleRepository rules) {
+   ExamSessionRepository exams, DataQualityRuleRepository rules,
+   SchedulingUtilizationProvider schedulingUtilization, SchedulingConflictProvider schedulingConflicts,
+   CourseAdjustmentCountProvider courseAdjustments, InvigilationWorkloadProvider invigilationWorkload) {
   this.definitions=definitions; this.snapshots=snapshots; this.reports=reports; this.issues=issues;
   this.rules=rules; this.scopes=scopes; this.files=files; this.students=students; this.classes=classes; this.exams=exams;
+  this.schedulingUtilization=schedulingUtilization; this.schedulingConflicts=schedulingConflicts;
+  this.courseAdjustments=courseAdjustments; this.invigilationWorkload=invigilationWorkload;
+ }
+ public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
+   DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
+   ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
+   ExamSessionRepository exams, DataQualityRuleRepository rules) {
+  this(definitions,snapshots,reports,issues,scopes,files,students,classes,exams,rules,
+    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty(),
+    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty());
  }
  public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
    DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
    ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
    ExamSessionRepository exams) {
-  this(definitions, snapshots, reports, issues, scopes, files, students, classes, exams, null);
+  this(definitions, snapshots, reports, issues, scopes, files, students, classes, exams, null,
+    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty(),
+    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty());
  }
  public List<DataMetricDefinition> metricDefinitions() { return definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc(); }
  public List<DataDailySnapshot> dashboard(String dashboard, LocalDate date, String campusId, Authentication user) {
@@ -101,6 +119,10 @@ public class EducationDataCenterService {
     return Optional.of(java.math.BigDecimal.valueOf(exams.findByExamDateBetweenAndStatus(
       date, date, "PUBLISHED").size()));
    }
+   if ("SCHEDULE_UTILIZATION".equals(code)) return schedulingUtilization.measure(date,campusId,scope);
+   if ("SCHEDULE_CONFLICT_COUNT".equals(code)) return schedulingConflicts.measure(date,campusId,scope);
+   if ("COURSE_ADJUSTMENT_COUNT".equals(code)) return courseAdjustments.measure(date,campusId,scope);
+   if ("INVIGILATION_LOAD".equals(code)) return invigilationWorkload.measure(date,campusId,scope);
    return Optional.empty();
   }
 
