@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test:score-center-analysis": "node scripts/score-center-analysis-contract.mjs",
     "test:teaching-center-routes": "node scripts/teaching-center-route-contract.mjs",
-    "test:teaching-center-api": "node scripts/teaching-center-api-contract.mjs"
+    "test:teaching-center-api": "node scripts/teaching-center-api-contract.mjs",
+    "test:education-acceptance-contracts": "npm run test:teaching-center-routes && npm run test:teaching-center-api && npm run test:score-center-analysis"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
