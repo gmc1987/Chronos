@@ -48,6 +48,35 @@ CHRONOS_FLYWAY_VERIFY_PSQL_OPTIONS='-h 127.0.0.1 -p 5433 -U chronos' \
   ./scripts/verify-education-flyway-isolated.sh
 ```
 
+## 部署验收入口
+
+真实部署验收使用 `education-deployment-acceptance.sh`。教育应用配置和验收入口都只接受显式的
+`CHRONOS_DB_URL`、`CHRONOS_DB_USERNAME`、`CHRONOS_DB_PASSWORD` 和
+`CHRONOS_DB_ACCEPT_TARGET=1`；应用配置中的默认 JDBC URL/账号不会被此入口采用。
+缺少任一项、URL 不是 PostgreSQL JDBC URL、目标未明确确认或 `psql` 不可用时，
+脚本在连接前失败。连接后第一条只读检查核对 `current_database()` 和
+`current_schema()`，随后在 `default_transaction_read_only` 会话中检查
+`flyway_schema_history` 的关键版本/checksum、失败行、仓库最高版本以及核心教育表。
+入口不运行 Flyway，不执行 `repair`、`baseline`、DDL、DML，也不修改已执行迁移。
+
+空库和已有库必须分别留存证据，命令中的模式不是“让脚本创建或迁移数据库”的开关：
+
+```bash
+cd Chronos
+export CHRONOS_DB_URL='jdbc:postgresql://db-host:5432/chronos_education_verify'
+export CHRONOS_DB_USERNAME='chronos_acceptance'
+export CHRONOS_DB_PASSWORD='来自密钥管理器的密码'
+export CHRONOS_DB_ACCEPT_TARGET=1
+./scripts/education-deployment-acceptance.sh empty
+./scripts/education-deployment-acceptance.sh existing
+```
+
+`empty` 表示该库应当是从空 PostgreSQL 库按 `V0` 到当前最高版本顺序迁移后
+验收；`existing` 表示已有教育结构/数据的脱敏副本，允许检查 baseline 行，但
+baseline 不能掩盖缺表、失败迁移或 checksum mismatch。两种模式都要求历史达到
+仓库最高版本且核心表存在。真实生产库执行前仍需备份、变更窗口和人工审批；不得
+把未确认的生产 URL 交给脚本。
+
 脚本会先运行静态门，然后只读输出 `flyway_schema_history`、失败迁移、重复成功版本
 和 SQL 迁移的空 checksum，并要求隔离库已成功迁移到仓库最高版本。它不会调用
 Flyway `repair`/`baseline`，也不会执行 DDL、清理数据或修改历史。

@@ -21,8 +21,11 @@ case "$mode" in
   deployment-flyway)
     exec "$ROOT/scripts/verify-education-flyway-isolated.sh"
     ;;
+  deployment)
+    exec "$ROOT/scripts/education-deployment-acceptance.sh" "${2:-}"
+    ;;
   *)
-    echo "usage: $0 [local|deployment-flyway]" >&2
+    echo "usage: $0 [local|deployment-flyway|deployment <empty|existing>]" >&2
     exit 2
     ;;
 esac
