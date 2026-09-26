@@ -13,6 +13,9 @@ import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +43,7 @@ public class SupervisionCenterService {
 	private final SchedulePlanVersionService scheduleVersions;
 	private final SupervisionCheckInProofProvider checkInProofs;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+	private final Map<String, Instant> consumedProofs = new ConcurrentHashMap<>();
 
 	@Autowired
 	public SupervisionCenterService(
@@ -204,22 +208,56 @@ public class SupervisionCenterService {
 	}
 
 	@Transactional
-	public SupervisionAssignment checkIn(String id, String supervisorId, String proof) {
+	public SupervisionAssignment checkIn(String id, String supervisorId,
+			SupervisionCheckInProofProvider.Proof proof) {
 		SupervisionAssignment assignment = assigned(id, supervisorId);
-		if (checkInProofs == null) {
-			throw new IllegalStateException("SUPERVISION_CHECK_IN_PROVIDER_UNAVAILABLE");
-		}
-		if (!checkInProofs.verify(assignment, proof)) {
-			throw new IllegalArgumentException("SUPERVISION_CHECK_IN_PROOF_INVALID");
-		}
 		if (!Set.of("ACCEPTED", "PENDING").contains(assignment.getStatus())) {
 			throw new IllegalStateException("当前任务不可签到");
+		}
+		Instant now = Instant.now();
+		SupervisionCheckInProofProvider.VerificationResult result = checkInProofs == null
+				? new SupervisionCheckInProofProvider.VerificationResult(
+						SupervisionCheckInProofProvider.VerificationCode.PROVIDER_UNAVAILABLE, null, null)
+				: proof == null || proof.providerId() == null || proof.providerId().isBlank()
+						|| proof.signedProof() == null || proof.signedProof().isBlank()
+				? new SupervisionCheckInProofProvider.VerificationResult(
+						SupervisionCheckInProofProvider.VerificationCode.INVALID_PROOF, null, null)
+				: checkInProofs.verify(new SupervisionCheckInProofProvider.VerificationRequest(
+						assignment, proof, now));
+		if (result == null) {
+			result = new SupervisionCheckInProofProvider.VerificationResult(
+					SupervisionCheckInProofProvider.VerificationCode.PROVIDER_UNAVAILABLE, null, null);
+		}
+		audit.log(supervisorId, "EDU_SUPERVISION_CHECK_IN_PROOF",
+				"assignmentId=" + id + ",code=" + result.code());
+		if (result.code() == null || !result.verified()) {
+			throw proofFailure(result.code());
+		}
+		if (result.proofId() == null || result.proofId().isBlank()
+				|| result.expiresAt() == null || !result.expiresAt().isAfter(now)) {
+			throw proofFailure(SupervisionCheckInProofProvider.VerificationCode.PROOF_EXPIRED);
+		}
+		consumedProofs.entrySet().removeIf(entry -> !entry.getValue().isAfter(now));
+		Instant previous = consumedProofs.putIfAbsent(result.proofId(), result.expiresAt());
+		if (previous != null && previous.isAfter(now)) {
+			throw proofFailure(SupervisionCheckInProofProvider.VerificationCode.REPLAY_DETECTED);
 		}
 		assignment.setStatus("CHECKED_IN");
 		// 签到时间只能由服务端产生，忽略客户端传入时间。
 		assignment.setCheckedInAt(LocalDateTime.now());
 		audit.log(supervisorId, "EDU_SUPERVISION_ASSIGNMENT_CHECK_IN", "assignmentId=" + id);
 		return assignments.save(assignment);
+	}
+
+	private RuntimeException proofFailure(SupervisionCheckInProofProvider.VerificationCode code) {
+		if (code == null) {
+			return new IllegalArgumentException("SUPERVISION_CHECK_IN_INVALID_PROOF");
+		}
+		return switch (code) {
+			case CONFIGURATION_MISSING, PROVIDER_UNAVAILABLE ->
+					new IllegalStateException("SUPERVISION_CHECK_IN_" + code.name());
+			default -> new IllegalArgumentException("SUPERVISION_CHECK_IN_" + code.name());
+		};
 	}
 
 	@Transactional

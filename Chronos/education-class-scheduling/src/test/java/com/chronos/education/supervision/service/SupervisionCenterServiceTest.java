@@ -50,7 +50,8 @@ class SupervisionCenterServiceTest {
 		assertThatThrownBy(() -> service.checkIn("a", "supervisor"))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("SUPERVISION_CHECK_IN_PROVIDER_UNAVAILABLE");
-		verifyNoInteractions(audit);
+		verify(audit).log("supervisor", "EDU_SUPERVISION_CHECK_IN_PROOF",
+				"assignmentId=a,code=PROVIDER_UNAVAILABLE");
 	}
 
 	@Test

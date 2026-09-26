@@ -113,3 +113,9 @@ chronos:
       agent:
         enabled: ${WORKFLOW_AGENT_EXECUTOR_ENABLED:false}
         base-url: ${WORKFLOW_AGENT_BASE_URL:}
+  supervision:
+    check-in:
+      # No location/QR provider is bundled. Register a SupervisionCheckInProofProvider
+      # bean in the deployment and configure its endpoint/credentials in a secret manager.
+      provider-id: ${CHRONOS_SUPERVISION_CHECK_IN_PROVIDER_ID:}
+      endpoint: ${CHRONOS_SUPERVISION_CHECK_IN_PROVIDER_ENDPOINT:}
