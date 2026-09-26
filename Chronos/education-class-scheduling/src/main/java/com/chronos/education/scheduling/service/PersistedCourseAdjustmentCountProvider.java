@@ -24,7 +24,8 @@ public class PersistedCourseAdjustmentCountProvider implements CourseAdjustmentC
 			return Optional.empty();
 		}
 		LocalDateTime start = date.atStartOfDay();
-		long count = records.countByCreateTimeBetween(start, date.plusDays(1).atStartOfDay());
+		long count = records.countByCreateTimeGreaterThanEqualAndCreateTimeLessThan(
+				start, date.plusDays(1).atStartOfDay());
 		return Optional.of(BigDecimal.valueOf(count));
 	}
 }

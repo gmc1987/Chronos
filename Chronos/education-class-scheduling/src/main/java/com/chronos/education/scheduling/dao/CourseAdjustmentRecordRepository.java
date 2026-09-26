@@ -25,4 +25,8 @@ public interface CourseAdjustmentRecordRepository extends
 	List<CourseAdjustmentRecord> findByStatusOrderByCreateTimeDesc(String status);
 
 	long countByCreateTimeBetween(LocalDateTime start, LocalDateTime end);
+
+	long countByCreateTimeGreaterThanEqualAndCreateTimeLessThan(
+			LocalDateTime start,
+			LocalDateTime end);
 }

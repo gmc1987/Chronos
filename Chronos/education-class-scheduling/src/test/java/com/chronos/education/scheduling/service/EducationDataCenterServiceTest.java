@@ -45,6 +45,8 @@ class EducationDataCenterServiceTest {
   AdministrativeClassRepository classes = mock(AdministrativeClassRepository.class);
   DataMetricDefinition studentsMetric = metric("STUDENT_COUNT");
   DataMetricDefinition utilizationMetric = metric("SCHEDULE_UTILIZATION");
+  DataMetricDefinition conflictMetric = metric("SCHEDULE_CONFLICT_COUNT");
+  DataMetricDefinition invigilationMetric = metric("INVIGILATION_LOAD");
   AdministrativeClass activeClass = new AdministrativeClass();
   activeClass.setId("class-1");
   activeClass.setStatus("ACTIVE");
@@ -53,7 +55,7 @@ class EducationDataCenterServiceTest {
   student.setAdministrativeClassId("class-1");
   student.setEnrollmentStatus("ACTIVE");
   when(definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc())
-    .thenReturn(List.of(studentsMetric, utilizationMetric));
+    .thenReturn(List.of(studentsMetric, utilizationMetric, conflictMetric, invigilationMetric));
   when(scopes.resolve("admin")).thenReturn(new EducationDataScope(
     true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
   when(classes.findAll()).thenReturn(List.of(activeClass));
@@ -75,6 +77,44 @@ class EducationDataCenterServiceTest {
   assertThat(result.get(0).getMetricCode()).isEqualTo("STUDENT_COUNT");
   assertThat(result.get(0).getMetricValue()).isEqualByComparingTo("1");
   verify(snapshots, times(1)).save(any(DataDailySnapshot.class));
+ }
+
+ @Test
+ void repeatedSnapshotUpdatesTheSamePersistedRow() {
+  DataMetricDefinitionRepository definitions = mock(DataMetricDefinitionRepository.class);
+  DataDailySnapshotRepository snapshots = mock(DataDailySnapshotRepository.class);
+  EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+  StudentProfileRepository students = mock(StudentProfileRepository.class);
+  AdministrativeClassRepository classes = mock(AdministrativeClassRepository.class);
+  DataMetricDefinition metric = metric("STUDENT_COUNT");
+  AdministrativeClass activeClass = new AdministrativeClass();
+  activeClass.setId("class-1");
+  activeClass.setStatus("ACTIVE");
+  DataDailySnapshot existing = new DataDailySnapshot();
+  existing.setMetricCode("STUDENT_COUNT");
+  when(definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc()).thenReturn(List.of(metric));
+  when(scopes.resolve("admin")).thenReturn(new EducationDataScope(
+    true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
+  when(classes.findAll()).thenReturn(List.of(activeClass));
+  when(students.findAll()).thenReturn(List.of());
+  when(snapshots.findBySnapshotDateAndCampusIdAndMetricCode(
+    any(), any(), eq("STUDENT_COUNT"))).thenReturn(java.util.Optional.of(existing));
+  when(snapshots.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+  EducationDataCenterService service = new EducationDataCenterService(
+    definitions, snapshots, mock(DataReportTaskRepository.class),
+    mock(DataQualityIssueRepository.class), scopes, mock(ManagedFileService.class),
+    students, classes, mock(ExamSessionRepository.class));
+  LocalDate date = LocalDate.of(2026, 9, 20);
+
+  List<DataDailySnapshot> first = service.takeSnapshot(
+    date, null, new UsernamePasswordAuthenticationToken("admin", "n/a"));
+  List<DataDailySnapshot> second = service.takeSnapshot(
+    date, null, new UsernamePasswordAuthenticationToken("admin", "n/a"));
+
+  assertThat(first).containsExactly(existing);
+  assertThat(second).containsExactly(existing);
+  verify(snapshots, times(2)).save(existing);
  }
 
  @Test
@@ -102,7 +142,7 @@ class EducationDataCenterServiceTest {
  @Test
  void courseAdjustmentProviderCountsPersistedRecordsForWholeCampus() {
   CourseAdjustmentRecordRepository records = mock(CourseAdjustmentRecordRepository.class);
-  when(records.countByCreateTimeBetween(
+  when(records.countByCreateTimeGreaterThanEqualAndCreateTimeLessThan(
     LocalDateTime.of(2026, 9, 20, 0, 0),
     LocalDateTime.of(2026, 9, 21, 0, 0))).thenReturn(3L);
   PersistedCourseAdjustmentCountProvider provider = new PersistedCourseAdjustmentCountProvider(records);
