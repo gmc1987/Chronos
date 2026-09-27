@@ -28,7 +28,7 @@
               class="target-select"
               filterable
               clearable
-              placeholder="请选择查询对象"
+              :placeholder="scheduleTargetPlaceholder"
               @change="loadSchedule">
               <el-option
                 v-for="item in dimensionOptions"
@@ -654,12 +654,9 @@ import {
   listClassrooms,
   listClassSchedule,
   listAcademicTerms,
-  listAdministrativeClasses,
   listCourseCatalog,
   listCourseOfferings,
   listCourseAdjustmentIncidents,
-  listEducationTeachers,
-  listEducationStudents,
   listScheduleVersions,
   listScheduleCandidates,
   previewScheduleCandidate,
@@ -682,6 +679,7 @@ import {
   listTeacherTimeConstraints,
   listClassroomUnavailableSlots,
   listScheduleOccurrences,
+  listScheduleDimensionOptions,
   listScheduleDateExceptionHistory,
   cancelScheduleDateException,
   restoreScheduleDateException,
@@ -806,16 +804,19 @@ const dimensionOptions = computed(() => {
   }
   return []
 })
+const scheduleTargetPlaceholder = computed(() => ({
+  TEACHER: '请选择教师',
+  TEACHING_CLASS: '请选择教学班',
+  ADMIN_CLASS: '请选择行政班',
+  STUDENT: '请选择学生',
+  CLASSROOM: '请选择教室',
+})[scheduleDimension.value] || '请选择查询对象')
 const reset = (target, value) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, value) }
 const loadAll = async () => {
-  const [termResponse, courseResponse, teacherResponse, studentResponse, classResponse, offeringResponse, classroomResponse, roomTypeResponse, versionResponse, candidateResponse, campusResponse] = await Promise.all([
+  const [termResponse, courseResponse, dimensionResponse, roomTypeResponse, versionResponse, candidateResponse, campusResponse] = await Promise.all([
     listAcademicTerms(),
     listCourseCatalog(),
-    listEducationTeachers(),
-    listEducationStudents(),
-    listAdministrativeClasses(),
-    listCourseOfferings(semesterCode.value),
-    listClassrooms(),
+    listScheduleDimensionOptions(semesterCode.value),
     dictionaryOptions('EDU_ROOM_TYPE'),
     listScheduleVersions(semesterCode.value),
     listScheduleCandidates(semesterCode.value),
@@ -823,11 +824,12 @@ const loadAll = async () => {
   ])
   terms.value = termResponse.data || []
   courses.value = courseResponse.data || []
-  teachers.value = teacherResponse.data || []
-  students.value = studentResponse.data || []
-  administrativeClasses.value = classResponse.data || []
-  offeringOptions.value = offeringResponse.data || []
-  classroomOptions.value = classroomResponse.data || []
+  const dimensions = dimensionResponse.data || {}
+  teachers.value = dimensions.teachers || []
+  students.value = dimensions.students || []
+  administrativeClasses.value = dimensions.administrativeClasses || []
+  offeringOptions.value = dimensions.teachingClasses || []
+  classroomOptions.value = dimensions.classrooms || []
   roomTypes.value = (roomTypeResponse?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
   versions.value = versionResponse.data || []
   candidates.value = candidateResponse.data || []
