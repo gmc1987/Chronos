@@ -688,7 +688,7 @@ import {
   updateClassroomUnavailableSlot,
 } from '../../../api/admin'
 
-const semesterCode = ref('2026-2027-1')
+const semesterCode = ref('')
 const scheduleFileInput = ref(null)
 const router = useRouter()
 const activeTab = ref('schedule')
@@ -760,6 +760,7 @@ const candidateForm = reactive({})
 const constraintForm = reactive({})
 const roomConstraintForm = reactive({})
 const dateExceptionForm = reactive({})
+let loadSequence = 0
 const orgName = item => item.organizationName || item.orgName || item.name || item.id
 const selectedTerm = computed(() => terms.value.find(item => item.termCode === semesterCode.value))
 const availableCombinedClasses = computed(() => administrativeClasses.value.filter(item =>
@@ -812,37 +813,110 @@ const scheduleTargetPlaceholder = computed(() => ({
   CLASSROOM: '请选择教室',
 })[scheduleDimension.value] || '请选择查询对象')
 const reset = (target, value) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, value) }
+const responseData = response => response?.data
+const responseList = response => {
+  const data = responseData(response)
+  return Array.isArray(data) ? data : data?.content || []
+}
+const loadResult = (results, index, fallback) => {
+  const result = results[index]
+  return result?.status === 'fulfilled' ? result.value : fallback
+}
+const clearSemesterData = () => {
+  schedule.value = []
+  offerings.value = []
+  classrooms.value = []
+  courses.value = []
+  versions.value = []
+  candidates.value = []
+  generationJobs.value = []
+  teacherConstraints.value = []
+  roomConstraints.value = []
+  occurrences.value = []
+  dateExceptionHistory.value = []
+  quality.value = {}
+  reset(policy, {})
+  campuses.value = []
+  roomTypes.value = []
+  teachers.value = []
+  students.value = []
+  administrativeClasses.value = []
+  offeringOptions.value = []
+  classroomOptions.value = []
+  bellSchedules.value = []
+  offeringTotal.value = 0
+  classroomTotal.value = 0
+  scheduleTargetId.value = ''
+}
 const loadAll = async () => {
-  const [termResponse, courseResponse, dimensionResponse, roomTypeResponse, versionResponse, candidateResponse, campusResponse] = await Promise.all([
-    listAcademicTerms(),
+  const sequence = ++loadSequence
+  let termResponse
+  try {
+    termResponse = await listAcademicTerms()
+  } catch (error) {
+    terms.value = []
+    semesterCode.value = ''
+    clearSemesterData()
+    ElMessage.error(`学期加载失败：${error.message}`)
+    return
+  }
+  if (sequence !== loadSequence) return
+  terms.value = responseList(termResponse)
+  const preferredTerm = terms.value.find(item => item.currentTerm) || terms.value[0]
+  if (!terms.value.some(item => item.termCode === semesterCode.value)) {
+    semesterCode.value = preferredTerm?.termCode || ''
+  }
+  if (!semesterCode.value) {
+    clearSemesterData()
+    return
+  }
+  const currentTerm = terms.value.find(item => item.termCode === semesterCode.value)
+  const results = await Promise.allSettled([
     listCourseCatalog(),
     listScheduleDimensionOptions(semesterCode.value),
     dictionaryOptions('EDU_ROOM_TYPE'),
     listScheduleVersions(semesterCode.value),
     listScheduleCandidates(semesterCode.value),
     orgList({ page: 0, size: 200 }),
+    currentTerm ? listBellSchedules(currentTerm.id) : Promise.resolve({ data: [] }),
+    listTeacherTimeConstraints(semesterCode.value),
+    listClassroomUnavailableSlots(semesterCode.value),
   ])
-  terms.value = termResponse.data || []
-  courses.value = courseResponse.data || []
-  const dimensions = dimensionResponse.data || {}
+  const courseResponse = loadResult(results, 0, { data: [] })
+  const dimensionResponse = loadResult(results, 1, { data: {} })
+  const roomTypeResponse = loadResult(results, 2, { data: [] })
+  const versionResponse = loadResult(results, 3, { data: [] })
+  const candidateResponse = loadResult(results, 4, { data: [] })
+  const campusResponse = loadResult(results, 5, { data: [] })
+  const bellScheduleResponse = loadResult(results, 6, { data: [] })
+  const teacherConstraintResponse = loadResult(results, 7, { data: [] })
+  const roomConstraintResponse = loadResult(results, 8, { data: [] })
+  if (sequence !== loadSequence) return
+  courses.value = responseList(courseResponse)
+  const dimensions = responseData(dimensionResponse) || {}
   teachers.value = dimensions.teachers || []
   students.value = dimensions.students || []
   administrativeClasses.value = dimensions.administrativeClasses || []
   offeringOptions.value = dimensions.teachingClasses || []
   classroomOptions.value = dimensions.classrooms || []
-  roomTypes.value = (roomTypeResponse?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
-  versions.value = versionResponse.data || []
-  candidates.value = candidateResponse.data || []
+  roomTypes.value = responseList(roomTypeResponse).map(item => ({ label: item.dictName, value: item.dictValue }))
+  versions.value = responseList(versionResponse)
+  candidates.value = responseList(candidateResponse)
   const organizations = campusResponse.data?.content || campusResponse.data || []
   campuses.value = organizations.filter(item => ['CAMPUS', 'SCHOOL'].includes(item.organizationType || item.orgType))
-  bellSchedules.value = selectedTerm.value
-    ? (await listBellSchedules(selectedTerm.value.id)).data || []
-    : []
-  teacherConstraints.value = (await listTeacherTimeConstraints(semesterCode.value)).data || []
-  roomConstraints.value = (await listClassroomUnavailableSlots(semesterCode.value)).data || []
+  bellSchedules.value = responseList(bellScheduleResponse)
+  teacherConstraints.value = responseList(teacherConstraintResponse)
+  roomConstraints.value = responseList(roomConstraintResponse)
   offeringPage.value = 1
   classroomPage.value = 1
-  await Promise.all([loadOfferingsPage(), loadClassroomsPage(), loadSchedule(), loadDateSchedule(), loadQualityAnalysis(), loadPolicy()])
+  await Promise.allSettled([
+    loadOfferingsPage(),
+    loadClassroomsPage(),
+    loadSchedule(),
+    loadDateSchedule(),
+    loadQualityAnalysis(),
+    loadPolicy(),
+  ])
 }
 const loadOfferingsPage = async () => {
   const response = await listCourseOfferings(semesterCode.value, {

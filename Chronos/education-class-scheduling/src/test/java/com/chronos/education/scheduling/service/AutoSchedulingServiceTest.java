@@ -188,6 +188,44 @@ class AutoSchedulingServiceTest {
 				.containsExactly("offering-0");
 	}
 
+	@Test
+	void readsLegacyCandidateMetricsWhenListingExistingPlans() {
+		ScheduleCandidatePlanRepository candidates = mock(ScheduleCandidatePlanRepository.class);
+		ScheduleCandidatePlan legacy = new ScheduleCandidatePlan();
+		legacy.setId("legacy-candidate");
+		legacy.setSemesterCode("2026-2027-1");
+		legacy.setPlanName("历史候选方案");
+		legacy.setGenerationMode("FULL");
+		legacy.setMetricsJson(
+				"{\"hardConflicts\":0,\"softConflicts\":3,\"roomUtilization\":0.78,\"teacherBalance\":0.86}");
+		when(candidates.findBySemesterCodeOrderByGeneratedAtDesc("2026-2027-1"))
+				.thenReturn(List.of(legacy));
+
+		AutoSchedulingService service = new AutoSchedulingService(
+				candidates,
+				mock(ScheduleEntryRepository.class),
+				mock(CourseOfferingRepository.class),
+				mock(ClassroomRepository.class),
+				mock(ClassroomUnavailableSlotRepository.class),
+				mock(TeacherTimeConstraintRepository.class),
+				mock(TeacherAcademicProfileRepository.class),
+				mock(TeachingClassMemberRepository.class),
+				mock(AcademicTermRepository.class),
+				mock(AcademicCalendarService.class),
+				policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class),
+				mock(IAuditLogService.class),
+				mock(EntityManager.class));
+
+		var result = service.list("2026-2027-1");
+
+		assertThat(result).singleElement().satisfies(candidate -> {
+			assertThat(candidate.id()).isEqualTo("legacy-candidate");
+			assertThat(candidate.metrics().scheduledLessons()).isZero();
+			assertThat(candidate.metrics().totalScore()).isZero();
+		});
+	}
+
 	private static SchedulePolicyService policyService() {
 		SchedulePolicyService service = mock(SchedulePolicyService.class);
 		SchedulePolicy policy = new SchedulePolicy();

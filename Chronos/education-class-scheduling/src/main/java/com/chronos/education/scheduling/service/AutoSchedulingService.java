@@ -28,6 +28,7 @@ import com.chronos.service.iService.IAuditLogService;
 import com.chronos.Idao.IAdminUserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import java.nio.charset.StandardCharsets;
@@ -925,7 +926,15 @@ public class AutoSchedulingService {
 
 	private <T> T read(String value, Class<T> type) {
 		try {
-			return json.readValue(value, type);
+			/*
+			 * Candidate rows can survive application upgrades. Older showcase and
+			 * pre-governance rows contain additional metrics that are no longer part
+			 * of the typed contract; unknown fields are safe to ignore here while
+			 * malformed JSON still fails explicitly.
+			 */
+			return json.readerFor(type)
+					.without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+					.readValue(value);
 		} catch (JsonProcessingException exception) {
 			throw new IllegalStateException("候选方案指标损坏", exception);
 		}
