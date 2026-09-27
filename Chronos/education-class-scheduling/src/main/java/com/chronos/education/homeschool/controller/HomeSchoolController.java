@@ -1,6 +1,7 @@
 package com.chronos.education.homeschool.controller;
 
 import java.util.List;
+import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +17,13 @@ public class HomeSchoolController {
 	@GetMapping("/admin/education/home-school/parent-bindings")
 	@PreAuthorize("hasAuthority('education:home-school:parent:view')")
 	public ResultData<List<ParentBindingResponse>> bindings() { return ok(service.listBindings()); }
+	@GetMapping("/admin/education/home-school/parent-bindings/page")
+	@PreAuthorize("hasAuthority('education:home-school:parent:view')")
+	public ResultData<Page<ParentBindingResponse>> bindingPage(
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size) {
+		return ok(service.listBindings(page, size));
+	}
 	@PostMapping("/admin/education/home-school/parent-bindings")
 	@PreAuthorize("hasAuthority('education:home-school:parent:create')")
 	public ResultData<ParentBindingResponse> bind(@RequestBody ParentBindingCommand command) { return ok(service.bind(command)); }
@@ -26,6 +34,14 @@ public class HomeSchoolController {
 	@GetMapping("/admin/education/home-school/notices")
 	@PreAuthorize("hasAuthority('education:home-school:notice:view')")
 	public ResultData<List<NoticeResponse>> notices(Authentication authentication) { return ok(service.listNotices(authentication.getName())); }
+	@GetMapping("/admin/education/home-school/notices/page")
+	@PreAuthorize("hasAuthority('education:home-school:notice:view')")
+	public ResultData<Page<NoticeResponse>> noticePage(
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size,
+			Authentication authentication) {
+		return ok(service.listNotices(authentication.getName(), page, size));
+	}
 	@PostMapping("/admin/education/home-school/notices")
 	@PreAuthorize("hasAuthority('education:home-school:notice:create')")
 	public ResultData<NoticeResponse> createNotice(@RequestBody NoticeCommand command, Authentication authentication) { return ok(service.createNotice(command, authentication.getName())); }

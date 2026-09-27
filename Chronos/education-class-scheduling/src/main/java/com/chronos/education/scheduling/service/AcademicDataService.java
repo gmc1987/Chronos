@@ -498,10 +498,23 @@ public class AcademicDataService {
 	public StudentGuardianRelation saveGuardian(
 			String id,
 			StudentGuardianRelation command) {
+		if (command == null || command.getStudentId() == null || command.getParentId() == null
+				|| command.getRelationship() == null || command.getRelationship().isBlank()) {
+			throw new IllegalArgumentException("监护关系字段不完整");
+		}
 		students.findById(command.getStudentId())
 				.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
 		parents.findById(command.getParentId())
 				.orElseThrow(() -> new IllegalArgumentException("家长不存在"));
+		if (Boolean.TRUE.equals(command.getPrimaryGuardian())) {
+			guardians.findByStudentIdOrderByCreateTime(command.getStudentId()).stream()
+					.filter(existing -> !java.util.Objects.equals(existing.getId(), id))
+					.filter(existing -> Boolean.TRUE.equals(existing.getPrimaryGuardian()))
+					.findAny()
+					.ifPresent(existing -> {
+						throw new IllegalStateException("每名学生只能有一名主监护人");
+					});
+		}
 		return guardians.save(entity(id, command, guardians));
 	}
 

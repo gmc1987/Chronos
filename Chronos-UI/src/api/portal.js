@@ -73,6 +73,9 @@ export const portalFamilyNotices = () => http.get('/portal/education/family/noti
 export const portalFamilyReceipt = (id, payload = {}) => http.post(
   `/portal/education/family/notices/${id}/receipt`, payload,
 )
+export const portalParentFeedback = () => http.get('/portal/education/family/feedback')
+export const submitParentFeedback = payload => http.post('/portal/education/family/feedback', payload)
+export const portalCommunicationRecords = () => http.get('/portal/education/family/communications')
 export const portalSupervisionTasks = () => http.get('/portal/education/supervision/tasks')
 export const acceptSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/accept`)
 export const checkInSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/check-in`)
