@@ -1,0 +1,1 @@
+import{G as e,v as t}from"./element-plus-DRTXEATa.js";import{t as n}from"./GradeAnalysisView-DfuLV4D4.js";var r={__name:`AdminScoreSubjectAnalysis`,setup(r){return(r,i)=>(e(),t(n,{dimension:`SUBJECT`,title:`学科分析`,description:`按课程学科比较平均分、及格率与优秀率。`}))}};export{r as default};
