@@ -208,6 +208,9 @@ export const listHomeSchoolNotices = (params = {}) => http.get(`/admin/education
 )}`)
 export const createHomeSchoolNotice = (payload) => http.post('/admin/education/home-school/notices', payload)
 export const publishHomeSchoolNotice = (id) => http.post(`/admin/education/home-school/notices/${id}/publish`)
+export const createParentMeeting = (payload) => http.post('/admin/education/parent-meetings', payload)
+export const listParentMeetings = () => http.get('/portal/education/parent-meetings')
+export const respondParentMeeting = (id, payload) => http.post(`/portal/education/parent-meetings/${id}/response`, payload)
 
 export const listSupervisionPlans = () => http.get('/admin/education/supervision/plans')
 export const createSupervisionPlan = (payload) => http.post('/admin/education/supervision/plans', payload)

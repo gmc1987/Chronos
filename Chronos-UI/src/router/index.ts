@@ -51,6 +51,7 @@ const PortalMeetings = () => import('../modules/education/pages/PortalMeetings.v
 const PortalGrades = () => import('../modules/education/pages/PortalGrades.vue')
 const PortalFamily = () => import('../modules/education/pages/PortalFamily.vue')
 const AdminHomeSchool = () => import('../modules/education/pages/AdminHomeSchool.vue')
+const AdminParentMeetings = () => import('../modules/education/pages/AdminParentMeetings.vue')
 const AdminSupervision = () => import('../modules/education/pages/AdminSupervision.vue')
 const AdminDataCenter = () => import('../modules/education/pages/AdminDataCenter.vue')
 const PortalSupervision = () => import('../modules/education/pages/PortalSupervision.vue')
@@ -165,6 +166,7 @@ const router = createRouter({
         { path: 'education/score-center/knowledge-analysis', name: 'admin-education-score-knowledge-analysis', component: AdminScoreKnowledgeAnalysis },
         { path: 'education/leaves', name: 'admin-education-leaves', component: AdminLeaveManagement },
         { path: 'education/home-school', name: 'admin-education-home-school', component: AdminHomeSchool },
+        { path: 'education/parent-meetings', name: 'admin-education-parent-meetings', component: AdminParentMeetings },
         { path: 'education/supervision', name: 'admin-education-supervision', component: AdminSupervision },
         { path: 'education/data-center', name: 'admin-education-data-center', component: AdminDataCenter },
         { path: 'education/materials', redirect: { name: 'admin-education-material' } },
