@@ -3,6 +3,7 @@ package com.chronos.integration.model;
 import java.time.LocalDateTime;
 
 import com.chronos.model.pojo.BaseEntity;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -38,7 +39,9 @@ public class SyncJob extends BaseEntity {
 	@Column(name = "idempotency_key_template", length = 300)
 	private String idempotencyKeyTemplate;
 	@Column(name = "lease_owner", length = 120)
+	@JsonIgnore
 	private String leaseOwner;
 	@Column(name = "lease_until")
+	@JsonIgnore
 	private LocalDateTime leaseUntil;
 }

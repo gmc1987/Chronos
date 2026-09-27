@@ -21,10 +21,18 @@ public class TemporaryGrantScheduler {
 	@Transactional
 	public void expireGrants() {
 		LocalDateTime now = LocalDateTime.now();
-		grants.findByStatusAndValidFromLessThanEqual("APPROVED", now).forEach(grant -> grant.setStatus("ACTIVE"));
-		grants.findByStatusAndValidUntilBefore("APPROVED", now).forEach(grant -> grant.setStatus("EXPIRED"));
-		grants.findByStatusAndValidUntilBefore("ACTIVE", now).forEach(grant -> {
+		grants.findByStatusAndValidUntilLessThanEqual("APPROVED", now).forEach(grant -> {
 			grant.setStatus("EXPIRED");
+			grants.save(grant);
+		});
+		grants.findByStatusAndValidFromLessThanEqualAndValidUntilGreaterThan("APPROVED", now, now)
+				.forEach(grant -> {
+					grant.setStatus("ACTIVE");
+					grants.save(grant);
+				});
+		grants.findByStatusAndValidUntilLessThanEqual("ACTIVE", now).forEach(grant -> {
+			grant.setStatus("EXPIRED");
+			grants.save(grant);
 			users.findById(grant.getUserId()).ifPresent(user -> {
 				user.setTokenVersion((user.getTokenVersion() == null ? 0 : user.getTokenVersion()) + 1);
 				users.save(user);

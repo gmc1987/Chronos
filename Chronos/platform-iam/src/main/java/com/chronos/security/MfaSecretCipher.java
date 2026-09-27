@@ -21,8 +21,14 @@ public class MfaSecretCipher {
 	private final SecureRandom random = new SecureRandom();
 
 	public MfaSecretCipher(Environment environment) {
-		String configured = environment.getProperty("security.mfa.encryption-key",
-				environment.getProperty("security.jwt.secret", ""));
+		String dedicated = environment.getProperty("security.mfa.encryption-key");
+		boolean production = java.util.Arrays.stream(environment.getActiveProfiles())
+				.anyMatch(profile -> "prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile));
+		if (production && (dedicated == null || dedicated.isBlank())) {
+			throw new IllegalStateException("security.mfa.encryption-key must be configured in production");
+		}
+		String configured = dedicated == null || dedicated.isBlank()
+				? environment.getProperty("security.jwt.secret", "") : dedicated;
 		if (configured == null || configured.isBlank()) {
 			throw new IllegalStateException("security.mfa.encryption-key must be configured");
 		}

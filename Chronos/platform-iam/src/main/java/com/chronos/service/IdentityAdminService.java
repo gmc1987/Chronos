@@ -5,7 +5,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +22,6 @@ import com.chronos.model.pojo.AdminUser;
 import com.chronos.model.pojo.ExternalIdentity;
 import com.chronos.model.pojo.IdentitySource;
 import com.chronos.model.pojo.IdentitySyncConflict;
-import com.chronos.model.pojo.MfaFactor;
 import com.chronos.model.pojo.TemporaryGrant;
 import com.chronos.service.iService.IAuditLogService;
 
@@ -40,7 +38,6 @@ public class IdentityAdminService {
 	private final IAccessReviewItemRepository reviewItems;
 	private final ITemporaryGrantRepository grants;
 	private final IAdminUserRepository users;
-	private final PasswordEncoder passwordEncoder;
 	private final IAuditLogService audit;
 
 	@Transactional
@@ -271,21 +268,6 @@ public class IdentityAdminService {
 			users.save(user);
 		});
 		audit.log(actor, "IAM_TEMPORARY_GRANT_REVOKE", id);
-		return saved;
-	}
-
-	@Transactional
-	public MfaFactor enrollMfa(String username, String secret, String actor) {
-		AdminUser user = users.findByUsername(username);
-		if (user == null || blank(secret)) throw new IllegalArgumentException("账号或密钥无效");
-		MfaFactor factor = factors.findByUserIdAndFactorType(user.getId(), "TOTP").orElseGet(MfaFactor::new);
-		factor.setUserId(user.getId());
-		factor.setFactorType("TOTP");
-		factor.setSecretCiphertext(passwordEncoder.encode(secret));
-		factor.setStatus("PENDING");
-		factor.setEnrolledAt(LocalDateTime.now());
-		MfaFactor saved = factors.save(factor);
-		audit.log(actor, "IAM_MFA_ENROLL", user.getId());
 		return saved;
 	}
 

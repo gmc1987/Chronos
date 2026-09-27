@@ -7,33 +7,65 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chronos.Idao.IIdentitySourceRepository;
+import com.chronos.Idao.IOidcAuthorizationStateRepository;
 import com.chronos.model.pojo.IdentitySource;
-
-import lombok.RequiredArgsConstructor;
+import com.chronos.model.pojo.OidcAuthorizationState;
 
 @Service
-@RequiredArgsConstructor
 public class OidcAuthorizationService {
 	private static final Duration STATE_TTL = Duration.ofMinutes(5);
 	private final IIdentitySourceRepository sources;
+	private final IOidcAuthorizationStateRepository states;
+	private final ObjectMapper objectMapper;
 	private final SecureRandom random = new SecureRandom();
 	private final Map<String, PendingAuthorization> pending = new ConcurrentHashMap<>();
+
+	@org.springframework.beans.factory.annotation.Autowired
+	public OidcAuthorizationService(IIdentitySourceRepository sources,
+			IOidcAuthorizationStateRepository states, ObjectMapper objectMapper) {
+		this.sources = sources;
+		this.states = states;
+		this.objectMapper = objectMapper;
+	}
+
+	/** Compatibility constructor for focused unit tests without a persistence context. */
+	public OidcAuthorizationService(IIdentitySourceRepository sources) {
+		this.sources = sources;
+		this.states = null;
+		this.objectMapper = new ObjectMapper();
+	}
 
 	public AuthorizationStart begin(String sourceCode, String redirectUri, String codeChallenge) {
 		IdentitySource source = source(sourceCode);
 		validateRedirectUri(redirectUri);
+		validateConfiguredRedirect(source, redirectUri);
 		validateCodeChallenge(codeChallenge);
 		String state = randomToken();
 		String nonce = randomToken();
-		pending.put(state, new PendingAuthorization(source.getSourceCode(), redirectUri, codeChallenge, nonce,
-				Instant.now().plus(STATE_TTL)));
+		Instant expiresAt = Instant.now().plus(STATE_TTL);
+		if (states == null) {
+			pending.put(state, new PendingAuthorization(source.getSourceCode(), redirectUri, codeChallenge, nonce,
+					expiresAt));
+		} else {
+			OidcAuthorizationState authorizationState = new OidcAuthorizationState();
+			authorizationState.setState(state);
+			authorizationState.setSourceCode(source.getSourceCode());
+			authorizationState.setRedirectUri(redirectUri);
+			authorizationState.setCodeChallenge(codeChallenge);
+			authorizationState.setNonce(nonce);
+			authorizationState.setExpiresAt(localTime(expiresAt));
+			states.save(authorizationState);
+		}
 		String authorizationUri = source.getIssuerUrl().replaceAll("/+$", "") + "/authorize"
 				+ "?response_type=code&client_id=" + encode(source.getClientId())
 				+ "&redirect_uri=" + encode(redirectUri)
@@ -50,14 +82,19 @@ public class OidcAuthorizationService {
 		if (blank(code) || blank(state) || blank(codeVerifier) || tokenClaims == null) {
 			throw new IllegalArgumentException("OIDC callback is incomplete");
 		}
-		PendingAuthorization expected = pending.remove(state);
+		PendingAuthorization expected = states == null ? pending.remove(state) : loadPersisted(state);
 		if (expected == null || expected.expiresAt().isBefore(Instant.now())) {
 			throw new IllegalArgumentException("OIDC state is invalid or already used");
 		}
+
 		if (!expected.sourceCode().equals(sourceCode) || !expected.redirectUri().equals(redirectUri)
 				|| !MessageDigest.isEqual(expected.codeChallenge().getBytes(StandardCharsets.US_ASCII),
 						s256(codeVerifier).getBytes(StandardCharsets.US_ASCII))) {
 			throw new IllegalArgumentException("OIDC state or PKCE verification failed");
+		}
+		if (states != null
+				&& states.consume(state, LocalDateTime.now(java.time.ZoneOffset.UTC)) != 1) {
+			throw new IllegalArgumentException("OIDC state is invalid or already used");
 		}
 		IdentitySource source = source(sourceCode);
 		if (!source.getIssuerUrl().equals(tokenClaims.issuer()) || !expected.nonce().equals(tokenClaims.nonce())
@@ -65,6 +102,16 @@ public class OidcAuthorizationService {
 			throw new IllegalArgumentException("OIDC token claims are invalid");
 		}
 		return new OidcIdentity(source.getId(), tokenClaims.subject());
+	}
+
+	private PendingAuthorization loadPersisted(String state) {
+		OidcAuthorizationState persisted = states.findById(state).orElse(null);
+		if (persisted == null) {
+			return null;
+		}
+		return new PendingAuthorization(persisted.getSourceCode(), persisted.getRedirectUri(),
+				persisted.getCodeChallenge(), persisted.getNonce(),
+				persisted.getExpiresAt().toInstant(java.time.ZoneOffset.UTC));
 	}
 
 	private IdentitySource source(String sourceCode) {
@@ -87,6 +134,23 @@ public class OidcAuthorizationService {
 		}
 		if (uri.getUserInfo() != null || uri.getFragment() != null) {
 			throw new IllegalArgumentException("redirect URI is invalid");
+		}
+	}
+
+	private void validateConfiguredRedirect(IdentitySource source, String redirectUri) {
+		try {
+			JsonNode configured = objectMapper.readTree(
+					blank(source.getConfigJson()) ? "{}" : source.getConfigJson());
+			JsonNode redirectUris = configured == null ? null : configured.get("redirectUris");
+			if (redirectUris == null || !redirectUris.isArray()
+					|| java.util.stream.StreamSupport.stream(redirectUris.spliterator(), false)
+							.noneMatch(value -> redirectUri.equals(value.asText()))) {
+				throw new IllegalArgumentException("redirect URI is not registered for this identity source");
+			}
+		} catch (IllegalArgumentException ex) {
+			throw ex;
+		} catch (Exception ex) {
+			throw new IllegalArgumentException("identity source redirect URI configuration is invalid", ex);
 		}
 	}
 
@@ -113,6 +177,10 @@ public class OidcAuthorizationService {
 
 	private static String encode(String value) {
 		return URLEncoder.encode(value, StandardCharsets.UTF_8);
+	}
+
+	private static LocalDateTime localTime(Instant instant) {
+		return LocalDateTime.ofInstant(instant, java.time.ZoneOffset.UTC);
 	}
 
 	private static boolean blank(String value) {

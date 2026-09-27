@@ -13,4 +13,9 @@ public interface SyncJobRepository extends JpaRepository<SyncJob,String> {
  @Transactional
  @Query("update SyncJob j set j.leaseOwner = :owner, j.leaseUntil = :leaseUntil where j.id = :id and (j.leaseUntil is null or j.leaseUntil <= :now)")
  int claimLease(String id, String owner, LocalDateTime now, LocalDateTime leaseUntil);
+
+ @Modifying
+ @Transactional
+ @Query("update SyncJob j set j.leaseOwner = null, j.leaseUntil = null where j.id = :id and j.leaseOwner = :owner")
+ int releaseLease(String id, String owner);
 }

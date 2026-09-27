@@ -221,9 +221,20 @@ public class AuthController {
 			newClaims.put("tokenVersion", user.getTokenVersion() == null ? 0 : user.getTokenVersion());
 			newClaims.put("mfaVerified", false);
 			String access = this.jwtUtil.generateAccessToken(username, newClaims);
+			String replacementRefresh = this.jwtUtil.generateRefreshToken(username, newClaims);
+			Claims replacementClaims = this.jwtUtil.parseToken(replacementRefresh);
+			LocalDateTime replacementExpiry = Instant.ofEpochMilli(
+					replacementClaims.getExpiration().getTime()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+			if (this.refreshTokenService.rotate(refreshToken, username, replacementRefresh,
+					replacementExpiry) == null) {
+				this.auditLogService.log(username, "REFRESH_FAIL", "refresh token replayed");
+				return ResultData.<Map<String, String>>builder().code("401").msg("refresh token replayed")
+						.data(null).build();
+			}
 			this.auditLogService.log(username, "REFRESH", "refreshed access token");
 			Map<String, String> data = new HashMap<>();
 			data.put("accessToken", access);
+			data.put("refreshToken", replacementRefresh);
 			return ResultData.<Map<String, String>>builder().code("200").msg("ok").data(data).build();
 		} catch (Exception e) {
 			this.auditLogService.log(null, "REFRESH_FAIL", "invalid refresh token");

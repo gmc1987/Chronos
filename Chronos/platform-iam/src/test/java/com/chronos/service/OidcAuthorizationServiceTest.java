@@ -22,6 +22,7 @@ class OidcAuthorizationServiceTest {
 		source.setStatus("ACTIVE");
 		source.setIssuerUrl("https://id.example.test");
 		source.setClientId("chronos");
+		source.setConfigJson("{\"redirectUris\":[\"https://app.example.test/callback\"]}");
 		when(repository.findBySourceCode("corp")).thenReturn(Optional.of(source));
 		OidcAuthorizationService service = new OidcAuthorizationService(repository);
 		String verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
@@ -36,5 +37,25 @@ class OidcAuthorizationServiceTest {
 		assertThatThrownBy(() -> service.complete("corp", "https://app.example.test/callback", start.state(),
 				"code", verifier, claims)).isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("already used");
+	}
+
+	@Test
+	void rejectsRedirectUrisThatAreNotRegisteredByTheIdentitySource() {
+		IIdentitySourceRepository repository = mock(IIdentitySourceRepository.class);
+		IdentitySource source = new IdentitySource();
+		source.setSourceCode("corp");
+		source.setSourceType("OIDC");
+		source.setStatus("ACTIVE");
+		source.setIssuerUrl("https://id.example.test");
+		source.setClientId("chronos");
+		source.setConfigJson("{\"redirectUris\":[\"https://app.example.test/callback\"]}");
+		when(repository.findBySourceCode("corp")).thenReturn(Optional.of(source));
+
+		OidcAuthorizationService service = new OidcAuthorizationService(repository);
+
+		assertThatThrownBy(() -> service.begin("corp", "https://attacker.example/callback",
+				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("not registered");
 	}
 }

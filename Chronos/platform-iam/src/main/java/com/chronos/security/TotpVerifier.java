@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.OptionalLong;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -13,17 +14,22 @@ public final class TotpVerifier {
 	private TotpVerifier() {}
 
 	public static boolean verify(String base32Secret, String code, Instant now) {
+		return matchingCounter(base32Secret, code, now).isPresent();
+	}
+
+	public static OptionalLong matchingCounter(String base32Secret, String code, Instant now) {
 		if (code == null || !code.matches("\\d{6}")) {
-			return false;
+			return OptionalLong.empty();
 		}
 		byte[] secret = decodeBase32(base32Secret);
 		long counter = now.getEpochSecond() / 30;
 		for (long offset = -1; offset <= 1; offset++) {
-			if (generate(secret, counter + offset).equals(code)) {
-				return true;
+			long candidate = counter + offset;
+			if (candidate >= 0 && generate(secret, candidate).equals(code)) {
+				return OptionalLong.of(candidate);
 			}
 		}
-		return false;
+		return OptionalLong.empty();
 	}
 
 	private static String generate(byte[] secret, long counter) {

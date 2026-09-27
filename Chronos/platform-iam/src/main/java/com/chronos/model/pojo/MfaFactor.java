@@ -27,4 +27,6 @@ public class MfaFactor extends BaseEntity {
 	private LocalDateTime enrolledAt;
 	@Column(name = "verified_at")
 	private LocalDateTime verifiedAt;
+	@Column(name = "last_used_time_step")
+	private Long lastUsedTimeStep;
 }

@@ -56,14 +56,17 @@ public class MfaService {
 		AdminUser user = requireUser(username);
 		MfaFactor factor = factors.findByUserIdAndFactorType(user.getId(), "TOTP")
 				.orElseThrow(() -> new IllegalStateException("MFA is not enrolled"));
-		boolean valid = TotpVerifier.verify(secretCipher.decrypt(factor.getSecretCiphertext()), code, Instant.now());
-		if (valid) {
-			factor.setStatus("ENROLLED");
-			factor.setVerifiedAt(LocalDateTime.now());
-			factors.save(factor);
-			audit.log(actor, "IAM_MFA_VERIFY", user.getId());
+		Instant now = Instant.now();
+		var matchingCounter = TotpVerifier.matchingCounter(
+				secretCipher.decrypt(factor.getSecretCiphertext()), code, now);
+		if (matchingCounter.isEmpty() || factors.claimTimeStep(factor.getId(), matchingCounter.getAsLong()) != 1) {
+			return false;
 		}
-		return valid;
+		factor.setStatus("ENROLLED");
+		factor.setVerifiedAt(LocalDateTime.now());
+		factors.save(factor);
+		audit.log(actor, "IAM_MFA_VERIFY", user.getId());
+		return true;
 	}
 
 	@Transactional
