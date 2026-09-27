@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface IWorkflowOutboxRepository extends JpaRepository<WorkflowOutbox, String> {
+	long countByStatus(String status);
+
 	List<WorkflowOutbox> findTop100ByStatusAndNextAttemptAtBeforeOrderByCreateTimeAsc(String status,
 			LocalDateTime nextAttemptAt);
 

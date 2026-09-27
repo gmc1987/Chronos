@@ -2,8 +2,8 @@
   <div class="portal-page"><el-page-header @back="$router.push('/portal/tasks')"><template #content><span>{{ bundle?.flow?.flowName || '流程详情' }}</span></template></el-page-header>
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
     <div v-loading="loading" class="detail-grid" v-if="bundle">
-      <main><el-card shadow="never" class="summary"><div><small>业务编号</small><strong>{{ bundle.instance?.businessKey }}</strong></div><div><small>发起人</small><strong>{{ bundle.instance?.initiator }}</strong></div><div><small>当前节点</small><strong>{{ bundle.nodeName }}</strong></div><div><small>状态</small><el-tag :type="statusType(bundle.instance?.status)">{{ statusLabel(bundle.instance?.status) }}</el-tag></div></el-card>
-        <el-card v-for="form in bundle.forms||[]" :key="form.formId" shadow="never" class="form-card"><template #header><strong>{{ form.formName }}</strong><el-tag class="role">{{ form.role==='MAIN'?'主表单':'附加表单' }}</el-tag></template><DynamicForm v-model="values[form.formId]" :fields="form.fields" :business-id="route.params.id" @uploading-change="setUploading(form.formId, $event)" /><div v-if="editable(form)" class="actions"><el-button :disabled="hasUploads" @click="save(form,true)">保存草稿</el-button><el-button type="primary" :disabled="hasUploads" @click="save(form,false)">提交表单</el-button></div></el-card>
+      <main><el-card shadow="never" class="summary"><div><small>业务编号</small><strong>{{ bundle.instance?.businessKey }}</strong></div><div><small>发起人</small><strong>{{ bundle.instance?.initiator }}</strong></div><div><small>流程版本</small><strong>{{ versionInfo?.definitionVersion || bundle.flow?.version || '—' }}</strong></div><div><small>状态</small><el-tag :type="statusType(bundle.instance?.status)">{{ statusLabel(bundle.instance?.status) }}</el-tag></div></el-card>
+        <el-card v-for="form in bundle.forms||[]" :key="form.formId" shadow="never" class="form-card"><template #header><strong>{{ form.formName }}</strong><el-tag class="role">{{ form.role==='MAIN'?'主表单':'附加表单' }}</el-tag><el-tag v-if="form.formVersion" class="role" type="info">{{ form.formVersion }}</el-tag></template><DynamicForm v-model="values[form.formId]" :fields="form.fields" :business-id="route.params.id" @uploading-change="setUploading(form.formId, $event)" /><div v-if="editable(form)" class="actions"><el-button :disabled="hasUploads" @click="save(form,true)">保存草稿</el-button><el-button type="primary" :disabled="hasUploads" @click="save(form,false)">提交表单</el-button></div></el-card>
         <el-empty v-if="!(bundle.forms||[]).length" description="当前节点没有关联表单" />
         <el-card v-if="bundle.currentTask" shadow="never" class="approval"><template #header><strong>{{ bundle.currentTask.taskKind==='STARTER_REWORK'?'修改后重新提交':'审批操作' }}</strong></template><el-input v-model="comment" type="textarea" :rows="3" placeholder="请输入处理意见" /><div class="actions"><el-button v-if="bundle.currentTask.taskKind==='STARTER_REWORK'&&canStart" type="primary" :disabled="hasUploads" @click="resubmit">重新提交</el-button><template v-else><el-button v-if="canReject&&bundle.operations?.reject!==false" type="danger" :disabled="hasUploads" @click="reject">拒绝</el-button><el-button v-if="canApprove&&bundle.operations?.approve!==false" type="primary" :disabled="hasUploads" @click="approve">同意</el-button></template></div></el-card>
       </main>
@@ -12,12 +12,34 @@
   </div>
 </template>
 <script setup>
-import { computed,onMounted,ref } from 'vue';import { useRoute,useRouter } from 'vue-router';import { ElMessage } from 'element-plus';import DynamicForm from '../components/DynamicForm.vue';import { getWorkflowRuntimeForms,saveWorkflowRuntimeForm,completeWorkflowTask,rejectWorkflowTask,resubmitWorkflowTask } from '../../../api/admin';import { hasAdminPermission } from '../../../store/auth'
+import { computed,onMounted,ref } from 'vue';import { useRoute,useRouter } from 'vue-router';import { ElMessage } from 'element-plus';import DynamicForm from '../components/DynamicForm.vue';import { getWorkflowRuntimeForms,getWorkflowInstanceVersion,saveWorkflowRuntimeForm,completeWorkflowTask,rejectWorkflowTask,resubmitWorkflowTask } from '../../../api/admin';import { hasAdminPermission } from '../../../store/auth'
 const route=useRoute(),router=useRouter(),bundle=ref(null),values=ref({}),loading=ref(false),error=ref(''),comment=ref('')
+const versionInfo = ref(null)
 const uploadingForms=ref(new Set()),hasUploads=computed(()=>uploadingForms.value.size>0)
 const setUploading=(formId,active)=>{const next=new Set(uploadingForms.value);if(active)next.add(formId);else next.delete(formId);uploadingForms.value=next}
 const canApprove=hasAdminPermission('workflow:task:approve'),canReject=hasAdminPermission('workflow:task:reject'),canStart=hasAdminPermission('workflow:instance:start')
-const load=async()=>{loading.value=true;error.value='';try{const res=await getWorkflowRuntimeForms(route.params.id);bundle.value=res?.data;(bundle.value?.forms||[]).forEach(f=>{values.value[f.formId]={...(f.data||{})}})}catch(e){error.value=`流程详情加载失败：${e?.message||'请求失败'}`}finally{loading.value=false}}
+const load = async () => {
+  loading.value = true
+  error.value = ''
+  try {
+    const response = await getWorkflowRuntimeForms(route.params.id)
+    bundle.value = response?.data
+    for (const form of bundle.value?.forms || []) {
+      values.value[form.formId] = { ...(form.data || {}) }
+    }
+    // Version details are supplementary; they must never block task handling.
+    try {
+      const versionResponse = await getWorkflowInstanceVersion(route.params.id)
+      versionInfo.value = versionResponse?.data || null
+    } catch {
+      versionInfo.value = null
+    }
+  } catch (failure) {
+    error.value = `流程详情加载失败：${failure?.message || '请求失败'}`
+  } finally {
+    loading.value = false
+  }
+}
 const editable=form=>bundle.value?.canEdit&&(form.fields||[]).some(f=>f.permission==='EDIT')
 const editableData=form=>Object.fromEntries((form.fields||[]).filter(f=>f.permission==='EDIT').map(f=>[f.fieldKey,values.value[form.formId]?.[f.fieldKey]]))
 const ensureUploaded=()=>{if(!hasUploads.value)return true;ElMessage.warning('请等待附件上传完成');return false}

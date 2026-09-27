@@ -13,7 +13,14 @@
 
     <el-tabs v-model="tab" @tab-change="changeTab">
       <el-tab-pane label="待办" name="pending">
-        <el-table :data="pending" v-loading="loading">
+        <div v-if="canApprove" class="batch-toolbar">
+          <el-button type="success" :disabled="!selectedTasks.length || loading" @click="batchApprove">
+            批量通过（{{ selectedTasks.length }}）
+          </el-button>
+          <span>仅可选无需填写表单、已认领且允许通过的任务；单次最多 20 项。</span>
+        </div>
+        <el-table :data="pending" v-loading="loading" @selection-change="selection => selectedTasks = selection">
+          <el-table-column v-if="canApprove" type="selection" width="48" :selectable="batchSelectable" />
           <el-table-column prop="flowName" label="流程" />
           <el-table-column prop="businessKey" label="业务编号" />
           <el-table-column prop="initiator" label="发起人" width="110" />
@@ -124,7 +131,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  addSignWorkflowTask, ccWorkflowTask, claimWorkflowTask, completeWorkflowTask,
+  addSignWorkflowTask, batchApproveWorkflowTasks, ccWorkflowTask, claimWorkflowTask, completeWorkflowTask,
   handledWorkflowTasks, initiatedWorkflowInstances, pendingWorkflowTasks,
   rejectWorkflowTask, remindWorkflowInstance, returnWorkflowTask,
   transferWorkflowTask, unclaimWorkflowTask, withdrawWorkflowInstance,
@@ -150,6 +157,7 @@ const canWithdraw = allowed('workflow:instance:withdraw')
 const allowedTabs = new Set(['pending', 'handled', 'initiated'])
 const tab = ref(allowedTabs.has(String(route.query.tab)) ? String(route.query.tab) : 'pending')
 const pending = ref([])
+const selectedTasks = ref([])
 const handled = ref([])
 const initiated = ref([])
 const users = ref([])
@@ -173,7 +181,10 @@ const load = async () => {
       : tab.value === 'handled' ? await handledWorkflowTasks(params) : await initiatedWorkflowInstances(params)
     const values = response?.data?.content || response?.data || []
     total.value = response?.data?.totalElements ?? values.length
-    if (tab.value === 'pending') pending.value = values
+    if (tab.value === 'pending') {
+      pending.value = values
+      selectedTasks.value = []
+    }
     else if (tab.value === 'handled') handled.value = values
     else initiated.value = values
   } finally {
@@ -208,6 +219,34 @@ const approve = async row => {
     comment: await comment('审批通过')
   })
   ElMessage.success('审批已通过')
+  await load()
+}
+const batchSelectable = row => canApprove
+  && !row.claimable
+  && row.taskKind !== 'STARTER_REWORK'
+  && row.operations?.approve !== false
+  && !row.requiresFormInput
+
+const batchApprove = async () => {
+  if (selectedTasks.value.length > 20) {
+    return ElMessage.warning('单次最多办理 20 项')
+  }
+  await ElMessageBox.confirm(
+    `确认批量通过 ${selectedTasks.value.length} 个任务？每项独立办理，失败项不会影响成功项。`,
+    '批量审批',
+    { type: 'warning' }
+  )
+  const response = await batchApproveWorkflowTasks({
+    taskIds: selectedTasks.value.map(item => item.id),
+    comment: '批量审批通过'
+  })
+  const result = response?.data
+  const failures = (result?.items || []).filter(item => item.status !== 'SUCCEEDED')
+  if (failures.length) {
+    ElMessage.warning(`成功 ${result.succeeded} 项，失败 ${failures.length} 项；请逐项检查失败任务。`)
+  } else {
+    ElMessage.success(`成功办理 ${result?.succeeded || 0} 项`)
+  }
   await load()
 }
 const reject = async row => {
@@ -280,4 +319,5 @@ onMounted(async () => {
 .title h2 { margin: 0; }
 .title p { color: #8492a6; margin: 8px 0 20px; }
 .notification-badge { margin-right: 12px; }
+.batch-toolbar { display: flex; align-items: center; gap: 12px; margin: 12px 0; color: #64748b; font-size: 13px; }
 </style>
