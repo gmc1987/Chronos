@@ -60,11 +60,19 @@ public class ScheduleGenerationJobService {
 	}
 
 	public ScheduleGenerationJob submit(AutoScheduleCommand command, String actor) {
+		return submit(command, actor, null);
+	}
+
+	public ScheduleGenerationJob submit(
+			AutoScheduleCommand command,
+			String actor,
+			String agentRunId) {
 		ScheduleGenerationJob job = transactions.execute(status -> {
 			ScheduleGenerationJob value = new ScheduleGenerationJob();
 			value.setSemesterCode(command.semesterCode());
 			value.setRequestJson(write(command));
 			value.setRequestedBy(actor);
+			value.setAgentRunId(agentRunId);
 			return jobs.save(value);
 		});
 		cancellationFlags.put(job.getId(), new AtomicBoolean(false));
@@ -74,6 +82,11 @@ public class ScheduleGenerationJobService {
 		running.put(job.getId(), future);
 		audit.log(actor, "EDUCATION_SCHEDULE_JOB_SUBMIT", "job=" + job.getId());
 		return job;
+	}
+
+	public ScheduleGenerationJob require(String id) {
+		return jobs.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("排课任务不存在"));
 	}
 
 	public List<ScheduleGenerationJob> list(String semesterCode) {
@@ -160,11 +173,6 @@ public class ScheduleGenerationJobService {
 
 	private boolean isCancelled(String id) {
 		return jobs.findById(id).map(job -> "CANCELLED".equals(job.getStatus())).orElse(true);
-	}
-
-	private ScheduleGenerationJob require(String id) {
-		return jobs.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("排课任务不存在"));
 	}
 
 	private String write(Object value) {

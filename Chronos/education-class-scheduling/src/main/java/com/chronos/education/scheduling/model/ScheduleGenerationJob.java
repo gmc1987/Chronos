@@ -38,6 +38,9 @@ public class ScheduleGenerationJob extends BaseEntity {
 	@Column(name = "requested_by", length = 128, nullable = false)
 	private String requestedBy;
 
+	@Column(name = "agent_run_id", length = 64)
+	private String agentRunId;
+
 	@Column(name = "started_at")
 	private LocalDateTime startedAt;
 

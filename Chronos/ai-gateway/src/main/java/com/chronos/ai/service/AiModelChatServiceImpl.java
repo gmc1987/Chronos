@@ -63,6 +63,16 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	}
 
 	@Override
+	public String chatStructured(String modelId, String schemaId, String message) {
+		if (schemaId == null || schemaId.isBlank()) {
+			throw new AiStructuredOutputException("结构化输出 schemaId 不能为空");
+		}
+		// The deterministic education adapter is the first production path.
+		// Do not silently reinterpret legacy free-form text as structured data.
+		throw new AiStructuredOutputException("当前 AI 模型未配置受验证的结构化输出契约");
+	}
+
+	@Override
 	public void invalidate(String modelId) {
 		if (modelId != null && !modelId.isBlank()) {
 			cache.remove(modelId.trim());
