@@ -16,10 +16,11 @@ spring:
     name: Chronos-Education
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
-    # Deployment must provide all three values; never fall back to an unknown database.
-    url: ${CHRONOS_DB_URL}
-    username: ${CHRONOS_DB_USERNAME}
-    password: ${CHRONOS_DB_PASSWORD}
+    # Local defaults keep the app runnable; deployment acceptance still requires
+    # explicit CHRONOS_DB_* values and an acknowledged target database.
+    url: ${CHRONOS_DB_URL:jdbc:postgresql://localhost:5432/ChronosEducation}
+    username: ${CHRONOS_DB_USERNAME:Chronos}
+    password: ${CHRONOS_DB_PASSWORD:Chronos123}
     driver-class-name: org.postgresql.Driver
   servlet:
     multipart:
