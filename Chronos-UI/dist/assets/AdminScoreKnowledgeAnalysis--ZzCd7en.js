@@ -1,0 +1,1 @@
+import{G as e,v as t}from"./element-plus-DRTXEATa.js";import{t as n}from"./GradeAnalysisView-DfuLV4D4.js";var r={__name:`AdminScoreKnowledgeAnalysis`,setup(r){return(r,i)=>(e(),t(n,{dimension:`KNOWLEDGE`,title:`知识点分析`,description:`基于已确认逐题成绩与知识点映射计算掌握度。`}))}};export{r as default};

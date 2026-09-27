@@ -1,0 +1,1 @@
+import{G as e,v as t}from"./element-plus-DRTXEATa.js";import{t as n}from"./GradeAnalysisView-DfuLV4D4.js";var r={__name:`AdminScoreGradeAnalysis`,setup(r){return(r,i)=>(e(),t(n,{dimension:`GRADE`,title:`年级分析`,description:`按年级汇总已发布成绩，观察整体达成情况。`}))}};export{r as default};
