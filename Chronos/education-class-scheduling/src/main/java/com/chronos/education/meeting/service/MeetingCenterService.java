@@ -651,6 +651,10 @@ public class MeetingCenterService {
 		return view(meeting, null);
 	}
 
+	MeetingView viewForRecurrence(Meeting meeting) {
+		return view(meeting);
+	}
+
 	private MeetingView view(Meeting meeting, String currentUsername) {
 		MeetingRoom room = meeting.getRoomId() == null ? null
 				: rooms.findById(meeting.getRoomId()).orElse(null);

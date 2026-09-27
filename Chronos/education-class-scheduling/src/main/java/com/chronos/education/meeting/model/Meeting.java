@@ -3,6 +3,7 @@ package com.chronos.education.meeting.model;
 import java.time.LocalDateTime;
 
 import com.chronos.model.pojo.BaseEntity;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -40,12 +41,14 @@ public class Meeting extends BaseEntity {
 	@Column(name = "meeting_provider", length = 32)
 	private String meetingProvider;
 
+	@JsonIgnore
 	@Column(name = "external_meeting_id", length = 128)
 	private String externalMeetingId;
 
 	@Column(name = "join_url", length = 1000)
 	private String joinUrl;
 
+	@JsonIgnore
 	@Column(name = "online_access_code", length = 128)
 	private String onlineAccessCode;
 
@@ -69,6 +72,39 @@ public class Meeting extends BaseEntity {
 
 	@Column(name = "cancel_reason", length = 1000)
 	private String cancelReason;
+
+	/** All occurrences in one recurring series point at the first occurrence id. */
+	@Column(name = "series_id", length = 64)
+	private String seriesId;
+
+	/** Stable occurrence identity used by calendar providers and retries. */
+	@Column(name = "occurrence_key", length = 80)
+	private String occurrenceKey;
+
+	@Column(name = "exception_type", nullable = false, length = 24)
+	private String exceptionType = "NONE";
+
+	@Column(name = "recurrence_frequency", nullable = false, length = 16)
+	private String recurrenceFrequency = "NONE";
+
+	@Column(name = "recurrence_interval")
+	private Integer recurrenceInterval;
+
+	@Column(name = "recurrence_by_day", length = 64)
+	private String recurrenceByDay;
+
+	@Column(name = "recurrence_day_of_month")
+	private Integer recurrenceDayOfMonth;
+
+	@Column(name = "recurrence_until")
+	private LocalDateTime recurrenceUntil;
+
+	@Column(name = "recurrence_count")
+	private Integer recurrenceCount;
+
+	@JsonIgnore
+	@Column(name = "credential_ref", length = 256)
+	private String credentialRef;
 
 	@Version
 	@Column(name = "record_version", nullable = false)

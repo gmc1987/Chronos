@@ -40,6 +40,33 @@ public final class MeetingCommands {
 			Long recordVersion) {
 	}
 
+	public record RecurrencePreview(
+			@NotNull LocalDateTime startTime,
+			@NotNull LocalDateTime endTime,
+			@NotBlank @Size(max = 16) String frequency,
+			Integer interval,
+			@Size(max = 64) String byDay,
+			Integer dayOfMonth,
+			LocalDateTime until,
+			Integer count) {
+	}
+
+	public record RecurringSave(
+			@NotNull Save meeting,
+			@NotNull RecurrencePreview recurrence) {
+	}
+
+	public record SeriesChange(
+			@NotBlank @Size(max = 24) String mode,
+			@NotNull Save meeting) {
+	}
+
+	public record CalendarBinding(
+			@Size(max = 32) String provider,
+			@Size(max = 128) String externalCalendarId,
+			Boolean enabled) {
+	}
+
 	public record Decision(boolean approve, String comment) {
 	}
 

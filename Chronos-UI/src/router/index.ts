@@ -83,6 +83,8 @@ const ErrorBook = () => import('../modules/education/pages/ErrorBook.vue')
 const AdminPortal = () => import('../modules/portal/pages/AdminPortal.vue')
 const AdminPublications = () => import('../modules/message/pages/AdminPublications.vue')
 const AdminNotificationSettings = () => import('../modules/message/pages/AdminNotificationSettings.vue')
+const AdminIntegrations = () => import('../modules/integration/pages/AdminIntegrations.vue')
+const AdminRecurringMeetings = () => import('../modules/education/pages/AdminRecurringMeetings.vue')
 const PortalPublications = () => import('../modules/message/pages/PortalPublications.vue')
 const PortalPublicationDetail = () => import('../modules/message/pages/PortalPublicationDetail.vue')
 
@@ -155,6 +157,8 @@ const router = createRouter({
         { path: 'integration', name: 'admin-integration-center', component: AdminIntegrationCenter },
         { path: 'publications', name: 'admin-publications', component: AdminPublications },
         { path: 'message-settings', name: 'admin-message-settings', component: AdminNotificationSettings },
+        { path: 'integrations', name: 'admin-integrations', component: AdminIntegrations },
+        { path: 'education/meeting/recurring', name: 'admin-education-recurring-meetings', component: AdminRecurringMeetings },
         { path: 'education/teaching-center/plan', name: 'admin-education-teaching-plan', component: AdminTeachingPlan },
         { path: 'education/teaching-center/lesson-plan', name: 'admin-education-lesson-plan', component: AdminLessonPlans },
         { path: 'teaching/plans', name: 'teaching-plans', component: AdminTeachingPlan },

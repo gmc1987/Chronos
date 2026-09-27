@@ -241,6 +241,16 @@ export const saveMeetingMinutes = (id, payload) => http.put(`/admin/education/me
 export const publishMeetingMinutes = (id) => http.post(`/admin/education/meetings/${id}/minutes/publish`)
 export const addMeetingActionItem = (id, payload) => http.post(`/admin/education/meetings/${id}/action-items`, payload)
 export const updateMeetingActionItem = (id, itemId, payload) => http.put(`/admin/education/meetings/${id}/action-items/${itemId}`, payload)
+export const previewRecurringMeeting = (payload) => http.post('/admin/education/meetings/recurring/preview', payload)
+export const createRecurringMeeting = (payload) => http.post('/admin/education/meetings/recurring', payload)
+export const recurringMeetingInstances = (id) => http.get(`/admin/education/meetings/${id}/series`)
+export const changeRecurringMeeting = (id, payload) => http.post(`/admin/education/meetings/${id}/series/change`, payload)
+export const cancelRecurringMeetingSeries = (id) => http.post(`/admin/education/meetings/${id}/series/cancel`)
+export const calendarBindingStatus = () => http.get('/admin/education/calendar/binding')
+export const saveCalendarBinding = (payload) => http.post('/admin/education/calendar/binding', payload)
+
+// 集成中心只读取脱敏连接器元数据，credential secret 永远不回显。
+export const listIntegrationConnectors = () => http.get('/admin/integrations/connectors')
 
 // 成绩中心使用独立 score 路由，避免与年级管理的 grades 路由冲突。
 export const listAssessmentSchemes = (params = {}) => http.get(`/admin/education/grades/schemes?${qs(params)}`)
