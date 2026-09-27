@@ -98,7 +98,7 @@ SELECT
     source.id, 'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', CURRENT_TIMESTAMP,
     source.permission_code, source.permission_name, 'MENU_ACTION',
     source.action_type, true, 1, 'MENU', 'ROLE',
-    'f34cc5d1-8ec4-4d34-9b3f-c5c3b5b2e2a1'
+    (SELECT id FROM t_menu WHERE menu_name = 'AI 智能排课' LIMIT 1)
 FROM (
     VALUES
         ('5d4c0ca2-4c16-4f08-bf0b-7f3b0c90e101', 'education:scheduling:ai:use', '使用 AI 智能排课', 'USE'),

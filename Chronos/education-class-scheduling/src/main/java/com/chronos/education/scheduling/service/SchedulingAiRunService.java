@@ -98,13 +98,19 @@ public class SchedulingAiRunService {
 		requireVersion(current, request.expectedPlanVersion());
 		requireState(current, "NEEDS_CLARIFICATION");
 		SchedulingAiPlan previous = readPlan(current.getParsedPlanJson());
+		String priorContext = previous.constraints().stream()
+				.map(constraint -> constraint.teacherName() == null
+						? "" : constraint.teacherName())
+				.filter(value -> !value.isBlank())
+				.findFirst()
+				.orElse("");
 		SchedulingAiRunRequest reparsed = new SchedulingAiRunRequest(
 				current.getClientRequestId() + "-reply-" + current.getPlanVersion(),
 				current.getSemesterCode(),
 				previous.mode(),
 				previous.selectedOfferingIds(),
 				previous.candidateCount(),
-				request.answer());
+				(priorContext + " " + request.answer()).trim());
 		SchedulingAiPlan plan = parser.parse(reparsed, actor).plan();
 		current.setPlanVersion(current.getPlanVersion() + 1);
 		current.setParsedPlanJson(write(plan));
@@ -161,7 +167,7 @@ public class SchedulingAiRunService {
 		return view(runs.save(current));
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	public List<ScheduleCandidateView> candidates(
 			String id,
 			String actor,
