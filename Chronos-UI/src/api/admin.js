@@ -527,6 +527,53 @@ export const createSchedulingAgentProposal = (payload) => http.post('/education/
 export const confirmSchedulingAgentProposal = (id) => http.post(`/education/agents/scheduling/proposals/${id}/confirm`)
 export const rejectSchedulingAgentProposal = (id) => http.post(`/education/agents/scheduling/proposals/${id}/reject`)
 export const analyzeAcademicSchedule = (semesterCode) => http.get(`/education/agents/academic/analyze?${qs({ semesterCode })}`)
+
+/**
+ * @typedef {Object} AiSchedulingRunCreatePayload
+ * @property {string} clientRequestId 客户端幂等请求标识
+ * @property {string} semesterCode 学期编码
+ * @property {string} requestText 自然语言排课需求
+ * @property {'GLOBAL'|'LOCAL'} mode 排课范围
+ * @property {string[]} [selectedOfferingIds] LOCAL 模式选中的教学任务
+ * @property {number} [candidateCount] 请求生成的候选数量
+ */
+
+/**
+ * @param {AiSchedulingRunCreatePayload} payload
+ */
+export const createAiSchedulingRun = (payload) => http.post('/admin/education/scheduling/ai/runs', payload)
+
+/**
+ * @param {string} id
+ */
+export const getAiSchedulingRun = (id) => http.get(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}`)
+
+/**
+ * @param {string} id
+ * @param {{ message: string }} payload
+ */
+export const replyAiSchedulingRun = (id, payload) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/reply`, payload)
+
+/**
+ * @param {string} id
+ */
+export const confirmAiSchedulingRun = (id) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/confirm`)
+
+/**
+ * @param {string} id
+ */
+export const generateAiSchedulingRun = (id) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/generate`)
+
+/**
+ * @param {string} id
+ */
+export const listAiSchedulingCandidates = (id) => http.get(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates`)
+
+/**
+ * @param {string} id
+ */
+export const cancelAiSchedulingRun = (id) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/cancel`)
+
 export const listTeachingClassMembers = (offeringId) => http.get(`/admin/education/teaching-class-members?${qs({ offeringId })}`)
 export const enrollTeachingClassStudent = (offeringId, studentId) =>
   http.post(`/admin/education/course-offerings/${offeringId}/enroll`, {
