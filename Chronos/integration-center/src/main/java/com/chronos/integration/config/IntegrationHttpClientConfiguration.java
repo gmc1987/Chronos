@@ -4,6 +4,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import reactor.netty.http.client.HttpClient;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+
 /**
  * 集成中心 HTTP 客户端配置。
  *
@@ -16,6 +19,8 @@ public class IntegrationHttpClientConfiguration {
 
     @Bean
     public WebClient.Builder integrationWebClientBuilder() {
-        return WebClient.builder();
+        return WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(
+                        HttpClient.create().followRedirect(false)));
     }
 }
