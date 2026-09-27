@@ -2,7 +2,6 @@ package com.chronos.model.pojo;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
@@ -17,7 +16,7 @@ import lombok.Setter;
 public class UserPortalPreference extends BaseEntity {
     @Column(name = "username", length = 100, nullable = false)
     private String username;
-    @Lob
+    // PostgreSQL stores this value as TEXT. @Lob makes Hibernate read it as an OID-backed CLOB.
     @Column(name = "layout_json", columnDefinition = "text", nullable = false)
     private String layoutJson;
     @Column(name = "theme", length = 30, nullable = false)
