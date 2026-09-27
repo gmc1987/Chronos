@@ -1020,6 +1020,8 @@ public class ExamCenterService {
 			plans.save(plan);
 			if ("PUBLISHED".equals(plan.getStatus())) {
 				examOperations.generateTickets(plan.getId(), actor);
+			} else {
+				examOperations.revokeTicketsForPlan(plan.getId());
 			}
 		}
 		change.setStatus(approve ? "APPROVED" : "REJECTED");

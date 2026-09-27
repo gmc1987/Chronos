@@ -196,6 +196,25 @@ public class ExamOperationsService {
 	}
 
 	@Transactional
+	public void revokeTicketsForPlan(String planId) {
+		plan(planId);
+		for (ExamSession session : sessions.findByPlanIdOrderByExamDateAscStartTimeAsc(planId)) {
+			for (ExamRoom room : rooms.findBySessionId(session.getId())) {
+				for (ExamCandidate candidate : candidates.findByRoomIdOrderBySeatNoAsc(room.getId())) {
+					for (ExamAdmissionTicket ticket : tickets
+							.findByCandidateIdOrderByPublishedVersionDesc(candidate.getId())) {
+						if ("ISSUED".equals(ticket.getStatus())) {
+							ticket.setStatus("REVOKED");
+							ticket.setRevokedAt(LocalDateTime.now());
+							tickets.save(ticket);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	@Transactional
 	public ExamMaterialLedger createLedger(ExamOperationsCommands.Material command, String actor) {
 		requireText(command.sessionId(), "场次");
 		requireText(command.materialType(), "物资类型");
