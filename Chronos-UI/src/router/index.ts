@@ -50,9 +50,13 @@ const PortalMyExams = () => import('../modules/education/pages/PortalMyExams.vue
 const PortalMeetings = () => import('../modules/education/pages/PortalMeetings.vue')
 const PortalGrades = () => import('../modules/education/pages/PortalGrades.vue')
 const PortalFamily = () => import('../modules/education/pages/PortalFamily.vue')
+const PortalParentFeedback = () => import('../modules/education/pages/PortalParentFeedback.vue')
+const PortalCommunicationRecords = () => import('../modules/education/pages/PortalCommunicationRecords.vue')
 const AdminHomeSchool = () => import('../modules/education/pages/AdminHomeSchool.vue')
 const AdminParentMeetings = () => import('../modules/education/pages/AdminParentMeetings.vue')
 const AdminClassGroups = () => import('../modules/education/pages/AdminClassGroups.vue')
+const AdminParentFeedback = () => import('../modules/education/pages/AdminParentFeedback.vue')
+const AdminCommunicationRecords = () => import('../modules/education/pages/AdminCommunicationRecords.vue')
 const AdminSupervision = () => import('../modules/education/pages/AdminSupervision.vue')
 const AdminDataCenter = () => import('../modules/education/pages/AdminDataCenter.vue')
 const PortalSupervision = () => import('../modules/education/pages/PortalSupervision.vue')
@@ -103,6 +107,8 @@ const router = createRouter({
         { path: 'education/meetings', name: 'portal-education-meetings', component: PortalMeetings },
         { path: 'education/grades', name: 'portal-education-grades', component: PortalGrades },
         { path: 'education/family', name: 'portal-education-family', component: PortalFamily },
+        { path: 'education/family/feedback', name: 'portal-education-family-feedback', component: PortalParentFeedback },
+        { path: 'education/family/communications', name: 'portal-education-family-communications', component: PortalCommunicationRecords },
         { path: 'education/supervision', name: 'portal-education-supervision', component: PortalSupervision },
         { path: 'education/homework', name: 'portal-education-homework', component: PortalHomework },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
@@ -169,6 +175,8 @@ const router = createRouter({
         { path: 'education/home-school', name: 'admin-education-home-school', component: AdminHomeSchool },
         { path: 'education/parent-meetings', name: 'admin-education-parent-meetings', component: AdminParentMeetings },
         { path: 'education/home-school/class-groups', name: 'admin-education-class-groups', component: AdminClassGroups },
+        { path: 'education/home-school/feedback', name: 'admin-education-home-school-feedback', component: AdminParentFeedback },
+        { path: 'education/home-school/communications', name: 'admin-education-home-school-communications', component: AdminCommunicationRecords },
         { path: 'education/supervision', name: 'admin-education-supervision', component: AdminSupervision },
         { path: 'education/data-center', name: 'admin-education-data-center', component: AdminDataCenter },
         { path: 'education/materials', redirect: { name: 'admin-education-material' } },
