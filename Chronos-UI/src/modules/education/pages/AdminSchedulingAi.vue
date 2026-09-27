@@ -68,13 +68,19 @@ let pollTimer = null
 const currentStatus = computed(() => run.value?.status || '')
 const statusLabel = computed(() => statusLabels[currentStatus.value] || currentStatus.value || '未创建')
 const statusType = computed(() => statusTypes[currentStatus.value] || 'info')
+const parsedPlan = computed(() => run.value?.parsedPlan || run.value?.plan || run.value?.schedulePlan || null)
 const clarificationItems = computed(() => {
-  const value = run.value?.clarifications || run.value?.clarificationMessages || run.value?.questions
+  const value = parsedPlan.value?.clarifications
+    || run.value?.clarifications
+    || run.value?.clarificationMessages
+    || run.value?.questions
   if (Array.isArray(value)) return value
   return value ? [value] : []
 })
-const parsedPlan = computed(() => run.value?.parsedPlan || run.value?.plan || run.value?.schedulePlan || null)
-const constraintDraft = computed(() => run.value?.constraintDraft || run.value?.constraints || null)
+const constraintDraft = computed(() => parsedPlan.value?.constraints
+  || run.value?.constraintDraft
+  || run.value?.constraints
+  || null)
 const selectedCandidateRows = computed(() => candidateSelection.value)
 const compareMetricRows = computed(() => {
   const selected = selectedCandidateRows.value
@@ -238,7 +244,10 @@ const replyToRun = async () => {
   const sequence = runRequestSequence.value
   replying.value = true
   try {
-    await replyAiSchedulingRun(runId, { message })
+    await replyAiSchedulingRun(runId, {
+      answer: message,
+      expectedPlanVersion: run.value.planVersion,
+    })
     if (sequence !== runRequestSequence.value || run.value?.id !== runId) return
     clarificationReply.value = ''
     if (!await loadRun(runId, sequence)) return
@@ -256,7 +265,9 @@ const confirmRun = async () => {
   const sequence = runRequestSequence.value
   confirming.value = true
   try {
-    await confirmAiSchedulingRun(runId)
+    await confirmAiSchedulingRun(runId, {
+      expectedPlanVersion: run.value.planVersion,
+    })
     if (sequence !== runRequestSequence.value || run.value?.id !== runId) return
     if (!await loadRun(runId, sequence)) return
     ElMessage.success('解析计划已确认')

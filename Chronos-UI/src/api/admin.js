@@ -612,14 +612,15 @@ export const getAiSchedulingRun = (id) => http.get(`/admin/education/scheduling/
 
 /**
  * @param {string} id
- * @param {{ message: string }} payload
+ * @param {{ answer: string, expectedPlanVersion: number }} payload
  */
 export const replyAiSchedulingRun = (id, payload) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/reply`, payload)
 
 /**
  * @param {string} id
+ * @param {{ expectedPlanVersion: number }} payload
  */
-export const confirmAiSchedulingRun = (id) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/confirm`)
+export const confirmAiSchedulingRun = (id, payload) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/confirm`, payload)
 
 /**
  * @param {string} id
