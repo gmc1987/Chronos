@@ -1,11 +1,9 @@
 package com.chronos.service;
 
-import org.springframework.stereotype.Component;
-
-import lombok.RequiredArgsConstructor;
-
-@Component
-@RequiredArgsConstructor
+/**
+ * Compatibility implementation for deployments that deliberately do not
+ * enable OIDC. The normal application bean is HttpOidcTokenExchange.
+ */
 public class UnsupportedOidcTokenExchange implements OidcTokenExchange {
 	@Override
 	public OidcAuthorizationService.OidcTokenClaims exchange(

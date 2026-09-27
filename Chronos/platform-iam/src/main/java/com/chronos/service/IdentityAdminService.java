@@ -8,6 +8,8 @@ import java.util.Locale;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chronos.Idao.IAccessReviewItemRepository;
 import com.chronos.Idao.IAccessReviewRepository;
 import com.chronos.Idao.IAdminUserRepository;
@@ -39,6 +41,7 @@ public class IdentityAdminService {
 	private final ITemporaryGrantRepository grants;
 	private final IAdminUserRepository users;
 	private final IAuditLogService audit;
+	private final ObjectMapper objectMapper;
 
 	@Transactional
 	public IdentitySource saveSource(String id, SourceCommand command, String actor) {
@@ -56,6 +59,10 @@ public class IdentityAdminService {
 				throw new IllegalArgumentException("OIDC clientId 不能为空");
 			}
 		}
+		String status = blank(command.status()) ? "DRAFT" : command.status().trim().toUpperCase(Locale.ROOT);
+		if ("OIDC".equals(type)) {
+			validateOidcConfiguration(command, status);
+		}
 		IdentitySource source = id == null
 				? new IdentitySource()
 				: sources.findById(id).orElseThrow(() -> new IllegalArgumentException("身份源不存在"));
@@ -71,7 +78,7 @@ public class IdentityAdminService {
 		source.setClientId(trim(command.clientId()));
 		source.setSecretRef(trim(command.secretRef()));
 		source.setConfigJson(blank(command.configJson()) ? "{}" : command.configJson().trim());
-		source.setStatus(blank(command.status()) ? "DRAFT" : command.status().trim().toUpperCase(Locale.ROOT));
+		source.setStatus(status);
 		IdentitySource saved = sources.save(source);
 		audit.log(actor, "IAM_IDENTITY_SOURCE_SAVE", saved.getId());
 		return saved;
@@ -284,6 +291,63 @@ public class IdentityAdminService {
 			}
 		} catch (IllegalArgumentException ex) {
 			throw new IllegalArgumentException("OIDC issuer 必须是合法 HTTPS 地址");
+		}
+	}
+
+	private void validateOidcConfiguration(SourceCommand command, String status) {
+		final JsonNode config;
+		try {
+			config = objectMapper.readTree(blank(command.configJson()) ? "{}" : command.configJson());
+		} catch (Exception exception) {
+			throw new IllegalArgumentException("OIDC source configuration is invalid", exception);
+		}
+		if (config == null || !config.isObject()) {
+			throw new IllegalArgumentException("OIDC source configuration must be a JSON object");
+		}
+		if (config.has("clientSecret") || config.has("client_secret")) {
+			throw new IllegalArgumentException("OIDC client secret must use secretRef");
+		}
+		if (!"ACTIVE".equals(status)) {
+			return;
+		}
+		JsonNode redirectUris = config.get("redirectUris");
+		if (redirectUris == null || !redirectUris.isArray() || redirectUris.isEmpty()) {
+			throw new IllegalArgumentException("ACTIVE OIDC source requires redirectUris");
+		}
+		for (JsonNode redirectUri : redirectUris) {
+			validateRedirectUri(redirectUri.asText());
+		}
+		String endpoint = config.path("tokenEndpoint").asText(null);
+		validateTokenEndpoint(command.issuerUrl(), endpoint);
+		boolean publicClient = config.path("publicClient").asBoolean(false);
+		if (!publicClient && blank(command.secretRef())) {
+			throw new IllegalArgumentException("confidential OIDC source requires secretRef");
+		}
+	}
+
+	private static void validateRedirectUri(String value) {
+		try {
+			URI uri = URI.create(value == null ? "" : value);
+			if ((!"https".equalsIgnoreCase(uri.getScheme()) && !"http".equalsIgnoreCase(uri.getScheme()))
+					|| uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null) {
+				throw new IllegalArgumentException();
+			}
+		} catch (IllegalArgumentException exception) {
+			throw new IllegalArgumentException("OIDC redirect URI is invalid", exception);
+		}
+	}
+
+	private static void validateTokenEndpoint(String issuerUrl, String endpoint) {
+		try {
+			URI issuer = URI.create(issuerUrl);
+			URI token = URI.create(endpoint == null ? "" : endpoint);
+			if (!"https".equalsIgnoreCase(token.getScheme()) || token.getHost() == null
+					|| !token.getHost().equalsIgnoreCase(issuer.getHost())
+					|| token.getUserInfo() != null || token.getFragment() != null) {
+				throw new IllegalArgumentException();
+			}
+		} catch (IllegalArgumentException exception) {
+			throw new IllegalArgumentException("OIDC token endpoint must be HTTPS on the issuer host", exception);
 		}
 	}
 

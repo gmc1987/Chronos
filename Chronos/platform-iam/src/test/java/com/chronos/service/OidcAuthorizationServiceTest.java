@@ -58,4 +58,34 @@ class OidcAuthorizationServiceTest {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("not registered");
 	}
+
+	@Test
+	void invalidTokenClaimsDoNotConsumeAuthorizationState() throws Exception {
+		IIdentitySourceRepository repository = mock(IIdentitySourceRepository.class);
+		IdentitySource source = new IdentitySource();
+		source.setSourceCode("corp");
+		source.setSourceType("OIDC");
+		source.setStatus("ACTIVE");
+		source.setIssuerUrl("https://id.example.test");
+		source.setClientId("chronos");
+		source.setConfigJson("{\"redirectUris\":[\"https://app.example.test/callback\"]}");
+		when(repository.findBySourceCode("corp")).thenReturn(Optional.of(source));
+
+		OidcAuthorizationService service = new OidcAuthorizationService(repository);
+		String verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+		String challenge = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+				java.security.MessageDigest.getInstance("SHA-256")
+						.digest(verifier.getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
+		var start = service.begin("corp", "https://app.example.test/callback", challenge);
+
+		assertThatThrownBy(() -> service.complete("corp", "https://app.example.test/callback", start.state(),
+				"code", verifier,
+				new OidcAuthorizationService.OidcTokenClaims("https://id.example.test", "subject-1", "wrong")))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("claims are invalid");
+
+		assertThat(service.complete("corp", "https://app.example.test/callback", start.state(), "code", verifier,
+				new OidcAuthorizationService.OidcTokenClaims("https://id.example.test", "subject-1",
+						start.nonce())).subject()).isEqualTo("subject-1");
+	}
 }

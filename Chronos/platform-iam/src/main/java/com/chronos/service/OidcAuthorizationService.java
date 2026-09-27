@@ -82,26 +82,45 @@ public class OidcAuthorizationService {
 		if (blank(code) || blank(state) || blank(codeVerifier) || tokenClaims == null) {
 			throw new IllegalArgumentException("OIDC callback is incomplete");
 		}
-		PendingAuthorization expected = states == null ? pending.remove(state) : loadPersisted(state);
-		if (expected == null || expected.expiresAt().isBefore(Instant.now())) {
-			throw new IllegalArgumentException("OIDC state is invalid or already used");
-		}
-
-		if (!expected.sourceCode().equals(sourceCode) || !expected.redirectUri().equals(redirectUri)
-				|| !MessageDigest.isEqual(expected.codeChallenge().getBytes(StandardCharsets.US_ASCII),
-						s256(codeVerifier).getBytes(StandardCharsets.US_ASCII))) {
-			throw new IllegalArgumentException("OIDC state or PKCE verification failed");
-		}
-		if (states != null
-				&& states.consume(state, LocalDateTime.now(java.time.ZoneOffset.UTC)) != 1) {
-			throw new IllegalArgumentException("OIDC state is invalid or already used");
-		}
+		PendingAuthorization expected = validateCallback(sourceCode, redirectUri, state, codeVerifier);
 		IdentitySource source = source(sourceCode);
 		if (!source.getIssuerUrl().equals(tokenClaims.issuer()) || !expected.nonce().equals(tokenClaims.nonce())
 				|| blank(tokenClaims.subject())) {
 			throw new IllegalArgumentException("OIDC token claims are invalid");
 		}
+		if (states == null) {
+			if (!pending.remove(state, expected)) {
+				throw new IllegalArgumentException("OIDC state is invalid or already used");
+			}
+		} else if (states.consume(state, LocalDateTime.now(java.time.ZoneOffset.UTC)) != 1) {
+			throw new IllegalArgumentException("OIDC state is invalid or already used");
+		}
 		return new OidcIdentity(source.getId(), tokenClaims.subject());
+	}
+
+	/**
+	 * Validates the callback binding before spending an authorization code at the
+	 * provider. State is consumed only after the token claims are verified.
+	 */
+	public void validateCallbackRequest(String sourceCode, String redirectUri, String state, String codeVerifier) {
+		validateCallback(sourceCode, redirectUri, state, codeVerifier);
+	}
+
+	private PendingAuthorization validateCallback(String sourceCode, String redirectUri, String state,
+			String codeVerifier) {
+		if (blank(sourceCode) || blank(redirectUri) || blank(state) || blank(codeVerifier)) {
+			throw new IllegalArgumentException("OIDC callback is incomplete");
+		}
+		PendingAuthorization expected = states == null ? pending.get(state) : loadPersisted(state);
+		if (expected == null || !expected.expiresAt().isAfter(Instant.now())) {
+			throw new IllegalArgumentException("OIDC state is invalid or already used");
+		}
+		if (!expected.sourceCode().equals(sourceCode) || !expected.redirectUri().equals(redirectUri)
+				|| !MessageDigest.isEqual(expected.codeChallenge().getBytes(StandardCharsets.US_ASCII),
+						s256(codeVerifier).getBytes(StandardCharsets.US_ASCII))) {
+			throw new IllegalArgumentException("OIDC state or PKCE verification failed");
+		}
+		return expected;
 	}
 
 	private PendingAuthorization loadPersisted(String state) {

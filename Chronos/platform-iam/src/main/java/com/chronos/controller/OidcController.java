@@ -33,6 +33,7 @@ public class OidcController {
 	public ResultData<OidcAuthorizationService.OidcIdentity> callback(
 			@PathVariable String sourceCode,
 			@RequestBody CallbackRequest request) {
+		oidc.validateCallbackRequest(sourceCode, request.redirectUri(), request.state(), request.codeVerifier());
 		return ok(oidc.complete(sourceCode, request.redirectUri(), request.state(), request.code(),
 				request.codeVerifier(), tokenExchange.exchange(sourceCode, request.code(), request.redirectUri(),
 						request.codeVerifier())));
