@@ -1,1 +1,0 @@
-import{G as e,v as t}from"./element-plus-DRTXEATa.js";import n from"./TeachingResourceWorkbench-CRjWpCR-.js";var r={__name:`AdminCourseware`,setup(r){return(r,i)=>(e(),t(n,{"initial-domain":`coursewares`}))}};export{r as default};

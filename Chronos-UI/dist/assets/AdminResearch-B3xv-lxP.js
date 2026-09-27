@@ -1,1 +1,0 @@
-import{G as e,v as t}from"./element-plus-DRTXEATa.js";import n from"./ResearchWorkbench-DftqMHBT.js";var r={__name:`AdminResearch`,setup(r){return(r,i)=>(e(),t(n))}};export{r as default};
