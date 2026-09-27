@@ -2,17 +2,36 @@ package com.chronos.security;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
+import java.time.LocalDateTime;
+import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.Idao.ITemporaryGrantRepository;
 
 @Component("iamAuthorization")
 public class IamAuthorization {
+    private final IAdminUserRepository users;
+    private final ITemporaryGrantRepository grants;
+
+    public IamAuthorization(IAdminUserRepository users, ITemporaryGrantRepository grants) {
+        this.users = users;
+        this.grants = grants;
+    }
+
     public boolean has(Authentication authentication, String permission) {
         if (authentication == null || !authentication.isAuthenticated()) return false;
-        return authentication.getAuthorities().stream().anyMatch(authority -> {
+        boolean direct = authentication.getAuthorities().stream().anyMatch(authority -> {
             String value = authority.getAuthority();
             if (permission.equals(value) || "*:*".equals(value)) return true;
             if (value != null && value.endsWith(":*") && permission.startsWith(value.substring(0, value.length() - 1))) return true;
             return "ROLE_CODE_SUPER_ADMIN".equals(value);
         });
+        if (direct) return true;
+        var user = users.findByUsername(authentication.getName());
+        if (user == null) return false;
+        LocalDateTime now = LocalDateTime.now();
+        return !grants.findByUserIdAndPermissionCodeAndStatusAndValidFromLessThanEqualAndValidUntilGreaterThan(
+                user.getId(), permission, "ACTIVE", now, now).isEmpty()
+                || !grants.findByUserIdAndPermissionCodeAndStatusAndValidFromLessThanEqualAndValidUntilGreaterThan(
+                user.getId(), permission, "APPROVED", now, now).isEmpty();
     }
 
     public boolean any(Authentication authentication, String... permissions) {
