@@ -19,6 +19,8 @@ import com.chronos.model.pojo.ExternalIdentity;
 import com.chronos.model.pojo.IdentitySource;
 import com.chronos.model.pojo.IdentitySyncConflict;
 import com.chronos.model.pojo.TemporaryGrant;
+import com.chronos.model.vo.IdentitySourceVO;
+import com.chronos.model.vo.TemporaryGrantVO;
 import com.chronos.service.IdentityAdminService;
 
 import lombok.RequiredArgsConstructor;
@@ -36,25 +38,27 @@ public class IdentityAdminController {
 
 	@GetMapping("/admin/iam/identity-sources")
 	@PreAuthorize("@iamAuthorization.has(authentication,'iam:identity:source:view')")
-	public ResultData<List<IdentitySource>> sources() { return ok(sources.findAll()); }
+	public ResultData<List<IdentitySourceVO>> sources() {
+		return ok(sources.findAll().stream().map(this::sourceView).toList());
+	}
 
 	@PostMapping("/admin/iam/identity-sources")
 	@PreAuthorize("@iamAuthorization.has(authentication,'iam:identity:source:manage')")
-	public ResultData<IdentitySource> saveSource(@RequestBody IdentityAdminService.SourceCommand command, Principal actor) {
-		return ok(service.saveSource(null, command, actor.getName()));
+	public ResultData<IdentitySourceVO> saveSource(@RequestBody IdentityAdminService.SourceCommand command, Principal actor) {
+		return ok(sourceView(service.saveSource(null, command, actor.getName())));
 	}
 
 	@PutMapping("/admin/iam/identity-sources/{id}")
 	@PreAuthorize("@iamAuthorization.has(authentication,'iam:identity:source:manage')")
-	public ResultData<IdentitySource> updateSource(@PathVariable String id,
+	public ResultData<IdentitySourceVO> updateSource(@PathVariable String id,
 			@RequestBody IdentityAdminService.SourceCommand command, Principal actor) {
-		return ok(service.saveSource(id, command, actor.getName()));
+		return ok(sourceView(service.saveSource(id, command, actor.getName())));
 	}
 
 	@PostMapping("/admin/iam/identity-sources/{id}/test")
 	@PreAuthorize("@iamAuthorization.has(authentication,'iam:identity:source:test')")
-	public ResultData<IdentitySource> testSource(@PathVariable String id, Principal actor) {
-		return ok(service.testSource(id, actor.getName()));
+	public ResultData<IdentitySourceVO> testSource(@PathVariable String id, Principal actor) {
+		return ok(sourceView(service.testSource(id, actor.getName())));
 	}
 
 	@GetMapping("/admin/iam/external-identities")
@@ -105,9 +109,23 @@ public class IdentityAdminController {
 		return ok(service.decideReviewItem(id, command.decision(), actor.getName()));
 	}
 
+	@PostMapping("/admin/iam/access-reviews/{id}/submit")
+	@PreAuthorize("@iamAuthorization.has(authentication,'iam:access-review:manage')")
+	public ResultData<AccessReview> submitReview(@PathVariable String id, Principal actor) {
+		return ok(service.submitReview(id, actor.getName()));
+	}
+
+	@PostMapping("/admin/iam/access-reviews/{id}/complete")
+	@PreAuthorize("@iamAuthorization.has(authentication,'iam:access-review:manage')")
+	public ResultData<AccessReview> completeReview(@PathVariable String id, Principal actor) {
+		return ok(service.completeReview(id, actor.getName()));
+	}
+
 	@GetMapping("/admin/iam/temporary-grants")
 	@PreAuthorize("@iamAuthorization.has(authentication,'iam:temporary-grant:view')")
-	public ResultData<List<TemporaryGrant>> grants() { return ok(grants.findAll()); }
+	public ResultData<List<TemporaryGrantVO>> grants() {
+		return ok(grants.findAll().stream().map(this::grantView).toList());
+	}
 
 	@PostMapping("/admin/iam/temporary-grants")
 	@PreAuthorize("@iamAuthorization.has(authentication,'iam:temporary-grant:manage')")
@@ -122,10 +140,27 @@ public class IdentityAdminController {
 		return ok(service.decideGrant(id, command.approve(), actor.getName()));
 	}
 
+	@PostMapping("/admin/iam/temporary-grants/{id}/revoke")
+	@PreAuthorize("@iamAuthorization.has(authentication,'iam:temporary-grant:manage')")
+	public ResultData<TemporaryGrant> revokeGrant(@PathVariable String id, Principal actor) {
+		return ok(service.revokeGrant(id, actor.getName()));
+	}
+
 	private <T> ResultData<T> ok(T value) {
 		return ResultData.<T>builder().code("200").msg("ok").data(value).build();
 	}
 
 	public record Decision(String decision) {}
 	public record Approval(boolean approve) {}
+
+	private IdentitySourceVO sourceView(IdentitySource source) {
+		return new IdentitySourceVO(source.getId(), source.getSourceCode(), source.getName(), source.getSourceType(),
+				source.getIssuerUrl(), source.getClientId(), source.getStatus(), source.getLastTestAt());
+	}
+
+	private TemporaryGrantVO grantView(TemporaryGrant grant) {
+		return new TemporaryGrantVO(grant.getId(), grant.getUserId(), grant.getPermissionCode(), grant.getReason(),
+				grant.getRequestedBy(), grant.getApprovedBy(), grant.getSecondApprovedBy(), grant.getValidFrom(),
+				grant.getValidUntil(), grant.getStatus(), grant.getRevokedAt());
+	}
 }

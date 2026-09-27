@@ -178,6 +178,37 @@ public class IdentityAdminService {
 	}
 
 	@Transactional
+	public AccessReview submitReview(String id, String actor) {
+		AccessReview review = reviews.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("授权复核不存在"));
+		if (!"OPEN".equals(review.getStatus())) {
+			throw new IllegalStateException("当前复核批次不能提交");
+		}
+		review.setStatus("SUBMITTED");
+		review.setSubmittedAt(LocalDateTime.now());
+		AccessReview saved = reviews.save(review);
+		audit.log(actor, "IAM_ACCESS_REVIEW_SUBMIT", id);
+		return saved;
+	}
+
+	@Transactional
+	public AccessReview completeReview(String id, String actor) {
+		AccessReview review = reviews.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("授权复核不存在"));
+		if (!"SUBMITTED".equals(review.getStatus())) {
+			throw new IllegalStateException("复核批次必须先提交");
+		}
+		if (reviewItems.countByReviewIdAndDecisionIsNull(id) > 0) {
+			throw new IllegalStateException("仍有未决复核项");
+		}
+		review.setStatus("COMPLETED");
+		review.setCompletedAt(LocalDateTime.now());
+		AccessReview saved = reviews.save(review);
+		audit.log(actor, "IAM_ACCESS_REVIEW_COMPLETE", id);
+		return saved;
+	}
+
+	@Transactional
 	public TemporaryGrant requestGrant(GrantCommand command, String actor) {
 		if (command == null || blank(command.username()) || blank(command.permissionCode())
 				|| blank(command.reason()) || command.validFrom() == null || command.validUntil() == null) {
@@ -192,6 +223,7 @@ public class IdentityAdminService {
 		grant.setUserId(user.getId());
 		grant.setPermissionCode(command.permissionCode().trim());
 		grant.setReason(command.reason().trim());
+		grant.setRequestedBy(actor);
 		grant.setValidFrom(command.validFrom());
 		grant.setValidUntil(command.validUntil());
 		grant.setStatus("REQUESTED");
@@ -207,13 +239,38 @@ public class IdentityAdminService {
 		if (!"REQUESTED".equals(grant.getStatus())) {
 			throw new IllegalStateException("当前临时授权不能审批");
 		}
-		if (grant.getUserId().equals(users.findByUsername(actor) == null ? null : users.findByUsername(actor).getId())) {
-			throw new IllegalArgumentException("申请人不能审批自己的临时授权");
+		if (actor.equals(grant.getRequestedBy()) || actor.equals(grant.getApprovedBy())) {
+			throw new IllegalArgumentException("申请人和第一审批人不能重复");
 		}
-		grant.setApprovedBy(actor);
-		grant.setStatus(approve ? "APPROVED" : "REVOKED");
+		if (!approve) {
+			grant.setApprovedBy(actor);
+			grant.setStatus("REVOKED");
+		} else if (grant.getApprovedBy() == null) {
+			grant.setApprovedBy(actor);
+		} else {
+			grant.setSecondApprovedBy(actor);
+			grant.setStatus(LocalDateTime.now().isBefore(grant.getValidFrom()) ? "APPROVED" : "ACTIVE");
+		}
 		TemporaryGrant saved = grants.save(grant);
 		audit.log(actor, "IAM_TEMPORARY_GRANT_DECIDE", id + ":" + approve);
+		return saved;
+	}
+
+	@Transactional
+	public TemporaryGrant revokeGrant(String id, String actor) {
+		TemporaryGrant grant = grants.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("临时授权不存在"));
+		if ("EXPIRED".equals(grant.getStatus()) || "REVOKED".equals(grant.getStatus())) {
+			return grant;
+		}
+		grant.setStatus("REVOKED");
+		grant.setRevokedAt(LocalDateTime.now());
+		TemporaryGrant saved = grants.save(grant);
+		users.findById(grant.getUserId()).ifPresent(user -> {
+			user.setTokenVersion((user.getTokenVersion() == null ? 0 : user.getTokenVersion()) + 1);
+			users.save(user);
+		});
+		audit.log(actor, "IAM_TEMPORARY_GRANT_REVOKE", id);
 		return saved;
 	}
 

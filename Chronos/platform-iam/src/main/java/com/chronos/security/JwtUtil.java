@@ -7,6 +7,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import java.security.Key;
 import java.util.Date;
 import java.util.Map;
+import java.util.UUID;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
@@ -32,6 +33,7 @@ public class JwtUtil {
 		long nowMillis = System.currentTimeMillis();
 		Date now = new Date(nowMillis);
 		return Jwts.builder().setClaims(claims).setSubject(subject).setIssuedAt(now)
+				.setId(UUID.randomUUID().toString())
 				.signWith(this.key, SignatureAlgorithm.HS256)
 				.setExpiration(new Date(nowMillis + ((ttlMillis > 0L) ? ttlMillis : this.expirationMs))).compact();
 	}
@@ -47,6 +49,7 @@ public class JwtUtil {
 		// reloaded from IAM when exchanging the token, keeping the token short and
 		// ensuring permission changes take effect after refresh.
 		return Jwts.builder().claim("tokenType", "refresh").setSubject(subject).setIssuedAt(now)
+				.setId(UUID.randomUUID().toString())
 				.signWith(this.key, SignatureAlgorithm.HS256)
 				.setExpiration(new Date(nowMillis + this.refreshExpirationMs)).compact();
 	}

@@ -19,6 +19,8 @@ public class MfaFactor extends BaseEntity {
 	private String factorType = "TOTP";
 	@Column(name = "secret_ciphertext", nullable = false, columnDefinition = "text")
 	private String secretCiphertext;
+	@Column(name = "recovery_code_hashes", nullable = false, columnDefinition = "text")
+	private String recoveryCodeHashes = "[]";
 	@Column(nullable = false, length = 24)
 	private String status = "PENDING";
 	@Column(name = "enrolled_at", nullable = false)

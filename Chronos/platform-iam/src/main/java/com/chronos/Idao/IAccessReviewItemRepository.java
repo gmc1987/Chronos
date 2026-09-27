@@ -8,4 +8,5 @@ import com.chronos.model.pojo.AccessReviewItem;
 
 public interface IAccessReviewItemRepository extends JpaRepository<AccessReviewItem, String> {
 	List<AccessReviewItem> findByReviewIdOrderByCreateTimeAsc(String reviewId);
+	long countByReviewIdAndDecisionIsNull(String reviewId);
 }

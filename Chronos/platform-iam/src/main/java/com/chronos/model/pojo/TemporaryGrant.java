@@ -19,8 +19,12 @@ public class TemporaryGrant extends BaseEntity {
 	private String permissionCode;
 	@Column(nullable = false, length = 1000)
 	private String reason;
+	@Column(name = "requested_by", nullable = false, length = 128)
+	private String requestedBy;
 	@Column(name = "approved_by", length = 128)
 	private String approvedBy;
+	@Column(name = "second_approved_by", length = 128)
+	private String secondApprovedBy;
 	@Column(name = "valid_from", nullable = false)
 	private LocalDateTime validFrom;
 	@Column(name = "valid_until", nullable = false)

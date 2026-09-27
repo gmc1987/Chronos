@@ -18,6 +18,14 @@ public class IamAuthorization {
 
     public boolean has(Authentication authentication, String permission) {
         if (authentication == null || !authentication.isAuthenticated()) return false;
+        boolean highRisk = permission != null
+                && (permission.startsWith("iam:temporary-grant:")
+                        || permission.endsWith(":high-risk")
+                        || permission.equals("iam:access-review:complete"));
+        if (highRisk && authentication.getAuthorities().stream()
+                .noneMatch(authority -> "MFA_VERIFIED".equals(authority.getAuthority()))) {
+            return false;
+        }
         boolean direct = authentication.getAuthorities().stream().anyMatch(authority -> {
             String value = authority.getAuthority();
             if (permission.equals(value) || "*:*".equals(value)) return true;

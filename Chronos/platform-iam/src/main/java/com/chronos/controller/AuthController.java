@@ -109,6 +109,7 @@ public class AuthController {
 		// JWT 只保存身份校验需要的最小声明。权限由服务端按角色实时加载，
 		// 避免原子权限增多后 Token 膨胀并超过 Tomcat 请求头限制。
 		claims.put("tokenVersion", authenticatedUser.getTokenVersion() == null ? 0 : authenticatedUser.getTokenVersion());
+		claims.put("mfaVerified", false);
 		String access = this.jwtUtil.generateAccessToken(user.getUsername(), claims);
 		String refresh = this.jwtUtil.generateRefreshToken(user.getUsername(), claims);
 
@@ -180,6 +181,10 @@ public class AuthController {
 		}
 		try {
 			Claims claims = this.jwtUtil.parseToken(refreshToken);
+			if (!"refresh".equals(claims.get("tokenType", String.class))) {
+				return ResultData.<Map<String, String>>builder().code("401").msg("invalid refresh token").data(null)
+						.build();
+			}
 
 			RefreshToken stored = this.refreshTokenService.findByToken(refreshToken);
 			if (stored == null) {
@@ -200,6 +205,10 @@ public class AuthController {
 			}
 
 			String username = claims.getSubject();
+			if (!username.equals(stored.getUsername())) {
+				return ResultData.<Map<String, String>>builder().code("401").msg("invalid refresh token").data(null)
+						.build();
+			}
 			AdminUser user = this.adminUserRepository.findByUsername(username);
 			if (user == null) {
 				return ResultData.<Map<String, String>>builder().code("401").msg("user not found").data(null).build();
@@ -210,6 +219,7 @@ public class AuthController {
 			Map<String, Object> newClaims = new HashMap<>();
 			// 不从旧 Token 复制角色和权限，授权结果始终以数据库为准。
 			newClaims.put("tokenVersion", user.getTokenVersion() == null ? 0 : user.getTokenVersion());
+			newClaims.put("mfaVerified", false);
 			String access = this.jwtUtil.generateAccessToken(username, newClaims);
 			this.auditLogService.log(username, "REFRESH", "refreshed access token");
 			Map<String, String> data = new HashMap<>();
