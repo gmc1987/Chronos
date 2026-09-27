@@ -1,1 +1,0 @@
-import{G as e,v as t}from"./element-plus-DRTXEATa.js";import n from"./ErrorBook-DZD6tMLj.js";var r={__name:`AdminMistakes`,setup(r){return(r,i)=>(e(),t(n))}};export{r as default};

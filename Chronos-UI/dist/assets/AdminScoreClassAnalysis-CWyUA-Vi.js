@@ -1,1 +1,0 @@
-import{G as e,v as t}from"./element-plus-DRTXEATa.js";import{t as n}from"./GradeAnalysisView-DfuLV4D4.js";var r={__name:`AdminScoreClassAnalysis`,setup(r){return(r,i)=>(e(),t(n,{dimension:`CLASS`,title:`班级分析`,description:`比较当前数据范围内各行政班的已发布成绩。`}))}};export{r as default};
