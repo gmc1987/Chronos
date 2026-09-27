@@ -27,7 +27,7 @@ BEGIN
        'ROLE', 1, true, '按班级、年级或学生范围创建家长会'),
       (gen_random_uuid()::text, 'SYSTEM', CURRENT_TIMESTAMP, '管理家长会',
        'education:parent-meeting:manage', 'MENU_ACTION', menu_id, 'MANAGE', 'MENU',
-       '管理家长会编排与执行闭环')
+       'ROLE', 1, true, '管理家长会编排与执行闭环')
     ON CONFLICT (permission_code) DO NOTHING;
   END IF;
 END $$;
