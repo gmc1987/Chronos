@@ -220,6 +220,13 @@ export const createSupervisionAssignment = (payload) => http.post('/admin/educat
 export const createSupervisionIssue = (recordId, payload) => http.post(`/admin/education/supervision/records/${recordId}/issues`, payload)
 export const reviewSupervisionIssue = (id, payload) => http.post(`/admin/education/supervision/issues/${id}/review`, payload)
 export const homeSchoolNoticeReceipts = (id) => http.get(`/admin/education/home-school/notices/${id}/receipts`)
+export const pageClassGroups = (params = {}) => http.get(`/admin/education/home-school/class-groups?${qs(params)}`)
+export const createClassGroup = (payload, key) => http.post('/admin/education/home-school/class-groups', payload,
+  key ? { headers: { 'Idempotency-Key': key } } : undefined)
+export const changeClassGroupStatus = (id, payload) => http.post(`/admin/education/home-school/class-groups/${id}/status`, payload)
+export const syncClassGroup = (id, payload = {}) => http.post(`/admin/education/home-school/class-groups/${id}/sync`, payload)
+export const pageClassGroupMembers = (id, params = {}) => http.get(`/admin/education/home-school/class-groups/${id}/members?${qs(params)}`)
+export const pageClassGroupAudit = (id, params = {}) => http.get(`/admin/education/home-school/class-groups/${id}/audit?${qs(params)}`)
 export const updateMeeting = (id, payload) => http.put(`/admin/education/meetings/${id}`, payload)
 export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id}`)
 export const publishMeeting = (id) => http.post(`/admin/education/meetings/${id}/publish`)
