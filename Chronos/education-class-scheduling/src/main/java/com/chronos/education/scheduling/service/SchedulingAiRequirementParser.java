@@ -65,6 +65,8 @@ public class SchedulingAiRequirementParser {
 		List<String> clarifications = new java.util.ArrayList<>();
 		List<SchedulingAiConstraint> constraints = new java.util.ArrayList<>();
 		String text = request.requestText();
+		validateMentionedSemester(request, text, clarifications);
+		validateMentionedMode(request, text, clarifications);
 		TeacherResolution teacher = resolveTeacher(text, scope);
 		boolean hasTimeRestriction = containsAny(
 				text, "不能", "不可", "禁止", "禁排", "尽量", "优先", "希望");
@@ -113,6 +115,37 @@ public class SchedulingAiRequirementParser {
 				clarifications,
 				List.of());
 		return new ParsedRequirement(plan, toCommand(plan));
+	}
+
+	private void validateMentionedSemester(
+			SchedulingAiRunRequest request,
+			String text,
+			List<String> clarifications) {
+		List<String> mentioned = terms.findAllByOrderByStartDateDesc().stream()
+				.filter(term -> text.contains(term.getTermCode())
+						|| text.contains(term.getTermName()))
+				.map(com.chronos.education.scheduling.model.AcademicTerm::getTermCode)
+				.distinct()
+				.toList();
+		if (mentioned.size() == 1 && !request.semesterCode().equals(mentioned.getFirst())) {
+			clarifications.add("自然语言中的学期与请求 semesterCode 不一致，请确认 "
+					+ request.semesterCode());
+		} else if (mentioned.size() > 1) {
+			clarifications.add("自然语言中出现多个学期，请只保留一个学期");
+		}
+	}
+
+	private void validateMentionedMode(
+			SchedulingAiRunRequest request,
+			String text,
+			List<String> clarifications) {
+		String mentioned = text.contains("局部") || text.contains("指定教学任务")
+				? "LOCAL"
+				: text.contains("全局") || text.contains("全部教学任务")
+						? "GLOBAL" : null;
+		if (mentioned != null && !mentioned.equals(request.mode())) {
+			clarifications.add("自然语言中的排课模式与请求 mode 不一致，请确认 " + request.mode());
+		}
 	}
 
 	public String requestHash(SchedulingAiRunRequest request) {

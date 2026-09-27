@@ -16,6 +16,7 @@ import jakarta.persistence.LockModeType;
 public interface SchedulingAgentProposalRepository extends JpaRepository<SchedulingAgentProposal, String> {
 	List<SchedulingAgentProposal> findBySemesterCodeOrderByCreateTimeDesc(String semesterCode);
 	Page<SchedulingAgentProposal> findBySemesterCodeOrderByCreateTimeDesc(String semesterCode, Pageable pageable);
+	List<SchedulingAgentProposal> findByAgentRunIdAndPlanVersion(String agentRunId, Integer planVersion);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select proposal from SchedulingAgentProposal proposal where proposal.id = :id")

@@ -98,8 +98,13 @@ public class SchedulingAiRunController {
 
 	private boolean hasOperations(Authentication authentication) {
 		return authentication.getAuthorities().stream()
-				.anyMatch(authority -> "education:scheduling:ai:operations".equals(
-						authority.getAuthority()));
+				.anyMatch(authority -> {
+					String value = authority.getAuthority();
+					return "education:scheduling:ai:operations".equals(value)
+							|| "education:scheduling:ai:*".equals(value)
+							|| "*:*".equals(value)
+							|| "ROLE_CODE_SUPER_ADMIN".equals(value);
+				});
 	}
 
 	private void requireFullDataAccess(Authentication authentication) {

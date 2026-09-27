@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.AgentRunRepository;
 import com.chronos.education.scheduling.dao.AgentStepRepository;
+import com.chronos.education.scheduling.dao.SchedulingAgentProposalRepository;
 import com.chronos.education.scheduling.model.AgentRun;
 import com.chronos.education.scheduling.model.AgentStep;
 import com.chronos.education.scheduling.model.AutoScheduleCommand;
@@ -12,6 +13,8 @@ import com.chronos.education.scheduling.model.SchedulingAiPlan;
 import com.chronos.education.scheduling.model.SchedulingAiReplyRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunView;
+import com.chronos.education.scheduling.model.SchedulingAgentProposal;
+import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +24,8 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +41,32 @@ public class SchedulingAiRunService {
 	private final AutoSchedulingService autoScheduling;
 	private final EducationDataScopeService dataScopes;
 	private final ObjectMapper json;
+	private final SchedulingAgentProposalRepository proposals;
+	private final com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository constraints;
 
+	@Autowired
+	public SchedulingAiRunService(
+			AgentRunRepository runs,
+			AgentStepRepository steps,
+			SchedulingAiRequirementParser parser,
+			ScheduleGenerationJobService jobs,
+			AutoSchedulingService autoScheduling,
+			EducationDataScopeService dataScopes,
+			ObjectMapper json,
+			SchedulingAgentProposalRepository proposals,
+			com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository constraints) {
+		this.runs = runs;
+		this.steps = steps;
+		this.parser = parser;
+		this.jobs = jobs;
+		this.autoScheduling = autoScheduling;
+		this.dataScopes = dataScopes;
+		this.json = json;
+		this.proposals = proposals;
+		this.constraints = constraints;
+	}
+
+	/** Compatibility constructor for lightweight callers that do not persist constraints. */
 	public SchedulingAiRunService(
 			AgentRunRepository runs,
 			AgentStepRepository steps,
@@ -45,13 +75,7 @@ public class SchedulingAiRunService {
 			AutoSchedulingService autoScheduling,
 			EducationDataScopeService dataScopes,
 			ObjectMapper json) {
-		this.runs = runs;
-		this.steps = steps;
-		this.parser = parser;
-		this.jobs = jobs;
-		this.autoScheduling = autoScheduling;
-		this.dataScopes = dataScopes;
-		this.json = json;
+		this(runs, steps, parser, jobs, autoScheduling, dataScopes, json, null, null);
 	}
 
 	@Transactional
@@ -136,11 +160,63 @@ public class SchedulingAiRunService {
 		if (!plan.readyForConfirmation()) {
 			throw new IllegalStateException("结构化需求仍包含待澄清项");
 		}
+		persistConfirmedConstraints(current, plan, actor);
 		current.setConfirmedPlanJson(current.getParsedPlanJson());
 		current.setStatus("CONFIRMED");
 		recordStep(current, "requirements.confirm." + current.getPlanVersion(),
 				"SCHEDULE_CONSTRAINTS_V1", "OK");
 		return view(runs.save(current));
+	}
+
+	private void persistConfirmedConstraints(
+			AgentRun run,
+			SchedulingAiPlan plan,
+			String actor) {
+		if (proposals == null || constraints == null || plan.constraints().isEmpty()) {
+			return;
+		}
+		if (!proposals.findByAgentRunIdAndPlanVersion(
+				run.getId(), run.getPlanVersion()).isEmpty()) {
+			return;
+		}
+		var scope = dataScopes.resolve(actor);
+		IntStream.range(0, plan.constraints().size()).forEach(index -> {
+			var item = plan.constraints().get(index);
+			if (!"TEACHER_TIME".equals(item.kind())
+					|| item.teacherId() == null
+					|| item.dayOfWeek() == null
+					|| item.periodNo() == null) {
+				return;
+			}
+			dataScopes.assertTeacherAccess(scope, item.teacherId());
+			TeacherTimeConstraint constraint = new TeacherTimeConstraint();
+			constraint.setSemesterCode(plan.semesterCode());
+			constraint.setTeacherId(item.teacherId());
+			constraint.setDayOfWeek(item.dayOfWeek());
+			constraint.setPeriodNo(item.periodNo());
+			constraint.setConstraintType("SOFT".equals(item.strength())
+					? "PREFERRED" : "FORBIDDEN");
+			constraint.setWeight("SOFT".equals(item.strength()) ? 10 : 100);
+			constraint.setReason("AI Run " + run.getId()
+					+ " planVersion " + run.getPlanVersion());
+			constraint = constraints.save(constraint);
+			SchedulingAgentProposal proposal = new SchedulingAgentProposal();
+			proposal.setSemesterCode(plan.semesterCode());
+			proposal.setRequestText(item.sourceText());
+			proposal.setTeacherId(item.teacherId());
+			proposal.setTeacherName(item.teacherName());
+			proposal.setDayOfWeek(item.dayOfWeek());
+			proposal.setPeriodNo(item.periodNo());
+			proposal.setConstraintType(constraint.getConstraintType());
+			proposal.setReason(item.resolution());
+			proposal.setStatus("CONFIRMED");
+			proposal.setConfirmedBy(actor);
+			proposal.setConfirmedAt(LocalDateTime.now());
+			proposal.setAppliedConstraintId(constraint.getId());
+			proposal.setAgentRunId(run.getId());
+			proposal.setPlanVersion(run.getPlanVersion());
+			proposals.save(proposal);
+		});
 	}
 
 	@Transactional
