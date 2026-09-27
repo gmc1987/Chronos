@@ -107,6 +107,7 @@ public class ExamCenterService {
 	private final ExamPaperAnalysisService paperAnalysis;
 	private final EducationResourceTransactionLock resourceLock;
 	private final IAuditLogService audit;
+	private final ExamOperationsService examOperations;
 
 	@Transactional(readOnly = true)
 	public List<ExamPlan> plans(String semesterCode) {
@@ -911,6 +912,7 @@ public class ExamCenterService {
 		plan.setStatus("PUBLISHED");
 		plan.setPublishedVersion(1);
 		ExamPlan published = plans.save(plan);
+		examOperations.generateTickets(planId, actor);
 		audit.log(actor, "EDUCATION_EXAM_PUBLISH",
 				"planId=" + planId + ", semester=" + plan.getSemesterCode());
 		examNotifications.planPublished(published);
@@ -1016,6 +1018,9 @@ public class ExamCenterService {
 			plan.setPublishedVersion(plan.getPublishedVersion() + 1);
 			change.setAppliedPlanVersion(plan.getPublishedVersion());
 			plans.save(plan);
+			if ("PUBLISHED".equals(plan.getStatus())) {
+				examOperations.generateTickets(plan.getId(), actor);
+			}
 		}
 		change.setStatus(approve ? "APPROVED" : "REJECTED");
 		change.setDecidedBy(actor);

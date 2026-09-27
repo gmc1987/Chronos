@@ -5,12 +5,16 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "edu_exam_registration")
+@Table(name = "edu_exam_registration",
+	uniqueConstraints = @UniqueConstraint(
+			name = "uk_edu_exam_registration",
+			columnNames = {"session_id", "student_id"}))
 @Getter @Setter
 public class ExamRegistration extends BaseEntity {
 	@Column(name="plan_id", nullable=false, length=64) private String planId;
