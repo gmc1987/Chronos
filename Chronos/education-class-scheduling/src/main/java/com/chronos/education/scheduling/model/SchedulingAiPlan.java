@@ -12,15 +12,25 @@ public record SchedulingAiPlan(
 		int candidateCount,
 		List<SchedulingAiConstraint> constraints,
 		List<String> clarifications,
-		List<String> unsupported) {
+		List<String> unsupported,
+		List<String> unresolvedClauses) {
 	public SchedulingAiPlan {
 		selectedOfferingIds = selectedOfferingIds == null ? Set.of() : Set.copyOf(selectedOfferingIds);
 		constraints = constraints == null ? List.of() : List.copyOf(constraints);
 		clarifications = clarifications == null ? List.of() : List.copyOf(clarifications);
 		unsupported = unsupported == null ? List.of() : List.copyOf(unsupported);
+		unresolvedClauses = unresolvedClauses == null ? List.of() : List.copyOf(unresolvedClauses);
+	}
+
+	public SchedulingAiPlan(int schemaVersion, String skillCode, String semesterCode,
+			String mode, Set<String> selectedOfferingIds, int candidateCount,
+			List<SchedulingAiConstraint> constraints, List<String> clarifications,
+			List<String> unsupported) {
+		this(schemaVersion, skillCode, semesterCode, mode, selectedOfferingIds, candidateCount,
+				constraints, clarifications, unsupported, List.of());
 	}
 
 	public boolean readyForConfirmation() {
-		return clarifications.isEmpty() && unsupported.isEmpty();
+		return clarifications.isEmpty() && unsupported.isEmpty() && unresolvedClauses.isEmpty();
 	}
 }

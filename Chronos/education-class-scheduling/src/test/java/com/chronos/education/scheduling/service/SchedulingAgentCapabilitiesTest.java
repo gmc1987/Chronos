@@ -18,15 +18,26 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 
 class SchedulingAgentCapabilitiesTest {
 	private final AgentRunRepository runs = mock(AgentRunRepository.class);
 	private final ScheduleGenerationJobService jobs = mock(ScheduleGenerationJobService.class);
 	private final EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+	private final SchedulingAgentTimetableService timetable =
+			mock(SchedulingAgentTimetableService.class);
 	private final SchedulingAgentPlanValidator validator =
-			new SchedulingAgentPlanValidator(scopes, new ObjectMapper().findAndRegisterModules());
+			new SchedulingAgentPlanValidator(scopes, new ObjectMapper().findAndRegisterModules(),
+					timetable);
 	private final ToolContext context = new ToolContext("run-1", "admin", null,
 			Map.of(), "run-1:submit:1", Instant.now().plusSeconds(10));
+
+	@BeforeEach
+	void configureTimetable() {
+		when(timetable.dimensions(org.mockito.ArgumentMatchers.any(),
+				org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 20));
+	}
 
 	@Test
 	void generationToolUsesPersistedConfirmedPlanInsteadOfCallerParameters() throws Exception {

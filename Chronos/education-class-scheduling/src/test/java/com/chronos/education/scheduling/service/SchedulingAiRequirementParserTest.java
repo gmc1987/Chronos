@@ -130,6 +130,62 @@ class SchedulingAiRequirementParserTest {
 	}
 
 	@Test
+	void afternoonRuleExpandsOnlyToVerifiedCampusPeriods() {
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		SchedulingAgentTimetableService timetable = mock(SchedulingAgentTimetableService.class);
+		var scope = new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(teachers.findAllByOrderByTeacherNo()).thenReturn(List.of(teacher("teacher-1", "张老师", "T001")));
+		when(scopes.canAccessTeacher(scope, "teacher-1")).thenReturn(true);
+		when(timetable.segment("2026-2027-1", "teacher-1", "GLOBAL", Set.of(), "AFTERNOON"))
+				.thenReturn(new SchedulingAgentTimetableService.SegmentResolution(List.of(5, 6), null));
+		var parser = new SchedulingAiRequirementParser(terms, mock(CourseOfferingRepository.class),
+				teachers, scopes, null, timetable);
+		var request = new SchedulingAiRunRequest("afternoon", "2026-2027-1", "GLOBAL",
+				Set.of(), 1, "张老师周三下午不能上课");
+
+		var plan = parser.parse(request, "admin").plan();
+
+		assertThat(plan.readyForConfirmation()).isTrue();
+		assertThat(plan.constraints()).extracting(item -> item.periodNo()).containsExactly(5, 6);
+		assertThat(plan.constraints()).allSatisfy(item -> {
+			assertThat(item.timePhrase()).isEqualTo("AFTERNOON");
+			assertThat(item.strength()).isEqualTo("HARD");
+		});
+	}
+
+	@Test
+	void missingTimetableAndWeekendRulesCannotBeConfirmed() {
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		SchedulingAgentTimetableService timetable = mock(SchedulingAgentTimetableService.class);
+		var scope = new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(teachers.findAllByOrderByTeacherNo()).thenReturn(List.of(teacher("teacher-1", "张老师", "T001")));
+		when(scopes.canAccessTeacher(scope, "teacher-1")).thenReturn(true);
+		when(timetable.segment("2026-2027-1", "teacher-1", "GLOBAL", Set.of(), "MORNING"))
+				.thenReturn(new SchedulingAgentTimetableService.SegmentResolution(
+						List.of(), "教师排课范围没有唯一的校区"));
+		var parser = new SchedulingAiRequirementParser(terms, mock(CourseOfferingRepository.class),
+				teachers, scopes, null, timetable);
+
+		var missing = parser.parse(new SchedulingAiRunRequest("missing", "2026-2027-1",
+				"GLOBAL", Set.of(), 1, "张老师周三上午不能排"), "admin").plan();
+		assertThat(missing.readyForConfirmation()).isFalse();
+		assertThat(missing.constraints()).isEmpty();
+		assertThat(missing.unresolvedClauses()).containsExactly("张老师周三上午不能排");
+		var weekend = parser.parse(new SchedulingAiRunRequest("weekend", "2026-2027-1",
+				"GLOBAL", Set.of(), 1, "张老师周六第3节不能上课"), "admin").plan();
+		assertThat(weekend.readyForConfirmation()).isFalse();
+		assertThat(weekend.unsupported()).anyMatch(item -> item.contains("周一至周五"));
+	}
+
+	@Test
 	void ambiguousTeacherEntersClarificationInsteadOfGuessing() {
 		AcademicTermRepository terms = mock(AcademicTermRepository.class);
 		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);

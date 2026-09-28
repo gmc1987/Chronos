@@ -17,7 +17,7 @@ public class SchedulingAiModelClassifier {
 			仅输出 JSON 对象：{"clauses":[{"text":"原文子句","classification":"TEACHER_SLOT"}]}，不输出 Markdown。
 			clauses 必须逐条原样复制按中文/英文分号、句号、逗号或换行分隔的非空子句。
 			classification 只能是 TEACHER_SLOT、GENERATION 或 UNSUPPORTED。
-			TEACHER_SLOT 仅限明确包含教师、星期、单个节次、禁排或偏好的子句；
+			TEACHER_SLOT 仅限明确包含教师、星期、单个节次或上下午时段、禁排或偏好的子句；
 			GENERATION 仅限纯生成排课方案的子句；无法完全理解就标记 UNSUPPORTED。
 			禁止输出实体 ID、工具名、SQL 或课表。待分类输入：
 			""";

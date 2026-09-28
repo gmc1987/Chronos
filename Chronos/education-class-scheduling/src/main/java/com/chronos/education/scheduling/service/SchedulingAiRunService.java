@@ -23,11 +23,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -38,6 +45,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class SchedulingAiRunService {
 	private static final int EXPIRY_HOURS = 24;
+	private static final Pattern NUMBERED_REPLY = Pattern.compile("([1-9]\\d*)[：:]\\s*(.+)");
 
 	private final AgentRunRepository runs;
 	private final AgentStepRepository steps;
@@ -88,39 +96,48 @@ public class SchedulingAiRunService {
 		}
 		SchedulingAiRequirementParser.ParsedRequirement parsed =
 				parser.parse(request, actor);
-		return transactions.execute(status -> {
-			var raced = runs.findByOwnerUsernameAndClientRequestId(actor, request.clientRequestId());
-			if (raced.isPresent()) {
-				AgentRun previous = raced.get();
-				if (!requestHash.equals(previous.getRequestHash())) {
-					throw new IllegalStateException("clientRequestId 已用于不同请求");
+		try {
+			return transactions.execute(status -> {
+				var raced = runs.findByOwnerUsernameAndClientRequestId(actor, request.clientRequestId());
+				if (raced.isPresent()) {
+					AgentRun previous = raced.get();
+					if (!requestHash.equals(previous.getRequestHash())) {
+						throw new IllegalStateException("clientRequestId 已用于不同请求");
+					}
+					return view(previous);
 				}
-				return view(previous);
+				AgentRun run = new AgentRun();
+				run.setClientRequestId(request.clientRequestId());
+				run.setOwnerUsername(actor);
+				run.setSemesterCode(request.semesterCode());
+				run.setRequestHash(requestHash);
+				run.setParsedPlanJson(write(parsed.plan()));
+				run.setStatus(parsed.plan().readyForConfirmation()
+						? "READY_FOR_CONFIRMATION"
+						: "NEEDS_CLARIFICATION");
+				run.setExpiresAt(LocalDateTime.now().plusHours(EXPIRY_HOURS));
+				run = runs.save(run);
+				var metadata = invoke(
+						run, actor, SchedulingAgentCapabilities.REQUIREMENTS,
+						SchedulingAgentCapabilities.CONTEXT, "term",
+						AgentRunStatus.valueOf(run.getStatus()),
+						new SchedulingAgentCapabilities.ContextInput(
+								"TERM", request.semesterCode(), request.semesterCode(), 0, 10));
+				var catalog = (SchedulingAgentCatalogService.Page) metadata;
+				if (catalog.items().stream().noneMatch(item -> request.semesterCode().equals(item.code()))) {
+					throw new IllegalStateException("目标学期未在授权基础数据中");
+				}
+				recordStep(run, "requirements.parse", "SCHEDULE_REQUIREMENTS_V1", "OK");
+				return view(run);
+			});
+		} catch (DataIntegrityViolationException exception) {
+			AgentRun concurrent = runs.findByOwnerUsernameAndClientRequestId(
+					actor, request.clientRequestId()).orElseThrow(() -> exception);
+			if (!requestHash.equals(concurrent.getRequestHash())) {
+				throw new IllegalStateException("clientRequestId 已用于不同请求", exception);
 			}
-			AgentRun run = new AgentRun();
-			run.setClientRequestId(request.clientRequestId());
-			run.setOwnerUsername(actor);
-			run.setSemesterCode(request.semesterCode());
-			run.setRequestHash(requestHash);
-			run.setParsedPlanJson(write(parsed.plan()));
-			run.setStatus(parsed.plan().readyForConfirmation()
-					? "READY_FOR_CONFIRMATION"
-					: "NEEDS_CLARIFICATION");
-			run.setExpiresAt(LocalDateTime.now().plusHours(EXPIRY_HOURS));
-			run = runs.save(run);
-			var metadata = invoke(
-					run, actor, SchedulingAgentCapabilities.REQUIREMENTS,
-					SchedulingAgentCapabilities.CONTEXT, "term",
-					AgentRunStatus.valueOf(run.getStatus()),
-					new SchedulingAgentCapabilities.ContextInput(
-							"TERM", request.semesterCode(), request.semesterCode(), 0, 10));
-			var catalog = (SchedulingAgentCatalogService.Page) metadata;
-			if (catalog.items().stream().noneMatch(item -> request.semesterCode().equals(item.code()))) {
-				throw new IllegalStateException("目标学期未在授权基础数据中");
-			}
-			recordStep(run, "requirements.parse", "SCHEDULE_REQUIREMENTS_V1", "OK");
-			return view(run);
-		});
+			return view(synchronize(concurrent));
+		}
 	}
 
 	@Transactional
@@ -136,21 +153,35 @@ public class SchedulingAiRunService {
 		AgentRun current = requireVisible(id, actor, false);
 		requireVersion(current, request.expectedPlanVersion());
 		requireState(current, "NEEDS_CLARIFICATION");
+		dataScopes.assertFullAccess(dataScopes.resolve(actor));
 		SchedulingAiPlan previous = readPlan(current.getParsedPlanJson());
-		String priorContext = previous.constraints().stream()
-				.map(constraint -> constraint.teacherName() == null
-						? "" : constraint.teacherName())
-				.filter(value -> !value.isBlank())
-				.findFirst()
-				.orElse("");
+		if (!previous.unsupported().isEmpty()) {
+			throw new IllegalStateException("原需求包含不支持的规则，请修改原需求并新建 Run");
+		}
+		if (previous.unresolvedClauses().isEmpty()) {
+			throw new IllegalStateException("此处的学期、模式或旧计划歧义需修改请求并新建 Run");
+		}
+		if (previous.clarifications().stream().anyMatch(item -> item.startsWith("自然语言中"))) {
+			throw new IllegalStateException("学期或模式冲突需修改原需求并新建 Run");
+		}
+		Map<Integer, String> replacements = replyReplacements(
+				request.answer(), previous.unresolvedClauses().size());
 		SchedulingAiRunRequest reparsed = new SchedulingAiRunRequest(
 				current.getClientRequestId() + "-reply-" + current.getPlanVersion(),
 				current.getSemesterCode(),
 				previous.mode(),
 				previous.selectedOfferingIds(),
 				previous.candidateCount(),
-				(priorContext + " " + request.answer()).trim());
+				String.join("；", replacements.values()));
 		SchedulingAiPlan updated = parser.parse(reparsed, actor).plan();
+		Set<String> parsedSources = updated.constraints().stream()
+				.map(com.chronos.education.scheduling.model.SchedulingAiConstraint::sourceText)
+				.collect(java.util.stream.Collectors.toSet());
+		if (!updated.readyForConfirmation()
+				|| parsedSources.size() != replacements.size()
+				|| !parsedSources.containsAll(replacements.values())) {
+			throw new IllegalStateException("每条澄清回复须完整且可解析，包含教师、星期和节次或时段");
+		}
 		List<com.chronos.education.scheduling.model.SchedulingAiConstraint> combined =
 				new java.util.ArrayList<>(previous.constraints());
 		for (var constraint : updated.constraints()) {
@@ -169,16 +200,19 @@ public class SchedulingAiRunService {
 				combined.add(constraint);
 			}
 		}
-		List<String> remainingClarifications = new java.util.ArrayList<>(updated.clarifications());
-		if (updated.constraints().isEmpty()) {
-			remainingClarifications.addAll(previous.clarifications());
+		List<String> remainingUnresolved = new ArrayList<>();
+		for (int index = 0; index < previous.unresolvedClauses().size(); index++) {
+			if (!replacements.containsKey(index + 1)) {
+				remainingUnresolved.add(previous.unresolvedClauses().get(index));
+			}
 		}
-		List<String> remainingUnsupported = new java.util.ArrayList<>(previous.unsupported());
-		remainingUnsupported.addAll(updated.unsupported());
+		List<String> remainingClarifications = remainingUnresolved.isEmpty()
+				? List.of()
+				: List.of("仍有 " + remainingUnresolved.size() + " 条原需求待澄清，请按编号完整重述");
 		SchedulingAiPlan plan = new SchedulingAiPlan(updated.schemaVersion(),
 				updated.skillCode(), updated.semesterCode(), updated.mode(),
 				updated.selectedOfferingIds(), updated.candidateCount(), combined,
-				remainingClarifications, remainingUnsupported);
+				remainingClarifications, List.of(), remainingUnresolved);
 		return transactions.execute(status -> {
 			AgentRun locked = lockedOwner(id, actor);
 			requireVersion(locked, request.expectedPlanVersion());
@@ -194,6 +228,33 @@ public class SchedulingAiRunService {
 					"SCHEDULE_REQUIREMENTS_V1", "OK");
 			return view(runs.save(locked));
 		});
+	}
+
+	private Map<Integer, String> replyReplacements(String answer, int unresolvedCount) {
+		Map<Integer, String> replacements = new TreeMap<>();
+		String[] lines = answer.split("\\R");
+		if (unresolvedCount == 1 && lines.length == 1
+				&& !NUMBERED_REPLY.matcher(answer).matches()) {
+			replacements.put(1, answer.strip());
+		} else {
+			for (String line : lines) {
+				Matcher matcher = NUMBERED_REPLY.matcher(line.strip());
+				if (!matcher.matches()) {
+					throw new IllegalArgumentException("多条待澄清规则请逐行用“编号：完整规则”回复");
+				}
+				int number = Integer.parseInt(matcher.group(1));
+				if (number > unresolvedCount || replacements.putIfAbsent(
+						number, matcher.group(2).strip()) != null) {
+					throw new IllegalArgumentException("澄清规则编号重复或不存在");
+				}
+			}
+		}
+		if (replacements.isEmpty() || new HashSet<>(replacements.values()).size() != replacements.size()
+				|| replacements.values().stream().anyMatch(value ->
+						value.isBlank() || value.matches(".*[；;。，,\\n].*"))) {
+			throw new IllegalArgumentException("每个编号只能替换为一条完整且不同的规则");
+		}
+		return replacements;
 	}
 
 	@Transactional

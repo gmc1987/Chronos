@@ -3,7 +3,6 @@ package com.chronos.education.scheduling.service;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
-import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.SchedulingAiConstraint;
@@ -38,6 +37,12 @@ public class SchedulingAiRequirementParser {
 					+ "第?[一二三四五六七八九十\\d]+节\\s*"
 					+ "(?:不能|不可|禁止|禁排|不排|尽量|优先|希望|最好)"
 					+ "(?:上课|排课|排|安排)?");
+	private static final Pattern SUPPORTED_TEACHER_SEGMENT = Pattern.compile(
+			"(?:请|帮我|给)?\\s*TEACHER\\s*(?:在|于)?"
+					+ "(?:星期[一二三四五六日天]|周[一二三四五六日天])\\s*"
+					+ "(?:上午|下午|晚上)\\s*"
+					+ "(?:不能|不可|禁止|禁排|不排|尽量|优先|希望|最好)"
+					+ "(?:上课|排课|排|安排)?");
 	private static final Map<String, Integer> DAYS = Map.ofEntries(
 			Map.entry("星期一", 1), Map.entry("周一", 1),
 			Map.entry("星期二", 2), Map.entry("周二", 2),
@@ -53,6 +58,7 @@ public class SchedulingAiRequirementParser {
 	private final TeacherAcademicProfileRepository teachers;
 	private final EducationDataScopeService dataScopes;
 	private final SchedulingAiModelClassifier modelClassifier;
+	private final SchedulingAgentTimetableService timetable;
 
 	@Autowired
 	public SchedulingAiRequirementParser(
@@ -60,19 +66,29 @@ public class SchedulingAiRequirementParser {
 			CourseOfferingRepository offerings,
 			TeacherAcademicProfileRepository teachers,
 			EducationDataScopeService dataScopes,
-			SchedulingAiModelClassifier modelClassifier) {
+			SchedulingAiModelClassifier modelClassifier,
+			SchedulingAgentTimetableService timetable) {
 		this.terms = terms;
 		this.offerings = offerings;
 		this.teachers = teachers;
 		this.dataScopes = dataScopes;
 		this.modelClassifier = modelClassifier;
+		this.timetable = timetable;
+	}
+
+	SchedulingAiRequirementParser(AcademicTermRepository terms,
+			CourseOfferingRepository offerings,
+			TeacherAcademicProfileRepository teachers,
+			EducationDataScopeService dataScopes,
+			SchedulingAiModelClassifier modelClassifier) {
+		this(terms, offerings, teachers, dataScopes, modelClassifier, null);
 	}
 
 	SchedulingAiRequirementParser(AcademicTermRepository terms,
 			CourseOfferingRepository offerings,
 			TeacherAcademicProfileRepository teachers,
 			EducationDataScopeService dataScopes) {
-		this(terms, offerings, teachers, dataScopes, null);
+		this(terms, offerings, teachers, dataScopes, null, null);
 	}
 
 	public ParsedRequirement parse(SchedulingAiRunRequest request, String username) {
@@ -83,6 +99,7 @@ public class SchedulingAiRequirementParser {
 		List<String> clarifications = new java.util.ArrayList<>();
 		List<SchedulingAiConstraint> constraints = new java.util.ArrayList<>();
 		List<String> unsupported = new java.util.ArrayList<>();
+		List<String> unresolvedClauses = new java.util.ArrayList<>();
 		String text = request.requestText();
 		validateMentionedSemester(request, text, clarifications);
 		validateMentionedMode(request, text, clarifications);
@@ -96,11 +113,13 @@ public class SchedulingAiRequirementParser {
 			String rule = clause.text();
 			if ("UNSUPPORTED".equals(clause.classification())) {
 				unsupported.add("模型无法确认该需求：" + rule);
+				unresolvedClauses.add(rule);
 				continue;
 			}
 			if ("GENERATION".equals(clause.classification()) != isGenerationInstruction(rule)
 					&& !"DETERMINISTIC".equals(clause.classification())) {
 				unsupported.add("模型分类与服务端规则不一致：" + rule);
+				unresolvedClauses.add(rule);
 				continue;
 			}
 			if (rule.isEmpty() || isGenerationInstruction(rule)) {
@@ -110,24 +129,36 @@ public class SchedulingAiRequirementParser {
 			boolean preferred = containsAny(rule, "尽量", "优先", "希望", "最好");
 			if (!forbidden && !preferred) {
 				unsupported.add("暂不支持该需求：" + rule);
+				unresolvedClauses.add(rule);
 				continue;
 			}
 			if (forbidden && preferred) {
 				clarifications.add("同一条规则同时包含禁排和偏好，请拆开描述：" + rule);
+				unresolvedClauses.add(rule);
 				continue;
 			}
 			if (DAYS.entrySet().stream().filter(entry -> rule.contains(entry.getKey()))
 					.map(Map.Entry::getValue).distinct().count() > 1
 					|| PERIOD_PATTERN.matcher(rule).results().count() > 1) {
 				unsupported.add("一条规则包含多个时段，请按教师、星期和节次拆开：" + rule);
+				unresolvedClauses.add(rule);
 				continue;
 			}
 			TeacherResolution teacher = resolveTeacher(rule, scope);
 			Integer day = resolveDay(rule);
 			Integer period = resolvePeriod(rule);
+			String segment = containsAny(rule, "上午", "下午", "晚上")
+					? rule.contains("上午") ? "MORNING" : rule.contains("下午") ? "AFTERNOON" : "EVENING"
+					: null;
 			if (containsAny(rule, "课程", "教室", "连堂", "年级", "班级", "单双周", "每周",
-					"上午", "下午", "避免", "跨校区", "集中", "节连")) {
+					"避免", "跨校区", "集中", "节连")
+					|| rule.replace("上课", "").replace("排课", "").contains("课")
+					|| segment != null && period != null
+					|| containsAny(rule, "上午", "下午", "晚上")
+						&& List.of("上午", "下午", "晚上").stream()
+								.filter(rule::contains).count() > 1) {
 				unsupported.add("该时间或业务规则还不能转成具体排课条件：" + rule);
+				unresolvedClauses.add(rule);
 				continue;
 			}
 			if (teacher.candidates().isEmpty()) {
@@ -141,39 +172,70 @@ public class SchedulingAiRequirementParser {
 			}
 			if (day == null) {
 				clarifications.add("请明确星期几");
+			} else if (day > 5) {
+				unsupported.add("当前排课求解器仅支持周一至周五：" + rule);
+				unresolvedClauses.add(rule);
+				continue;
 			}
-			if (period == null || period < 1 || period > 20) {
+			if (segment == null && (period == null || period < 1 || period > 20)) {
 				clarifications.add("请明确有效节次（1-20）");
 			}
-			if (teacher.unique() != null && day != null && period != null
-					&& period >= 1 && period <= 20) {
+			if (teacher.unique() != null && day != null
+					&& (segment != null || period != null && period >= 1 && period <= 20)) {
 				String normalized = rule.replace(teacher.unique().getTeacherName(), "TEACHER");
 				if (teacher.unique().getTeacherNo() != null
 						&& !teacher.unique().getTeacherNo().isBlank()) {
 					normalized = normalized.replace(teacher.unique().getTeacherNo(), "TEACHER");
 				}
-				if (!SUPPORTED_TEACHER_SLOT.matcher(normalized).matches()) {
-					unsupported.add("该表述不能安全地转换为教师单节规则：" + rule);
+				if (!(segment == null ? SUPPORTED_TEACHER_SLOT : SUPPORTED_TEACHER_SEGMENT)
+						.matcher(normalized).matches()) {
+					unsupported.add("该表述不能安全地转换为教师时段规则：" + rule);
+					unresolvedClauses.add(rule);
 					continue;
 				}
-				if (constraints.stream().anyMatch(existing ->
-						existing.teacherId().equals(teacher.unique().getId())
-								&& existing.dayOfWeek().equals(day)
-								&& existing.periodNo().equals(period)
-								&& !existing.strength().equals(preferred ? "SOFT" : "HARD"))) {
+				List<Integer> resolvedPeriods;
+				if (segment != null) {
+					if (timetable == null) {
+						throw new IllegalStateException("AI 作息映射服务不可用");
+					}
+					var result = timetable.segment(request.semesterCode(), teacher.unique().getId(),
+							request.mode(), selected, segment);
+					if (result.clarification() != null) {
+						clarifications.add(result.clarification() + "：" + rule);
+						unresolvedClauses.add(rule);
+						continue;
+					}
+					resolvedPeriods = result.periodNumbers();
+					if (resolvedPeriods == null || resolvedPeriods.isEmpty()) {
+						throw new IllegalStateException("作息时段映射没有可排课节次");
+					}
+				} else {
+					resolvedPeriods = List.of(period);
+				}
+				if (resolvedPeriods.stream().anyMatch(resolved ->
+						constraints.stream().anyMatch(existing ->
+								existing.teacherId().equals(teacher.unique().getId())
+										&& existing.dayOfWeek().equals(day)
+										&& existing.periodNo().equals(resolved)
+										&& !existing.strength().equals(preferred ? "SOFT" : "HARD")))) {
 					clarifications.add("同一教师时段同时包含禁排和偏好：" + rule);
+					unresolvedClauses.add(rule);
 					continue;
 				}
-				constraints.add(new SchedulingAiConstraint(
-						"TEACHER_TIME",
-						preferred ? "SOFT" : "HARD",
-						teacher.unique().getId(),
-						teacher.unique().getTeacherName(),
-						day,
-						period,
-						null,
-						rule,
-						"RESOLVED"));
+				for (Integer resolved : resolvedPeriods) {
+					constraints.add(new SchedulingAiConstraint(
+							"TEACHER_TIME",
+							preferred ? "SOFT" : "HARD",
+							teacher.unique().getId(),
+							teacher.unique().getTeacherName(),
+							day,
+							resolved,
+							segment,
+							rule,
+							"RESOLVED"));
+				}
+			} else {
+				unresolvedClauses.add(rule);
 			}
 		}
 		SchedulingAiPlan plan = new SchedulingAiPlan(
@@ -185,8 +247,9 @@ public class SchedulingAiRequirementParser {
 				request.candidateCount(),
 				constraints,
 				clarifications,
-				unsupported);
-		return new ParsedRequirement(plan, toCommand(plan));
+				unsupported,
+				unresolvedClauses);
+		return new ParsedRequirement(plan);
 	}
 
 	private boolean isGenerationInstruction(String rule) {
@@ -303,22 +366,7 @@ public class SchedulingAiRequirementParser {
 		return false;
 	}
 
-	private AutoScheduleCommand toCommand(SchedulingAiPlan plan) {
-		return new AutoScheduleCommand(
-				plan.semesterCode(),
-				"AI-" + plan.semesterCode(),
-				"LOCAL".equals(plan.mode()) ? "LOCAL" : "FULL",
-				plan.selectedOfferingIds(),
-				plan.candidateCount(),
-				5,
-				8,
-				1,
-				20);
-	}
-
-	public record ParsedRequirement(
-			SchedulingAiPlan plan,
-			AutoScheduleCommand command) {
+	public record ParsedRequirement(SchedulingAiPlan plan) {
 	}
 
 	private record TeacherResolution(List<TeacherAcademicProfile> candidates) {

@@ -14,7 +14,6 @@ import com.chronos.education.scheduling.dao.AgentRunRepository;
 import com.chronos.education.scheduling.dao.AgentStepRepository;
 import com.chronos.education.scheduling.model.AgentRun;
 import com.chronos.education.scheduling.model.AgentStep;
-import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.ScheduleGenerationJob;
 import com.chronos.education.scheduling.model.ScheduleRunConstraints;
@@ -29,6 +28,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -54,8 +54,11 @@ class SchedulingAiRunServiceTest {
 		autoScheduling = mock(AutoSchedulingService.class);
 		scopes = mock(EducationDataScopeService.class);
 		tools = mock(AgentToolExecutor.class);
+		SchedulingAgentTimetableService timetable = mock(SchedulingAgentTimetableService.class);
+		when(timetable.dimensions(any(), any(), any()))
+				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 20));
 		planValidator = new SchedulingAgentPlanValidator(scopes,
-				new ObjectMapper().findAndRegisterModules());
+				new ObjectMapper().findAndRegisterModules(), timetable);
 		PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
 		when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
 		when(tools.newBudget(any(), any())).thenReturn(mock(AgentRunBudget.class));
@@ -133,6 +136,34 @@ class SchedulingAiRunServiceTest {
 	}
 
 	@Test
+	void concurrentInsertOfSameRequestReturnsTheExistingRun() {
+		SchedulingAiRunRequest request = request("request-1");
+		when(parser.requestHash(request)).thenReturn("hash-1");
+		when(parser.parse(request, "admin")).thenReturn(parsed(readyPlan));
+		when(runs.findByOwnerUsernameAndClientRequestId("admin", "request-1"))
+				.thenReturn(Optional.empty(), Optional.empty(), Optional.of(existing("hash-1")));
+		org.mockito.Mockito.doThrow(new DataIntegrityViolationException("duplicate"))
+				.when(runs).save(any());
+
+		assertThat(service.create(request, "admin").id()).isEqualTo("run-existing");
+		verify(parser).parse(request, "admin");
+	}
+
+	@Test
+	void unrelatedIntegrityErrorIsNotDisguisedAsAnIdempotentRequest() {
+		SchedulingAiRunRequest request = request("request-1");
+		when(parser.requestHash(request)).thenReturn("hash-1");
+		when(parser.parse(request, "admin")).thenReturn(parsed(readyPlan));
+		when(runs.findByOwnerUsernameAndClientRequestId("admin", "request-1"))
+				.thenReturn(Optional.empty());
+		org.mockito.Mockito.doThrow(new DataIntegrityViolationException("other"))
+				.when(runs).save(any());
+
+		assertThatThrownBy(() -> service.create(request, "admin"))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
 	void illegalReplyStateIsRejected() {
 		AgentRun run = existing("hash-1");
 		run.setId("run-1");
@@ -151,24 +182,80 @@ class SchedulingAiRunServiceTest {
 
 	@Test
 	void replyCannotSilentlyDropAnUnsupportedOriginalRule() throws Exception {
-		AgentRun run = existing("hash-1");
-		run.setId("run-1");
-		run.setStatus("NEEDS_CLARIFICATION");
-		run.setParsedPlanJson(new ObjectMapper().findAndRegisterModules().writeValueAsString(
-				new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1", "2026-2027-1",
-						"GLOBAL", Set.of(), 1, List.of(), List.of(),
-						List.of("暂不支持该需求：数学课尽量安排在上午"))));
-		when(runs.findById("run-1")).thenReturn(Optional.of(run));
-		when(runs.findLockedById("run-1")).thenReturn(Optional.of(run));
-		when(parser.parse(any(SchedulingAiRunRequest.class), org.mockito.ArgumentMatchers.eq("admin")))
-				.thenReturn(parsed(new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
-						"2026-2027-1", "GLOBAL", Set.of(), 1,
-						List.of(), List.of(), List.of())));
+		clarifyingRun(List.of("数学课尽量安排在上午"),
+				List.of(), List.of("暂不支持该需求：数学课尽量安排在上午"));
 
-		var result = service.reply("run-1", new SchedulingAiReplyRequest("帮我排课", 1), "admin");
+		assertThatThrownBy(() -> service.reply("run-1",
+				new SchedulingAiReplyRequest("张老师周三第3节不能上课", 1), "admin"))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("新建 Run");
+		org.mockito.Mockito.verifyNoInteractions(parser);
+	}
+
+	@Test
+	void replyReplacesOneAmbiguousClauseWithoutDroppingOtherClauses() throws Exception {
+		clarifyingRun(List.of("张老师周三不能排", "李老师周五下午不能排"),
+				List.of("请明确有效节次"), List.of());
+		when(parser.parse(any(SchedulingAiRunRequest.class),
+				org.mockito.ArgumentMatchers.eq("admin")))
+				.thenReturn(parsed(replyPlan("张老师周三第3节不能排", "teacher-1")));
+
+		var result = service.reply("run-1",
+				new SchedulingAiReplyRequest("1：张老师周三第3节不能排", 1), "admin");
 
 		assertThat(result.status()).isEqualTo("NEEDS_CLARIFICATION");
-		assertThat(result.plan().unsupported()).contains("暂不支持该需求：数学课尽量安排在上午");
+		assertThat(result.plan().unresolvedClauses()).containsExactly("李老师周五下午不能排");
+		assertThat(result.plan().constraints()).hasSize(1);
+		var captured = org.mockito.ArgumentCaptor.forClass(SchedulingAiRunRequest.class);
+		verify(parser).parse(captured.capture(), org.mockito.ArgumentMatchers.eq("admin"));
+		assertThat(captured.getValue().requestText()).isEqualTo("张老师周三第3节不能排");
+	}
+
+	@Test
+	void replyWithTwoOldClausesCannotReplaceThemUsingOneNewRule() throws Exception {
+		clarifyingRun(List.of("张老师周三不能排", "李老师周五下午不能排"),
+				List.of("请明确节次"), List.of());
+
+		assertThatThrownBy(() -> service.reply("run-1",
+				new SchedulingAiReplyRequest("张老师周三第3节不能排", 1), "admin"))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("编号");
+		org.mockito.Mockito.verifyNoInteractions(parser);
+	}
+
+	@Test
+	void replyDoesNotAcceptGenerationTextAsReplacement() throws Exception {
+		clarifyingRun(List.of("张老师周三不能排"), List.of("请明确节次"), List.of());
+		when(parser.parse(any(SchedulingAiRunRequest.class),
+				org.mockito.ArgumentMatchers.eq("admin")))
+				.thenReturn(parsed(new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+						"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of(), List.of())));
+
+		assertThatThrownBy(() -> service.reply("run-1",
+				new SchedulingAiReplyRequest("帮我排课", 1), "admin"))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("完整且可解析");
+	}
+
+	@Test
+	void replyCanResolveAllClausesByIndex() throws Exception {
+		clarifyingRun(List.of("张老师周三不能排", "李老师周五下午不能排"),
+				List.of("请明确时段"), List.of());
+		var first = new SchedulingAiConstraint(
+				"TEACHER_TIME", "HARD", "teacher-1", "张老师",
+				3, 3, null, "张老师周三第3节不能排", "RESOLVED");
+		var second = new SchedulingAiConstraint(
+				"TEACHER_TIME", "HARD", "teacher-2", "李老师",
+				5, 5, "AFTERNOON", "李老师周五下午不能排", "RESOLVED");
+		when(parser.parse(any(SchedulingAiRunRequest.class),
+				org.mockito.ArgumentMatchers.eq("admin")))
+				.thenReturn(parsed(new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+						"2026-2027-1", "GLOBAL", Set.of(), 1,
+						List.of(first, second), List.of(), List.of())));
+
+		var result = service.reply("run-1", new SchedulingAiReplyRequest(
+				"1：张老师周三第3节不能排\n2：李老师周五下午不能排", 1), "admin");
+
+		assertThat(result.status()).isEqualTo("READY_FOR_CONFIRMATION");
+		assertThat(result.plan().constraints()).containsExactly(first, second);
+		assertThat(result.plan().unresolvedClauses()).isEmpty();
 	}
 
 	@Test
@@ -207,10 +294,26 @@ class SchedulingAiRunServiceTest {
 	}
 
 	private SchedulingAiRequirementParser.ParsedRequirement parsed(SchedulingAiPlan plan) {
-		return new SchedulingAiRequirementParser.ParsedRequirement(
-				plan,
-				new AutoScheduleCommand(
-						plan.semesterCode(), "AI", "FULL", Set.of(), 1, 5, 8, 1, 20));
+		return new SchedulingAiRequirementParser.ParsedRequirement(plan);
+	}
+
+	private SchedulingAiPlan replyPlan(String source, String teacher) {
+		return new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1,
+				List.of(new SchedulingAiConstraint("TEACHER_TIME", "HARD", teacher,
+						"张老师", 3, 3, null, source, "RESOLVED")), List.of(), List.of());
+	}
+
+	private void clarifyingRun(List<String> unresolved, List<String> clarifications,
+			List<String> unsupported) throws Exception {
+		AgentRun run = existing("hash-1");
+		run.setId("run-1");
+		run.setStatus("NEEDS_CLARIFICATION");
+		run.setParsedPlanJson(new ObjectMapper().findAndRegisterModules().writeValueAsString(
+				new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1", "2026-2027-1",
+						"GLOBAL", Set.of(), 1, List.of(), clarifications, unsupported, unresolved)));
+		when(runs.findById("run-1")).thenReturn(Optional.of(run));
+		when(runs.findLockedById("run-1")).thenReturn(Optional.of(run));
 	}
 
 	private AgentRun existing(String hash) {

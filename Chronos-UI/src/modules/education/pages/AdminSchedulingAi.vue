@@ -86,6 +86,7 @@ const clarificationItems = computed(() => {
   return value ? [value] : []
 })
 const unsupportedItems = computed(() => parsedPlan.value?.unsupported || [])
+const unresolvedItems = computed(() => parsedPlan.value?.unresolvedClauses || [])
 const constraintDraft = computed(() => parsedPlan.value?.constraints
   || run.value?.constraintDraft
   || run.value?.constraints
@@ -432,7 +433,7 @@ onBeforeUnmount(() => {
             :rows="5"
             maxlength="2000"
             show-word-limit
-            placeholder="当前支持：张老师周三第3节不能上课；李老师周四第2节尽量排课。其他规则会明确提示暂不支持。"
+            placeholder="例如：张老师周三下午不能上课；李老师周四第2节尽量排课。上下午需要教师所属校区的默认作息，其余规则会明确提示。"
           />
         </el-form-item>
         <el-form-item>
@@ -470,10 +471,15 @@ onBeforeUnmount(() => {
         <ul v-else class="clarification-list">
           <li v-for="(item, index) in clarificationItems" :key="index">{{ typeof item === 'string' ? item : formatJson(item) }}</li>
         </ul>
-        <div class="reply-box">
-          <el-input v-model="clarificationReply" type="textarea" :rows="3" placeholder="补充完整的教师、星期、节次；不支持的规则需创建新 Run 并修改原需求" />
+        <div v-if="unresolvedItems.length && !unsupportedItems.length" class="reply-box">
+          <div>
+            <p>请用完整新规则替换下列待澄清原文；多条时逐行输入“编号：教师＋星期＋节次/时段＋禁排或偏好”。未回复的规则会继续等待澄清。</p>
+            <ol><li v-for="(item, index) in unresolvedItems" :key="index">{{ item }}</li></ol>
+          </div>
+          <el-input v-model="clarificationReply" type="textarea" :rows="3" placeholder="例如：1：张老师周三第3节不能上课" />
           <el-button type="primary" :loading="replying" @click="replyToRun">提交回复</el-button>
         </div>
+        <el-alert v-else-if="unsupportedItems.length || currentStatus === 'NEEDS_CLARIFICATION'" title="请修改原需求、新建 Run 以解决不支持的规则或学期/模式冲突。" type="info" :closable="false" />
       </section>
 
       <section v-if="currentStatus === 'READY_FOR_CONFIRMATION'" class="workflow-section">
@@ -562,8 +568,9 @@ p { margin: 0; color: #84909a; }
 .request-card :deep(.el-select), .offering-select { width: min(720px, 100%); }
 .workflow-section { margin-top: 22px; }
 .clarification-list { margin: 0 0 16px; padding: 12px 12px 12px 30px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: var(--el-fill-color-light); }
-.reply-box { display: flex; align-items: flex-start; gap: 12px; max-width: 900px; }
-.reply-box .el-textarea { flex: 1; }
+.reply-box { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; max-width: 900px; }
+.reply-box .el-textarea { width: 100%; }
+.reply-box ol { margin: 8px 0 0; padding-left: 26px; }
 .json-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 pre { margin: 0; max-height: 320px; overflow: auto; padding: 12px; white-space: pre-wrap; word-break: break-word; border-radius: 4px; background: #f6f8fa; color: #334155; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .generation-row { justify-content: flex-start; }

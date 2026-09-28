@@ -15,10 +15,13 @@ import org.springframework.stereotype.Service;
 public class SchedulingAgentPlanValidator {
 	private final EducationDataScopeService scopes;
 	private final ObjectMapper json;
+	private final SchedulingAgentTimetableService timetable;
 
-	public SchedulingAgentPlanValidator(EducationDataScopeService scopes, ObjectMapper json) {
+	public SchedulingAgentPlanValidator(EducationDataScopeService scopes, ObjectMapper json,
+			SchedulingAgentTimetableService timetable) {
 		this.scopes = scopes;
 		this.json = json;
+		this.timetable = timetable;
 	}
 
 	public Parameters fromConfirmedRun(AgentRun run, String actor) {
@@ -59,6 +62,8 @@ public class SchedulingAgentPlanValidator {
 		}
 		var scope = scopes.resolve(actor);
 		scopes.assertFullAccess(scope);
+		var dimensions = timetable.dimensions(plan.semesterCode(), plan.mode(),
+				plan.selectedOfferingIds());
 		List<ScheduleRunConstraints.TeacherSlot> rules = plan.constraints().stream()
 				.map(item -> {
 					if (!"TEACHER_TIME".equals(item.kind())
@@ -66,7 +71,10 @@ public class SchedulingAgentPlanValidator {
 							|| item.strength() == null
 							|| !Set.of("HARD", "SOFT").contains(item.strength())
 							|| item.teacherId() == null
-							|| item.dayOfWeek() == null || item.periodNo() == null) {
+							|| item.dayOfWeek() == null || item.periodNo() == null
+							|| item.dayOfWeek() < 1 || item.periodNo() < 1
+							|| item.dayOfWeek() > dimensions.weekdays()
+							|| item.periodNo() > dimensions.periodsPerDay()) {
 						throw new IllegalStateException("结构化规则未被求解器支持");
 					}
 					scopes.assertTeacherAccess(scope, item.teacherId());
@@ -78,7 +86,8 @@ public class SchedulingAgentPlanValidator {
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				plan.semesterCode(), "AI-" + plan.semesterCode(),
 				"LOCAL".equals(plan.mode()) ? "LOCAL" : "FULL",
-				plan.selectedOfferingIds(), plan.candidateCount(), 5, 8, 1, 20);
+				plan.selectedOfferingIds(), plan.candidateCount(),
+				dimensions.weekdays(), dimensions.periodsPerDay(), 1, dimensions.endWeek());
 		return new Parameters(command, new ScheduleRunConstraints(rules));
 	}
 
