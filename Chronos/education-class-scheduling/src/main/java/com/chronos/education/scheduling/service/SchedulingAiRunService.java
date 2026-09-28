@@ -1,20 +1,22 @@
 package com.chronos.education.scheduling.service;
 
+import com.chronos.agent.AgentRunStatus;
+import com.chronos.agent.AgentRunBudget;
+import com.chronos.agent.AgentToolExecutor;
+import com.chronos.agent.ToolContext;
+import com.chronos.agent.ToolResult;
 import com.chronos.education.scheduling.dao.AgentRunRepository;
 import com.chronos.education.scheduling.dao.AgentStepRepository;
-import com.chronos.education.scheduling.dao.SchedulingAgentProposalRepository;
 import com.chronos.education.scheduling.model.AgentRun;
 import com.chronos.education.scheduling.model.AgentStep;
-import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
+import com.chronos.education.scheduling.model.ScheduleDiffView;
 import com.chronos.education.scheduling.model.ScheduleGenerationJob;
 import com.chronos.education.scheduling.model.SchedulingAiConfirmRequest;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
 import com.chronos.education.scheduling.model.SchedulingAiReplyRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunView;
-import com.chronos.education.scheduling.model.SchedulingAgentProposal;
-import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,12 +24,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.IntStream;
-import org.springframework.beans.factory.annotation.Autowired;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Orchestrates the persisted state machine without exposing apply/publish tools. */
 @Service
@@ -41,10 +46,11 @@ public class SchedulingAiRunService {
 	private final AutoSchedulingService autoScheduling;
 	private final EducationDataScopeService dataScopes;
 	private final ObjectMapper json;
-	private final SchedulingAgentProposalRepository proposals;
-	private final com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository constraints;
+	private final AgentToolExecutor tools;
+	private final SchedulingAgentCandidateService candidateService;
+	private final TransactionTemplate transactions;
+	private final ConcurrentHashMap<String, AgentRunBudget> budgets = new ConcurrentHashMap<>();
 
-	@Autowired
 	public SchedulingAiRunService(
 			AgentRunRepository runs,
 			AgentStepRepository steps,
@@ -53,8 +59,9 @@ public class SchedulingAiRunService {
 			AutoSchedulingService autoScheduling,
 			EducationDataScopeService dataScopes,
 			ObjectMapper json,
-			SchedulingAgentProposalRepository proposals,
-			com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository constraints) {
+			AgentToolExecutor tools,
+			SchedulingAgentCandidateService candidateService,
+			TransactionTemplate transactions) {
 		this.runs = runs;
 		this.steps = steps;
 		this.parser = parser;
@@ -62,24 +69,13 @@ public class SchedulingAiRunService {
 		this.autoScheduling = autoScheduling;
 		this.dataScopes = dataScopes;
 		this.json = json;
-		this.proposals = proposals;
-		this.constraints = constraints;
+		this.tools = tools;
+		this.candidateService = candidateService;
+		this.transactions = transactions;
 	}
 
-	/** Compatibility constructor for lightweight callers that do not persist constraints. */
-	public SchedulingAiRunService(
-			AgentRunRepository runs,
-			AgentStepRepository steps,
-			SchedulingAiRequirementParser parser,
-			ScheduleGenerationJobService jobs,
-			AutoSchedulingService autoScheduling,
-			EducationDataScopeService dataScopes,
-			ObjectMapper json) {
-		this(runs, steps, parser, jobs, autoScheduling, dataScopes, json, null, null);
-	}
-
-	@Transactional
 	public SchedulingAiRunView create(SchedulingAiRunRequest request, String actor) {
+		dataScopes.assertFullAccess(dataScopes.resolve(actor));
 		String requestHash = parser.requestHash(request);
 		var existing = runs.findByOwnerUsernameAndClientRequestId(
 				actor, request.clientRequestId());
@@ -92,19 +88,39 @@ public class SchedulingAiRunService {
 		}
 		SchedulingAiRequirementParser.ParsedRequirement parsed =
 				parser.parse(request, actor);
-		AgentRun run = new AgentRun();
-		run.setClientRequestId(request.clientRequestId());
-		run.setOwnerUsername(actor);
-		run.setSemesterCode(request.semesterCode());
-		run.setRequestHash(requestHash);
-		run.setParsedPlanJson(write(parsed.plan()));
-		run.setStatus(parsed.plan().readyForConfirmation()
-				? "READY_FOR_CONFIRMATION"
-				: "NEEDS_CLARIFICATION");
-		run.setExpiresAt(LocalDateTime.now().plusHours(EXPIRY_HOURS));
-		run = runs.save(run);
-		recordStep(run, "requirements.parse", "SCHEDULE_REQUIREMENTS_V1", "OK");
-		return view(run);
+		return transactions.execute(status -> {
+			var raced = runs.findByOwnerUsernameAndClientRequestId(actor, request.clientRequestId());
+			if (raced.isPresent()) {
+				AgentRun previous = raced.get();
+				if (!requestHash.equals(previous.getRequestHash())) {
+					throw new IllegalStateException("clientRequestId 已用于不同请求");
+				}
+				return view(previous);
+			}
+			AgentRun run = new AgentRun();
+			run.setClientRequestId(request.clientRequestId());
+			run.setOwnerUsername(actor);
+			run.setSemesterCode(request.semesterCode());
+			run.setRequestHash(requestHash);
+			run.setParsedPlanJson(write(parsed.plan()));
+			run.setStatus(parsed.plan().readyForConfirmation()
+					? "READY_FOR_CONFIRMATION"
+					: "NEEDS_CLARIFICATION");
+			run.setExpiresAt(LocalDateTime.now().plusHours(EXPIRY_HOURS));
+			run = runs.save(run);
+			var metadata = invoke(
+					run, actor, SchedulingAgentCapabilities.REQUIREMENTS,
+					SchedulingAgentCapabilities.CONTEXT, "term",
+					AgentRunStatus.valueOf(run.getStatus()),
+					new SchedulingAgentCapabilities.ContextInput(
+							"TERM", request.semesterCode(), request.semesterCode(), 0, 10));
+			var catalog = (SchedulingAgentCatalogService.Page) metadata;
+			if (catalog.items().stream().noneMatch(item -> request.semesterCode().equals(item.code()))) {
+				throw new IllegalStateException("目标学期未在授权基础数据中");
+			}
+			recordStep(run, "requirements.parse", "SCHEDULE_REQUIREMENTS_V1", "OK");
+			return view(run);
+		});
 	}
 
 	@Transactional
@@ -113,12 +129,11 @@ public class SchedulingAiRunService {
 		return view(synchronize(run));
 	}
 
-	@Transactional
 	public SchedulingAiRunView reply(
 			String id,
 			SchedulingAiReplyRequest request,
 			String actor) {
-		AgentRun current = lockedOwner(id, actor);
+		AgentRun current = requireVisible(id, actor, false);
 		requireVersion(current, request.expectedPlanVersion());
 		requireState(current, "NEEDS_CLARIFICATION");
 		SchedulingAiPlan previous = readPlan(current.getParsedPlanJson());
@@ -135,17 +150,50 @@ public class SchedulingAiRunService {
 				previous.selectedOfferingIds(),
 				previous.candidateCount(),
 				(priorContext + " " + request.answer()).trim());
-		SchedulingAiPlan plan = parser.parse(reparsed, actor).plan();
-		current.setPlanVersion(current.getPlanVersion() + 1);
-		current.setParsedPlanJson(write(plan));
-		current.setStatus(plan.readyForConfirmation()
-				? "READY_FOR_CONFIRMATION"
-				: "NEEDS_CLARIFICATION");
-		current.setErrorCode(null);
-		current.setErrorMessage(null);
-		recordStep(current, "requirements.reply." + current.getPlanVersion(),
-				"SCHEDULE_REQUIREMENTS_V1", "OK");
-		return view(runs.save(current));
+		SchedulingAiPlan updated = parser.parse(reparsed, actor).plan();
+		List<com.chronos.education.scheduling.model.SchedulingAiConstraint> combined =
+				new java.util.ArrayList<>(previous.constraints());
+		for (var constraint : updated.constraints()) {
+			if (combined.stream().anyMatch(existing ->
+					existing.teacherId().equals(constraint.teacherId())
+							&& existing.dayOfWeek().equals(constraint.dayOfWeek())
+							&& existing.periodNo().equals(constraint.periodNo())
+							&& !existing.strength().equals(constraint.strength()))) {
+				throw new IllegalStateException("补充需求与已解析教师时段规则冲突，请重新创建请求");
+			}
+			if (combined.stream().noneMatch(existing ->
+					existing.teacherId().equals(constraint.teacherId())
+							&& existing.dayOfWeek().equals(constraint.dayOfWeek())
+							&& existing.periodNo().equals(constraint.periodNo())
+							&& existing.strength().equals(constraint.strength()))) {
+				combined.add(constraint);
+			}
+		}
+		List<String> remainingClarifications = new java.util.ArrayList<>(updated.clarifications());
+		if (updated.constraints().isEmpty()) {
+			remainingClarifications.addAll(previous.clarifications());
+		}
+		List<String> remainingUnsupported = new java.util.ArrayList<>(previous.unsupported());
+		remainingUnsupported.addAll(updated.unsupported());
+		SchedulingAiPlan plan = new SchedulingAiPlan(updated.schemaVersion(),
+				updated.skillCode(), updated.semesterCode(), updated.mode(),
+				updated.selectedOfferingIds(), updated.candidateCount(), combined,
+				remainingClarifications, remainingUnsupported);
+		return transactions.execute(status -> {
+			AgentRun locked = lockedOwner(id, actor);
+			requireVersion(locked, request.expectedPlanVersion());
+			requireState(locked, "NEEDS_CLARIFICATION");
+			locked.setPlanVersion(locked.getPlanVersion() + 1);
+			locked.setParsedPlanJson(write(plan));
+			locked.setStatus(plan.readyForConfirmation()
+					? "READY_FOR_CONFIRMATION"
+					: "NEEDS_CLARIFICATION");
+			locked.setErrorCode(null);
+			locked.setErrorMessage(null);
+			recordStep(locked, "requirements.reply." + locked.getPlanVersion(),
+					"SCHEDULE_REQUIREMENTS_V1", "OK");
+			return view(runs.save(locked));
+		});
 	}
 
 	@Transactional
@@ -160,7 +208,11 @@ public class SchedulingAiRunService {
 		if (!plan.readyForConfirmation()) {
 			throw new IllegalStateException("结构化需求仍包含待澄清项");
 		}
-		persistConfirmedConstraints(current, plan, actor);
+		invoke(current, actor, SchedulingAgentCapabilities.CONSTRAINTS,
+				SchedulingAgentCapabilities.CONSTRAINTS_VALIDATE,
+				"constraints.validate." + current.getPlanVersion(),
+				AgentRunStatus.READY_FOR_CONFIRMATION,
+				new SchedulingAgentCapabilities.GenerationInput(current.getPlanVersion()));
 		current.setConfirmedPlanJson(current.getParsedPlanJson());
 		current.setStatus("CONFIRMED");
 		recordStep(current, "requirements.confirm." + current.getPlanVersion(),
@@ -168,79 +220,71 @@ public class SchedulingAiRunService {
 		return view(runs.save(current));
 	}
 
-	private void persistConfirmedConstraints(
-			AgentRun run,
-			SchedulingAiPlan plan,
-			String actor) {
-		if (proposals == null || constraints == null || plan.constraints().isEmpty()) {
-			return;
-		}
-		if (!proposals.findByAgentRunIdAndPlanVersion(
-				run.getId(), run.getPlanVersion()).isEmpty()) {
-			return;
-		}
-		var scope = dataScopes.resolve(actor);
-		IntStream.range(0, plan.constraints().size()).forEach(index -> {
-			var item = plan.constraints().get(index);
-			if (!"TEACHER_TIME".equals(item.kind())
-					|| item.teacherId() == null
-					|| item.dayOfWeek() == null
-					|| item.periodNo() == null) {
-				return;
-			}
-			dataScopes.assertTeacherAccess(scope, item.teacherId());
-			TeacherTimeConstraint constraint = new TeacherTimeConstraint();
-			constraint.setSemesterCode(plan.semesterCode());
-			constraint.setTeacherId(item.teacherId());
-			constraint.setDayOfWeek(item.dayOfWeek());
-			constraint.setPeriodNo(item.periodNo());
-			constraint.setConstraintType("SOFT".equals(item.strength())
-					? "PREFERRED" : "FORBIDDEN");
-			constraint.setWeight("SOFT".equals(item.strength()) ? 10 : 100);
-			constraint.setReason("AI Run " + run.getId()
-					+ " planVersion " + run.getPlanVersion());
-			constraint = constraints.save(constraint);
-			SchedulingAgentProposal proposal = new SchedulingAgentProposal();
-			proposal.setSemesterCode(plan.semesterCode());
-			proposal.setRequestText(item.sourceText());
-			proposal.setTeacherId(item.teacherId());
-			proposal.setTeacherName(item.teacherName());
-			proposal.setDayOfWeek(item.dayOfWeek());
-			proposal.setPeriodNo(item.periodNo());
-			proposal.setConstraintType(constraint.getConstraintType());
-			proposal.setReason(item.resolution());
-			proposal.setStatus("CONFIRMED");
-			proposal.setConfirmedBy(actor);
-			proposal.setConfirmedAt(LocalDateTime.now());
-			proposal.setAppliedConstraintId(constraint.getId());
-			proposal.setAgentRunId(run.getId());
-			proposal.setPlanVersion(run.getPlanVersion());
-			proposals.save(proposal);
-		});
-	}
-
 	@Transactional
 	public SchedulingAiRunView generate(String id, String actor) {
 		AgentRun current = lockedOwner(id, actor);
 		dataScopes.assertFullAccess(dataScopes.resolve(actor));
 		requireState(current, "CONFIRMED");
-		SchedulingAiPlan plan = readPlan(current.getConfirmedPlanJson());
-		AutoScheduleCommand command = new AutoScheduleCommand(
-				plan.semesterCode(),
-				"AI-" + plan.semesterCode(),
-				"LOCAL".equals(plan.mode()) ? "LOCAL" : "FULL",
-				plan.selectedOfferingIds(),
-				plan.candidateCount(),
-				5,
-				8,
-				1,
-				20);
-		ScheduleGenerationJob job = jobs.submit(command, actor, current.getId());
-		current.setRelatedJobId(job.getId());
+		invoke(current, actor, SchedulingAgentCapabilities.GENERATION,
+				SchedulingAgentCapabilities.GENERATION_VALIDATE,
+				"generation.validate." + current.getPlanVersion(),
+				AgentRunStatus.CONFIRMED,
+				new SchedulingAgentCapabilities.GenerationInput(current.getPlanVersion()));
+		String jobId = (String) invoke(
+				current, actor, SchedulingAgentCapabilities.GENERATION,
+				SchedulingAgentCapabilities.GENERATE,
+				"generation.submit." + current.getPlanVersion(),
+				AgentRunStatus.CONFIRMED,
+				new SchedulingAgentCapabilities.GenerationInput(current.getPlanVersion()));
+		current.setRelatedJobId(jobId);
 		current.setStatus("QUEUED");
 		recordStep(current, "generation.submit." + current.getPlanVersion(),
 				"SCHEDULE_GENERATE_V1", "OK");
 		return view(runs.save(current));
+	}
+
+	private Object invoke(AgentRun run, String actor, String skill, String tool,
+			String key, AgentRunStatus status, Object input) {
+		ToolContext context = new ToolContext(run.getId(), actor, run.getSchoolId(),
+				java.util.Map.of(), key, Instant.now().plusSeconds(10));
+		String budgetKey = run.getId() + ":" + skill;
+		AgentRunBudget budget = budgets.computeIfAbsent(budgetKey,
+				ignored -> tools.newBudget(context, skill));
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCompletion(int completionStatus) {
+					budgets.remove(budgetKey, budget);
+				}
+			});
+		}
+		ToolResult<?> result = tools.invoke(skill, tool, 1, context, budget, status, input);
+		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+			budgets.remove(budgetKey, budget);
+		}
+		if (!result.succeeded()) {
+			throw new IllegalStateException("排课工具执行失败：" + result.resultCode() + " " + result.summary());
+		}
+		if (!List.of(SchedulingAgentCapabilities.STATUS, SchedulingAgentCapabilities.COMPARE,
+				SchedulingAgentCapabilities.PREVIEW).contains(tool)
+				&& steps.findByRunIdAndStepKey(run.getId(), key).isEmpty()) {
+			AgentStep trace = new AgentStep();
+			trace.setRunId(run.getId());
+			trace.setStepNo(steps.findByRunIdOrderByStepNo(run.getId()).size() + 1);
+			trace.setPlanVersion(run.getPlanVersion());
+			trace.setStepKey(key);
+			trace.setSkillCode(skill);
+			trace.setToolCode(tool);
+			trace.setState("SUCCEEDED");
+			trace.setResultCode(result.resultCode());
+			trace.setInputDigest(digest(tool + ":" + key));
+			trace.setOutputSummaryJson(write(java.util.Map.of("summary", result.summary())));
+			trace.setStartedAt(LocalDateTime.now());
+			trace.setFinishedAt(LocalDateTime.now());
+			trace.setDurationMs(0L);
+			steps.save(trace);
+		}
+		return result.data();
 	}
 
 	@Transactional
@@ -253,10 +297,26 @@ public class SchedulingAiRunService {
 			return List.of();
 		}
 		ScheduleGenerationJob job = jobs.require(run.getRelatedJobId());
+		if (!run.getId().equals(job.getAgentRunId())
+				|| !run.getSemesterCode().equals(job.getSemesterCode())) {
+			throw new IllegalStateException("排课任务与当前 AI Run 不匹配");
+		}
 		Set<String> ids = readIds(job.getResultCandidateIds());
 		return autoScheduling.list(run.getSemesterCode()).stream()
 				.filter(candidate -> ids.contains(candidate.id()))
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<ScheduleCandidateView> compare(String id, String actor, List<String> candidateIds) {
+		AgentRun run = requireVisible(id, actor, false);
+		return candidateService.compare(run, actor, candidateIds);
+	}
+
+	@Transactional(readOnly = true)
+	public ScheduleDiffView preview(String id, String actor, String candidateId) {
+		AgentRun run = requireVisible(id, actor, false);
+		return candidateService.preview(run, actor, candidateId);
 	}
 
 	@Transactional
@@ -280,7 +340,7 @@ public class SchedulingAiRunService {
 	}
 
 	private AgentRun synchronize(AgentRun run) {
-		if (run.getExpiresAt() != null
+		if (run.getRelatedJobId() == null && run.getExpiresAt() != null
 				&& run.getExpiresAt().isBefore(LocalDateTime.now())
 				&& !List.of("CANDIDATES_READY", "FAILED", "CANCELLED", "EXPIRED")
 						.contains(run.getStatus())) {
@@ -291,6 +351,10 @@ public class SchedulingAiRunService {
 			return run;
 		}
 		ScheduleGenerationJob job = jobs.require(run.getRelatedJobId());
+		if (!run.getId().equals(job.getAgentRunId())
+				|| !run.getSemesterCode().equals(job.getSemesterCode())) {
+			throw new IllegalStateException("排课任务与当前 AI Run 不匹配");
+		}
 		switch (job.getStatus()) {
 			case "RUNNING" -> run.setStatus("RUNNING");
 			case "SUCCEEDED" -> run.setStatus("CANDIDATES_READY");
@@ -321,6 +385,9 @@ public class SchedulingAiRunService {
 				.orElseThrow(() -> new IllegalArgumentException("AI Run 不存在"));
 		if (!actor.equals(run.getOwnerUsername())) {
 			throw new org.springframework.security.access.AccessDeniedException("无权操作该 AI Run");
+		}
+		if (run.getExpiresAt() != null && run.getExpiresAt().isBefore(LocalDateTime.now())) {
+			throw new IllegalStateException("AI Run 已过期");
 		}
 		return run;
 	}

@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import {
   cancelAiSchedulingRun,
+  compareAiSchedulingCandidates,
   confirmAiSchedulingRun,
   createAiSchedulingRun,
   generateAiSchedulingRun,
@@ -12,6 +13,7 @@ import {
   listAiSchedulingCandidates,
   listAcademicTerms,
   listCourseOfferings,
+  previewAiSchedulingCandidate,
   replyAiSchedulingRun,
 } from '../../../api/admin'
 
@@ -58,6 +60,8 @@ const run = ref(null)
 const candidates = ref([])
 const candidateSelection = ref([])
 const previewCandidate = ref(null)
+const previewDiff = ref(null)
+const comparedCandidates = ref([])
 const clarificationReply = ref('')
 const creating = ref(false)
 const loadingOfferings = ref(false)
@@ -81,13 +85,14 @@ const clarificationItems = computed(() => {
   if (Array.isArray(value)) return value
   return value ? [value] : []
 })
+const unsupportedItems = computed(() => parsedPlan.value?.unsupported || [])
 const constraintDraft = computed(() => parsedPlan.value?.constraints
   || run.value?.constraintDraft
   || run.value?.constraints
   || null)
 const selectedCandidateRows = computed(() => candidateSelection.value)
 const compareMetricRows = computed(() => {
-  const selected = selectedCandidateRows.value
+  const selected = comparedCandidates.value
   const keys = new Set(selected.flatMap(candidate => Object.keys(candidate.metrics || candidate.indicators || {})))
   return [...keys].map(metric => ({
     metric,
@@ -336,8 +341,37 @@ const statusMessage = status => run.value?.errorMessage || run.value?.message ||
   CANCELLED: '该 Run 已取消。',
   EXPIRED: '该 Run 已过期，请重新创建 Run。',
 }[status] || '')
-const showCandidatePreview = candidate => { previewCandidate.value = candidate }
-const selectCandidates = rows => { candidateSelection.value = rows }
+const showCandidatePreview = async candidate => {
+  const runId = run.value?.id
+  if (!runId) return
+  previewCandidate.value = null
+  previewDiff.value = null
+  try {
+    const response = await previewAiSchedulingCandidate(runId, candidate.id)
+    if (run.value?.id !== runId) return
+    previewCandidate.value = candidate
+    previewDiff.value = unwrapData(response)
+  } catch (error) {
+    showError(error)
+  }
+}
+const selectCandidates = rows => {
+  candidateSelection.value = rows
+  comparedCandidates.value = []
+}
+const compareCandidates = async () => {
+  const runId = run.value?.id
+  if (!runId || selectedCandidateRows.value.length < 2) return
+  try {
+    const response = await compareAiSchedulingCandidates(
+      runId, selectedCandidateRows.value.map(candidate => candidate.id),
+    )
+    if (run.value?.id !== runId) return
+    comparedCandidates.value = unwrapList(response)
+  } catch (error) {
+    showError(error)
+  }
+}
 
 onMounted(async () => {
   await loadInitial()
@@ -389,7 +423,7 @@ onBeforeUnmount(() => {
           </el-select>
         </el-form-item>
         <el-form-item label="候选数量">
-          <el-input-number v-model="form.candidateCount" :min="1" :max="10" />
+          <el-input-number v-model="form.candidateCount" :min="1" :max="5" />
         </el-form-item>
         <el-form-item label="自然语言需求" required>
           <el-input
@@ -398,7 +432,7 @@ onBeforeUnmount(() => {
             :rows="5"
             maxlength="2000"
             show-word-limit
-            placeholder="例如：尽量避免教师连续 3 节授课，优先安排数学课在上午，并保留相邻班级的连贯时段。"
+            placeholder="当前支持：张老师周三第3节不能上课；李老师周四第2节尽量排课。其他规则会明确提示暂不支持。"
           />
         </el-form-item>
         <el-form-item>
@@ -419,6 +453,16 @@ onBeforeUnmount(() => {
       </template>
 
       <el-alert v-if="statusMessage(currentStatus)" :title="statusMessage(currentStatus)" :type="currentStatus === 'FAILED' ? 'error' : 'warning'" show-icon :closable="false" />
+      <el-alert
+        v-if="unsupportedItems.length"
+        title="以下规则暂不支持，无法确认或执行；请修改需求后重试"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="unsupported-alert"
+      >
+        <ul><li v-for="(item, index) in unsupportedItems" :key="index">{{ item }}</li></ul>
+      </el-alert>
 
       <section v-if="['DRAFT', 'NEEDS_CLARIFICATION'].includes(currentStatus)" class="workflow-section">
         <h3>需求澄清</h3>
@@ -427,7 +471,7 @@ onBeforeUnmount(() => {
           <li v-for="(item, index) in clarificationItems" :key="index">{{ typeof item === 'string' ? item : formatJson(item) }}</li>
         </ul>
         <div class="reply-box">
-          <el-input v-model="clarificationReply" type="textarea" :rows="3" placeholder="补充时间、教师、教室或其他排课约束" />
+          <el-input v-model="clarificationReply" type="textarea" :rows="3" placeholder="补充完整的教师、星期、节次；不支持的规则需创建新 Run 并修改原需求" />
           <el-button type="primary" :loading="replying" @click="replyToRun">提交回复</el-button>
         </div>
       </section>
@@ -485,17 +529,18 @@ onBeforeUnmount(() => {
 
         <div v-if="selectedCandidateRows.length >= 2" class="compare-panel">
           <h3>候选对比</h3>
-          <el-table :data="compareMetricRows" border size="small">
+          <el-button @click="compareCandidates">对比所选方案</el-button>
+          <el-table v-if="comparedCandidates.length" :data="compareMetricRows" border size="small">
             <el-table-column prop="metric" label="指标" min-width="180" />
-            <el-table-column v-for="candidate in selectedCandidateRows" :key="candidate.id" :label="candidate.name || candidate.planName || candidate.id">
-              <template #default="scope">{{ scope.row.values[selectedCandidateRows.indexOf(candidate)] }}</template>
+            <el-table-column v-for="(candidate, index) in comparedCandidates" :key="candidate.id" :label="candidate.name || candidate.planName || candidate.id">
+              <template #default="scope">{{ scope.row.values[index] }}</template>
             </el-table-column>
           </el-table>
         </div>
       </section>
 
       <el-alert v-if="currentStatus === 'CANDIDATES_READY' && previewCandidate" class="preview-alert" title="候选预览（只读）" type="info" :closable="false">
-        <pre>{{ formatJson(previewCandidate.preview || previewCandidate.schedule || previewCandidate) }}</pre>
+        <pre>{{ formatJson(previewDiff) }}</pre>
       </el-alert>
     </el-card>
 

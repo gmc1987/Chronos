@@ -35,6 +35,7 @@ import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleCandidatePlan;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulePolicy;
+import com.chronos.education.scheduling.model.ScheduleRunConstraints;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -43,6 +44,54 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 
 class AutoSchedulingServiceTest {
+	@Test
+	void scopedTeacherRuleChangesOnlyAiCandidateNotOrdinaryScheduling() throws Exception {
+		ScheduleCandidatePlanRepository candidates = mock(ScheduleCandidatePlanRepository.class);
+		ScheduleEntryRepository entries = mock(ScheduleEntryRepository.class);
+		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);
+		ClassroomRepository classrooms = mock(ClassroomRepository.class);
+		TeacherTimeConstraintRepository constraints = mock(TeacherTimeConstraintRepository.class);
+		TeachingClassMemberRepository members = mock(TeachingClassMemberRepository.class);
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		AcademicCalendarService calendar = mock(AcademicCalendarService.class);
+		List<ScheduleCandidatePlan> saved = new ArrayList<>();
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(offerings(1));
+		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(classrooms(1));
+		when(constraints.findBySemesterCodeOrderByTeacherIdAscDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of());
+		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
+				.thenReturn(List.of());
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(2)))
+				.thenReturn(Set.of(1, 2));
+		when(candidates.save(any())).thenAnswer(invocation -> {
+			ScheduleCandidatePlan plan = invocation.getArgument(0);
+			plan.setId("candidate-" + saved.size());
+			saved.add(plan);
+			return plan;
+		});
+		AutoSchedulingService service = new AutoSchedulingService(
+				candidates, entries, offerings, classrooms,
+				mock(ClassroomUnavailableSlotRepository.class), constraints,
+				mock(TeacherAcademicProfileRepository.class), members, terms, calendar,
+				policyService(), mock(com.chronos.Idao.IAdminUserRepository.class),
+				mock(IAuditLogService.class), mock(EntityManager.class));
+		AutoScheduleCommand command = new AutoScheduleCommand(
+				"2026-2027-1", "隔离验证", "FULL", Set.of(), 1, 1, 2, 1, 20);
+
+		service.generate(command, "admin", () -> false, progress -> { },
+				new ScheduleRunConstraints(List.of(
+						new ScheduleRunConstraints.TeacherSlot("teacher-0", 1, 1, "FORBIDDEN"))));
+		service.generate(command, "admin");
+
+		assertThat(readEntries(saved.get(0).getSnapshotJson()).getFirst().getPeriodNo()).isEqualTo(2);
+		assertThat(readEntries(saved.get(1).getSnapshotJson()).getFirst().getPeriodNo()).isEqualTo(1);
+		verify(constraints, org.mockito.Mockito.never()).save(any());
+	}
+
 	@Test
 	void schedulesTwoThousandOfferingsWithinCapacityUsingScopedMemberQuery() throws Exception {
 		ScheduleCandidatePlanRepository candidates = mock(ScheduleCandidatePlanRepository.class);

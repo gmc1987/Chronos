@@ -643,6 +643,14 @@ export const generateAiSchedulingRun = (id) => http.post(`/admin/education/sched
  */
 export const listAiSchedulingCandidates = (id) => http.get(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates`)
 
+export const compareAiSchedulingCandidates = (id, candidateIds) => http.post(
+  `/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/compare`, candidateIds,
+)
+
+export const previewAiSchedulingCandidate = (id, candidateId) => http.get(
+  `/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/preview`,
+)
+
 /**
  * @param {string} id
  */

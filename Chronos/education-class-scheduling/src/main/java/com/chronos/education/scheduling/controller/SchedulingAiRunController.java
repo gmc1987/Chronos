@@ -6,6 +6,7 @@ import com.chronos.education.scheduling.model.SchedulingAiReplyRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunView;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
+import com.chronos.education.scheduling.model.ScheduleDiffView;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.SchedulingAiRunService;
 import java.util.List;
@@ -85,6 +86,23 @@ public class SchedulingAiRunController {
 			Authentication authentication) {
 		requireFullDataAccess(authentication);
 		return ok(runs.candidates(id, authentication.getName(), hasOperations(authentication)));
+	}
+
+	@PostMapping("/admin/education/scheduling/ai/runs/{id}/compare")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:agent:use') && @iamAuthorization.has(authentication,'education:scheduling:manage') && @iamAuthorization.has(authentication,'education:scheduling:ai:use')")
+	public ResultData<List<ScheduleCandidateView>> compare(
+			@PathVariable String id, @RequestBody List<String> candidateIds,
+			Authentication authentication) {
+		requireFullDataAccess(authentication);
+		return ok(runs.compare(id, authentication.getName(), candidateIds));
+	}
+
+	@GetMapping("/admin/education/scheduling/ai/runs/{id}/candidates/{candidateId}/preview")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:agent:use') && @iamAuthorization.has(authentication,'education:scheduling:manage') && @iamAuthorization.has(authentication,'education:scheduling:ai:use')")
+	public ResultData<ScheduleDiffView> preview(
+			@PathVariable String id, @PathVariable String candidateId, Authentication authentication) {
+		requireFullDataAccess(authentication);
+		return ok(runs.preview(id, authentication.getName(), candidateId));
 	}
 
 	@PostMapping("/admin/education/scheduling/ai/runs/{id}/cancel")

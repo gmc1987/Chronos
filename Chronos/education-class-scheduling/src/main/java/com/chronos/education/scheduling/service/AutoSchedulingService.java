@@ -21,6 +21,7 @@ import com.chronos.education.scheduling.model.ScheduleDiffItem;
 import com.chronos.education.scheduling.model.ScheduleDiffView;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulePolicy;
+import com.chronos.education.scheduling.model.ScheduleRunConstraints;
 import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.chronos.education.scheduling.model.TeachingClassMember;
@@ -130,6 +131,19 @@ public class AutoSchedulingService {
 			String actor,
 			BooleanSupplier cancelled,
 			IntConsumer progress) {
+		return generate(command, actor, cancelled, progress, ScheduleRunConstraints.empty());
+	}
+
+	@Transactional
+	public List<ScheduleCandidateView> generate(
+			AutoScheduleCommand command,
+			String actor,
+			BooleanSupplier cancelled,
+			IntConsumer progress,
+			ScheduleRunConstraints runConstraints) {
+		if (runConstraints == null) {
+			throw new IllegalArgumentException("动态排课规则不能为空");
+		}
 		GenerationRequest request = validate(command);
 		SchedulePolicy policy = policyService.resolve(request.semesterCode());
 		terms.findByTermCode(request.semesterCode())
@@ -141,6 +155,16 @@ public class AutoSchedulingService {
 				.filter(offering -> "ACTIVE".equals(offering.getStatus()))
 				.toList();
 		Set<String> targetIds = targetOfferingIds(request, semesterOfferings);
+		Set<String> teacherIds = semesterOfferings.stream()
+				.filter(offering -> targetIds.contains(offering.getId()))
+				.map(CourseOffering::getTeacherId)
+				.collect(Collectors.toSet());
+		if (runConstraints.teacherSlots().stream()
+				.anyMatch(rule -> !teacherIds.contains(rule.teacherId())
+						|| rule.dayOfWeek() > request.weekdays()
+						|| rule.periodNo() > request.periodsPerDay())) {
+			throw new IllegalArgumentException("动态规则包含当前排课范围以外的教师或时段");
+		}
 		List<ScheduleCandidateView> result = new ArrayList<>();
 		for (int index = 0; index < request.candidateCount(); index++) {
 			checkCancelled(cancelled);
@@ -151,7 +175,8 @@ public class AutoSchedulingService {
 					targetIds,
 					policy,
 					cancelled,
-					index);
+					index,
+					runConstraints);
 			ScheduleCandidatePlan candidate = new ScheduleCandidatePlan();
 			candidate.setSemesterCode(request.semesterCode());
 			candidate.setPlanName(request.planName() + "-方案" + (index + 1));
@@ -375,7 +400,8 @@ public class AutoSchedulingService {
 			Set<String> targetIds,
 			SchedulePolicy policy,
 			BooleanSupplier cancelled,
-			int variation) {
+			int variation,
+			ScheduleRunConstraints runConstraints) {
 		Map<String, CourseOffering> offeringById = semesterOfferings.stream()
 				.collect(Collectors.toMap(CourseOffering::getId, value -> value));
 		List<ScheduleEntry> result = baseline.stream()
@@ -402,6 +428,15 @@ public class AutoSchedulingService {
 				.findBySemesterCodeOrderByTeacherIdAscDayOfWeekAscPeriodNoAsc(request.semesterCode())
 				.stream()
 				.collect(Collectors.groupingBy(TeacherTimeConstraint::getTeacherId));
+		for (ScheduleRunConstraints.TeacherSlot rule : runConstraints.teacherSlots()) {
+			TeacherTimeConstraint scoped = new TeacherTimeConstraint();
+			scoped.setTeacherId(rule.teacherId());
+			scoped.setDayOfWeek(rule.dayOfWeek());
+			scoped.setPeriodNo(rule.periodNo());
+			scoped.setConstraintType(rule.type());
+			teacherConstraints.computeIfAbsent(rule.teacherId(), ignored -> new ArrayList<>())
+					.add(scoped);
+		}
 		Map<String, TeacherAcademicProfile> teacherById = teacherProfiles.findAll().stream()
 				.collect(Collectors.toMap(TeacherAcademicProfile::getId, item -> item));
 		List<Classroom> availableRooms = classrooms.findByEnabledTrueOrderByRoomCode();

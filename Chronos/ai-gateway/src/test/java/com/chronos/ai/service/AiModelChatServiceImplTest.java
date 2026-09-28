@@ -83,6 +83,24 @@ class AiModelChatServiceImplTest {
 				.hasMessageContaining("不受支持");
 	}
 
+	@Test
+	void structuredSchedulingOutputIsStrictJsonWithBoundedShape() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		when(chatModel.call(org.mockito.ArgumentMatchers.contains("张老师周三第3节不能上课")))
+				.thenReturn("{\"clauses\":[{\"text\":\"张老师周三第3节不能上课\","
+						+ "\"classification\":\"TEACHER_SLOT\"}]}");
+		var service = new AiModelChatServiceImpl(models, factory);
+		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"张老师周三第3节不能上课")).contains("TEACHER_SLOT");
+
+		when(chatModel.call(org.mockito.ArgumentMatchers.contains("禁止脚本")))
+				.thenReturn("{\"clauses\":[]}");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"禁止脚本")).isInstanceOf(AiStructuredOutputException.class);
+		assertThatThrownBy(() -> service.chatStructured(null, "unknown", "需求"))
+				.isInstanceOf(AiStructuredOutputException.class);
+	}
+
 	private AiModel validModel(String id) {
 		AiModel value = new AiModel();
 		value.setId(id);

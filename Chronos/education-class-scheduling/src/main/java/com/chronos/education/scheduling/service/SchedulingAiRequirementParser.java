@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,6 +32,12 @@ import org.springframework.stereotype.Service;
 public class SchedulingAiRequirementParser {
 	private static final Pattern PERIOD_PATTERN =
 			Pattern.compile("第?([一二三四五六七八九十\\d]+)节");
+	private static final Pattern SUPPORTED_TEACHER_SLOT = Pattern.compile(
+			"(?:请|帮我|给)?\\s*TEACHER\\s*(?:在|于)?"
+					+ "(?:星期[一二三四五六日天]|周[一二三四五六日天])\\s*"
+					+ "第?[一二三四五六七八九十\\d]+节\\s*"
+					+ "(?:不能|不可|禁止|禁排|不排|尽量|优先|希望|最好)"
+					+ "(?:上课|排课|排|安排)?");
 	private static final Map<String, Integer> DAYS = Map.ofEntries(
 			Map.entry("星期一", 1), Map.entry("周一", 1),
 			Map.entry("星期二", 2), Map.entry("周二", 2),
@@ -45,16 +52,27 @@ public class SchedulingAiRequirementParser {
 	private final CourseOfferingRepository offerings;
 	private final TeacherAcademicProfileRepository teachers;
 	private final EducationDataScopeService dataScopes;
+	private final SchedulingAiModelClassifier modelClassifier;
 
+	@Autowired
 	public SchedulingAiRequirementParser(
 			AcademicTermRepository terms,
 			CourseOfferingRepository offerings,
 			TeacherAcademicProfileRepository teachers,
-			EducationDataScopeService dataScopes) {
+			EducationDataScopeService dataScopes,
+			SchedulingAiModelClassifier modelClassifier) {
 		this.terms = terms;
 		this.offerings = offerings;
 		this.teachers = teachers;
 		this.dataScopes = dataScopes;
+		this.modelClassifier = modelClassifier;
+	}
+
+	SchedulingAiRequirementParser(AcademicTermRepository terms,
+			CourseOfferingRepository offerings,
+			TeacherAcademicProfileRepository teachers,
+			EducationDataScopeService dataScopes) {
+		this(terms, offerings, teachers, dataScopes, null);
 	}
 
 	public ParsedRequirement parse(SchedulingAiRunRequest request, String username) {
@@ -64,15 +82,54 @@ public class SchedulingAiRequirementParser {
 		Set<String> selected = validateSelectedOfferings(request, scope);
 		List<String> clarifications = new java.util.ArrayList<>();
 		List<SchedulingAiConstraint> constraints = new java.util.ArrayList<>();
+		List<String> unsupported = new java.util.ArrayList<>();
 		String text = request.requestText();
 		validateMentionedSemester(request, text, clarifications);
 		validateMentionedMode(request, text, clarifications);
-		TeacherResolution teacher = resolveTeacher(text, scope);
-		boolean hasTimeRestriction = containsAny(
-				text, "不能", "不可", "禁止", "禁排", "尽量", "优先", "希望");
-		Integer day = resolveDay(text);
-		Integer period = resolvePeriod(text);
-		if (hasTimeRestriction) {
+		List<SchedulingAiModelClassifier.Clause> clauses = modelClassifier == null
+				? java.util.Arrays.stream(text.split("[；;。，,\\n]+"))
+						.map(String::strip).filter(value -> !value.isEmpty())
+						.map(value -> new SchedulingAiModelClassifier.Clause(value, "DETERMINISTIC"))
+						.toList()
+				: modelClassifier.classify(text);
+		for (SchedulingAiModelClassifier.Clause clause : clauses) {
+			String rule = clause.text();
+			if ("UNSUPPORTED".equals(clause.classification())) {
+				unsupported.add("模型无法确认该需求：" + rule);
+				continue;
+			}
+			if ("GENERATION".equals(clause.classification()) != isGenerationInstruction(rule)
+					&& !"DETERMINISTIC".equals(clause.classification())) {
+				unsupported.add("模型分类与服务端规则不一致：" + rule);
+				continue;
+			}
+			if (rule.isEmpty() || isGenerationInstruction(rule)) {
+				continue;
+			}
+			boolean forbidden = containsAny(rule, "不能", "不可", "禁止", "禁排", "不排");
+			boolean preferred = containsAny(rule, "尽量", "优先", "希望", "最好");
+			if (!forbidden && !preferred) {
+				unsupported.add("暂不支持该需求：" + rule);
+				continue;
+			}
+			if (forbidden && preferred) {
+				clarifications.add("同一条规则同时包含禁排和偏好，请拆开描述：" + rule);
+				continue;
+			}
+			if (DAYS.entrySet().stream().filter(entry -> rule.contains(entry.getKey()))
+					.map(Map.Entry::getValue).distinct().count() > 1
+					|| PERIOD_PATTERN.matcher(rule).results().count() > 1) {
+				unsupported.add("一条规则包含多个时段，请按教师、星期和节次拆开：" + rule);
+				continue;
+			}
+			TeacherResolution teacher = resolveTeacher(rule, scope);
+			Integer day = resolveDay(rule);
+			Integer period = resolvePeriod(rule);
+			if (containsAny(rule, "课程", "教室", "连堂", "年级", "班级", "单双周", "每周",
+					"上午", "下午", "避免", "跨校区", "集中", "节连")) {
+				unsupported.add("该时间或业务规则还不能转成具体排课条件：" + rule);
+				continue;
+			}
 			if (teacher.candidates().isEmpty()) {
 				clarifications.add("未能从授权教师数据中识别教师，请提供教师姓名或工号");
 			} else if (teacher.candidates().size() > 1) {
@@ -85,22 +142,37 @@ public class SchedulingAiRequirementParser {
 			if (day == null) {
 				clarifications.add("请明确星期几");
 			}
-			if (period == null && !text.contains("上午") && !text.contains("下午")) {
-				clarifications.add("请明确节次或上午/下午");
+			if (period == null || period < 1 || period > 20) {
+				clarifications.add("请明确有效节次（1-20）");
 			}
-			if (period == null && (text.contains("上午") || text.contains("下午"))) {
-				clarifications.add("上午/下午需按校区作息映射为具体节次，请确认节次范围");
-			}
-			if (teacher.unique() != null && day != null && period != null) {
+			if (teacher.unique() != null && day != null && period != null
+					&& period >= 1 && period <= 20) {
+				String normalized = rule.replace(teacher.unique().getTeacherName(), "TEACHER");
+				if (teacher.unique().getTeacherNo() != null
+						&& !teacher.unique().getTeacherNo().isBlank()) {
+					normalized = normalized.replace(teacher.unique().getTeacherNo(), "TEACHER");
+				}
+				if (!SUPPORTED_TEACHER_SLOT.matcher(normalized).matches()) {
+					unsupported.add("该表述不能安全地转换为教师单节规则：" + rule);
+					continue;
+				}
+				if (constraints.stream().anyMatch(existing ->
+						existing.teacherId().equals(teacher.unique().getId())
+								&& existing.dayOfWeek().equals(day)
+								&& existing.periodNo().equals(period)
+								&& !existing.strength().equals(preferred ? "SOFT" : "HARD"))) {
+					clarifications.add("同一教师时段同时包含禁排和偏好：" + rule);
+					continue;
+				}
 				constraints.add(new SchedulingAiConstraint(
 						"TEACHER_TIME",
-						containsAny(text, "尽量", "优先", "希望") ? "SOFT" : "HARD",
+						preferred ? "SOFT" : "HARD",
 						teacher.unique().getId(),
 						teacher.unique().getTeacherName(),
 						day,
 						period,
 						null,
-						"已从服务端教师与时间数据解析",
+						rule,
 						"RESOLVED"));
 			}
 		}
@@ -113,8 +185,13 @@ public class SchedulingAiRequirementParser {
 				request.candidateCount(),
 				constraints,
 				clarifications,
-				List.of());
+				unsupported);
 		return new ParsedRequirement(plan, toCommand(plan));
+	}
+
+	private boolean isGenerationInstruction(String rule) {
+		return rule.matches("(请|帮我|帮忙)?(生成|进行)?(全局|局部)?(走班)?排课(方案)?")
+				|| rule.matches("(请|帮我)?生成[一二三四五\\d]*个?(候选)?方案");
 	}
 
 	private void validateMentionedSemester(

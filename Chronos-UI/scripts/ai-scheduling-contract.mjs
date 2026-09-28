@@ -14,6 +14,8 @@ const endpoints = [
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/confirm', 'confirmAiSchedulingRun'],
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/generate', 'generateAiSchedulingRun'],
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates', 'listAiSchedulingCandidates'],
+  ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/compare', 'compareAiSchedulingCandidates'],
+  ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/preview', 'previewAiSchedulingCandidate'],
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/cancel', 'cancelAiSchedulingRun'],
 ]
 
@@ -66,6 +68,11 @@ if (!menuMigration.includes("path = '/admin/education/scheduling/ai'")
 
 for (const requiredText of ['自然语言需求', 'GLOBAL 全量', 'LOCAL 局部', '需求澄清', '候选对比', '候选预览（只读）', '取消 Run']) {
   if (!pageSource.includes(requiredText)) throw new Error(`AI 排课页面缺少关键文案: ${requiredText}`)
+}
+if (!pageSource.includes('unsupportedItems') || !pageSource.includes(':max="5"')
+  || !pageSource.includes('await previewAiSchedulingCandidate(')
+  || !pageSource.includes('await compareAiSchedulingCandidates(')) {
+  throw new Error('AI 排课页面缺少不支持规则提示、候选数量门禁或真实候选比较/预览')
 }
 
 console.log(`AI scheduling contract passed (${endpoints.length} endpoints, 10 statuses)`)

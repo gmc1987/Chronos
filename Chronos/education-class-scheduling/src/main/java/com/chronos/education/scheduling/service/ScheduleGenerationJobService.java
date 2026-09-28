@@ -4,6 +4,7 @@ import com.chronos.education.scheduling.dao.ScheduleGenerationJobRepository;
 import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
 import com.chronos.education.scheduling.model.ScheduleGenerationJob;
+import com.chronos.education.scheduling.model.ScheduleRunConstraints;
 import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,7 +12,6 @@ import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +19,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /** 负责自动排课任务的持久化状态、后台执行与进程内取消。 */
 @Service
@@ -30,7 +32,6 @@ public class ScheduleGenerationJobService {
 	private final TransactionTemplate progressTransactions;
 	private final Executor executor;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
-	private final Map<String, CompletableFuture<Void>> running = new ConcurrentHashMap<>();
 	private final Map<String, AtomicBoolean> cancellationFlags = new ConcurrentHashMap<>();
 
 	public ScheduleGenerationJobService(
@@ -67,21 +68,58 @@ public class ScheduleGenerationJobService {
 			AutoScheduleCommand command,
 			String actor,
 			String agentRunId) {
+		return submit(command, actor, agentRunId, ScheduleRunConstraints.empty());
+	}
+
+	public ScheduleGenerationJob submit(
+			AutoScheduleCommand command,
+			String actor,
+			String agentRunId,
+			ScheduleRunConstraints runConstraints) {
+		if (runConstraints == null || (agentRunId == null && !runConstraints.teacherSlots().isEmpty())) {
+			throw new IllegalArgumentException("动态排课规则只能由 AI Run 提交");
+		}
 		ScheduleGenerationJob job = transactions.execute(status -> {
 			ScheduleGenerationJob value = new ScheduleGenerationJob();
 			value.setSemesterCode(command.semesterCode());
-			value.setRequestJson(write(command));
+			value.setRequestJson(agentRunId == null
+					? write(command)
+					: write(Map.of("command", command, "runConstraints", runConstraints)));
 			value.setRequestedBy(actor);
 			value.setAgentRunId(agentRunId);
 			return jobs.save(value);
 		});
-		cancellationFlags.put(job.getId(), new AtomicBoolean(false));
-		CompletableFuture<Void> future = CompletableFuture.runAsync(
-				() -> execute(job.getId(), command, actor),
-				executor);
-		running.put(job.getId(), future);
+		Runnable start = () -> start(job.getId(), command, actor, runConstraints);
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					start.run();
+				}
+			});
+		} else {
+			start.run();
+		}
 		audit.log(actor, "EDUCATION_SCHEDULE_JOB_SUBMIT", "job=" + job.getId());
 		return job;
+	}
+
+	private void start(String id, AutoScheduleCommand command, String actor,
+			ScheduleRunConstraints runConstraints) {
+		cancellationFlags.put(id, new AtomicBoolean(false));
+		try {
+			executor.execute(() -> execute(id, command, actor, runConstraints));
+		} catch (RuntimeException exception) {
+			cancellationFlags.remove(id);
+			progressTransactions.executeWithoutResult(status -> {
+				ScheduleGenerationJob job = require(id);
+				job.setStatus("FAILED");
+				job.setErrorMessage(safeMessage(exception));
+				job.setFinishedAt(LocalDateTime.now());
+				jobs.save(job);
+			});
+			throw exception;
+		}
 	}
 
 	public ScheduleGenerationJob require(String id) {
@@ -109,14 +147,19 @@ public class ScheduleGenerationJobService {
 		return job;
 	}
 
-	private void execute(String id, AutoScheduleCommand command, String actor) {
+	private void execute(
+			String id,
+			AutoScheduleCommand command,
+			String actor,
+			ScheduleRunConstraints runConstraints) {
 		try {
 			update(id, "RUNNING", 10, null, null);
 			List<ScheduleCandidateView> result = scheduling.generate(
 					command,
 					actor,
 					() -> cancellationFlags.getOrDefault(id, new AtomicBoolean()).get(),
-					completed -> updateProgress(id, 10 + completed * 80 / 100));
+					completed -> updateProgress(id, 10 + completed * 80 / 100),
+					runConstraints);
 			if (isCancelled(id)) {
 				return;
 			}
@@ -131,7 +174,6 @@ public class ScheduleGenerationJobService {
 				update(id, "FAILED", 100, null, safeMessage(exception));
 			}
 		} finally {
-			running.remove(id);
 			cancellationFlags.remove(id);
 		}
 	}

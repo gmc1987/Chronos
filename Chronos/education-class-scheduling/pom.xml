@@ -25,6 +25,16 @@
 		</dependency>
 		<dependency>
 			<groupId>com.chronos</groupId>
+			<artifactId>agent-runtime</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.chronos</groupId>
+			<artifactId>ai-gateway</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.chronos</groupId>
 			<artifactId>platform-workflow</artifactId>
 			<version>${project.version}</version>
 		</dependency>
