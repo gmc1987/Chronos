@@ -18,7 +18,9 @@ class SchedulingAiModelClassifierTest {
 	@Test
 	void eachOriginalClauseMustBeRepresentedInOrder() {
 		String input = "帮我排课；张老师周三第3节不能上课";
-		when(models.chatStructured(null, "schedule.requirement.clauses.v1", input))
+		when(models.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
 				.thenReturn("""
 						{"clauses":[
 							{"text":"帮我排课","classification":"GENERATION"},
@@ -27,7 +29,9 @@ class SchedulingAiModelClassifierTest {
 		assertThat(classifier.classify(input)).extracting(SchedulingAiModelClassifier.Clause::text)
 				.containsExactly("帮我排课", "张老师周三第3节不能上课");
 
-		when(models.chatStructured(null, "schedule.requirement.clauses.v1", input))
+		when(models.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
 				.thenReturn("""
 						{"clauses":[{"text":"帮我排课","classification":"GENERATION"}]}
 						""");
@@ -39,7 +43,9 @@ class SchedulingAiModelClassifierTest {
 	@Test
 	void modelCannotInventToolCodesOrReplaceUserText() {
 		String input = "张老师周三第3节不能上课";
-		when(models.chatStructured(null, "schedule.requirement.clauses.v1", input))
+		when(models.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
 				.thenReturn("""
 						{"clauses":[{"text":"李老师周三第3节不能上课","classification":"TEACHER_SLOT"}]}
 						""");

@@ -26,7 +26,9 @@ class SchedulingAiRequirementParserTest {
 		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
 		AiModelChatService model = mock(AiModelChatService.class);
 		String input = "张老师周三第3节不能上课";
-		when(model.chatStructured(null, "schedule.requirement.clauses.v1", input))
+		when(model.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
 				.thenReturn("""
 						{"clauses":[{"text":"张老师周三第3节不能上课","classification":"TEACHER_SLOT"}]}
 						""", """
