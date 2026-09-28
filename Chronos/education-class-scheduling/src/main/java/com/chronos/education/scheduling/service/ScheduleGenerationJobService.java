@@ -55,7 +55,7 @@ public class ScheduleGenerationJobService {
 		transactions.executeWithoutResult(status -> jobs.findByStatusIn(List.of("QUEUED", "RUNNING"))
 				.forEach(job -> {
 					job.setStatus("FAILED");
-					job.setErrorMessage("应用重启导致排课任务中断，请重新提交");
+					job.setErrorMessage("应用重启导致排课任务中断；请核实已生成的候选，再新建 AI Run 重新排课，勿在原 Run 重复提交");
 					job.setFinishedAt(LocalDateTime.now());
 					jobs.save(job);
 				}));

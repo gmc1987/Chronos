@@ -84,6 +84,24 @@ class AiModelChatServiceImplTest {
 	}
 
 	@Test
+	void structuredCandidateFactsRejectFreeTextAndUnknownKeys() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		var service = new AiModelChatServiceImpl(models, factory);
+		when(chatModel.call("metrics")).thenReturn("{\"factKeys\":[\"BLOCK\",\"UNSCHEDULED\"]}");
+		assertThat(service.chatStructured(null, "schedule.candidate.facts.v1", "metrics"))
+				.contains("BLOCK");
+		when(chatModel.call("metrics")).thenReturn("{\"factKeys\":[\"MADE_UP\"]}");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.candidate.facts.v1", "metrics"))
+				.isInstanceOf(AiStructuredOutputException.class);
+		when(chatModel.call("metrics")).thenReturn("{\"factKeys\":[\"BLOCK\"],\"analysis\":\"perfect\"}");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.candidate.facts.v1", "metrics"))
+				.isInstanceOf(AiStructuredOutputException.class);
+		when(chatModel.call("metrics")).thenReturn("{\"factKeys\":[\"BLOCK\",\"BLOCK\"]}");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.candidate.facts.v1", "metrics"))
+				.isInstanceOf(AiStructuredOutputException.class);
+	}
+
+	@Test
 	void structuredSchedulingOutputIsStrictJsonWithBoundedShape() {
 		when(models.findFirstDefault()).thenReturn(Optional.of(model));
 		when(chatModel.call(org.mockito.ArgumentMatchers.contains("张老师周三第3节不能上课")))

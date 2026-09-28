@@ -651,6 +651,10 @@ export const previewAiSchedulingCandidate = (id, candidateId) => http.get(
   `/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/preview`,
 )
 
+export const explainAiSchedulingCandidate = (id, candidateId) => http.get(
+  `/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/explanation`,
+)
+
 /**
  * @param {string} id
  */

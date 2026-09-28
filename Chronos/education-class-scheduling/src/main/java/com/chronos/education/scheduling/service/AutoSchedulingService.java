@@ -229,6 +229,11 @@ public class AutoSchedulingService {
 	}
 
 	@Transactional(readOnly = true)
+	public ScheduleCandidateView get(String candidateId) {
+		return view(candidate(candidateId));
+	}
+
+	@Transactional(readOnly = true)
 	public List<ScheduleCandidateView> compare(List<String> candidateIds) {
 		if (candidateIds == null || candidateIds.size() < 2 || candidateIds.size() > 5) {
 			throw new IllegalArgumentException("请选择 2 到 5 个候选方案进行对比");

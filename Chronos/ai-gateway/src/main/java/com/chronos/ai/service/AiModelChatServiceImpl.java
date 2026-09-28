@@ -29,6 +29,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	private static final int DEFAULT_READ_TIMEOUT_MS = 60_000;
 	private static final int DEFAULT_CALL_TIMEOUT_MS = 120_000;
 	private static final String SCHEDULING_CLAUSES_SCHEMA = "schedule.requirement.clauses.v1";
+	private static final String SCHEDULING_FACTS_SCHEMA = "schedule.candidate.facts.v1";
 
 	private final AiModelRepository models;
 	private final DeepSeekChatModelFactory modelFactory;
@@ -70,7 +71,8 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 
 	@Override
 	public String chatStructured(String modelId, String schemaId, String message) {
-		if (!SCHEDULING_CLAUSES_SCHEMA.equals(schemaId)) {
+		if (!SCHEDULING_CLAUSES_SCHEMA.equals(schemaId)
+				&& !SCHEDULING_FACTS_SCHEMA.equals(schemaId)) {
 			throw new AiStructuredOutputException("未知的结构化输出 schema");
 		}
 		requireMessage(message);
@@ -83,6 +85,23 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		}
 		try {
 			JsonNode root = structuredJson.readTree(response);
+			if (SCHEDULING_FACTS_SCHEMA.equals(schemaId)) {
+				if (root == null || !root.isObject() || root.size() != 1
+						|| !root.path("factKeys").isArray()
+						|| root.path("factKeys").isEmpty()
+						|| root.path("factKeys").size() > 6) {
+					throw new AiStructuredOutputException("模型候选指标格式无效");
+				}
+				java.util.Set<String> seen = new java.util.HashSet<>();
+				for (JsonNode item : root.path("factKeys")) {
+					if (!item.isTextual() || !java.util.Set.of("SCHEDULED", "UNSCHEDULED",
+							"PREFERRED_SLOT", "BLOCK", "CAMPUS_SWITCH", "TEACHER_GAP")
+							.contains(item.asText()) || !seen.add(item.asText())) {
+						throw new AiStructuredOutputException("模型候选指标代码无效");
+					}
+				}
+				return root.toString();
+			}
 			if (root == null || !root.isObject() || root.size() != 1 || !root.has("clauses")
 					|| !root.get("clauses").isArray()
 					|| root.get("clauses").isEmpty() || root.get("clauses").size() > 30) {

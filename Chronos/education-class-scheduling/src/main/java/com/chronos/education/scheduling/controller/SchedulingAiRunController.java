@@ -7,6 +7,7 @@ import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunView;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
 import com.chronos.education.scheduling.model.ScheduleDiffView;
+import com.chronos.education.scheduling.model.SchedulingCandidateExplanation;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.SchedulingAiRunService;
 import java.util.List;
@@ -103,6 +104,14 @@ public class SchedulingAiRunController {
 			@PathVariable String id, @PathVariable String candidateId, Authentication authentication) {
 		requireFullDataAccess(authentication);
 		return ok(runs.preview(id, authentication.getName(), candidateId));
+	}
+
+	@GetMapping("/admin/education/scheduling/ai/runs/{id}/candidates/{candidateId}/explanation")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:agent:use') && @iamAuthorization.has(authentication,'education:scheduling:manage') && @iamAuthorization.has(authentication,'education:scheduling:ai:use')")
+	public ResultData<SchedulingCandidateExplanation> explain(
+			@PathVariable String id, @PathVariable String candidateId, Authentication authentication) {
+		requireFullDataAccess(authentication);
+		return ok(runs.explain(id, authentication.getName(), candidateId));
 	}
 
 	@PostMapping("/admin/education/scheduling/ai/runs/{id}/cancel")

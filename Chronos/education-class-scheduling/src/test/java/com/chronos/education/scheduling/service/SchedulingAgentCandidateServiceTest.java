@@ -19,6 +19,15 @@ class SchedulingAgentCandidateServiceTest {
 			jobs, scheduling, mock(EducationDataScopeService.class), new ObjectMapper());
 
 	@Test
+	void explanationCandidateChecksMembershipBeforeLookingUpMetrics() {
+		AgentRun run = run();
+		when(jobs.require("job-1")).thenReturn(job("[\"ours\"]"));
+		assertThatThrownBy(() -> service.candidate(run, "admin", "someone-elses"))
+				.isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+		verifyNoInteractions(scheduling);
+	}
+
+	@Test
 	void previewRejectsCandidateFromAnotherRun() {
 		AgentRun run = run();
 		when(jobs.require("job-1")).thenReturn(job("[\"ours\"]"));

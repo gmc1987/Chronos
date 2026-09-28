@@ -47,6 +47,18 @@ public class SchedulingAgentCandidateService {
 		return scheduling.preview(candidateId);
 	}
 
+	public ScheduleCandidateView candidate(AgentRun run, String actor, String candidateId) {
+		if (candidateId == null || candidateId.isBlank()) {
+			throw new IllegalArgumentException("候选 ID 不能为空");
+		}
+		authorize(run, actor, List.of(candidateId));
+		ScheduleCandidateView candidate = scheduling.get(candidateId);
+		if (!run.getSemesterCode().equals(candidate.semesterCode())) {
+			throw new IllegalStateException("候选学期与本轮排课不一致");
+		}
+		return candidate;
+	}
+
 	private void authorize(AgentRun run, String actor, List<String> candidateIds) {
 		scopes.assertFullAccess(scopes.resolve(actor));
 		if (!actor.equals(run.getOwnerUsername()) || run.getRelatedJobId() == null) {

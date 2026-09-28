@@ -96,6 +96,7 @@ class SchedulingAiRunServiceTest {
 				new ObjectMapper().findAndRegisterModules(),
 				tools,
 				mock(SchedulingAgentCandidateService.class),
+				mock(SchedulingAgentExplanationService.class),
 				new TransactionTemplate(manager));
 		readyPlan = new SchedulingAiPlan(
 				1,

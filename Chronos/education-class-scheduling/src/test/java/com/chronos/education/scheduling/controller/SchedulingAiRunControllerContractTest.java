@@ -30,16 +30,23 @@ class SchedulingAiRunControllerContractTest {
 				})
 				.collect(Collectors.toSet());
 		assertThat(paths).allMatch(path -> path.startsWith("/admin/education/scheduling/ai/runs"));
+		assertThat(paths).contains(
+				"/admin/education/scheduling/ai/runs/{id}/candidates/{candidateId}/explanation");
 		assertThat(paths).noneMatch(path -> path.contains("/apply")
 				|| path.contains("/publish")
 				|| path.contains("/rollback"));
 		assertThat(Arrays.stream(SchedulingAiRunController.class.getDeclaredMethods())
-				.filter(method -> method.isAnnotationPresent(PostMapping.class))
+				.filter(method -> method.isAnnotationPresent(PostMapping.class)
+						|| method.isAnnotationPresent(GetMapping.class))
 				.map(method -> method.getAnnotation(PreAuthorize.class))
-				.filter(annotation -> annotation != null)
+				.peek(annotation -> assertThat(annotation).isNotNull())
 				.map(PreAuthorize::value)
 				.allMatch(value -> value.contains("education:ai:agent:use")
 						&& value.contains("education:scheduling:manage")))
 				.isTrue();
+		assertThat(Arrays.stream(SchedulingAiRunController.class.getDeclaredMethods())
+				.filter(method -> "explain".equals(method.getName()))
+				.map(method -> method.getAnnotation(PreAuthorize.class).value()))
+				.allMatch(value -> value.contains("education:scheduling:ai:use"));
 	}
 }

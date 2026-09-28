@@ -14,6 +14,7 @@ import {
   listAcademicTerms,
   listCourseOfferings,
   previewAiSchedulingCandidate,
+  explainAiSchedulingCandidate,
   replyAiSchedulingRun,
 } from '../../../api/admin'
 
@@ -61,6 +62,8 @@ const candidates = ref([])
 const candidateSelection = ref([])
 const previewCandidate = ref(null)
 const previewDiff = ref(null)
+const modelExplanation = ref(null)
+let explanationRequestSequence = 0
 const comparedCandidates = ref([])
 const clarificationReply = ref('')
 const creating = ref(false)
@@ -239,6 +242,8 @@ const createRun = async () => {
   candidates.value = []
   candidateSelection.value = []
   previewCandidate.value = null
+  modelExplanation.value = null
+  explanationRequestSequence += 1
   creating.value = true
   try {
     const payload = {
@@ -367,6 +372,19 @@ const showCandidatePreview = async candidate => {
   } catch (error) {
     showError(error)
   }
+  const showModelExplanation = async candidate => {
+    const runId = run.value?.id
+    if (!runId) return
+    const sequence = ++explanationRequestSequence
+    modelExplanation.value = null
+    try {
+      const response = await explainAiSchedulingCandidate(runId, candidate.id)
+      if (run.value?.id !== runId || sequence !== explanationRequestSequence) return
+      modelExplanation.value = unwrapData(response)
+    } catch (error) {
+      if (sequence === explanationRequestSequence) showError(error)
+    }
+  }
 }
 const selectCandidates = rows => {
   candidateSelection.value = rows
@@ -393,6 +411,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   runRequestSequence.value += 1
+  explanationRequestSequence += 1
   stopPolling()
 })
 </script>
@@ -543,8 +562,11 @@ onBeforeUnmount(() => {
           <el-table-column label="方案依据" min-width="320">
             <template #default="scope">{{ candidateExplanation(scope.row) }}</template>
           </el-table-column>
-          <el-table-column label="只读操作" width="110" fixed="right">
-            <template #default="scope"><el-button link type="primary" @click="showCandidatePreview(scope.row)">预览</el-button></template>
+          <el-table-column label="只读操作" width="170" fixed="right">
+            <template #default="scope">
+              <el-button link type="primary" @click="showCandidatePreview(scope.row)">预览</el-button>
+              <el-button link type="primary" @click="showModelExplanation(scope.row)">模型解读</el-button>
+            </template>
           </el-table-column>
         </el-table>
 
@@ -562,6 +584,9 @@ onBeforeUnmount(() => {
 
       <el-alert v-if="currentStatus === 'CANDIDATES_READY' && previewCandidate" class="preview-alert" title="候选预览（只读）" type="info" :closable="false">
         <pre>{{ formatJson(previewDiff) }}</pre>
+      </el-alert>
+      <el-alert v-if="currentStatus === 'CANDIDATES_READY' && modelExplanation" class="preview-alert" title="模型筛选的真实指标（仅供参考）" type="info" :closable="false">
+        <p v-for="fact in modelExplanation.facts" :key="fact.code">{{ fact.text }}</p>
       </el-alert>
     </el-card>
 

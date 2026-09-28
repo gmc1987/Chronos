@@ -16,6 +16,7 @@ const endpoints = [
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates', 'listAiSchedulingCandidates'],
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/compare', 'compareAiSchedulingCandidates'],
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/preview', 'previewAiSchedulingCandidate'],
+  ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/explanation', 'explainAiSchedulingCandidate'],
   ['/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/cancel', 'cancelAiSchedulingRun'],
 ]
 
@@ -79,6 +80,11 @@ if (!pageSource.includes('candidateExplanation(scope.row)')
   || !pageSource.includes('metrics.preferredSlotHits')
   || !pageSource.includes('metrics.consecutiveBlockHits')) {
   throw new Error('候选说明必须取自真实排课指标，并显示未排课时与偏好命中')
+}
+if (!pageSource.includes('await explainAiSchedulingCandidate(')
+  || !pageSource.includes('fact.text')
+  || !pageSource.includes('modelExplanation.value = null')) {
+  throw new Error('模型候选解读必须独立请求并显示服务端受控指标')
 }
 
 console.log(`AI scheduling contract passed (${endpoints.length} endpoints, 10 statuses)`)

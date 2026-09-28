@@ -14,6 +14,7 @@ import com.chronos.education.scheduling.model.ScheduleGenerationJob;
 import com.chronos.education.scheduling.model.ScheduleRunConstraints;
 import com.chronos.service.iService.IAuditLogService;
 import java.util.Set;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,31 @@ import org.springframework.transaction.support.TransactionSynchronizationUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class ScheduleGenerationJobServiceTest {
+	@Test
+	void restartMarksInterruptedJobsFailedWithoutReplayingGeneration() {
+		PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
+		when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+		ScheduleGenerationJobRepository jobs = mock(ScheduleGenerationJobRepository.class);
+		ScheduleGenerationJob queued = new ScheduleGenerationJob();
+		queued.setStatus("QUEUED");
+		ScheduleGenerationJob running = new ScheduleGenerationJob();
+		running.setStatus("RUNNING");
+		when(jobs.findByStatusIn(List.of("QUEUED", "RUNNING")))
+				.thenReturn(List.of(queued, running));
+		Executor executor = mock(Executor.class);
+		var service = new ScheduleGenerationJobService(jobs, mock(AutoSchedulingService.class),
+				mock(IAuditLogService.class), new TransactionTemplate(manager), executor);
+
+		service.recoverInterruptedJobs();
+
+		assertThat(List.of(queued, running)).allSatisfy(job -> {
+			assertThat(job.getStatus()).isEqualTo("FAILED");
+			assertThat(job.getFinishedAt()).isNotNull();
+			assertThat(job.getErrorMessage()).contains("新建 AI Run", "核实已生成的候选");
+		});
+		verifyNoInteractions(executor);
+	}
+
 	@Test
 	void nestedAiSubmissionWaitsForRunTransactionCommit() {
 		PlatformTransactionManager manager = mock(PlatformTransactionManager.class);

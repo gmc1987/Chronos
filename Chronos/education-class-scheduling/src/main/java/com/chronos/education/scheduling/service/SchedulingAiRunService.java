@@ -11,6 +11,7 @@ import com.chronos.education.scheduling.model.AgentRun;
 import com.chronos.education.scheduling.model.AgentStep;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
 import com.chronos.education.scheduling.model.ScheduleDiffView;
+import com.chronos.education.scheduling.model.SchedulingCandidateExplanation;
 import com.chronos.education.scheduling.model.ScheduleGenerationJob;
 import com.chronos.education.scheduling.model.SchedulingAiConfirmRequest;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
@@ -57,6 +58,7 @@ public class SchedulingAiRunService {
 	private final ObjectMapper json;
 	private final AgentToolExecutor tools;
 	private final SchedulingAgentCandidateService candidateService;
+	private final SchedulingAgentExplanationService explanations;
 	private final TransactionTemplate transactions;
 	private final ConcurrentHashMap<String, AgentRunBudget> budgets = new ConcurrentHashMap<>();
 
@@ -70,6 +72,7 @@ public class SchedulingAiRunService {
 			ObjectMapper json,
 			AgentToolExecutor tools,
 			SchedulingAgentCandidateService candidateService,
+			SchedulingAgentExplanationService explanations,
 			TransactionTemplate transactions) {
 		this.runs = runs;
 		this.steps = steps;
@@ -80,6 +83,7 @@ public class SchedulingAiRunService {
 		this.json = json;
 		this.tools = tools;
 		this.candidateService = candidateService;
+		this.explanations = explanations;
 		this.transactions = transactions;
 	}
 
@@ -393,6 +397,11 @@ public class SchedulingAiRunService {
 	public ScheduleDiffView preview(String id, String actor, String candidateId) {
 		AgentRun run = requireVisible(id, actor, false);
 		return candidateService.preview(run, actor, candidateId);
+	}
+
+	public SchedulingCandidateExplanation explain(String id, String actor, String candidateId) {
+		AgentRun run = requireVisible(id, actor, false);
+		return explanations.explain(run, actor, candidateId);
 	}
 
 	@Transactional
