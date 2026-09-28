@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises'
 const apiSource = await readFile(new URL('../src/api/admin.js', import.meta.url), 'utf8')
 const pageSource = await readFile(new URL('../src/modules/education/pages/AdminSchedulingAi.vue', import.meta.url), 'utf8')
 const industrySource = await readFile(new URL('../src/industries/education/index.js', import.meta.url), 'utf8')
+const classicSource = await readFile(new URL('../src/modules/education/pages/AdminClassScheduling.vue', import.meta.url), 'utf8')
+const switchSource = await readFile(new URL('../src/modules/education/components/SchedulingModeSwitch.vue', import.meta.url), 'utf8')
+const menuMigration = await readFile(new URL('../../Chronos/education-app/src/main/resources/db/migration/V20270106__education_ai_scheduling_single_menu.sql', import.meta.url), 'utf8')
 
 const endpoints = [
   ['/admin/education/scheduling/ai/runs', 'createAiSchedulingRun'],
@@ -30,6 +33,35 @@ for (const forbiddenAction of [/\bapply\b/i, /\bpublish\b/i, /\brollback\b/i, /�
 
 if (!industrySource.includes("path: '/admin/education/scheduling/ai'") || !industrySource.includes('component: AdminSchedulingAi')) {
   throw new Error('教育行业路由缺少 AI 排课工作台')
+}
+if (!industrySource.includes("path: '/admin/education/scheduling'") || !industrySource.includes('component: AdminClassScheduling')) {
+  throw new Error('教育行业路由缺少原走班排课界面')
+}
+if (!classicSource.includes('<SchedulingModeSwitch') || !pageSource.includes('<SchedulingModeSwitch')) {
+  throw new Error('两个排课界面必须共用模式开关')
+}
+if (!switchSource.includes("const SCHEDULING_PATH = '/admin/education/scheduling'")
+  || !switchSource.includes('const AI_PATH = `${SCHEDULING_PATH}/ai`')
+  || !switchSource.includes('path: enabled ? AI_PATH : SCHEDULING_PATH')) {
+  throw new Error('模式开关未连接普通排课与 AI 排课路由')
+}
+if (!switchSource.includes('aiRunId: runId') || !switchSource.includes('{ semesterCode }')
+  || !pageSource.includes('await loadRun(runId)')
+  || !pageSource.includes('runRequestSequence.value += 1')) {
+  throw new Error('排课模式切换未保留学期和运行中的 Run')
+}
+for (const permission of ['education:ai:agent:use', 'education:scheduling:manage', 'education:scheduling:ai:use']) {
+  if (!switchSource.includes(permission)) throw new Error(`模式开关缺少权限校验: ${permission}`)
+}
+for (const table of ['t_permission', 't_role_menu_permission', 't_role_menu', 't_menu']) {
+  if (!menuMigration.includes(table)) throw new Error(`菜单迁移未处理 ${table}`)
+}
+if (!menuMigration.includes("path = '/admin/education/scheduling/ai'")
+  || !menuMigration.includes("path = '/admin/education/scheduling'")
+  || !menuMigration.includes('SET menu_id = retired.parent_id')
+  || !menuMigration.includes('INSERT INTO t_role_menu_permission')
+  || !menuMigration.includes('DELETE FROM t_menu menu')) {
+  throw new Error('菜单迁移没有保留原菜单与 AI 权限关联')
 }
 
 for (const requiredText of ['自然语言需求', 'GLOBAL 全量', 'LOCAL 局部', '需求澄清', '候选对比', '候选预览（只读）', '取消 Run']) {

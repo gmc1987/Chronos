@@ -5,9 +5,12 @@
         <h2>走班排课</h2>
         <p>按教学班安排教师、教室、星期、节次和授课周次，保存时自动检查冲突。</p>
       </div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="loadAll">
-        <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
-      </el-select>
+      <div class="scheduling-header-actions">
+        <SchedulingModeSwitch :semester-code="semesterCode" />
+        <el-select v-model="semesterCode" placeholder="选择学期" @change="loadAll">
+          <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
+        </el-select>
+      </div>
     </header>
 
     <el-tabs v-model="activeTab">
@@ -623,8 +626,9 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import ScheduleGrid from '../components/ScheduleGrid.vue'
+import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   applyScheduleCandidate,
@@ -688,7 +692,8 @@ import {
   updateClassroomUnavailableSlot,
 } from '../../../api/admin'
 
-const semesterCode = ref('')
+const route = useRoute()
+const semesterCode = ref(typeof route.query.semesterCode === 'string' ? route.query.semesterCode : '')
 const scheduleFileInput = ref(null)
 const router = useRouter()
 const activeTab = ref('schedule')
@@ -1326,6 +1331,17 @@ header h2 {
 header p {
   margin: 0;
   color: #84909a;
+}
+.scheduling-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+@media (max-width: 800px) {
+  header { flex-wrap: wrap; }
+  .scheduling-header-actions { justify-content: flex-start; }
 }
 header .el-input {
   width: 260px;

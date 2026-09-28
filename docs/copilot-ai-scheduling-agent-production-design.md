@@ -48,7 +48,7 @@
 
 ### 2.2 页面：独立“AI 智能排课”工作台
 
-路由建议 `/admin/education/scheduling/ai`，从走班排课页面显式进入，不把完整会话塞进旧“Scheduling Agent”小页签。页面分四区：
+路由建议 `/admin/education/scheduling/ai`，从走班排课页面内的“普通排课 / AI 智能排课”开关进入，并可切回普通排课；导航只保留“走班排课”一个入口，不把完整会话塞进旧“Scheduling Agent”小页签。页面分四区：
 
 1. **需求输入**：选择学期（字典/领域接口）、范围（专业、年级、行政班、教学班；服务端返回可见选项）、自然语言输入框、常用示例。显示该轮可用 Skill，不要求用户知道 Tool 名。
 2. **理解与澄清**：按“事实/硬约束/软约束/未确认项”展示解析结果；教师同名、学期不明、`下午` 对应节次因校区作息不同等，给出候选和原因，用户明确选择。任何输入修订都生成新解析版本，不暗中覆盖旧确认。
@@ -215,7 +215,7 @@ Agent Run 状态：`DRAFT → NEEDS_CLARIFICATION → READY_FOR_CONFIRMATION →
 | `GET /admin/education/scheduling/ai/runs/{id}/candidates` | 返回关联候选与确定性指标、解释 | 有权查看 Run 及对应候选 |
 | `POST /admin/education/scheduling/ai/runs/{id}/cancel` | 取消待执行/运行中任务 | Run 所有者或管理员，按既有任务取消规则 |
 
-新增权限建议 `education:scheduling:ai:use`、`education:scheduling:ai:confirm`、`education:scheduling:ai:operations`；第一片还必须与现有 `education:ai:agent:use`、`education:scheduling:manage` 联合检查，避免仅凭新菜单权限扩大数据范围。权限定义要绑定“AI 智能排课”菜单；前端按钮权限只是提示，后端控制器、Agent 调度器与领域 Tool 三层都要校验。普通教师、校区管理员和其他学校账号不能通过 Run ID、候选 ID 或模型对话泄露全校数据。
+新增权限建议 `education:scheduling:ai:use`、`education:scheduling:ai:confirm`、`education:scheduling:ai:operations`；第一片还必须与现有 `education:ai:agent:use`、`education:scheduling:manage` 联合检查，避免仅凭菜单权限扩大数据范围。AI 权限定义绑定现有“走班排课”菜单，不另建导航子菜单；页面开关的权限判断只是提示，后端控制器、Agent 调度器与领域 Tool 三层都要校验。普通教师、校区管理员和其他学校账号不能通过 Run ID、候选 ID 或模型对话泄露全校数据。
 
 错误约定：参数/歧义 400，未授权 403，Run/任务不存在或不可见 404，状态或基线竞争 409，模型不可用 503，限流 429。前端统一显示业务错误码及可恢复动作，不用 HTTP 200 包装伪成功。
 

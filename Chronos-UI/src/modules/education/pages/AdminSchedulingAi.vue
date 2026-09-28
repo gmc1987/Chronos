@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import {
   cancelAiSchedulingRun,
   confirmAiSchedulingRun,
@@ -14,6 +16,8 @@ import {
 } from '../../../api/admin'
 
 const POLL_INTERVAL = 2500
+const route = useRoute()
+const router = useRouter()
 const POLLING_STATUSES = ['QUEUED', 'RUNNING']
 const TERMINAL_STATUSES = ['CANDIDATES_READY', 'FAILED', 'CANCELLED', 'EXPIRED']
 const statusLabels = {
@@ -186,7 +190,10 @@ const loadOfferings = async () => {
 const loadInitial = async () => {
   try {
     terms.value = unwrapList(await listAcademicTerms({ page: 0, size: 100 }))
-    const current = terms.value.find(term => term.currentTerm) || terms.value[0]
+    const requestedTerm = route.query.semesterCode
+    const current = terms.value.find(term => term.termCode === requestedTerm)
+      || terms.value.find(term => term.currentTerm)
+      || terms.value[0]
     if (current) {
       form.semesterCode = current.termCode
       await loadOfferings()
@@ -228,6 +235,10 @@ const createRun = async () => {
     const createdRun = unwrapRun(response)
     const runId = createdRun?.id || createdRun?.runId
     if (!runId) throw new Error('创建排课 Run 失败：服务端未返回 Run ID')
+    await router.replace({
+      path: route.path,
+      query: { ...route.query, semesterCode: form.semesterCode, aiRunId: runId },
+    })
     if (!await loadRun(runId, sequence)) return
     ElMessage.success('排课 Run 已创建')
   } catch (error) {
@@ -328,8 +339,15 @@ const statusMessage = status => run.value?.errorMessage || run.value?.message ||
 const showCandidatePreview = candidate => { previewCandidate.value = candidate }
 const selectCandidates = rows => { candidateSelection.value = rows }
 
-onMounted(loadInitial)
-onBeforeUnmount(stopPolling)
+onMounted(async () => {
+  await loadInitial()
+  const runId = route.query.aiRunId
+  if (typeof runId === 'string' && runId) await loadRun(runId)
+})
+onBeforeUnmount(() => {
+  runRequestSequence.value += 1
+  stopPolling()
+})
 </script>
 
 <template>
@@ -339,7 +357,10 @@ onBeforeUnmount(stopPolling)
         <h2>AI 智能排课工作台</h2>
         <p>用自然语言描述排课目标，逐步检查解析结果并查看候选方案。</p>
       </div>
-      <el-tag :type="statusType">当前状态：{{ statusLabel }}</el-tag>
+      <div class="header-actions">
+        <SchedulingModeSwitch :semester-code="form.semesterCode" :run-id="run?.id" />
+        <el-tag :type="statusType">当前状态：{{ statusLabel }}</el-tag>
+      </div>
     </header>
 
     <el-card shadow="never" class="request-card">
