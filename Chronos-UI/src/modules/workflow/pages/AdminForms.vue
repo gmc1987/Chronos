@@ -27,7 +27,7 @@
     </div>
 
     <div v-else>
-      <div class="header"><div class="header-actions"><el-button @click="back">返回</el-button><div><div class="title">{{ currentForm.formName }}</div><div class="subtitle">{{ currentForm.formKey }} · {{ currentForm.version }} · {{ currentForm.status }}</div></div></div><div><el-button @click="showPreview = true">预览</el-button><el-button v-if="editable" type="primary" @click="openField()">添加字段</el-button></div></div>
+      <div class="header"><div class="header-actions"><el-button @click="back">返回</el-button><div><div class="title">{{ currentForm.formName }}</div><div class="subtitle">{{ currentForm.formKey }} · {{ currentForm.version }} · {{ currentForm.status }}</div></div></div><div><el-button @click="openVersionDialog">版本差异</el-button><el-button @click="showPreview = true">预览</el-button><el-button v-if="editable" type="primary" @click="openField()">添加字段</el-button></div></div>
       <div class="designer-grid">
         <el-card shadow="never"><template #header>字段列表</template>
           <el-empty v-if="!fields.length" description="暂无字段，请添加字段" />
@@ -47,16 +47,42 @@
     <el-dialog v-model="showFieldDialog" :title="fieldDraft.id ? '编辑字段' : '添加字段'" width="620px"><el-form label-width="100px"><el-form-item label="字段Key"><el-input v-model="fieldDraft.fieldKey" :disabled="!!fieldDraft.id" placeholder="例如 applicantName" /></el-form-item><el-form-item label="字段名称"><el-input v-model="fieldDraft.fieldLabel" /></el-form-item><el-form-item label="字段类型"><el-select v-model="fieldDraft.fieldType" style="width: 100%"><el-option v-for="item in fieldTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="必填"><el-switch v-model="fieldDraft.required" /></el-form-item><template v-if="optionField"><el-form-item label="选项来源"><el-radio-group v-model="optionSource"><el-radio value="DICTIONARY">数据字典</el-radio><el-radio value="CUSTOM">自定义选项</el-radio></el-radio-group></el-form-item><el-form-item v-if="optionSource === 'DICTIONARY'" label="字典编码"><el-input v-model="dictionaryCodeValue" placeholder="例如 EDU_LEAVE_TYPE" /></el-form-item><el-form-item v-else label="选项"><el-input v-model="optionText" type="textarea" placeholder="每行一个选项，格式：值|显示名称" /></el-form-item></template></el-form><template #footer><el-button @click="showFieldDialog = false">取消</el-button><el-button type="primary" @click="saveField">保存</el-button></template></el-dialog>
 
     <el-dialog v-model="showPreview" title="表单预览" width="680px"><el-form label-width="120px"><el-form-item v-for="field in fields" :key="field.id" :label="field.fieldLabel" :required="field.required"><el-input v-if="['TEXT','NUMBER','DATE','DATETIME'].includes(field.fieldType)" :type="field.fieldType === 'TEXTAREA' ? 'textarea' : 'text'" disabled :placeholder="fieldTypeLabel(field.fieldType)" /><el-input v-else-if="field.fieldType === 'TEXTAREA'" type="textarea" disabled /><el-select v-else-if="['SELECT','RADIO','CHECKBOX'].includes(field.fieldType)" disabled style="width: 100%"><el-option v-for="option in parseOptions(field.optionsJson)" :key="option.value" :label="option.label" :value="option.value" /></el-select><el-upload v-else-if="field.fieldType === 'FILE'" disabled action="#"><el-button disabled>选择文件</el-button></el-upload><el-switch v-else-if="field.fieldType === 'BOOLEAN'" disabled /><el-input v-else disabled /></el-form-item></el-form></el-dialog>
+    <el-dialog v-model="showVersionDialog" title="表单版本差异" width="680px">
+      <el-alert title="运行中的流程继续使用原表单版本；差异预检不会改写历史数据。" type="info" :closable="false" />
+      <el-form-item label="目标版本" label-width="90px" style="margin-top: 16px">
+        <el-select v-model="targetVersionId" placeholder="请选择同编码版本" style="width: 100%" @change="loadComparison">
+          <el-option v-for="item in comparableVersions" :key="item.id" :label="`${item.version} · ${item.status}`" :value="item.id" />
+        </el-select>
+      </el-form-item>
+      <template v-if="versionComparison">
+        <el-alert
+          :title="versionComparison.requiresManualMigration ? '存在不兼容变更，请新建流程版本并人工确认数据迁移' : '未发现不兼容字段变更'"
+          :type="versionComparison.requiresManualMigration ? 'warning' : 'success'"
+          :closable="false"
+        />
+        <el-table :data="versionComparison.changes" style="margin-top: 12px">
+          <el-table-column prop="fieldKey" label="字段 Key" />
+          <el-table-column prop="change" label="变化" />
+          <el-table-column label="兼容性" width="110">
+            <template #default="{ row }"><el-tag :type="row.breaking ? 'warning' : 'success'">{{ row.breaking ? '需处理' : '兼容' }}</el-tag></template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { dictionaryOptions, listForms, createForm, updateForm, deleteForm, publishForm, createFormVersion, listFormFields, createFormField, updateFormField, deleteFormField } from '../../../api/admin'
+import { dictionaryOptions, listForms, createForm, updateForm, deleteForm, publishForm, createFormVersion, listFormVersions, compareFormVersions, listFormFields, createFormField, updateFormField, deleteFormField } from '../../../api/admin'
 
 const viewMode = ref('list'), forms = ref([]), fields = ref([]), currentForm = ref({})
 const showFormDialog = ref(false), showFieldDialog = ref(false), showPreview = ref(false), optionText = ref('')
+const showVersionDialog = ref(false)
+const comparableVersions = ref([])
+const targetVersionId = ref('')
+const versionComparison = ref(null)
 const optionSource = ref('DICTIONARY')
 const dictionaryCodeValue = ref('')
 const dictionaryData = reactive({})
@@ -139,6 +165,18 @@ const moveField = async (index, offset) => { const other = fields.value[index + 
 const removeForm = async (form) => { await ElMessageBox.confirm(`确认删除草稿表单“${form.formName}”？`, '删除表单', { type: 'warning' }); await deleteForm(form.id); await load() }
 const publishCurrent = async (form) => { await ElMessageBox.confirm('发布后当前版本不可修改，确认发布？', '发布表单', { type: 'warning' }); await publishForm(form.id); await load(); ElMessage.success('表单发布成功') }
 const newVersion = async (form) => { const result = await ElMessageBox.prompt('请输入新版本号', '创建表单新版本', { inputValue: nextVersion(form.version), inputPattern: /^\S+$/, inputErrorMessage: '版本不能为空' }); const res = await createFormVersion(form.id, result.value); await load(); if (res?.data) await openDesigner(res.data) }
+const openVersionDialog = async () => {
+  const response = await listFormVersions(currentForm.value.id)
+  comparableVersions.value = (response?.data || []).filter(item => item.id !== currentForm.value.id)
+  targetVersionId.value = ''
+  versionComparison.value = null
+  showVersionDialog.value = true
+}
+const loadComparison = async () => {
+  if (!targetVersionId.value) return
+  const response = await compareFormVersions(currentForm.value.id, targetVersionId.value)
+  versionComparison.value = response?.data || null
+}
 const nextVersion = (version) => { const match = String(version || '').match(/^(.*?)(\d+)$/); return match ? `${match[1]}${Number(match[2]) + 1}` : `${version}.1` }
 const optionConfig = (json) => {
   try {

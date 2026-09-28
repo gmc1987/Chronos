@@ -12,6 +12,9 @@ import org.springframework.data.jpa.repository.Query;
 import jakarta.persistence.LockModeType;
 
 public interface IWorkflowIncidentRepository extends JpaRepository<WorkflowIncident, String> {
+	long countByStatus(String status);
+	List<WorkflowIncident> findByInstanceIdOrderByCreateTimeAsc(String instanceId);
+
 	List<WorkflowIncident> findByStatusOrderByCreateTimeDesc(String status);
 
 	List<WorkflowIncident> findAllByOrderByCreateTimeDesc();
