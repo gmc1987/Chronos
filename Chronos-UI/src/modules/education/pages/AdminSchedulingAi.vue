@@ -126,6 +126,18 @@ const formatJson = value => {
   return JSON.stringify(value, null, 2)
 }
 const metricEntries = candidate => Object.entries(candidate.metrics || candidate.indicators || {})
+const candidateExplanation = candidate => {
+  const metrics = candidate.metrics
+  if (!metrics) return '暂无可验证的生成指标，请勿仅凭总分判断方案。'
+  const lines = [
+    `已排 ${metrics.scheduledLessons ?? 0} 节，未排 ${metrics.unscheduledLessons ?? 0} 节；偏好时段命中 ${metrics.preferredSlotHits ?? 0} 次。`,
+  ]
+  if (metrics.consecutiveBlockHits > 0) lines.push(`本轮连堂偏好达成 ${metrics.consecutiveBlockHits} 次。`)
+  if (metrics.unscheduledLessons > 0) lines.push('仍有未排课时，不能直接用于正式课表。')
+  if (metrics.campusSwitchPenalty > 0) lines.push(`跨校区切换惩罚 ${metrics.campusSwitchPenalty}。`)
+  if (metrics.teacherGapPenalty > 0) lines.push(`教师空档惩罚 ${metrics.teacherGapPenalty}。`)
+  return lines.join(' ')
+}
 
 const stopPolling = () => {
   if (pollTimer) {
@@ -433,7 +445,7 @@ onBeforeUnmount(() => {
             :rows="5"
             maxlength="2000"
             show-word-limit
-            placeholder="例如：张老师周三下午不能上课；李老师周四第2节尽量排课。上下午需要教师所属校区的默认作息，其余规则会明确提示。"
+            placeholder="例如：张老师周三下午不能上课；PLC 实训尽量连堂。单双周等暂不支持的规则会明确提示。"
           />
         </el-form-item>
         <el-form-item>
@@ -527,6 +539,9 @@ onBeforeUnmount(() => {
                 {{ entry[0] }}: {{ entry[1] }}<i v-if="index < metricEntries(scope.row).length - 1"> · </i>
               </span>
             </template>
+          </el-table-column>
+          <el-table-column label="方案依据" min-width="320">
+            <template #default="scope">{{ candidateExplanation(scope.row) }}</template>
           </el-table-column>
           <el-table-column label="只读操作" width="110" fixed="right">
             <template #default="scope"><el-button link type="primary" @click="showCandidatePreview(scope.row)">预览</el-button></template>

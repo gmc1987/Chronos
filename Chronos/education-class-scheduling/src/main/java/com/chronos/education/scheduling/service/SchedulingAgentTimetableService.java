@@ -99,6 +99,12 @@ public class SchedulingAgentTimetableService {
 		return new Dimensions(5, lastPeriod, term.getWeekCount());
 	}
 
+	public Set<String> targetOfferingIds(String semesterCode, String mode, Set<String> selectedOfferingIds) {
+		activeTerm(semesterCode);
+		return activeOfferings(semesterCode, mode, selectedOfferingIds).stream()
+				.map(CourseOffering::getId).collect(java.util.stream.Collectors.toUnmodifiableSet());
+	}
+
 	private AcademicTerm activeTerm(String code) {
 		return terms.findByTermCode(code)
 				.filter(term -> "ACTIVE".equals(term.getStatus()))

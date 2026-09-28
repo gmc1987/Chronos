@@ -64,6 +64,24 @@ public class SchedulingAgentPlanValidator {
 		scopes.assertFullAccess(scope);
 		var dimensions = timetable.dimensions(plan.semesterCode(), plan.mode(),
 				plan.selectedOfferingIds());
+		Set<String> targetIds = timetable.targetOfferingIds(plan.semesterCode(), plan.mode(),
+				plan.selectedOfferingIds());
+		if (plan.offeringConstraints().stream()
+				.map(com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint::offeringId)
+				.distinct().count() != plan.offeringConstraints().size()) {
+			throw new IllegalStateException("课程连堂规则重复");
+		}
+		List<ScheduleRunConstraints.OfferingDuration> durationRules =
+				plan.offeringConstraints().stream()
+						.map(item -> {
+							if (item.offeringId() == null || !targetIds.contains(item.offeringId())
+									|| item.periods() != 2
+									|| item.sourceText() == null || item.sourceText().isBlank()) {
+								throw new IllegalStateException("课程连堂规则不在当前排课范围内");
+							}
+							return new ScheduleRunConstraints.OfferingDuration(
+									item.offeringId(), item.periods());
+						}).toList();
 		List<ScheduleRunConstraints.TeacherSlot> rules = plan.constraints().stream()
 				.map(item -> {
 					if (!"TEACHER_TIME".equals(item.kind())
@@ -88,7 +106,7 @@ public class SchedulingAgentPlanValidator {
 				"LOCAL".equals(plan.mode()) ? "LOCAL" : "FULL",
 				plan.selectedOfferingIds(), plan.candidateCount(),
 				dimensions.weekdays(), dimensions.periodsPerDay(), 1, dimensions.endWeek());
-		return new Parameters(command, new ScheduleRunConstraints(rules));
+		return new Parameters(command, new ScheduleRunConstraints(rules, durationRules));
 	}
 
 	public record Parameters(AutoScheduleCommand command, ScheduleRunConstraints constraints) {

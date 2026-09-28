@@ -213,7 +213,8 @@ public class SchedulingAgentCapabilities {
 					? validator.fromConfirmedRun(run, context.actorUsername())
 					: validator.parameters(validator.fromDraftRun(run), context.actorUsername());
 			return ToolResult.success(new Validation(parameters.command().candidateCount(),
-					parameters.constraints().teacherSlots().size()),
+					parameters.constraints().teacherSlots().size()
+							+ parameters.constraints().offeringDurations().size()),
 					run.getSemesterCode(), "已验证确认计划和动态规则");
 		}
 	}

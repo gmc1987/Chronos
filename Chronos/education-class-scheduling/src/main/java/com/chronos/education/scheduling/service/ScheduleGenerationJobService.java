@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.TransactionDefinition;
@@ -76,19 +77,42 @@ public class ScheduleGenerationJobService {
 			String actor,
 			String agentRunId,
 			ScheduleRunConstraints runConstraints) {
-		if (runConstraints == null || (agentRunId == null && !runConstraints.teacherSlots().isEmpty())) {
+		if (runConstraints == null || (agentRunId == null
+				&& (!runConstraints.teacherSlots().isEmpty()
+						|| !runConstraints.offeringDurations().isEmpty()))) {
 			throw new IllegalArgumentException("动态排课规则只能由 AI Run 提交");
 		}
-		ScheduleGenerationJob job = transactions.execute(status -> {
-			ScheduleGenerationJob value = new ScheduleGenerationJob();
-			value.setSemesterCode(command.semesterCode());
-			value.setRequestJson(agentRunId == null
-					? write(command)
-					: write(Map.of("command", command, "runConstraints", runConstraints)));
-			value.setRequestedBy(actor);
-			value.setAgentRunId(agentRunId);
-			return jobs.save(value);
-		});
+		String requestJson = agentRunId == null
+				? write(command)
+				: write(Map.of("command", command, "runConstraints", runConstraints));
+		Submission submission;
+		try {
+			submission = transactions.execute(status -> {
+				if (agentRunId != null) {
+					var existing = jobs.findByAgentRunId(agentRunId);
+					if (existing.isPresent()) {
+						return new Submission(sameJob(existing.get(), requestJson, command, actor), false);
+					}
+				}
+				ScheduleGenerationJob value = new ScheduleGenerationJob();
+				value.setSemesterCode(command.semesterCode());
+				value.setRequestJson(requestJson);
+				value.setRequestedBy(actor);
+				value.setAgentRunId(agentRunId);
+				return new Submission(jobs.save(value), true);
+			});
+		} catch (DataIntegrityViolationException exception) {
+			if (agentRunId == null) {
+				throw exception;
+			}
+			ScheduleGenerationJob concurrent = jobs.findByAgentRunId(agentRunId)
+					.orElseThrow(() -> exception);
+			return sameJob(concurrent, requestJson, command, actor);
+		}
+		ScheduleGenerationJob job = submission.job();
+		if (!submission.created()) {
+			return job;
+		}
 		Runnable start = () -> start(job.getId(), command, actor, runConstraints);
 		if (TransactionSynchronizationManager.isSynchronizationActive()) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -223,6 +247,27 @@ public class ScheduleGenerationJobService {
 		} catch (JsonProcessingException exception) {
 			throw new IllegalStateException("排课任务参数序列化失败", exception);
 		}
+	}
+
+	private boolean sameRequest(String requested, String persisted) {
+		try {
+			return json.readTree(requested).equals(json.readTree(persisted));
+		} catch (JsonProcessingException exception) {
+			throw new IllegalStateException("排课任务请求快照损坏", exception);
+		}
+	}
+
+	private ScheduleGenerationJob sameJob(ScheduleGenerationJob previous, String request,
+			AutoScheduleCommand command, String actor) {
+		if (!actor.equals(previous.getRequestedBy())
+				|| !command.semesterCode().equals(previous.getSemesterCode())
+				|| !sameRequest(request, previous.getRequestJson())) {
+			throw new IllegalStateException("AI Run 已提交不同的排课任务");
+		}
+		return previous;
+	}
+
+	private record Submission(ScheduleGenerationJob job, boolean created) {
 	}
 
 	private String safeMessage(RuntimeException exception) {

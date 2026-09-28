@@ -93,6 +93,65 @@ class AutoSchedulingServiceTest {
 	}
 
 	@Test
+	void scopedBlockPreferenceKeepsOrdinarySchedulingAndFallsBackToSinglePeriods() throws Exception {
+		ScheduleCandidatePlanRepository candidates = mock(ScheduleCandidatePlanRepository.class);
+		ScheduleEntryRepository entries = mock(ScheduleEntryRepository.class);
+		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);
+		ClassroomRepository classrooms = mock(ClassroomRepository.class);
+		AcademicCalendarService calendar = mock(AcademicCalendarService.class);
+		TeachingClassMemberRepository members = mock(TeachingClassMemberRepository.class);
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		List<ScheduleCandidatePlan> saved = new ArrayList<>();
+		CourseOffering course = offerings(1).getFirst();
+		course.setWeeklyLessons(2);
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(course));
+		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(classrooms(1));
+		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
+				.thenReturn(List.of());
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), any(Integer.class)))
+				.thenReturn(Set.of(1, 2));
+		when(candidates.save(any())).thenAnswer(invocation -> {
+			ScheduleCandidatePlan plan = invocation.getArgument(0);
+			plan.setId("candidate-" + saved.size());
+			saved.add(plan);
+			return plan;
+		});
+		var service = new AutoSchedulingService(candidates, entries, offerings, classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
+				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
+				members, terms, calendar, policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
+				mock(EntityManager.class));
+		var command = new AutoScheduleCommand("2026-2027-1", "连堂", "FULL",
+				Set.of(), 1, 1, 2, 1, 20);
+		var blockRule = new ScheduleRunConstraints(List.of(),
+				List.of(new ScheduleRunConstraints.OfferingDuration("offering-0", 2)));
+		service.generate(command, "admin", () -> false, progress -> { }, blockRule);
+		service.generate(command, "admin");
+		assertThat(readEntries(saved.get(0).getSnapshotJson()))
+				.extracting(ScheduleEntry::getDurationPeriods).containsExactly(2);
+		var savedMetrics = new ObjectMapper().readValue(saved.get(0).getMetricsJson(),
+				com.chronos.education.scheduling.model.ScheduleCandidateMetrics.class);
+		assertThat(savedMetrics.consecutiveBlockHits()).isEqualTo(1);
+		assertThat(readEntries(saved.get(1).getSnapshotJson()))
+				.extracting(ScheduleEntry::getDurationPeriods).containsExactly(1, 1);
+		// A single schedulable period cannot fit a block, but must still place one lesson.
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), any(Integer.class)))
+				.thenReturn(Set.of(1));
+		service.generate(command, "admin", () -> false, progress -> { }, blockRule);
+		assertThat(readEntries(saved.get(2).getSnapshotJson()))
+				.extracting(ScheduleEntry::getDurationPeriods).containsExactly(1);
+		assertThat(saved.get(2).getUnscheduledLessons()).isEqualTo(1);
+		assertThat(new ObjectMapper().readValue(saved.get(2).getMetricsJson(),
+				com.chronos.education.scheduling.model.ScheduleCandidateMetrics.class)
+				.consecutiveBlockHits()).isZero();
+	}
+
+	@Test
 	void schedulesTwoThousandOfferingsWithinCapacityUsingScopedMemberQuery() throws Exception {
 		ScheduleCandidatePlanRepository candidates = mock(ScheduleCandidatePlanRepository.class);
 		ScheduleEntryRepository entries = mock(ScheduleEntryRepository.class);

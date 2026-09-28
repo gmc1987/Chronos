@@ -6,6 +6,7 @@ import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.SchedulingAiConstraint;
+import com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
@@ -31,6 +32,8 @@ import org.springframework.stereotype.Service;
 public class SchedulingAiRequirementParser {
 	private static final Pattern PERIOD_PATTERN =
 			Pattern.compile("第?([一二三四五六七八九十\\d]+)节");
+	private static final Pattern OFFERING_BLOCK_PATTERN = Pattern.compile(
+			"(?:请|帮我)?\\s*(.+?)\\s*(?:尽量|优先|希望|最好)连堂(?:上课|排课|排)?");
 	private static final Pattern SUPPORTED_TEACHER_SLOT = Pattern.compile(
 			"(?:请|帮我|给)?\\s*TEACHER\\s*(?:在|于)?"
 					+ "(?:星期[一二三四五六日天]|周[一二三四五六日天])\\s*"
@@ -98,6 +101,7 @@ public class SchedulingAiRequirementParser {
 		Set<String> selected = validateSelectedOfferings(request, scope);
 		List<String> clarifications = new java.util.ArrayList<>();
 		List<SchedulingAiConstraint> constraints = new java.util.ArrayList<>();
+		List<SchedulingAiOfferingConstraint> offeringConstraints = new java.util.ArrayList<>();
 		List<String> unsupported = new java.util.ArrayList<>();
 		List<String> unresolvedClauses = new java.util.ArrayList<>();
 		String text = request.requestText();
@@ -116,13 +120,46 @@ public class SchedulingAiRequirementParser {
 				unresolvedClauses.add(rule);
 				continue;
 			}
-			if ("GENERATION".equals(clause.classification()) != isGenerationInstruction(rule)
-					&& !"DETERMINISTIC".equals(clause.classification())) {
+			if (!"DETERMINISTIC".equals(clause.classification())
+					&& !("GENERATION".equals(clause.classification()) && isGenerationInstruction(rule))
+					&& !("TEACHER_SLOT".equals(clause.classification())
+							&& !isGenerationInstruction(rule)
+							&& !OFFERING_BLOCK_PATTERN.matcher(rule).matches())
+					&& !("OFFERING_BLOCK".equals(clause.classification())
+							&& OFFERING_BLOCK_PATTERN.matcher(rule).matches())) {
 				unsupported.add("模型分类与服务端规则不一致：" + rule);
 				unresolvedClauses.add(rule);
 				continue;
 			}
 			if (rule.isEmpty() || isGenerationInstruction(rule)) {
+				continue;
+			}
+			Matcher block = OFFERING_BLOCK_PATTERN.matcher(rule);
+			if (block.matches()) {
+				String course = block.group(1).strip();
+				List<CourseOffering> matched = dataScopes.visibleOfferings(scope,
+						offerings.findBySemesterCodeOrderByOfferingCode(request.semesterCode()))
+						.stream().filter(offering -> "ACTIVE".equals(offering.getStatus()))
+						.filter(offering -> "GLOBAL".equals(request.mode())
+								|| selected.contains(offering.getId()))
+						.filter(offering -> course.equals(offering.getCourseCode())
+								|| course.equals(offering.getCourseName()))
+						.toList();
+				if (matched.isEmpty() || matched.stream().map(CourseOffering::getCourseCode)
+						.distinct().count() != 1
+						|| matched.stream().anyMatch(offering ->
+								offering.getWeeklyLessons() == null || offering.getWeeklyLessons() < 2)) {
+					clarifications.add("请指定排课范围内唯一且每周至少两节的课程：" + rule);
+					unresolvedClauses.add(rule);
+					continue;
+				}
+				for (CourseOffering offering : matched) {
+					if (offeringConstraints.stream().noneMatch(existing ->
+							existing.offeringId().equals(offering.getId()))) {
+						offeringConstraints.add(new SchedulingAiOfferingConstraint(
+								offering.getId(), offering.getCourseName(), 2, rule));
+					}
+				}
 				continue;
 			}
 			boolean forbidden = containsAny(rule, "不能", "不可", "禁止", "禁排", "不排");
@@ -248,7 +285,8 @@ public class SchedulingAiRequirementParser {
 				constraints,
 				clarifications,
 				unsupported,
-				unresolvedClauses);
+				unresolvedClauses,
+				offeringConstraints);
 		return new ParsedRequirement(plan);
 	}
 

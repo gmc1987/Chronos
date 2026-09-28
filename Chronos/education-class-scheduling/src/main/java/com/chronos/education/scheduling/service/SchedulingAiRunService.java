@@ -14,6 +14,7 @@ import com.chronos.education.scheduling.model.ScheduleDiffView;
 import com.chronos.education.scheduling.model.ScheduleGenerationJob;
 import com.chronos.education.scheduling.model.SchedulingAiConfirmRequest;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
+import com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiReplyRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunView;
@@ -177,6 +178,8 @@ public class SchedulingAiRunService {
 		Set<String> parsedSources = updated.constraints().stream()
 				.map(com.chronos.education.scheduling.model.SchedulingAiConstraint::sourceText)
 				.collect(java.util.stream.Collectors.toSet());
+		updated.offeringConstraints().stream().map(SchedulingAiOfferingConstraint::sourceText)
+				.forEach(parsedSources::add);
 		if (!updated.readyForConfirmation()
 				|| parsedSources.size() != replacements.size()
 				|| !parsedSources.containsAll(replacements.values())) {
@@ -209,10 +212,18 @@ public class SchedulingAiRunService {
 		List<String> remainingClarifications = remainingUnresolved.isEmpty()
 				? List.of()
 				: List.of("仍有 " + remainingUnresolved.size() + " 条原需求待澄清，请按编号完整重述");
+		List<SchedulingAiOfferingConstraint> combinedOfferings =
+				new ArrayList<>(previous.offeringConstraints());
+		for (var offering : updated.offeringConstraints()) {
+			if (combinedOfferings.stream().noneMatch(existing ->
+					existing.offeringId().equals(offering.offeringId()))) {
+				combinedOfferings.add(offering);
+			}
+		}
 		SchedulingAiPlan plan = new SchedulingAiPlan(updated.schemaVersion(),
 				updated.skillCode(), updated.semesterCode(), updated.mode(),
 				updated.selectedOfferingIds(), updated.candidateCount(), combined,
-				remainingClarifications, List.of(), remainingUnresolved);
+				remainingClarifications, List.of(), remainingUnresolved, combinedOfferings);
 		return transactions.execute(status -> {
 			AgentRun locked = lockedOwner(id, actor);
 			requireVersion(locked, request.expectedPlanVersion());
@@ -285,6 +296,10 @@ public class SchedulingAiRunService {
 	public SchedulingAiRunView generate(String id, String actor) {
 		AgentRun current = lockedOwner(id, actor);
 		dataScopes.assertFullAccess(dataScopes.resolve(actor));
+		if (current.getRelatedJobId() != null
+				&& List.of("QUEUED", "RUNNING", "CANDIDATES_READY").contains(current.getStatus())) {
+			return view(synchronize(current));
+		}
 		requireState(current, "CONFIRMED");
 		invoke(current, actor, SchedulingAgentCapabilities.GENERATION,
 				SchedulingAgentCapabilities.GENERATION_VALIDATE,

@@ -20,6 +20,7 @@ import com.chronos.education.scheduling.model.ScheduleRunConstraints;
 import com.chronos.education.scheduling.model.SchedulingAiConfirmRequest;
 import com.chronos.education.scheduling.model.SchedulingAiConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
+import com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiReplyRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +58,7 @@ class SchedulingAiRunServiceTest {
 		SchedulingAgentTimetableService timetable = mock(SchedulingAgentTimetableService.class);
 		when(timetable.dimensions(any(), any(), any()))
 				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 20));
+		when(timetable.targetOfferingIds(any(), any(), any())).thenReturn(Set.of());
 		planValidator = new SchedulingAgentPlanValidator(scopes,
 				new ObjectMapper().findAndRegisterModules(), timetable);
 		PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
@@ -287,6 +289,25 @@ class SchedulingAiRunServiceTest {
 		verify(tools).invoke(org.mockito.ArgumentMatchers.eq(SchedulingAgentCapabilities.GENERATION),
 				org.mockito.ArgumentMatchers.eq(SchedulingAgentCapabilities.GENERATE),
 				org.mockito.ArgumentMatchers.eq(1), any(), any(), any(), any());
+	}
+
+	@Test
+	void confirmedOfferingRuleMustBelongToCurrentScope() {
+		var offeringRule = new SchedulingAiOfferingConstraint(
+				"offering-plc", "PLC 实训", 2, "PLC 实训尽量连堂");
+		var plan = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1,
+				List.of(), List.of(), List.of(), List.of(), List.of(offeringRule));
+		SchedulingAgentTimetableService timetable = mock(SchedulingAgentTimetableService.class);
+		when(timetable.dimensions(any(), any(), any()))
+				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 20));
+		var validator = new SchedulingAgentPlanValidator(scopes,
+				new ObjectMapper().findAndRegisterModules(), timetable);
+		assertThatThrownBy(() -> validator.parameters(plan, "admin"))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("范围");
+		when(timetable.targetOfferingIds(any(), any(), any())).thenReturn(Set.of("offering-plc"));
+		assertThat(validator.parameters(plan, "admin").constraints().offeringDurations())
+				.containsExactly(new ScheduleRunConstraints.OfferingDuration("offering-plc", 2));
 	}
 
 	private SchedulingAiRunRequest request(String id) {

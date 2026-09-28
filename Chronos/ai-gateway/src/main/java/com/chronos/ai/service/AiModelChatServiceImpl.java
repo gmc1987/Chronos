@@ -94,7 +94,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 						|| clause.path("text").asText().isBlank()
 						|| clause.path("text").asText().length() > 2000
 						|| !clause.path("classification").isTextual()
-						|| !java.util.Set.of("TEACHER_SLOT", "GENERATION", "UNSUPPORTED")
+						|| !java.util.Set.of("TEACHER_SLOT", "OFFERING_BLOCK", "GENERATION", "UNSUPPORTED")
 								.contains(clause.path("classification").asText())) {
 					throw new AiStructuredOutputException("模型子句格式或分类无效");
 				}

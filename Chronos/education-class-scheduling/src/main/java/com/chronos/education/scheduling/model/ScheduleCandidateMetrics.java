@@ -10,5 +10,14 @@ public record ScheduleCandidateMetrics(
 		int consecutivePenalty,
 		int campusSwitchPenalty,
 		int teacherGapPenalty,
-		int totalScore) {
+		int totalScore,
+		int consecutiveBlockHits) {
+	public ScheduleCandidateMetrics(int scheduledLessons, int unscheduledLessons,
+			int preferredSlotHits, int sameCourseDayPenalty, int teacherLoadPenalty,
+			int consecutivePenalty, int campusSwitchPenalty, int teacherGapPenalty,
+			int totalScore) {
+		this(scheduledLessons, unscheduledLessons, preferredSlotHits, sameCourseDayPenalty,
+				teacherLoadPenalty, consecutivePenalty, campusSwitchPenalty, teacherGapPenalty,
+				totalScore, 0);
+	}
 }

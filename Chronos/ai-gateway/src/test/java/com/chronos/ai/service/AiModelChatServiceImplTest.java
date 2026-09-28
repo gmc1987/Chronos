@@ -92,6 +92,11 @@ class AiModelChatServiceImplTest {
 		var service = new AiModelChatServiceImpl(models, factory);
 		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1",
 				"张老师周三第3节不能上课")).contains("TEACHER_SLOT");
+		when(chatModel.call(org.mockito.ArgumentMatchers.contains("PLC 实训尽量连堂")))
+				.thenReturn("{\"clauses\":[{\"text\":\"PLC 实训尽量连堂\","
+						+ "\"classification\":\"OFFERING_BLOCK\"}]}");
+		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"PLC 实训尽量连堂")).contains("OFFERING_BLOCK");
 
 		when(chatModel.call(org.mockito.ArgumentMatchers.contains("禁止脚本")))
 				.thenReturn("{\"clauses\":[]}");

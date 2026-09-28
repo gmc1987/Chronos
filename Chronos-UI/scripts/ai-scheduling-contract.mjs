@@ -74,5 +74,11 @@ if (!pageSource.includes('unsupportedItems') || !pageSource.includes(':max="5"')
   || !pageSource.includes('await compareAiSchedulingCandidates(')) {
   throw new Error('AI 排课页面缺少不支持规则提示、候选数量门禁或真实候选比较/预览')
 }
+if (!pageSource.includes('candidateExplanation(scope.row)')
+  || !pageSource.includes('metrics.unscheduledLessons')
+  || !pageSource.includes('metrics.preferredSlotHits')
+  || !pageSource.includes('metrics.consecutiveBlockHits')) {
+  throw new Error('候选说明必须取自真实排课指标，并显示未排课时与偏好命中')
+}
 
 console.log(`AI scheduling contract passed (${endpoints.length} endpoints, 10 statuses)`)

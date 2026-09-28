@@ -165,6 +165,14 @@ public class AutoSchedulingService {
 						|| rule.periodNo() > request.periodsPerDay())) {
 			throw new IllegalArgumentException("动态规则包含当前排课范围以外的教师或时段");
 		}
+		if (runConstraints.offeringDurations().stream().anyMatch(rule ->
+				!targetIds.contains(rule.offeringId())
+				|| semesterOfferings.stream().noneMatch(offering ->
+						rule.offeringId().equals(offering.getId())
+								&& offering.getWeeklyLessons() != null
+								&& offering.getWeeklyLessons() >= rule.periods()))) {
+			throw new IllegalArgumentException("动态连堂规则包含无效教学任务");
+		}
 		List<ScheduleCandidateView> result = new ArrayList<>();
 		for (int index = 0; index < request.candidateCount(); index++) {
 			checkCancelled(cancelled);
@@ -404,6 +412,10 @@ public class AutoSchedulingService {
 			ScheduleRunConstraints runConstraints) {
 		Map<String, CourseOffering> offeringById = semesterOfferings.stream()
 				.collect(Collectors.toMap(CourseOffering::getId, value -> value));
+		Map<String, Integer> localDurations = runConstraints.offeringDurations().stream()
+				.collect(Collectors.toMap(
+						ScheduleRunConstraints.OfferingDuration::offeringId,
+						ScheduleRunConstraints.OfferingDuration::periods));
 		List<ScheduleEntry> result = baseline.stream()
 				.filter(entry -> "CANCELLED".equals(entry.getStatus())
 						|| !targetIds.contains(entry.getOfferingId())
@@ -466,6 +478,7 @@ public class AutoSchedulingService {
 		int consecutivePenalty = 0;
 		int campusSwitchPenalty = 0;
 		int teacherGapPenalty = 0;
+		int consecutiveBlockHits = 0;
 		Map<String, Set<Integer>> periodsByCampus = new HashMap<>();
 		for (CourseOffering offering : targets) {
 			checkCancelled(cancelled);
@@ -475,9 +488,9 @@ public class AutoSchedulingService {
 					.mapToInt(entry -> entry.getDurationPeriods() == null ? 1 : entry.getDurationPeriods())
 					.sum();
 			int requiredLessons = Math.max(0, offering.getWeeklyLessons() - lockedLessons);
-			int preferredDuration = Math.max(1, offering.getPreferredDurationPeriods() == null
-					? 1
-					: offering.getPreferredDurationPeriods());
+			int preferredDuration = Math.max(1, localDurations.getOrDefault(offering.getId(),
+					offering.getPreferredDurationPeriods() == null ? 1
+							: offering.getPreferredDurationPeriods()));
 			Set<Integer> allowedPeriods = periodsByCampus.computeIfAbsent(
 					offering.getCampusId() == null ? "" : offering.getCampusId(),
 					campus -> academicCalendar.schedulablePeriodNumbers(
@@ -498,6 +511,15 @@ public class AutoSchedulingService {
 						roomUnavailableSlots,
 						teacherById.get(offering.getTeacherId()),
 						policy);
+				if (placement == null && duration == 2
+						&& localDurations.containsKey(offering.getId())) {
+					duration = 1;
+					placement = bestPlacement(
+							offering, slots, availableRooms, schedulingIndex,
+							teacherConstraints.getOrDefault(offering.getTeacherId(), List.of()),
+							allowedPeriods, duration, roomUnavailableSlots,
+							teacherById.get(offering.getTeacherId()), policy);
+				}
 				if (placement == null) {
 					unscheduled += duration;
 					lesson += duration;
@@ -522,6 +544,9 @@ public class AutoSchedulingService {
 				result.add(generated);
 				schedulingIndex.add(generated);
 				scheduled += duration;
+				if (duration == 2 && localDurations.containsKey(offering.getId())) {
+					consecutiveBlockHits++;
+				}
 				lesson += duration;
 				if (placement.preferred()) {
 					preferredHits++;
@@ -553,7 +578,8 @@ public class AutoSchedulingService {
 						consecutivePenalty,
 						campusSwitchPenalty,
 						teacherGapPenalty,
-						score));
+						score,
+						consecutiveBlockHits));
 	}
 
 	private void checkCancelled(BooleanSupplier cancelled) {

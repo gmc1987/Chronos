@@ -53,4 +53,19 @@ class SchedulingAiModelClassifierTest {
 				.isInstanceOf(AiStructuredOutputException.class)
 				.hasMessageContaining("原文");
 	}
+
+	@Test
+	void courseBlockClassificationKeepsOriginalClause() {
+		String input = "PLC 实训尽量连堂";
+		when(models.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
+				.thenReturn("""
+						{"clauses":[{"text":"PLC 实训尽量连堂","classification":"OFFERING_BLOCK"}]}
+						""");
+		assertThat(classifier.classify(input)).singleElement().satisfies(clause -> {
+			assertThat(clause.text()).isEqualTo(input);
+			assertThat(clause.classification()).isEqualTo("OFFERING_BLOCK");
+		});
+	}
 }

@@ -37,6 +37,9 @@ class SchedulingAgentCapabilitiesTest {
 		when(timetable.dimensions(org.mockito.ArgumentMatchers.any(),
 				org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
 				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 20));
+		when(timetable.targetOfferingIds(org.mockito.ArgumentMatchers.any(),
+				org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+				.thenReturn(Set.of());
 	}
 
 	@Test

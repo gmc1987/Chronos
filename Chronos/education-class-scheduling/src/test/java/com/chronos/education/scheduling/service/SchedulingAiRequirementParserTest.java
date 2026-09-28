@@ -186,6 +186,41 @@ class SchedulingAiRequirementParserTest {
 	}
 
 	@Test
+	void resolvesConsecutivePreferenceOnlyForAuthorizedCourseOfferings() {
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);
+		TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		var scope = new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		var offering = new com.chronos.education.scheduling.model.CourseOffering();
+		offering.setId("offering-plc");
+		offering.setCourseCode("PLC");
+		offering.setCourseName("PLC 实训");
+		offering.setStatus("ACTIVE");
+		offering.setWeeklyLessons(2);
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(offering));
+		when(scopes.visibleOfferings(org.mockito.ArgumentMatchers.eq(scope),
+				org.mockito.ArgumentMatchers.anyList()))
+				.thenReturn(List.of(offering));
+		var parser = new SchedulingAiRequirementParser(terms, offerings, teachers, scopes);
+		var plan = parser.parse(new SchedulingAiRunRequest("plc", "2026-2027-1", "GLOBAL",
+				Set.of(), 1, "PLC 实训尽量连堂"), "admin").plan();
+		assertThat(plan.readyForConfirmation()).isTrue();
+		assertThat(plan.offeringConstraints()).singleElement()
+				.satisfies(rule -> {
+					assertThat(rule.offeringId()).isEqualTo("offering-plc");
+					assertThat(rule.periods()).isEqualTo(2);
+				});
+		var invalid = parser.parse(new SchedulingAiRunRequest("unknown", "2026-2027-1", "GLOBAL",
+				Set.of(), 1, "未知课程尽量连堂"), "admin").plan();
+		assertThat(invalid.readyForConfirmation()).isFalse();
+		assertThat(invalid.unresolvedClauses()).containsExactly("未知课程尽量连堂");
+	}
+
+	@Test
 	void ambiguousTeacherEntersClarificationInsteadOfGuessing() {
 		AcademicTermRepository terms = mock(AcademicTermRepository.class);
 		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);

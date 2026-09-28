@@ -72,6 +72,7 @@ class ChronosEducationApplicationTests {
 		offering.setTeachingClassName("AI 验证班");
 		offering.setTeacherId(teacher);
 		offering.setTeacherName("验证教师");
+		offering.setStudentCount(1);
 		offering.setCampusId(campus);
 		offerings.saveAndFlush(offering);
 
