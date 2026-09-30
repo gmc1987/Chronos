@@ -21,22 +21,16 @@ public class AiModelService {
 	private final AiModelChatService runtime;
 	private final SecretEncryptionProvider encryption;
 	private final IAuditLogService audit;
-
-	public AiModelService(AiModelRepository models) {
-		this(models, null, null, null);
-	}
-
-	public AiModelService(AiModelRepository models, AiModelChatService runtime) {
-		this(models, runtime, null, null);
-	}
+	private final AiModelTypes modelTypes;
 
 	@Autowired
 	public AiModelService(AiModelRepository models, AiModelChatService runtime,
-			SecretEncryptionProvider encryption, IAuditLogService audit) {
+			SecretEncryptionProvider encryption, IAuditLogService audit, AiModelTypes modelTypes) {
 		this.models = models;
 		this.runtime = runtime;
 		this.encryption = encryption;
 		this.audit = audit;
+		this.modelTypes = modelTypes;
 	}
 
 	@Transactional(readOnly = true)
@@ -187,8 +181,8 @@ public class AiModelService {
 		if (!Integer.valueOf(1).equals(target.getStatus())) {
 			throw new IllegalArgumentException("只有启用的模型才能设为默认模型");
 		}
-		if (!"CHAT".equalsIgnoreCase(target.getModelType())) {
-			throw new IllegalArgumentException("只有聊天模型才能设为默认模型");
+		if (!modelTypes.isText(target.getModelType())) {
+			throw new IllegalArgumentException("只有文本模型才能设为默认模型");
 		}
 		if (target.getApiKeyCiphertext() == null || target.getApiKeyCiphertext().isBlank()) {
 			throw new IllegalArgumentException("只有已配置 API Key 的模型才能设为默认模型");

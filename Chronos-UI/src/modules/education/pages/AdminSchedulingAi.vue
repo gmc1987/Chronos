@@ -136,6 +136,7 @@ const candidateExplanation = candidate => {
     `已排 ${metrics.scheduledLessons ?? 0} 节，未排 ${metrics.unscheduledLessons ?? 0} 节；偏好时段命中 ${metrics.preferredSlotHits ?? 0} 次。`,
   ]
   if (metrics.consecutiveBlockHits > 0) lines.push(`本轮连堂偏好达成 ${metrics.consecutiveBlockHits} 次。`)
+  if (metrics.teacherDayConcentrationHits > 0) lines.push(`本轮教师同日集中偏好命中 ${metrics.teacherDayConcentrationHits} 次。`)
   if (metrics.unscheduledLessons > 0) lines.push('仍有未排课时，不能直接用于正式课表。')
   if (metrics.campusSwitchPenalty > 0) lines.push(`跨校区切换惩罚 ${metrics.campusSwitchPenalty}。`)
   if (metrics.teacherGapPenalty > 0) lines.push(`教师空档惩罚 ${metrics.teacherGapPenalty}。`)
@@ -464,7 +465,7 @@ onBeforeUnmount(() => {
             :rows="5"
             maxlength="2000"
             show-word-limit
-            placeholder="例如：张老师周三下午不能上课；PLC 实训尽量连堂。单双周等暂不支持的规则会明确提示。"
+            placeholder="例如：张老师周三下午不能上课；PLC 实训尽量连堂；PLC 实训单周第1周到第17周。保留现有课表项可写“保留PLC 实训周三第3节”；有歧义的规则会要求澄清。"
           />
         </el-form-item>
         <el-form-item>
@@ -504,7 +505,7 @@ onBeforeUnmount(() => {
         </ul>
         <div v-if="unresolvedItems.length && !unsupportedItems.length" class="reply-box">
           <div>
-            <p>请用完整新规则替换下列待澄清原文；多条时逐行输入“编号：教师＋星期＋节次/时段＋禁排或偏好”。未回复的规则会继续等待澄清。</p>
+            <p>请用完整新规则替换下列待澄清原文；多条时逐行输入“编号：完整规则”，并写明课程或教师、教学周、节次等必要信息。未回复的规则会继续等待澄清。</p>
             <ol><li v-for="(item, index) in unresolvedItems" :key="index">{{ item }}</li></ol>
           </div>
           <el-input v-model="clarificationReply" type="textarea" :rows="3" placeholder="例如：1：张老师周三第3节不能上课" />
@@ -524,6 +525,7 @@ onBeforeUnmount(() => {
 
       <section v-if="['CONFIRMED', 'QUEUED', 'RUNNING'].includes(currentStatus)" class="workflow-section">
         <h3>候选方案生成</h3>
+        <p>本轮确认的动态规则仅作用于候选生成；临时锁课不会修改正式课表的锁定标志，软偏好不保证全部满足。</p>
         <el-alert
           v-if="currentStatus === 'QUEUED' || currentStatus === 'RUNNING'"
           title="候选方案正在生成，页面会自动刷新状态。"

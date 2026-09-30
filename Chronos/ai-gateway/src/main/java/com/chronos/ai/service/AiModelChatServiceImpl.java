@@ -34,6 +34,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	private final AiModelRepository models;
 	private final DeepSeekChatModelFactory modelFactory;
 	private final SecretEncryptionProvider encryption;
+	private final AiModelTypes modelTypes;
 	private final ObjectMapper structuredJson = new ObjectMapper()
 			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private final ConcurrentHashMap<String, CachedModel> cache = new ConcurrentHashMap<>();
@@ -42,14 +43,12 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	public AiModelChatServiceImpl(
 			AiModelRepository models,
 			DeepSeekChatModelFactory modelFactory,
-			SecretEncryptionProvider encryption) {
+			SecretEncryptionProvider encryption,
+			AiModelTypes modelTypes) {
 		this.models = models;
 		this.modelFactory = modelFactory;
 		this.encryption = encryption;
-	}
-
-	public AiModelChatServiceImpl(AiModelRepository models, DeepSeekChatModelFactory modelFactory) {
-		this(models, modelFactory, null);
+		this.modelTypes = modelTypes;
 	}
 
 	@Override
@@ -113,7 +112,8 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 						|| clause.path("text").asText().isBlank()
 						|| clause.path("text").asText().length() > 2000
 						|| !clause.path("classification").isTextual()
-						|| !java.util.Set.of("TEACHER_SLOT", "OFFERING_BLOCK", "GENERATION", "UNSUPPORTED")
+						|| !java.util.Set.of("TEACHER_SLOT", "OFFERING_BLOCK", "WEEK_RULE",
+								"LOCK_ENTRY", "TEACHER_PRIORITY", "GENERATION", "UNSUPPORTED")
 								.contains(clause.path("classification").asText())) {
 					throw new AiStructuredOutputException("模型子句格式或分类无效");
 				}
@@ -157,8 +157,8 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		if (!Integer.valueOf(1).equals(model.getStatus())) {
 			throw new AiModelConfigurationException(label + "已停用");
 		}
-		if (!"CHAT".equalsIgnoreCase(model.getModelType())) {
-			throw new AiModelConfigurationException(label + "不是聊天模型");
+		if (!modelTypes.isText(model.getModelType())) {
+			throw new AiModelConfigurationException(label + "不是文本模型");
 		}
 		if (model.getApiKey() == null || model.getApiKey().isBlank()) {
 			if (model.getApiKeyCiphertext() == null || model.getApiKeyCiphertext().isBlank()) {

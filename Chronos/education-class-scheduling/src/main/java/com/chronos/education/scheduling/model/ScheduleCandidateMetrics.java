@@ -11,13 +11,23 @@ public record ScheduleCandidateMetrics(
 		int campusSwitchPenalty,
 		int teacherGapPenalty,
 		int totalScore,
-		int consecutiveBlockHits) {
+		int consecutiveBlockHits,
+		int teacherDayConcentrationHits) {
+	public ScheduleCandidateMetrics(int scheduledLessons, int unscheduledLessons,
+			int preferredSlotHits, int sameCourseDayPenalty, int teacherLoadPenalty,
+			int consecutivePenalty, int campusSwitchPenalty, int teacherGapPenalty,
+			int totalScore, int consecutiveBlockHits) {
+		this(scheduledLessons, unscheduledLessons, preferredSlotHits, sameCourseDayPenalty,
+				teacherLoadPenalty, consecutivePenalty, campusSwitchPenalty, teacherGapPenalty,
+				totalScore, consecutiveBlockHits, 0);
+	}
+
 	public ScheduleCandidateMetrics(int scheduledLessons, int unscheduledLessons,
 			int preferredSlotHits, int sameCourseDayPenalty, int teacherLoadPenalty,
 			int consecutivePenalty, int campusSwitchPenalty, int teacherGapPenalty,
 			int totalScore) {
 		this(scheduledLessons, unscheduledLessons, preferredSlotHits, sameCourseDayPenalty,
 				teacherLoadPenalty, consecutivePenalty, campusSwitchPenalty, teacherGapPenalty,
-				totalScore, 0);
+				totalScore, 0, 0);
 	}
 }

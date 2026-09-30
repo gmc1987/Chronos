@@ -47,6 +47,12 @@ public class ScheduleGenerationJob extends BaseEntity {
 	@Column(name = "finished_at")
 	private LocalDateTime finishedAt;
 
+	@Column(name = "lease_owner", length = 64)
+	private String leaseOwner;
+
+	@Column(name = "lease_expires_at")
+	private LocalDateTime leaseExpiresAt;
+
 	@Version
 	@Column(name = "lock_version", nullable = false)
 	private Long lockVersion = 0L;

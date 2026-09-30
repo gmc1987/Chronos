@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -44,6 +45,171 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 
 class AutoSchedulingServiceTest {
+	@Test
+	void teacherDayConcentrationPriorityChangesOnlyAiCandidate() throws Exception {
+		var candidates = mock(ScheduleCandidatePlanRepository.class);
+		var entries = mock(ScheduleEntryRepository.class);
+		var offerings = mock(CourseOfferingRepository.class);
+		var classrooms = mock(ClassroomRepository.class);
+		var members = mock(TeachingClassMemberRepository.class);
+		var terms = mock(AcademicTermRepository.class);
+		var calendar = mock(AcademicCalendarService.class);
+		CourseOffering course = offerings(1).getFirst();
+		course.setWeeklyLessons(2);
+		List<ScheduleCandidatePlan> saved = new ArrayList<>();
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(course));
+		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(classrooms(1));
+		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
+				.thenReturn(List.of());
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(2)))
+				.thenReturn(Set.of(1, 2));
+		when(candidates.save(any())).thenAnswer(invocation -> {
+			ScheduleCandidatePlan plan = invocation.getArgument(0);
+			plan.setId("candidate-" + saved.size());
+			saved.add(plan);
+			return plan;
+		});
+		var solver = new AutoSchedulingService(candidates, entries, offerings, classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
+				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
+				members, terms, calendar, policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
+				mock(EntityManager.class));
+		var command = new AutoScheduleCommand("2026-2027-1", "集中偏好", "FULL",
+				Set.of(), 1, 2, 2, 1, 20);
+		var priority = new ScheduleRunConstraints(List.of(), List.of(), List.of(), List.of(),
+				List.of(new ScheduleRunConstraints.SoftPriority("SAME_DAY", "teacher-0")));
+
+		solver.generate(command, "admin", () -> false, progress -> { }, priority);
+		solver.generate(command, "admin");
+
+		assertThat(readEntries(saved.get(0).getSnapshotJson()))
+				.extracting(ScheduleEntry::getDayOfWeek).containsExactly(1, 1);
+		assertThat(readEntries(saved.get(1).getSnapshotJson()))
+				.extracting(ScheduleEntry::getDayOfWeek).containsExactly(1, 2);
+		assertThat(saved.get(0).getTotalScore()).isGreaterThan(saved.get(1).getTotalScore());
+		assertThat(new ObjectMapper().readValue(saved.get(0).getMetricsJson(),
+				com.chronos.education.scheduling.model.ScheduleCandidateMetrics.class)
+				.teacherDayConcentrationHits()).isEqualTo(1);
+	}
+
+	@Test
+	void oddAndEvenWeeksShareResourcesButAllWeeksConflict() throws Exception {
+		var candidates = mock(ScheduleCandidatePlanRepository.class);
+		var entries = mock(ScheduleEntryRepository.class);
+		var offerings = mock(CourseOfferingRepository.class);
+		var classrooms = mock(ClassroomRepository.class);
+		var members = mock(TeachingClassMemberRepository.class);
+		var terms = mock(AcademicTermRepository.class);
+		var calendar = mock(AcademicCalendarService.class);
+		var courses = offerings(3);
+		for (var course : courses) course.setTeacherId("one-teacher");
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(courses);
+		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(classrooms(1));
+		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
+				.thenReturn(List.of(member("offering-0", "student-1"),
+						member("offering-1", "student-1"), member("offering-2", "student-1")));
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(1)))
+				.thenReturn(Set.of(1));
+		List<ScheduleCandidatePlan> saved = new ArrayList<>();
+		when(candidates.save(any())).thenAnswer(invocation -> {
+			ScheduleCandidatePlan plan = invocation.getArgument(0);
+			plan.setId("candidate-" + saved.size());
+			saved.add(plan);
+			return plan;
+		});
+		var solver = new AutoSchedulingService(candidates, entries, offerings, classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
+				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
+				members, terms, calendar, policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
+				mock(EntityManager.class));
+		var command = new AutoScheduleCommand("2026-2027-1", "周次", "FULL",
+				Set.of(), 1, 1, 1, 1, 20);
+		var run = new ScheduleRunConstraints(List.of(), List.of(), List.of(
+				new ScheduleRunConstraints.WeekRule("offering-0", "ODD", 1, 20),
+				new ScheduleRunConstraints.WeekRule("offering-1", "EVEN", 1, 20)),
+				List.of(), List.of());
+
+		solver.generate(command, "admin", () -> false, progress -> { }, run);
+		solver.generate(command, "admin");
+
+		assertThat(readEntries(saved.get(0).getSnapshotJson()))
+				.extracting(ScheduleEntry::getWeekPattern).containsExactly("ODD", "EVEN");
+		assertThat(saved.get(0).getUnscheduledLessons()).isEqualTo(1);
+		assertThat(saved.get(1).getUnscheduledLessons()).isEqualTo(2);
+	}
+
+	@Test
+	void temporaryLockKeepsOriginalEntryWithoutWritingFormalLock() throws Exception {
+		var candidates = mock(ScheduleCandidatePlanRepository.class);
+		var entries = mock(ScheduleEntryRepository.class);
+		var offerings = mock(CourseOfferingRepository.class);
+		var classrooms = mock(ClassroomRepository.class);
+		var members = mock(TeachingClassMemberRepository.class);
+		var terms = mock(AcademicTermRepository.class);
+		var calendar = mock(AcademicCalendarService.class);
+		ScheduleEntry original = new ScheduleEntry();
+		original.setId("entry-1");
+		original.setSemesterCode("2026-2027-1");
+		original.setOfferingId("offering-0");
+		original.setClassroomId("room-0");
+		original.setDayOfWeek(1);
+		original.setPeriodNo(1);
+		original.setWeekPattern("ALL");
+		original.setStartWeek(1);
+		original.setEndWeek(20);
+		original.setStatus("SCHEDULED");
+		original.setLocked(false);
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of(original));
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(offerings(1));
+		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(classrooms(1));
+		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
+				.thenReturn(List.of());
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(2)))
+				.thenReturn(Set.of(1, 2));
+		AtomicReference<ScheduleCandidatePlan> saved = new AtomicReference<>();
+		when(candidates.save(any())).thenAnswer(invocation -> {
+			ScheduleCandidatePlan value = invocation.getArgument(0);
+			value.setId("candidate-1");
+			saved.set(value);
+			return value;
+		});
+		var solver = new AutoSchedulingService(candidates, entries, offerings, classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
+				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
+				members, terms, calendar, policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
+				mock(EntityManager.class));
+		var command = new AutoScheduleCommand("2026-2027-1", "临时锁课", "FULL",
+				Set.of(), 1, 1, 2, 1, 20);
+		var lock = new ScheduleRunConstraints(List.of(), List.of(), List.of(),
+				List.of(new ScheduleRunConstraints.LockedEntry("entry-1", "offering-0", 1, 1)), List.of());
+
+		solver.generate(command, "admin", () -> false, progress -> { }, lock);
+		assertThat(readEntries(saved.get().getSnapshotJson()))
+				.singleElement().satisfies(entry -> {
+					assertThat(entry.getId()).isEqualTo("entry-1");
+					assertThat(entry.getLocked()).isFalse();
+				});
+		assertThatThrownBy(() -> solver.generate(command, "admin", () -> false,
+				progress -> { }, new ScheduleRunConstraints(List.of(), List.of(),
+						List.of(new ScheduleRunConstraints.WeekRule("offering-0", "ODD", 1, 20)),
+						lock.lockedEntries(), List.of())))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("授课周");
+	}
+
 	@Test
 	void scopedTeacherRuleChangesOnlyAiCandidateNotOrdinaryScheduling() throws Exception {
 		ScheduleCandidatePlanRepository candidates = mock(ScheduleCandidatePlanRepository.class);
