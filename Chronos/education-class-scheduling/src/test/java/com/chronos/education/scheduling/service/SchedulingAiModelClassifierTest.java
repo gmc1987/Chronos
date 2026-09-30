@@ -68,4 +68,21 @@ class SchedulingAiModelClassifierTest {
 			assertThat(clause.classification()).isEqualTo("OFFERING_BLOCK");
 		});
 	}
+
+	@Test
+	void acceptsTheNarrowNewRuleCategoriesWithoutChangingSourceText() {
+		String input = "PLC 实训仅单周；保留现有课表条目 entry-17；张老师减少空档";
+		when(models.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
+				.thenReturn("""
+						{"clauses":[
+							{"text":"PLC 实训仅单周","classification":"WEEK_RULE"},
+							{"text":"保留现有课表条目 entry-17","classification":"LOCK_ENTRY"},
+							{"text":"张老师减少空档","classification":"TEACHER_PRIORITY"}]}
+						""");
+		assertThat(classifier.classify(input))
+				.extracting(SchedulingAiModelClassifier.Clause::classification)
+				.containsExactly("WEEK_RULE", "LOCK_ENTRY", "TEACHER_PRIORITY");
+	}
 }

@@ -115,6 +115,11 @@ class AiModelChatServiceImplTest {
 						+ "\"classification\":\"OFFERING_BLOCK\"}]}");
 		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1",
 				"PLC 实训尽量连堂")).contains("OFFERING_BLOCK");
+		when(chatModel.call(org.mockito.ArgumentMatchers.contains("PLC 实训仅单周")))
+				.thenReturn("{\"clauses\":[{\"text\":\"PLC 实训仅单周\","
+						+ "\"classification\":\"WEEK_RULE\"}]}");
+		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"PLC 实训仅单周")).contains("WEEK_RULE");
 
 		when(chatModel.call(org.mockito.ArgumentMatchers.contains("禁止脚本")))
 				.thenReturn("{\"clauses\":[]}");

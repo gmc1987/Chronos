@@ -21,8 +21,11 @@ import com.chronos.education.scheduling.model.SchedulingAiConfirmRequest;
 import com.chronos.education.scheduling.model.SchedulingAiConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
 import com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint;
+import com.chronos.education.scheduling.model.SchedulingAiLockedEntry;
 import com.chronos.education.scheduling.model.SchedulingAiReplyRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
+import com.chronos.education.scheduling.model.SchedulingAiSoftPriority;
+import com.chronos.education.scheduling.model.SchedulingAiWeekRule;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
@@ -262,6 +265,66 @@ class SchedulingAiRunServiceTest {
 	}
 
 	@Test
+	void replyMergePreservesExistingRulesAndAddsNewWeekRule() throws Exception {
+		var previousRule = new SchedulingAiWeekRule(
+				"offering-old", "ODD", 1, 18, "BIO-T1仅单周");
+		SchedulingAiPlan previous = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of("请明确课程"),
+				List.of(), List.of("待补充课程周次"), List.of(),
+				List.of(previousRule), List.of(), List.of());
+		clarifyingRun(previous);
+		var addedRule = new SchedulingAiWeekRule(
+				"offering-new", "EVEN", 2, 16, "CHEM-T1仅双周");
+		when(parser.parse(any(SchedulingAiRunRequest.class),
+				org.mockito.ArgumentMatchers.eq("admin")))
+				.thenReturn(parsed(new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+						"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of(),
+						List.of(), List.of(), List.of(), List.of(addedRule), List.of(), List.of())));
+
+		var result = service.reply("run-1", new SchedulingAiReplyRequest(
+				"1：CHEM-T1仅双周", 1), "admin");
+
+		assertThat(result.status()).isEqualTo("READY_FOR_CONFIRMATION");
+		assertThat(result.plan().weekRules()).containsExactly(previousRule, addedRule);
+	}
+
+	@Test
+	void replyMergePreservesWeekLockAndTeacherPriorityLists() throws Exception {
+		var previousWeek = new SchedulingAiWeekRule(
+				"offering-old", "ODD", 1, 18, "BIO-T1仅单周");
+		var previousLock = new SchedulingAiLockedEntry(
+				"entry-old", "offering-old", 3, 4, "保留课表条目 entry-old");
+		var previousPriority = new SchedulingAiSoftPriority(
+				"SAME_DAY", "teacher-old", "张老师", "张老师同一天集中");
+		SchedulingAiPlan previous = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(),
+				List.of("请补充规则"), List.of(),
+				List.of("待补充周次", "待补充锁课", "待补充教师偏好"), List.of(),
+				List.of(previousWeek), List.of(previousLock), List.of(previousPriority));
+		clarifyingRun(previous);
+		var addedWeek = new SchedulingAiWeekRule(
+				"offering-new", "EVEN", 2, 16, "CHEM-T1仅双周");
+		var addedLock = new SchedulingAiLockedEntry(
+				"entry-new", "offering-new", 2, 3, "保留课表条目 entry-new");
+		var addedPriority = new SchedulingAiSoftPriority(
+				"TEACHER_GAP", "teacher-new", "李老师", "李老师减少空档");
+		when(parser.parse(any(SchedulingAiRunRequest.class),
+				org.mockito.ArgumentMatchers.eq("admin")))
+				.thenReturn(parsed(new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+						"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of(),
+						List.of(), List.of(), List.of(), List.of(addedWeek),
+						List.of(addedLock), List.of(addedPriority))));
+
+		var result = service.reply("run-1", new SchedulingAiReplyRequest(
+				"1：CHEM-T1仅双周\n2：保留课表条目 entry-new\n3：李老师减少空档", 1), "admin");
+
+		assertThat(result.status()).isEqualTo("READY_FOR_CONFIRMATION");
+		assertThat(result.plan().weekRules()).containsExactly(previousWeek, addedWeek);
+		assertThat(result.plan().lockedEntries()).containsExactly(previousLock, addedLock);
+		assertThat(result.plan().softPriorities()).containsExactly(previousPriority, addedPriority);
+	}
+
+	@Test
 	void generateAssociatesExactlyOneAsyncJobAndConfirmBindsPlanVersion() {
 		AgentRun run = existing("hash-1");
 		run.setId("run-1");
@@ -334,6 +397,15 @@ class SchedulingAiRunServiceTest {
 		run.setParsedPlanJson(new ObjectMapper().findAndRegisterModules().writeValueAsString(
 				new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1", "2026-2027-1",
 						"GLOBAL", Set.of(), 1, List.of(), clarifications, unsupported, unresolved)));
+		when(runs.findById("run-1")).thenReturn(Optional.of(run));
+		when(runs.findLockedById("run-1")).thenReturn(Optional.of(run));
+	}
+
+	private void clarifyingRun(SchedulingAiPlan plan) throws Exception {
+		AgentRun run = existing("hash-1");
+		run.setId("run-1");
+		run.setStatus("NEEDS_CLARIFICATION");
+		run.setParsedPlanJson(new ObjectMapper().findAndRegisterModules().writeValueAsString(plan));
 		when(runs.findById("run-1")).thenReturn(Optional.of(run));
 		when(runs.findLockedById("run-1")).thenReturn(Optional.of(run));
 	}

@@ -7,11 +7,13 @@ import static org.mockito.Mockito.when;
 import com.chronos.ai.service.AiModelChatService;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
+import com.chronos.education.scheduling.model.ScheduleEntry;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -245,6 +247,196 @@ class SchedulingAiRequirementParserTest {
 		assertThat(parsed.plan().readyForConfirmation()).isFalse();
 		assertThat(parsed.plan().clarifications()).anyMatch(value -> value.contains("多个匹配"));
 		assertThat(parsed.plan().constraints()).isEmpty();
+	}
+
+	@Test
+	void resolvesOddEvenAndContiguousWeekRulesToOneAuthorizedOffering() {
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);
+		TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		EducationDataScope scope = new EducationDataScope(
+				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		var offering = offering("offering-1", "BIO-101", "生物实验", "BIO-T1");
+		AcademicTerm term = new AcademicTerm();
+		term.setWeekCount(18);
+		term.setStatus("ACTIVE");
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(term));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(offering));
+		when(scopes.visibleOfferings(org.mockito.ArgumentMatchers.eq(scope),
+				org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(offering));
+		when(scopes.canAccessOffering(scope, offering)).thenReturn(true);
+		var parser = new SchedulingAiRequirementParser(terms, offerings, teachers, scopes);
+
+		var odd = parser.parse(request("odd", "BIO-T1仅单周"), "admin").plan();
+		assertThat(odd.readyForConfirmation()).isTrue();
+		assertThat(odd.weekRules()).singleElement().satisfies(rule -> {
+			assertThat(rule.offeringId()).isEqualTo("offering-1");
+			assertThat(rule.weekPattern()).isEqualTo("ODD");
+			assertThat(rule.startWeek()).isEqualTo(1);
+			assertThat(rule.endWeek()).isEqualTo(18);
+			assertThat(rule.sourceText()).isEqualTo("BIO-T1仅单周");
+		});
+
+		var bounded = parser.parse(request("bounded", "生物实验第3周至第9周"), "admin").plan();
+		assertThat(bounded.readyForConfirmation()).isTrue();
+		assertThat(bounded.weekRules()).singleElement().satisfies(rule -> {
+			assertThat(rule.weekPattern()).isEqualTo("ALL");
+			assertThat(rule.startWeek()).isEqualTo(3);
+			assertThat(rule.endWeek()).isEqualTo(9);
+		});
+		var outOfRange = parser.parse(request("invalid", "生物实验第3周至第19周"), "admin").plan();
+		assertThat(outOfRange.readyForConfirmation()).isFalse();
+		assertThat(outOfRange.weekRules()).isEmpty();
+		assertThat(outOfRange.unresolvedClauses()).containsExactly("生物实验第3周至第19周");
+		var noOddWeek = parser.parse(request("no-odd", "BIO-T1仅单周第2周至第2周"), "admin").plan();
+		assertThat(noOddWeek.readyForConfirmation()).isFalse();
+		assertThat(noOddWeek.weekRules()).isEmpty();
+		assertThat(noOddWeek.clarifications()).anyMatch(value -> value.contains("没有交集"));
+		var noEvenWeek = parser.parse(request("no-even", "BIO-T1仅双周第3周至第3周"), "admin").plan();
+		assertThat(noEvenWeek.readyForConfirmation()).isFalse();
+		assertThat(noEvenWeek.weekRules()).isEmpty();
+	}
+
+	@Test
+	void failsClosedOnAmbiguousAndConflictingWeekRules() {
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);
+		TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		EducationDataScope scope = new EducationDataScope(
+				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		AcademicTerm term = new AcademicTerm();
+		term.setWeekCount(18);
+		term.setStatus("ACTIVE");
+		var first = offering("offering-1", "BIO-101", "生物实验", "BIO-T1");
+		var second = offering("offering-2", "BIO-101", "生物实验", "BIO-T2");
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(term));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(first, second));
+		when(scopes.visibleOfferings(org.mockito.ArgumentMatchers.eq(scope),
+				org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(first, second));
+		var parser = new SchedulingAiRequirementParser(terms, offerings, teachers, scopes);
+
+		var ambiguous = parser.parse(request("ambiguous", "生物实验仅双周"), "admin").plan();
+		assertThat(ambiguous.readyForConfirmation()).isFalse();
+		assertThat(ambiguous.weekRules()).isEmpty();
+		assertThat(ambiguous.clarifications()).anyMatch(value -> value.contains("多个匹配"));
+
+		var conflicting = parser.parse(request("conflict",
+				"BIO-T1仅单周；BIO-T1仅双周"), "admin").plan();
+		assertThat(conflicting.readyForConfirmation()).isFalse();
+		assertThat(conflicting.weekRules()).hasSize(1);
+		assertThat(conflicting.clarifications()).anyMatch(value -> value.contains("相互冲突"));
+
+		var duplicate = parser.parse(request("duplicate",
+				"BIO-T1仅单周；BIO-T1仅单周"), "admin").plan();
+		assertThat(duplicate.readyForConfirmation()).isFalse();
+		assertThat(duplicate.unresolvedClauses()).containsExactly("BIO-T1仅单周");
+		assertThat(duplicate.clarifications()).anyMatch(value -> value.contains("重复指定"));
+	}
+
+	@Test
+	void resolvesTemporaryLockFromCurrentSemesterAndAuthorizedTargetAndTeacherSoftPriorities() {
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);
+		TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
+		ScheduleEntryRepository entries = mock(ScheduleEntryRepository.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		EducationDataScope scope = new EducationDataScope(
+				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		var offering = offering("offering-1", "BIO-101", "生物实验", "BIO-T1");
+		var teacher = teacher("teacher-1", "张老师", "T001");
+		var entry = new ScheduleEntry();
+		entry.setId("entry-17");
+		entry.setSemesterCode("2026-2027-1");
+		entry.setOfferingId("offering-1");
+		entry.setStatus("SCHEDULED");
+		entry.setDayOfWeek(3);
+		entry.setPeriodNo(4);
+		AcademicTerm term = new AcademicTerm();
+		term.setWeekCount(18);
+		term.setStatus("ACTIVE");
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(term));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(offering));
+		when(offerings.findById("offering-1")).thenReturn(Optional.of(offering));
+		when(scopes.visibleOfferings(org.mockito.ArgumentMatchers.eq(scope),
+				org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(offering));
+		when(scopes.canAccessOffering(scope, offering)).thenReturn(true);
+		when(entries.findById("entry-17")).thenReturn(Optional.of(entry));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of(entry));
+		when(teachers.findAllByOrderByTeacherNo()).thenReturn(List.of(teacher));
+		when(scopes.canAccessTeacher(scope, "teacher-1")).thenReturn(true);
+		var parser = new SchedulingAiRequirementParser(terms, offerings, teachers, scopes,
+				null, null, entries);
+
+		var plan = parser.parse(request("lock-priority",
+				"保留现有课表条目 entry-17；张老师仅单周；张老师减少空档；张老师同一天集中"),
+				"admin").plan();
+		assertThat(plan.readyForConfirmation()).isTrue();
+		assertThat(plan.weekRules()).singleElement()
+				.satisfies(rule -> assertThat(rule.offeringId()).isEqualTo("offering-1"));
+		assertThat(plan.lockedEntries()).singleElement().satisfies(item -> {
+			assertThat(item.entryId()).isEqualTo("entry-17");
+			assertThat(item.offeringId()).isEqualTo("offering-1");
+			assertThat(item.sourceText()).isEqualTo("保留现有课表条目 entry-17");
+		});
+		assertThat(plan.softPriorities()).extracting(item -> item.kind())
+				.containsExactly("TEACHER_GAP", "SAME_DAY");
+
+		var slotLock = parser.parse(request("slot-lock", "保留BIO-T1周三第4节"), "admin").plan();
+		assertThat(slotLock.readyForConfirmation()).isTrue();
+		assertThat(slotLock.lockedEntries()).singleElement()
+				.satisfies(item -> assertThat(item.entryId()).isEqualTo("entry-17"));
+		var uniqueCourseLock = parser.parse(request("unique-course-lock", "保留BIO-T1"),
+				"admin").plan();
+		assertThat(uniqueCourseLock.readyForConfirmation()).isTrue();
+		assertThat(uniqueCourseLock.lockedEntries()).singleElement()
+				.satisfies(item -> assertThat(item.entryId()).isEqualTo("entry-17"));
+
+		var secondEntry = new ScheduleEntry();
+		secondEntry.setId("entry-18");
+		secondEntry.setSemesterCode("2026-2027-1");
+		secondEntry.setOfferingId("offering-1");
+		secondEntry.setStatus("SCHEDULED");
+		secondEntry.setDayOfWeek(4);
+		secondEntry.setPeriodNo(5);
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of(entry, secondEntry));
+		var unbounded = parser.parse(request("unbounded-lock", "保留BIO-T1"), "admin").plan();
+		assertThat(unbounded.readyForConfirmation()).isFalse();
+		assertThat(unbounded.lockedEntries()).isEmpty();
+		assertThat(unbounded.clarifications()).anyMatch(value -> value.contains("多个现有课表项"));
+
+		entry.setSemesterCode("2025-2026-2");
+		var stale = parser.parse(request("stale-lock", "保留现有课表条目 entry-17"), "admin").plan();
+		assertThat(stale.readyForConfirmation()).isFalse();
+		assertThat(stale.lockedEntries()).isEmpty();
+	}
+
+	private SchedulingAiRunRequest request(String id, String text) {
+		return new SchedulingAiRunRequest(id, "2026-2027-1", "GLOBAL", Set.of(), 1, text);
+	}
+
+	private com.chronos.education.scheduling.model.CourseOffering offering(
+			String id, String courseCode, String courseName, String offeringCode) {
+		var offering = new com.chronos.education.scheduling.model.CourseOffering();
+		offering.setId(id);
+		offering.setCourseCode(courseCode);
+		offering.setCourseName(courseName);
+		offering.setOfferingCode(offeringCode);
+		offering.setTeachingClassName(offeringCode);
+		offering.setTeacherId("teacher-1");
+		offering.setTeacherName("张老师");
+		offering.setStatus("ACTIVE");
+		offering.setWeeklyLessons(2);
+		return offering;
 	}
 
 	private TeacherAcademicProfile teacher(String id, String name, String no) {

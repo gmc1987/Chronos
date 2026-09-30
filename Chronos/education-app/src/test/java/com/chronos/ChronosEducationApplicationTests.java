@@ -4,10 +4,12 @@ import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.BellPeriodRepository;
 import com.chronos.education.scheduling.dao.BellScheduleRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.ScheduleGenerationJobRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.BellPeriod;
 import com.chronos.education.scheduling.model.BellSchedule;
 import com.chronos.education.scheduling.model.CourseOffering;
+import com.chronos.education.scheduling.model.ScheduleGenerationJob;
 import com.chronos.education.scheduling.service.SchedulingAgentTimetableService;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -42,9 +44,37 @@ class ChronosEducationApplicationTests {
 	private BellPeriodRepository periods;
 	@Autowired
 	private SchedulingAgentTimetableService timetable;
+	@Autowired
+	private ScheduleGenerationJobRepository jobs;
 
 	@Test
 	void contextLoads() {
+	}
+
+	@Test
+	@Transactional
+	void jobLeaseOwnerAndExpiryAreEnforcedInPostgres() {
+		ScheduleGenerationJob job = new ScheduleGenerationJob();
+		job.setSemesterCode("AI-VERIFY");
+		job.setRequestJson("{}");
+		job.setRequestedBy("ai-verify");
+		job.setLeaseExpiresAt(jobs.databaseTime().plusMinutes(2));
+		job = jobs.saveAndFlush(job);
+		String id = job.getId();
+		var now = jobs.databaseTime();
+
+		Assertions.assertEquals(1, jobs.claim(id, "worker-a", now, now.plusMinutes(2)));
+		Assertions.assertEquals(0, jobs.claim(id, "worker-b", now, now.plusMinutes(2)));
+		Assertions.assertEquals(0, jobs.progress(id, "worker-b", 40,
+				now, now.plusMinutes(2)));
+		Assertions.assertEquals(0, jobs.failExpired(id, "expired", now));
+		Assertions.assertEquals(1, jobs.heartbeat(id, "worker-a", now, now.plusMinutes(3)));
+		Assertions.assertEquals(0, jobs.succeed(id, "worker-b", "[]", now));
+		Assertions.assertEquals(1, jobs.failExpired(id, "expired",
+				now.plusMinutes(4)));
+		Assertions.assertEquals(0, jobs.succeed(id, "worker-a", "[]",
+				now.plusMinutes(4)));
+		Assertions.assertEquals("FAILED", jobs.findById(id).orElseThrow().getStatus());
 	}
 
 	@Test

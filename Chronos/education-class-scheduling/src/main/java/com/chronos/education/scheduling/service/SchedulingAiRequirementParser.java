@@ -2,12 +2,17 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
+import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulingAiConstraint;
+import com.chronos.education.scheduling.model.SchedulingAiLockedEntry;
 import com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
+import com.chronos.education.scheduling.model.SchedulingAiSoftPriority;
+import com.chronos.education.scheduling.model.SchedulingAiWeekRule;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +39,27 @@ public class SchedulingAiRequirementParser {
 			Pattern.compile("第?([一二三四五六七八九十\\d]+)节");
 	private static final Pattern OFFERING_BLOCK_PATTERN = Pattern.compile(
 			"(?:请|帮我)?\\s*(.+?)\\s*(?:尽量|优先|希望|最好)连堂(?:上课|排课|排)?");
+	private static final Pattern WEEK_RULE_PATTERN = Pattern.compile(
+			"(?:请|帮我)?\\s*(.+?)\\s*(?:(?:仅|安排在|限定为|按)?"
+					+ "(单周|奇数周|双周|偶数周|单双周|每周)"
+					+ "(?:第?(\\d+)周(?:至|到|[-—])第?(\\d+)周)?"
+					+ "|第?(\\d+)周(?:至|到|[-—])第?(\\d+)周)\\s*");
+	private static final Pattern LOCK_ENTRY_PATTERN = Pattern.compile(
+			"(?:请|帮我)?\\s*(?:本次)?(?:临时)?保留(?:当前|现有)?"
+					+ "(?:课表条目|课表项|条目)\\s*[:：#]?\\s*([A-Za-z0-9_-]+)");
+	private static final Pattern LOCK_ENTRY_SLOT_PATTERN = Pattern.compile(
+			"(?:请|帮我)?\\s*(?:本次)?(?:临时)?保留(?:当前|现有)?\\s*(.+?)\\s*"
+					+ "((?:星期|周)[一二三四五六日天])\\s*第?([一二三四五六七八九十\\d]+)节");
+	private static final Pattern LOCK_ENTRY_OFFERING_PATTERN = Pattern.compile(
+			"(?:请|帮我)?\\s*(?:本次)?(?:临时)?保留(?:当前|现有)?\\s*"
+					+ "(.+?)(?:的)?(?:课程|教学任务|课表|排课)");
+	private static final Pattern LOCK_ENTRY_ALIAS_PATTERN = Pattern.compile(
+			"(?:请|帮我)?\\s*(?:本次)?(?:临时)?保留(?:当前|现有)?\\s*(.+)");
+	private static final Pattern SOFT_PRIORITY_PATTERN = Pattern.compile(
+			"(?:请|帮我)?\\s*(.+?)\\s*(?:尽量|优先|希望|最好)?\\s*"
+					+ "(减少跨校区|减少校区切换|避免跨校区|跨校区切换少|"
+					+ "减少空档|减少教师空档|避免空档|"
+					+ "同一天集中|尽量同日集中|集中在同一天|同日集中)(?:排课)?");
 	private static final Pattern SUPPORTED_TEACHER_SLOT = Pattern.compile(
 			"(?:请|帮我|给)?\\s*TEACHER\\s*(?:在|于)?"
 					+ "(?:星期[一二三四五六日天]|周[一二三四五六日天])\\s*"
@@ -62,6 +88,7 @@ public class SchedulingAiRequirementParser {
 	private final EducationDataScopeService dataScopes;
 	private final SchedulingAiModelClassifier modelClassifier;
 	private final SchedulingAgentTimetableService timetable;
+	private final ScheduleEntryRepository scheduleEntries;
 
 	@Autowired
 	public SchedulingAiRequirementParser(
@@ -70,13 +97,15 @@ public class SchedulingAiRequirementParser {
 			TeacherAcademicProfileRepository teachers,
 			EducationDataScopeService dataScopes,
 			SchedulingAiModelClassifier modelClassifier,
-			SchedulingAgentTimetableService timetable) {
+			SchedulingAgentTimetableService timetable,
+			ScheduleEntryRepository scheduleEntries) {
 		this.terms = terms;
 		this.offerings = offerings;
 		this.teachers = teachers;
 		this.dataScopes = dataScopes;
 		this.modelClassifier = modelClassifier;
 		this.timetable = timetable;
+		this.scheduleEntries = scheduleEntries;
 	}
 
 	SchedulingAiRequirementParser(AcademicTermRepository terms,
@@ -84,14 +113,23 @@ public class SchedulingAiRequirementParser {
 			TeacherAcademicProfileRepository teachers,
 			EducationDataScopeService dataScopes,
 			SchedulingAiModelClassifier modelClassifier) {
-		this(terms, offerings, teachers, dataScopes, modelClassifier, null);
+		this(terms, offerings, teachers, dataScopes, modelClassifier, null, null);
+	}
+
+	SchedulingAiRequirementParser(AcademicTermRepository terms,
+			CourseOfferingRepository offerings,
+			TeacherAcademicProfileRepository teachers,
+			EducationDataScopeService dataScopes,
+			SchedulingAiModelClassifier modelClassifier,
+			SchedulingAgentTimetableService timetable) {
+		this(terms, offerings, teachers, dataScopes, modelClassifier, timetable, null);
 	}
 
 	SchedulingAiRequirementParser(AcademicTermRepository terms,
 			CourseOfferingRepository offerings,
 			TeacherAcademicProfileRepository teachers,
 			EducationDataScopeService dataScopes) {
-		this(terms, offerings, teachers, dataScopes, null, null);
+		this(terms, offerings, teachers, dataScopes, null, null, null);
 	}
 
 	public ParsedRequirement parse(SchedulingAiRunRequest request, String username) {
@@ -102,6 +140,9 @@ public class SchedulingAiRequirementParser {
 		List<String> clarifications = new java.util.ArrayList<>();
 		List<SchedulingAiConstraint> constraints = new java.util.ArrayList<>();
 		List<SchedulingAiOfferingConstraint> offeringConstraints = new java.util.ArrayList<>();
+		List<SchedulingAiWeekRule> weekRules = new java.util.ArrayList<>();
+		List<SchedulingAiLockedEntry> lockedEntries = new java.util.ArrayList<>();
+		List<SchedulingAiSoftPriority> softPriorities = new java.util.ArrayList<>();
 		List<String> unsupported = new java.util.ArrayList<>();
 		List<String> unresolvedClauses = new java.util.ArrayList<>();
 		String text = request.requestText();
@@ -126,12 +167,35 @@ public class SchedulingAiRequirementParser {
 							&& !isGenerationInstruction(rule)
 							&& !OFFERING_BLOCK_PATTERN.matcher(rule).matches())
 					&& !("OFFERING_BLOCK".equals(clause.classification())
-							&& OFFERING_BLOCK_PATTERN.matcher(rule).matches())) {
+							&& OFFERING_BLOCK_PATTERN.matcher(rule).matches())
+					&& !("WEEK_RULE".equals(clause.classification())
+							&& WEEK_RULE_PATTERN.matcher(rule).matches())
+					&& !("LOCK_ENTRY".equals(clause.classification())
+							&& isLockEntryForm(rule))
+					&& !("TEACHER_PRIORITY".equals(clause.classification())
+							&& SOFT_PRIORITY_PATTERN.matcher(rule).matches())) {
 				unsupported.add("模型分类与服务端规则不一致：" + rule);
 				unresolvedClauses.add(rule);
 				continue;
 			}
 			if (rule.isEmpty() || isGenerationInstruction(rule)) {
+				continue;
+			}
+			if ("WEEK_RULE".equals(clause.classification())
+					|| WEEK_RULE_PATTERN.matcher(rule).matches()) {
+				parseWeekRule(request, scope, selected, rule, weekRules, clarifications,
+						unsupported, unresolvedClauses);
+				continue;
+			}
+			if ("LOCK_ENTRY".equals(clause.classification()) || isLockEntryForm(rule)) {
+				parseLockedEntry(request, scope, selected, rule, lockedEntries,
+						clarifications, unsupported, unresolvedClauses);
+				continue;
+			}
+			if ("TEACHER_PRIORITY".equals(clause.classification())
+					|| SOFT_PRIORITY_PATTERN.matcher(rule).matches()) {
+				parseSoftPriority(rule, scope, softPriorities, clarifications,
+						unsupported, unresolvedClauses);
 				continue;
 			}
 			Matcher block = OFFERING_BLOCK_PATTERN.matcher(rule);
@@ -286,8 +350,286 @@ public class SchedulingAiRequirementParser {
 				clarifications,
 				unsupported,
 				unresolvedClauses,
-				offeringConstraints);
+				offeringConstraints,
+				weekRules,
+				lockedEntries,
+				softPriorities);
 		return new ParsedRequirement(plan);
+	}
+
+	private void parseWeekRule(SchedulingAiRunRequest request, EducationDataScope scope,
+			Set<String> selected, String source, List<SchedulingAiWeekRule> parsed,
+			List<String> clarifications, List<String> unsupported,
+			List<String> unresolved) {
+		Matcher matcher = WEEK_RULE_PATTERN.matcher(source);
+		if (!matcher.matches()) {
+			unsupported.add("教学周规则仅支持明确课程/教学任务的单双周或连续起止周：" + source);
+			unresolved.add(source);
+			return;
+		}
+		var term = terms.findByTermCode(request.semesterCode()).orElseThrow();
+		int weekCount = term.getWeekCount() == null ? 0 : term.getWeekCount();
+		if (!"ACTIVE".equals(term.getStatus()) || weekCount < 1 || weekCount > 52) {
+			clarifications.add("学期教学周数无效，无法解析教学周规则：" + source);
+			unresolved.add(source);
+			return;
+		}
+		ResolvedOffering resolved = resolveOffering(scope, request.semesterCode(), request.mode(),
+				selected, matcher.group(1), source);
+		if (resolved.offering() == null) {
+			clarifications.add(resolved.clarification());
+			unresolved.add(source);
+			return;
+		}
+		String pattern = matcher.group(2) == null ? "ALL" : switch (matcher.group(2)) {
+			case "单周", "奇数周" -> "ODD";
+			case "双周", "偶数周" -> "EVEN";
+			default -> "ALL";
+		};
+		int start;
+		int end;
+		try {
+			String startValue = matcher.group(3) != null ? matcher.group(3) : matcher.group(5);
+			String endValue = matcher.group(4) != null ? matcher.group(4) : matcher.group(6);
+			start = startValue == null ? 1 : Integer.parseInt(startValue);
+			end = endValue == null ? weekCount : Integer.parseInt(endValue);
+		} catch (NumberFormatException exception) {
+			clarifications.add("教学周次超出有效范围：" + source);
+			unresolved.add(source);
+			return;
+		}
+		if (start < 1 || end > weekCount || end < start) {
+			clarifications.add("教学周范围必须是本学期内有效的连续周次：" + source);
+			unresolved.add(source);
+			return;
+		}
+		if (!hasMatchingWeek(pattern, start, end)) {
+			clarifications.add("单双周规则与指定周次范围没有交集：" + source);
+			unresolved.add(source);
+			return;
+		}
+		SchedulingAiWeekRule next = new SchedulingAiWeekRule(
+				resolved.offering().getId(), pattern, start, end, source);
+		SchedulingAiWeekRule existing = parsed.stream()
+				.filter(item -> item.offeringId().equals(next.offeringId()))
+				.findFirst().orElse(null);
+		if (existing != null) {
+			boolean conflict = !existing.weekPattern().equals(next.weekPattern())
+					|| existing.startWeek() != next.startWeek()
+					|| existing.endWeek() != next.endWeek();
+			clarifications.add(conflict
+					? "同一教学任务包含相互冲突的教学周规则：" + source
+					: "同一教学任务重复指定教学周规则，请保留一条：" + source);
+			unresolved.add(source);
+			return;
+		}
+		parsed.add(next);
+	}
+
+	private void parseLockedEntry(SchedulingAiRunRequest request, EducationDataScope scope,
+			Set<String> selected, String source, List<SchedulingAiLockedEntry> parsed,
+			List<String> clarifications, List<String> unsupported,
+			List<String> unresolved) {
+		if (scheduleEntries == null) {
+			throw new IllegalStateException("现有课表查询服务不可用");
+		}
+		Set<String> targets = targetOfferings(scope, request.semesterCode(), request.mode(), selected)
+				.stream().map(CourseOffering::getId)
+				.collect(java.util.stream.Collectors.toSet());
+		List<ScheduleEntry> currentEntries = scheduleEntries
+				.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(request.semesterCode()).stream()
+				.filter(entry -> request.semesterCode().equals(entry.getSemesterCode()))
+				.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
+				.filter(entry -> targets.contains(entry.getOfferingId()))
+				.filter(entry -> entry.getDayOfWeek() != null && entry.getPeriodNo() != null
+						&& entry.getDayOfWeek() >= 1 && entry.getDayOfWeek() <= 7
+						&& entry.getPeriodNo() >= 1 && entry.getPeriodNo() <= 20)
+				.toList();
+		Matcher idMatcher = LOCK_ENTRY_PATTERN.matcher(source);
+		Matcher slotMatcher = LOCK_ENTRY_SLOT_PATTERN.matcher(source);
+		Matcher offeringMatcher = LOCK_ENTRY_OFFERING_PATTERN.matcher(source);
+		List<ScheduleEntry> matches;
+		if (idMatcher.matches()) {
+			String entryId = idMatcher.group(1);
+			matches = currentEntries.stream().filter(entry -> entryId.equals(entry.getId())).toList();
+		} else if (slotMatcher.matches()) {
+			Integer day = resolveDay(slotMatcher.group(2));
+			Integer period = chineseNumber(slotMatcher.group(3));
+			ResolvedOffering offering = resolveOffering(scope, request.semesterCode(),
+					request.mode(), selected, slotMatcher.group(1), source);
+			if (offering.offering() == null || day == null || period == null) {
+				clarifications.add(offering.clarification() != null
+						? offering.clarification()
+						: "请明确课表项的有效星期和节次：" + source);
+				unresolved.add(source);
+				return;
+			}
+			matches = currentEntries.stream()
+					.filter(entry -> offering.offering().getId().equals(entry.getOfferingId()))
+					.filter(entry -> day.equals(entry.getDayOfWeek())
+							&& period.equals(entry.getPeriodNo()))
+					.toList();
+		} else {
+			Matcher matcher = LOCK_ENTRY_OFFERING_PATTERN.matcher(source);
+			String offeringPhrase;
+			if (matcher.matches()) {
+				offeringPhrase = matcher.group(1);
+			} else {
+				matcher = LOCK_ENTRY_ALIAS_PATTERN.matcher(source);
+				if (!matcher.matches()) {
+				unsupported.add("临时保留规则须指定条目 ID，或唯一课程及星期节次：" + source);
+				unresolved.add(source);
+				return;
+				}
+				offeringPhrase = matcher.group(1);
+			}
+			ResolvedOffering offering = resolveOffering(scope, request.semesterCode(),
+					request.mode(), selected, offeringPhrase, source);
+			if (offering.offering() == null) {
+				clarifications.add(offering.clarification());
+				unresolved.add(source);
+				return;
+			}
+			matches = currentEntries.stream()
+					.filter(entry -> offering.offering().getId().equals(entry.getOfferingId()))
+					.toList();
+		}
+		if (matches.isEmpty()) {
+			clarifications.add("当前授权排课范围内未找到匹配的现有课表项：" + source);
+			unresolved.add(source);
+			return;
+		}
+		if (matches.size() != 1) {
+			clarifications.add("临时保留规则匹配多个现有课表项，请提供唯一条目 ID 或星期节次：" + source);
+			unresolved.add(source);
+			return;
+		}
+		ScheduleEntry entry = matches.getFirst();
+		CourseOffering offering = offerings.findById(entry.getOfferingId()).orElse(null);
+		if (offering == null || !targets.contains(entry.getOfferingId())
+				|| !dataScopes.canAccessOffering(scope, offering)) {
+			clarifications.add("该课表条目不属于当前授权排课范围：" + entry.getId());
+			unresolved.add(source);
+			return;
+		}
+		if (parsed.stream().anyMatch(existing -> existing.entryId().equals(entry.getId()))) {
+			clarifications.add("同一课表项被重复指定临时保留：" + source);
+			unresolved.add(source);
+			return;
+		}
+		parsed.add(new SchedulingAiLockedEntry(entry.getId(), entry.getOfferingId(),
+				entry.getDayOfWeek(), entry.getPeriodNo(), source));
+	}
+
+	private void parseSoftPriority(String source, EducationDataScope scope,
+			List<SchedulingAiSoftPriority> parsed, List<String> clarifications,
+			List<String> unsupported, List<String> unresolved) {
+		Matcher matcher = SOFT_PRIORITY_PATTERN.matcher(source);
+		if (!matcher.matches()) {
+			unsupported.add("教师软偏好仅支持减少跨校区/空档或同日集中：" + source);
+			unresolved.add(source);
+			return;
+		}
+		TeacherResolution resolved = resolveTeacher(matcher.group(1), scope);
+		if (resolved.candidates().isEmpty()) {
+			clarifications.add("未能从授权教师数据中识别教师：" + source);
+			unresolved.add(source);
+			return;
+		}
+		if (resolved.candidates().size() != 1) {
+			clarifications.add("教师名称存在多个匹配，无法应用软偏好：" + source);
+			unresolved.add(source);
+			return;
+		}
+		String kind = switch (matcher.group(2)) {
+			case "减少跨校区", "减少校区切换", "避免跨校区", "跨校区切换少" -> "CAMPUS_SWITCH";
+			case "减少空档", "减少教师空档", "避免空档" -> "TEACHER_GAP";
+			default -> "SAME_DAY";
+		};
+		TeacherAcademicProfile teacher = resolved.unique();
+		if (parsed.stream().anyMatch(existing ->
+				existing.teacherId().equals(teacher.getId()) && existing.kind().equals(kind))) {
+			clarifications.add("同一教师软偏好重复指定：" + source);
+			unresolved.add(source);
+			return;
+		}
+		parsed.add(new SchedulingAiSoftPriority(kind, teacher.getId(),
+				teacher.getTeacherName(), source));
+	}
+
+	private ResolvedOffering resolveOffering(EducationDataScope scope, String semester,
+			String mode, Set<String> selected, String phrase, String source) {
+		String entity = phrase.strip();
+		TeacherResolution teacher = resolveTeacher(entity, scope);
+		if (teacher.candidates().size() > 1) {
+			return new ResolvedOffering(null, "周次规则中的教师名称存在多个匹配：" + source);
+		}
+		if (teacher.unique() != null) {
+			entity = entity.replace(teacher.unique().getTeacherName(), "")
+					.replace("的", "").strip();
+			if (teacher.unique().getTeacherNo() != null) {
+				entity = entity.replace(teacher.unique().getTeacherNo(), "").strip();
+			}
+		}
+		List<CourseOffering> candidates = targetOfferings(scope, semester, mode, selected).stream()
+				.filter(offering -> teacher.unique() == null
+						|| teacher.unique().getId().equals(offering.getTeacherId()))
+				.toList();
+		if (entity.isBlank() && teacher.unique() != null) {
+			if (candidates.size() == 1) {
+				return new ResolvedOffering(candidates.getFirst(), null);
+			}
+			return new ResolvedOffering(null, "该教师对应多个授权教学任务，请指定唯一任务：" + source);
+		}
+		if (entity.isBlank()) {
+			return new ResolvedOffering(null, "请明确唯一课程或教学任务：" + source);
+		}
+		String offeringReference = entity;
+		List<CourseOffering> matches = candidates.stream()
+				.filter(offering -> offeringAliases(offering).stream()
+						.anyMatch(alias -> normalizeEntity(alias).equals(normalizeEntity(offeringReference))))
+				.toList();
+		if (matches.isEmpty()) {
+			return new ResolvedOffering(null, "未能从授权排课范围识别周次规则对应的课程/教学任务：" + source);
+		}
+		if (matches.size() != 1) {
+			return new ResolvedOffering(null, "课程或教学任务存在多个匹配，请使用唯一教学任务编码：" + source);
+		}
+		return new ResolvedOffering(matches.getFirst(), null);
+	}
+
+	private List<CourseOffering> targetOfferings(EducationDataScope scope, String semester,
+			String mode, Set<String> selected) {
+		return dataScopes.visibleOfferings(scope,
+						offerings.findBySemesterCodeOrderByOfferingCode(semester)).stream()
+				.filter(offering -> "ACTIVE".equals(offering.getStatus()))
+				.filter(offering -> "GLOBAL".equals(mode) || selected.contains(offering.getId()))
+				.toList();
+	}
+
+	private List<String> offeringAliases(CourseOffering offering) {
+		return java.util.stream.Stream.of(offering.getOfferingCode(), offering.getCourseCode(),
+						offering.getCourseName(), offering.getTeachingClassName())
+				.filter(value -> value != null && !value.isBlank()).toList();
+	}
+
+	private String normalizeEntity(String value) {
+		return value.replaceAll("\\s+", "").strip();
+	}
+
+	private boolean hasMatchingWeek(String pattern, int start, int end) {
+		return switch (pattern) {
+			case "ODD" -> (start % 2 != 0) || start < end;
+			case "EVEN" -> (start % 2 == 0) || start < end;
+			default -> true;
+		};
+	}
+
+	private boolean isLockEntryForm(String source) {
+		return LOCK_ENTRY_PATTERN.matcher(source).matches()
+				|| LOCK_ENTRY_SLOT_PATTERN.matcher(source).matches()
+				|| LOCK_ENTRY_OFFERING_PATTERN.matcher(source).matches()
+				|| LOCK_ENTRY_ALIAS_PATTERN.matcher(source).matches();
 	}
 
 	private boolean isGenerationInstruction(String rule) {
@@ -389,8 +731,18 @@ public class SchedulingAiRequirementParser {
 		try {
 			return Integer.parseInt(value);
 		} catch (NumberFormatException ignored) {
-			List<String> values = List.of("一", "二", "三", "四", "五", "六", "七", "八", "九", "十");
-			int result = values.indexOf(value) + 1;
+			List<String> digits = List.of("一", "二", "三", "四", "五", "六", "七", "八", "九");
+			if ("十".equals(value)) {
+				return 10;
+			}
+			if (value.startsWith("十") && value.length() == 2) {
+				int digit = digits.indexOf(value.substring(1)) + 1;
+				return digit > 0 ? 10 + digit : null;
+			}
+			if ("二十".equals(value)) {
+				return 20;
+			}
+			int result = digits.indexOf(value) + 1;
 			return result < 1 ? null : result;
 		}
 	}
@@ -411,5 +763,8 @@ public class SchedulingAiRequirementParser {
 		private TeacherAcademicProfile unique() {
 			return candidates.size() == 1 ? candidates.get(0) : null;
 		}
+	}
+
+	private record ResolvedOffering(CourseOffering offering, String clarification) {
 	}
 }

@@ -184,10 +184,19 @@ public class SchedulingAiRunService {
 				.collect(java.util.stream.Collectors.toSet());
 		updated.offeringConstraints().stream().map(SchedulingAiOfferingConstraint::sourceText)
 				.forEach(parsedSources::add);
+		updated.weekRules().stream()
+				.map(com.chronos.education.scheduling.model.SchedulingAiWeekRule::sourceText)
+				.forEach(parsedSources::add);
+		updated.lockedEntries().stream()
+				.map(com.chronos.education.scheduling.model.SchedulingAiLockedEntry::sourceText)
+				.forEach(parsedSources::add);
+		updated.softPriorities().stream()
+				.map(com.chronos.education.scheduling.model.SchedulingAiSoftPriority::sourceText)
+				.forEach(parsedSources::add);
 		if (!updated.readyForConfirmation()
 				|| parsedSources.size() != replacements.size()
 				|| !parsedSources.containsAll(replacements.values())) {
-			throw new IllegalStateException("每条澄清回复须完整且可解析，包含教师、星期和节次或时段");
+			throw new IllegalStateException("每条澄清回复须完整且可解析为受支持的排课规则");
 		}
 		List<com.chronos.education.scheduling.model.SchedulingAiConstraint> combined =
 				new java.util.ArrayList<>(previous.constraints());
@@ -224,10 +233,48 @@ public class SchedulingAiRunService {
 				combinedOfferings.add(offering);
 			}
 		}
+		List<com.chronos.education.scheduling.model.SchedulingAiWeekRule> combinedWeekRules =
+				new ArrayList<>(previous.weekRules());
+		for (var weekRule : updated.weekRules()) {
+			var existing = combinedWeekRules.stream()
+					.filter(item -> item.offeringId().equals(weekRule.offeringId()))
+					.findFirst();
+			if (existing.isPresent() && (!existing.get().weekPattern().equals(weekRule.weekPattern())
+					|| existing.get().startWeek() != weekRule.startWeek()
+					|| existing.get().endWeek() != weekRule.endWeek())) {
+				throw new IllegalStateException("补充需求与已解析教学周规则冲突，请重新创建请求");
+			}
+			if (existing.isEmpty()) {
+				combinedWeekRules.add(weekRule);
+			}
+		}
+		List<com.chronos.education.scheduling.model.SchedulingAiLockedEntry> combinedLocks =
+				new ArrayList<>(previous.lockedEntries());
+		for (var locked : updated.lockedEntries()) {
+			if (combinedLocks.stream().anyMatch(existing ->
+					existing.entryId().equals(locked.entryId())
+							&& !existing.offeringId().equals(locked.offeringId()))) {
+				throw new IllegalStateException("补充需求与已解析临时保留课表项冲突");
+			}
+			if (combinedLocks.stream().noneMatch(existing ->
+					existing.entryId().equals(locked.entryId()))) {
+				combinedLocks.add(locked);
+			}
+		}
+		List<com.chronos.education.scheduling.model.SchedulingAiSoftPriority> combinedPriorities =
+				new ArrayList<>(previous.softPriorities());
+		for (var priority : updated.softPriorities()) {
+			if (combinedPriorities.stream().noneMatch(existing ->
+					existing.teacherId().equals(priority.teacherId())
+							&& existing.kind().equals(priority.kind()))) {
+				combinedPriorities.add(priority);
+			}
+		}
 		SchedulingAiPlan plan = new SchedulingAiPlan(updated.schemaVersion(),
 				updated.skillCode(), updated.semesterCode(), updated.mode(),
 				updated.selectedOfferingIds(), updated.candidateCount(), combined,
-				remainingClarifications, List.of(), remainingUnresolved, combinedOfferings);
+				remainingClarifications, List.of(), remainingUnresolved, combinedOfferings,
+				combinedWeekRules, combinedLocks, combinedPriorities);
 		return transactions.execute(status -> {
 			AgentRun locked = lockedOwner(id, actor);
 			requireVersion(locked, request.expectedPlanVersion());
