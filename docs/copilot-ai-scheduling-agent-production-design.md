@@ -269,3 +269,5 @@ Agent Run 状态：`DRAFT → NEEDS_CLARIFICATION → READY_FOR_CONFIRMATION →
 5. 记录模型超时、无模型、提示词注入、权限不足、任务取消与重复请求的实际错误和恢复动作；核查迁移在隔离空库及历史升级副本上的结果。任何一步未能用真实数据、账号和服务端日志证实，就不得标记生产验收通过。
 
 **现有数据副本验收（部分完成）**：只读清点 `ChronosEducation`：`2026-2027-1` 有 17 个教学任务、21 条课表项，教师档案 64 条、教室 63 间；教学任务和课表项的周模式均为 `ALL`，课表项均未正式锁定。已将约 45 MB 的现有数据库复制到独立的 `chronos_agent_verify` PostgreSQL 容器；只在副本运行教育应用，将 Flyway 从 `20270106` 升至 `20270108`，再用 `SchedulingExistingDataAcceptanceTests` 验证真实课表项的本轮临时锁课、真实教学任务的单双周覆盖，以及事务内补建单双周教学任务后同一教师/教室可以错周共用资源，而普通生成保持原行为。测试事务回滚；副本原有课表项 21 条、候选 1 条未增加，现有业务库没有写入。此测试仅在 `CHRONOS_ACCEPTANCE_CLONE=true` 且 `CHRONOS_DB_URL` 指向名称包含 `test` 或 `verify` 的**隔离副本**时执行，可通过 `./mvnw -pl education-app -am -Dtest=ChronosEducationApplicationTests,SchedulingExistingDataAcceptanceTests -Dsurefire.failIfNoSpecifiedTests=false test` 复现；须同时显式设置隔离库连接环境变量。现有库没有已启用的默认模型，不能以测试密钥代替真实模型；自然语言端到端、双角色人工审核/发布仍未验收通过。
+
+**模型类型兼容**：现有 DeepSeek 配置已启用且有加密密钥，但 `is_default=false`；其 `model_type` 使用 `DICT_MODEL_TEXT` 对应的字典值。模型管理设置默认、聊天调用及旧 DeepSeek 适配器现统一按该字典项判断文本模型，不再要求数据库记录写入 `CHAT`；实际类型值由字典决定，字典缺失/禁用时报配置错误。修复类型判断并不自动改变默认模型或发起真实模型调用，需由管理员确认模型配置后另行验收。

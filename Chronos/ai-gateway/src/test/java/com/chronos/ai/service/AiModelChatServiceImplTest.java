@@ -14,14 +14,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 
+import com.chronos.Idao.IDictRepository;
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
+import com.chronos.model.pojo.DictItem;
+import com.chronos.security.SecretEncryptionProvider;
 
 class AiModelChatServiceImplTest {
 	private AiModelRepository models;
 	private DeepSeekChatModelFactory factory;
 	private ChatModel chatModel;
 	private AiModel model;
+	private AiModelTypes types;
 
 	@BeforeEach
 	void setUp() {
@@ -29,6 +33,11 @@ class AiModelChatServiceImplTest {
 		factory = mock(DeepSeekChatModelFactory.class);
 		chatModel = mock(ChatModel.class);
 		model = validModel("model-1");
+		IDictRepository dictionaries = mock(IDictRepository.class);
+		DictItem text = new DictItem();
+		text.setDictValue("0");
+		when(dictionaries.findByDictCode("DICT_MODEL_TEXT")).thenReturn(java.util.List.of(text));
+		types = new AiModelTypes(dictionaries);
 		when(factory.create(any())).thenReturn(chatModel);
 		when(chatModel.call("hello")).thenReturn("world");
 	}
@@ -37,7 +46,7 @@ class AiModelChatServiceImplTest {
 	void explicitModelUsesCachedClientUntilInvalidated() {
 		when(models.findById("model-1")).thenReturn(Optional.of(model));
 
-		AiModelChatServiceImpl service = new AiModelChatServiceImpl(models, factory);
+		AiModelChatServiceImpl service = service();
 		assertThat(service.chat("model-1", "hello")).isEqualTo("world");
 		assertThat(service.chat("model-1", "hello")).isEqualTo("world");
 		assertThat(service.chat("model-1", "hello")).isEqualTo("world");
@@ -50,7 +59,7 @@ class AiModelChatServiceImplTest {
 	@Test
 	void missingDefaultDoesNotFallBackToYamlConfiguration() {
 		when(models.findFirstDefault()).thenReturn(Optional.empty());
-		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat(null, "hello"))
+		assertThatThrownBy(() -> service().chat(null, "hello"))
 				.isInstanceOf(AiModelConfigurationException.class)
 				.hasMessageContaining("模型管理");
 		verify(factory, times(0)).create(any());
@@ -59,26 +68,39 @@ class AiModelChatServiceImplTest {
 	@Test
 	void configuredDefaultIsUsedAndInvalidConfigurationIsNotSilentlyIgnored() {
 		when(models.findFirstDefault()).thenReturn(Optional.of(model));
-		assertThat(new AiModelChatServiceImpl(models, factory).chat(null, "hello"))
+		assertThat(service().chat(null, "hello"))
 				.isEqualTo("world");
 
 		model.setApiKey(null);
-		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat(null, "hello"))
+		assertThatThrownBy(() -> service().chat(null, "hello"))
 				.isInstanceOf(AiModelConfigurationException.class)
 				.hasMessageContaining("API Key");
+	}
+
+	@Test
+	void encryptedTextModelIsAcceptedForDefaultChat() {
+		model.setApiKey(null);
+		model.setApiKeyCiphertext("encrypted");
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		SecretEncryptionProvider encryption = mock(SecretEncryptionProvider.class);
+		when(encryption.decrypt("encrypted")).thenReturn("decrypted");
+
+		assertThat(new AiModelChatServiceImpl(models, factory, encryption, types)
+				.chat(null, "hello")).isEqualTo("world");
+		verify(encryption).decrypt("encrypted");
 	}
 
 	@Test
 	void disabledAndUnsupportedModelsFailClearly() {
 		model.setStatus(0);
 		when(models.findById("model-1")).thenReturn(Optional.of(model));
-		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat("model-1", "hello"))
+		assertThatThrownBy(() -> service().chat("model-1", "hello"))
 				.isInstanceOf(AiModelConfigurationException.class)
 				.hasMessageContaining("停用");
 
 		model.setStatus(1);
 		model.setProvider("openai");
-		assertThatThrownBy(() -> new AiModelChatServiceImpl(models, factory).chat("model-1", "hello"))
+		assertThatThrownBy(() -> service().chat("model-1", "hello"))
 				.isInstanceOf(AiModelConfigurationException.class)
 				.hasMessageContaining("不受支持");
 	}
@@ -86,7 +108,7 @@ class AiModelChatServiceImplTest {
 	@Test
 	void structuredCandidateFactsRejectFreeTextAndUnknownKeys() {
 		when(models.findFirstDefault()).thenReturn(Optional.of(model));
-		var service = new AiModelChatServiceImpl(models, factory);
+		var service = service();
 		when(chatModel.call("metrics")).thenReturn("{\"factKeys\":[\"BLOCK\",\"UNSCHEDULED\"]}");
 		assertThat(service.chatStructured(null, "schedule.candidate.facts.v1", "metrics"))
 				.contains("BLOCK");
@@ -107,7 +129,7 @@ class AiModelChatServiceImplTest {
 		when(chatModel.call(org.mockito.ArgumentMatchers.contains("张老师周三第3节不能上课")))
 				.thenReturn("{\"clauses\":[{\"text\":\"张老师周三第3节不能上课\","
 						+ "\"classification\":\"TEACHER_SLOT\"}]}");
-		var service = new AiModelChatServiceImpl(models, factory);
+		var service = service();
 		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1",
 				"张老师周三第3节不能上课")).contains("TEACHER_SLOT");
 		when(chatModel.call(org.mockito.ArgumentMatchers.contains("PLC 实训尽量连堂")))
@@ -133,11 +155,15 @@ class AiModelChatServiceImplTest {
 		AiModel value = new AiModel();
 		value.setId(id);
 		value.setModelName("deepseek-chat");
-		value.setModelType("chat");
+		value.setModelType("0");
 		value.setProvider("deepseek");
 		value.setApiKey("secret");
 		value.setStatus(1);
 		value.setBaseUrl("https://api.deepseek.com");
 		return value;
+	}
+
+	private AiModelChatServiceImpl service() {
+		return new AiModelChatServiceImpl(models, factory, null, types);
 	}
 }
