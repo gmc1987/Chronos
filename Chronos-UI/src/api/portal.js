@@ -25,6 +25,7 @@ export const publishPortalClassNotice = id => http.post(`/portal/education/head-
 export const portalParentClassNotices = () => http.get('/portal/education/class-notices')
 export const acknowledgePortalClassNotice = (id, comment) => http.post(`/portal/education/class-notices/${id}/acknowledge`, { comment })
 export const portalLeaveRecords = () => http.get('/portal/education/leaves')
+export const startPortalLeave = payload => http.post('/portal/education/leaves', payload)
 export const requestLeaveCancellation = (id, reason) => http.post(`/portal/education/leaves/${id}/cancellation`, { reason })
 export const portalClassroomReservations = () => http.get('/portal/education/classroom-reservations')
 export const cancelPortalClassroomReservation = (id, reason) => http.post(
@@ -72,6 +73,9 @@ export const portalFamilyNotices = () => http.get('/portal/education/family/noti
 export const portalFamilyReceipt = (id, payload = {}) => http.post(
   `/portal/education/family/notices/${id}/receipt`, payload,
 )
+export const portalParentFeedback = () => http.get('/portal/education/family/feedback')
+export const submitParentFeedback = payload => http.post('/portal/education/family/feedback', payload)
+export const portalCommunicationRecords = () => http.get('/portal/education/family/communications')
 export const portalSupervisionTasks = () => http.get('/portal/education/supervision/tasks')
 export const acceptSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/accept`)
 export const checkInSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/check-in`)

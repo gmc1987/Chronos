@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,9 +19,13 @@ import com.chronos.education.scheduling.dao.ExamPaperItemRepository;
 import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
+import com.chronos.education.scheduling.dao.ExamSessionOfferingRepository;
+import com.chronos.education.scheduling.dao.QuestionKnowledgePointRepository;
+import com.chronos.education.scheduling.dao.QuestionRepository;
 import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
+import com.chronos.education.grade.dto.GradeSourceEventContracts.ExamScoresConfirmedV1;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
 
 import lombok.RequiredArgsConstructor;
@@ -30,20 +35,63 @@ import lombok.RequiredArgsConstructor;
  * 绝不将缺考或未批改考生当作零分参与平均值计算。
  */
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class ExamPaperAnalysisService {
 	private final ExamSessionRepository sessions;
+	private final ExamSessionOfferingRepository sessionOfferings;
 	private final ExamRoomRepository rooms;
 	private final ExamCandidateRepository candidates;
 	private final ExamPaperItemRepository items;
 	private final ExamItemScoreRepository scores;
 	private final ExamPlanRepository plans;
 	private final EducationDomainEventService domainEvents;
+	private final QuestionRepository questions;
+	private final QuestionKnowledgePointRepository questionKnowledgePoints;
+
+	/**
+	 * 保留原有单元测试和独立调用方使用的构造入口。生产环境由 Spring 注入包含
+	 * ExamSessionOfferingRepository 的完整构造器；缺少映射仓储时禁止确认成绩。
+	 */
+	ExamPaperAnalysisService(
+			ExamSessionRepository sessions,
+			ExamRoomRepository rooms,
+			ExamCandidateRepository candidates,
+			ExamPaperItemRepository items,
+			ExamItemScoreRepository scores,
+			ExamPlanRepository plans,
+			EducationDomainEventService domainEvents,
+			QuestionRepository questions,
+			QuestionKnowledgePointRepository questionKnowledgePoints) {
+		this.sessions = sessions;
+		this.sessionOfferings = null;
+		this.rooms = rooms;
+		this.candidates = candidates;
+		this.items = items;
+		this.scores = scores;
+		this.plans = plans;
+		this.domainEvents = domainEvents;
+		this.questions = questions;
+		this.questionKnowledgePoints = questionKnowledgePoints;
+	}
 
 	@Transactional(readOnly = true)
 	public List<ExamPaperItem> items(String sessionId) {
 		requireSession(sessionId);
 		return items.findBySessionIdOrderByQuestionNoAsc(sessionId);
+	}
+
+	@Transactional(readOnly = true)
+	public List<AvailableQuestion> availableQuestions() {
+		// 考试中心只暴露组卷所需快照字段，避免考务角色依赖教学中心管理权限。
+		return questions.findByStatusAndArchivedFalseOrderByIdDesc("PUBLISHED").stream()
+				.filter(question -> questionKnowledgePoints.existsByQuestionId(question.getId()))
+				.map(question -> new AvailableQuestion(
+						question.getId(),
+						question.getStem(),
+						question.getScore(),
+						question.getQuestionType(),
+						question.getDifficulty()))
+				.toList();
 	}
 
 	@Transactional
@@ -58,9 +106,21 @@ public class ExamPaperAnalysisService {
 				.anyMatch(item -> item.getQuestionNo().equals(command.questionNo().trim()))) {
 			throw new IllegalArgumentException("同一场次题号不能重复");
 		}
+		if (blank(command.questionId())) {
+			throw new IllegalArgumentException("请选择已发布的题库题目，才能形成知识点分析链路");
+		}
+		var question = questions.findById(command.questionId())
+				.orElseThrow(() -> new IllegalArgumentException("题库题目不存在"));
+		if (!"PUBLISHED".equals(question.getStatus()) || question.isArchived()) {
+			throw new IllegalArgumentException("只能引用已发布且未归档的题库题目");
+		}
+		if (questionKnowledgePoints.findByQuestionId(question.getId()).isEmpty()) {
+			throw new IllegalArgumentException("所选题目尚未关联知识点");
+		}
 		ExamPaperItem item = new ExamPaperItem();
 		item.setSessionId(sessionId);
 		item.setQuestionNo(command.questionNo().trim());
+		item.setQuestionId(question.getId());
 		item.setTitle(command.title().trim());
 		item.setMaxScore(command.maxScore());
 		return items.save(item);
@@ -112,6 +172,13 @@ public class ExamPaperAnalysisService {
 
 	@Transactional
 	public com.chronos.education.scheduling.model.ExamSession confirmScores(String sessionId) {
+		return confirmScores(sessionId, "SYSTEM");
+	}
+
+	@Transactional
+	public com.chronos.education.scheduling.model.ExamSession confirmScores(
+			String sessionId,
+			String actor) {
 		var session = requireSessionEntity(sessionId);
 		if ("CONFIRMED".equals(session.getScoreStatus()) || "PUBLISHED".equals(session.getScoreStatus())) {
 			return session;
@@ -127,6 +194,50 @@ public class ExamPaperAnalysisService {
 		for (ExamPaperItem item : paperItems) {
 			if (scores.findByItemId(item.getId()).size() != candidateCount) {
 				throw new IllegalStateException("所有题目必须完成全部考生评分后才能确认");
+			}
+		}
+		if (sessionOfferings == null) {
+			throw new IllegalStateException("考试场次映射存储不可用，不能确认成绩");
+		}
+		List<String> offeringIds = sessionOfferings.findBySessionId(sessionId).stream()
+				.map(mapping -> mapping.getOfferingId())
+				.distinct()
+				.toList();
+		if (offeringIds.isEmpty()) {
+			throw new IllegalStateException("考试场次缺少课程开设映射，不能确认成绩");
+		}
+		var confirmedAt = java.time.OffsetDateTime.now();
+		var plan = plans.findById(session.getPlanId())
+				.orElseThrow(() -> new IllegalStateException("考试计划不存在"));
+		for (ExamCandidate candidate : candidatesForSession(sessionId)) {
+			BigDecimal rawScore = paperItems.stream()
+					.map(item -> scores.findByItemIdAndCandidateId(item.getId(), candidate.getId())
+							.orElseThrow(() -> new IllegalStateException("考生逐题成绩不存在"))
+							.getScore())
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
+			BigDecimal maxScore = paperItems.stream()
+					.map(ExamPaperItem::getMaxScore)
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
+			for (String offeringId : offeringIds) {
+				ExamScoresConfirmedV1 event = new ExamScoresConfirmedV1(
+						"EXAM_SCORES_CONFIRMED:" + sessionId + ":" + offeringId + ":" + candidate.getStudentId(),
+						"ExamScoresConfirmedV1",
+						confirmedAt,
+						1,
+						plan.getId(),
+						sessionId,
+						offeringId,
+						candidate.getStudentId(),
+						rawScore,
+						maxScore,
+						null,
+						confirmedAt);
+				domainEvents.enqueueGradeEvent(
+						event.eventType(),
+						sessionId,
+						event.eventId(),
+						event,
+						actor);
 			}
 		}
 		// 确认动作冻结逐题得分，避免审核、统计与错题沉淀读取到不同版本。
@@ -258,7 +369,15 @@ public class ExamPaperAnalysisService {
 		return value == null || value.isBlank();
 	}
 
-	public record ItemCommand(String questionNo, String title, BigDecimal maxScore) {
+	public record ItemCommand(String questionNo, String questionId, String title, BigDecimal maxScore) {
+	}
+
+	public record AvailableQuestion(
+			String id,
+			String stem,
+			BigDecimal score,
+			String questionType,
+			String difficulty) {
 	}
 
 	public record ScoreCommand(String candidateId, BigDecimal score) {

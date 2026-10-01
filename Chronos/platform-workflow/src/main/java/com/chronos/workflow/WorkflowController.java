@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.form.FormInstance;
+import com.chronos.model.form.FormInstanceRevision;
 import com.chronos.model.workflow.WorkflowAiSetting;
 import com.chronos.model.workflow.WorkflowDefinition;
 import com.chronos.model.workflow.WorkflowDefinitionAcl;
@@ -44,6 +45,7 @@ public class WorkflowController {
 	private final WorkflowNotificationService notifications;
 	private final WorkflowIncidentService incidents;
 	private final WorkflowExecutionAuditService executionAudit;
+	private final WorkflowBatchApprovalService batchApproval;
 
 	public WorkflowController(
 			WorkflowService service,
@@ -51,13 +53,15 @@ public class WorkflowController {
 			WorkflowIdempotencyService idempotency,
 			WorkflowNotificationService notifications,
 			WorkflowIncidentService incidents,
-			WorkflowExecutionAuditService executionAudit) {
+			WorkflowExecutionAuditService executionAudit,
+			WorkflowBatchApprovalService batchApproval) {
 		this.service = service;
 		this.executors = executors;
 		this.idempotency = idempotency;
 		this.notifications = notifications;
 		this.incidents = incidents;
 		this.executionAudit = executionAudit;
+		this.batchApproval = batchApproval;
 	}
 
 	private <T> ResultData<T> ok(T data) {
@@ -110,6 +114,20 @@ public class WorkflowController {
 	public ResultData<WorkflowDefinition> createVersion(@PathVariable String id, @RequestBody Map<String, String> body,
 			Principal p) {
 		return ok(service.createVersion(id, body.get("version"), p.getName()));
+	}
+
+	@GetMapping("/admin/workflows/{id}/versions")
+	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:definition:view','workflow:manage') and @workflowSecurity.canDefinition(authentication.name,#id,'VIEW')")
+	public ResultData<List<WorkflowDefinition>> versions(@PathVariable String id, Principal principal) {
+		return ok(service.versions(id, principal.getName()));
+	}
+
+	@GetMapping("/admin/workflows/{id}/compare")
+	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:definition:view','workflow:manage') and @workflowSecurity.canDefinition(authentication.name,#id,'VIEW') and @workflowSecurity.canDefinition(authentication.name,#targetId,'VIEW')")
+	public ResultData<WorkflowService.WorkflowVersionComparison> compareVersions(
+			@PathVariable String id,
+			@RequestParam String targetId) {
+		return ok(service.compareVersions(id, targetId));
 	}
 
 	@GetMapping("/admin/workflows/{id}/acls")
@@ -267,6 +285,21 @@ public class WorkflowController {
 	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:instance:view') and @workflowSecurity.canViewInstance(authentication.name,#id)")
 	public ResultData<Map<String, Object>> runtimeForms(@PathVariable String id, Principal p) {
 		return ok(service.runtimeForms(id, p.getName()));
+	}
+
+	@GetMapping("/workflow-instances/{id}/version")
+	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:instance:view') and @workflowSecurity.canViewInstance(authentication.name,#id)")
+	public ResultData<WorkflowService.InstanceVersionView> instanceVersion(@PathVariable String id) {
+		return ok(service.instanceVersion(id));
+	}
+
+	@GetMapping("/admin/workflow-instances/{id}/forms/{formId}/revisions")
+	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:manage') and @workflowSecurity.canManageInstance(authentication.name,#id)")
+	public ResultData<List<FormInstanceRevision>> formRevisions(
+			@PathVariable String id,
+			@PathVariable String formId,
+			@RequestParam String nodeKey) {
+		return ok(service.formRevisions(id, formId, nodeKey));
 	}
 
 	@PutMapping("/workflow-instances/{id}/forms/{formId}")
@@ -544,6 +577,14 @@ public class WorkflowController {
 		if (!Boolean.TRUE.equals(body.get("approved")))
 			throw new IllegalArgumentException("拒绝任务请使用独立拒绝接口");
 		return ok(service.completeTask(id, true, String.valueOf(body.getOrDefault("comment", "")), p.getName()));
+	}
+
+	@PostMapping("/workflow-tasks/batch-approve")
+	@PreAuthorize("@iamAuthorization.has(authentication,'workflow:task:approve')")
+	public ResultData<WorkflowBatchApprovalService.BatchResult> batchApprove(
+			@RequestBody WorkflowBatchApprovalService.BatchCommand command,
+			Principal principal) {
+		return ok(batchApproval.approve(command, principal.getName()));
 	}
 
 	@PostMapping("/workflow-tasks/{id}/reject")

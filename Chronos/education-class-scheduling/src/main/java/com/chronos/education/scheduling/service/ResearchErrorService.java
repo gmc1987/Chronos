@@ -306,7 +306,14 @@ public class ResearchErrorService {
 	}
 
 	private String currentTeacherId(Authentication authentication) {
-		return currentTeacherIds(authentication).stream()
+		if (identities == null) {
+			throw new IllegalStateException("教师身份绑定服务未配置");
+		}
+		Set<String> teacherIds = identities.teacherIds(authentication.getName());
+		if (teacherIds == null || teacherIds.isEmpty()) {
+			throw new AccessDeniedException("当前账号未绑定教师档案");
+		}
+		return teacherIds.stream()
 				.findFirst()
 				.orElseThrow(() -> new AccessDeniedException("当前账号未绑定教师档案"));
 	}
@@ -499,6 +506,9 @@ public class ResearchErrorService {
 	@Transactional(readOnly = true)
 	public List<ErrorItem> items(String courseId, Authentication a) {
 			EducationDataScope current = scope(a);
+			if (!current.fullAccess() && !current.teacherIds().isEmpty() && current.studentIds().isEmpty()) {
+				throw new AccessDeniedException("教师只能查看错题聚合统计");
+			}
 			Set<String> visibleBooks = books.findAll().stream()
 					.filter(book -> !book.isArchived() && (courseId == null || courseId.equals(book.getCourseId())))
 					.filter(book -> scopes.canAccessStudent(current, book.getStudentId()))

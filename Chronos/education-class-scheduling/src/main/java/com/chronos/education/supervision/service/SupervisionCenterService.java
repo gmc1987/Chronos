@@ -4,13 +4,24 @@ import com.chronos.education.grade.service.DomainEventOutboxService;
 import com.chronos.education.supervision.dao.*;
 import com.chronos.education.supervision.model.*;
 import com.chronos.education.scheduling.model.EducationDataScope;
+import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.education.scheduling.service.SchedulePlanVersionService;
+import com.chronos.form.FormService;
+import com.chronos.model.form.FormInstance;
 import com.chronos.service.iService.IAuditLogService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,9 +35,43 @@ public class SupervisionCenterService {
 	private final SupervisionRecordRepository records;
 	private final SupervisionIssueRepository issues;
 	private final SupervisionRectificationRepository rectifications;
+	private final SupervisionReviewRepository reviews;
+	private final EducationDataScopeService dataScopes;
 	private final DomainEventOutboxService events;
 	private final IAuditLogService audit;
-	private final EducationDataScopeService dataScopes;
+	private final FormService forms;
+	private final SchedulePlanVersionService scheduleVersions;
+	private final SupervisionCheckInProofProvider checkInProofs;
+	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+	private final Map<String, Instant> consumedProofs = new ConcurrentHashMap<>();
+
+	@Autowired
+	public SupervisionCenterService(
+			SupervisionPlanRepository plans,
+			SupervisionAssignmentRepository assignments,
+			SupervisionRecordRepository records,
+			SupervisionIssueRepository issues,
+			SupervisionRectificationRepository rectifications,
+			SupervisionReviewRepository reviews,
+			EducationDataScopeService dataScopes,
+			DomainEventOutboxService events,
+			IAuditLogService audit,
+			FormService forms,
+			SchedulePlanVersionService scheduleVersions,
+			@Nullable SupervisionCheckInProofProvider checkInProofs) {
+		this.plans = plans;
+		this.assignments = assignments;
+		this.records = records;
+		this.issues = issues;
+		this.rectifications = rectifications;
+		this.reviews = reviews;
+		this.dataScopes = dataScopes;
+		this.events = events;
+		this.audit = audit;
+		this.forms = forms;
+		this.scheduleVersions = scheduleVersions;
+		this.checkInProofs = checkInProofs;
+	}
 
 	public SupervisionCenterService(
 			SupervisionPlanRepository plans,
@@ -37,45 +82,54 @@ public class SupervisionCenterService {
 			DomainEventOutboxService events,
 			IAuditLogService audit,
 			EducationDataScopeService dataScopes) {
-		this.plans = plans;
-		this.assignments = assignments;
-		this.records = records;
-		this.issues = issues;
-		this.rectifications = rectifications;
-		this.events = events;
-		this.audit = audit;
-		this.dataScopes = dataScopes;
+		this(plans, assignments, records, issues, rectifications, null, dataScopes, events, audit,
+				null, null, null);
 	}
 
 	@Transactional
 	public SupervisionPlan publishPlan(String id, String actor) {
 		SupervisionPlan plan = plans.findById(id).orElseThrow();
-		assertSchool(dataScopes.resolve(actor), plan.getSchoolId());
 		requireState(plan.getStatus(), "DRAFT");
 		plan.setStatus("PUBLISHED");
 		audit.log(actor, "EDU_SUPERVISION_PLAN_PUBLISH", "planId=" + id);
 		return plans.save(plan);
 	}
 
+	@Transactional
+	public SupervisionPlan completePlan(String id, String actor) {
+		SupervisionPlan plan = plans.findById(id).orElseThrow();
+		requireState(plan.getStatus(), "IN_PROGRESS");
+		plan.setStatus("COMPLETED");
+		audit.log(actor, "EDU_SUPERVISION_PLAN_COMPLETE", "planId=" + id);
+		return plans.save(plan);
+	}
+
+	@Transactional
+	public SupervisionPlan archivePlan(String id, String actor) {
+		SupervisionPlan plan = plans.findById(id).orElseThrow();
+		requireState(plan.getStatus(), "COMPLETED");
+		plan.setStatus("ARCHIVED");
+		audit.log(actor, "EDU_SUPERVISION_PLAN_ARCHIVE", "planId=" + id);
+		return plans.save(plan);
+	}
+
 	@Transactional(readOnly = true)
 	public List<SupervisionPlan> listPlans(String actor) {
-		EducationDataScope scope = dataScopes.resolve(actor);
-		return scope.fullAccess()
-				? plans.findAll()
-				: plans.findBySchoolIdInOrderByCreateTimeDesc(scope.schoolIds());
+		return plans.findBySchoolIdOrderByCreateTimeDesc(scopeSchool(dataScopes.resolve(actor)));
 	}
 
 	@Transactional
 	public SupervisionPlan createPlan(String actor, String name,
 			java.time.LocalDate startDate, java.time.LocalDate endDate, String campusId) {
-		EducationDataScope scope = dataScopes.resolve(actor);
-		String schoolId = dataScopes.requireSchoolForCampus(scope, campusId);
-		dataScopes.assertCampusAccess(scope, campusId);
 		if (endDate.isBefore(startDate)) {
 			throw new IllegalArgumentException("督导计划结束日期不能早于开始日期");
 		}
+		EducationDataScope scope = dataScopes.resolve(actor);
+		if (campusId != null && !scope.fullAccess() && !scope.campusIds().contains(campusId)) {
+			throw new AccessDeniedException("无权创建该校区计划");
+		}
 		SupervisionPlan plan = new SupervisionPlan();
-		plan.setSchoolId(schoolId);
+		plan.setSchoolId(scopeSchool(scope));
 		plan.setName(name);
 		plan.setStartDate(startDate);
 		plan.setEndDate(endDate);
@@ -87,22 +141,33 @@ public class SupervisionCenterService {
 	@Transactional
 	public SupervisionAssignment createAssignment(String actor, String planId,
 			String supervisorId, String teacherId, String scheduleEntryId, String campusId) {
-		EducationDataScope scope = dataScopes.resolve(actor);
 		SupervisionPlan plan = plans.findById(planId).orElseThrow();
-		assertSchool(scope, plan.getSchoolId());
+		EducationDataScope scope = dataScopes.resolve(actor);
+		if (plan.getCampusId() != null && !scope.fullAccess() && !scope.campusIds().contains(plan.getCampusId())) {
+			throw new AccessDeniedException("无权访问该督导计划");
+		}
 		if (!"PUBLISHED".equals(plan.getStatus())) {
 			throw new IllegalStateException("仅可向本校已发布计划分配任务");
 		}
-		dataScopes.assertCampusAccess(scope, campusId);
 		dataScopes.assertTeacherAccess(scope, supervisorId);
 		dataScopes.assertTeacherAccess(scope, teacherId);
+		dataScopes.assertScheduleEntryAccess(scope, scheduleEntryId);
+		if (campusId != null) {
+			dataScopes.assertCampusAccess(scope, campusId);
+		}
+		ScheduleEntry publishedEntry = scheduleVersions == null
+				? null
+				: scheduleVersions.requirePublishedEntry(scheduleEntryId);
+		if (publishedEntry == null) {
+			throw new IllegalStateException("SUPERVISION_PUBLISHED_SCHEDULE_PROVIDER_UNAVAILABLE");
+		}
 		SupervisionAssignment assignment = new SupervisionAssignment();
 		assignment.setPlanId(planId);
 		assignment.setSchoolId(plan.getSchoolId());
 		assignment.setCampusId(campusId);
 		assignment.setSupervisorId(supervisorId);
 		assignment.setTeacherId(teacherId);
-		assignment.setScheduleEntryId(scheduleEntryId);
+		assignment.setScheduleEntryId(publishedEntry.getId());
 		audit.log(actor, "EDU_SUPERVISION_ASSIGNMENT_CREATE", "planId=" + planId);
 		return assignments.save(assignment);
 	}
@@ -116,10 +181,6 @@ public class SupervisionCenterService {
 	public SupervisionRecord getRecordForSupervisor(String assignmentId, String supervisorId) {
 		assigned(assignmentId, supervisorId);
 		return records.findByAssignmentId(assignmentId).orElseThrow();
-	}
-
-	private void assertSchool(EducationDataScope scope, String schoolId) {
-		dataScopes.assertSchoolAccess(scope, schoolId);
 	}
 
 	@Transactional
@@ -137,18 +198,75 @@ public class SupervisionCenterService {
 		requireState(assignment.getStatus(), "PENDING");
 		assignment.setStatus("ACCEPTED");
 		assignment.setAcceptedAt(LocalDateTime.now());
+		audit.log(supervisorId, "EDU_SUPERVISION_ASSIGNMENT_ACCEPT", "assignmentId=" + id);
 		return assignments.save(assignment);
 	}
 
 	@Transactional
 	public SupervisionAssignment checkIn(String id, String supervisorId) {
+		return checkIn(id, supervisorId, null);
+	}
+
+	@Transactional
+	public SupervisionAssignment checkIn(String id, String supervisorId,
+			SupervisionCheckInProofProvider.Proof proof) {
 		SupervisionAssignment assignment = assigned(id, supervisorId);
 		if (!Set.of("ACCEPTED", "PENDING").contains(assignment.getStatus())) {
 			throw new IllegalStateException("当前任务不可签到");
 		}
+		Instant now = Instant.now();
+		SupervisionCheckInProofProvider.VerificationResult result = checkInProofs == null
+				? new SupervisionCheckInProofProvider.VerificationResult(
+						SupervisionCheckInProofProvider.VerificationCode.PROVIDER_UNAVAILABLE, null, null)
+				: proof == null || proof.providerId() == null || proof.providerId().isBlank()
+						|| proof.signedProof() == null || proof.signedProof().isBlank()
+				? new SupervisionCheckInProofProvider.VerificationResult(
+						SupervisionCheckInProofProvider.VerificationCode.INVALID_PROOF, null, null)
+				: checkInProofs.verify(new SupervisionCheckInProofProvider.VerificationRequest(
+						assignment, proof, now));
+		if (result == null) {
+			result = new SupervisionCheckInProofProvider.VerificationResult(
+					SupervisionCheckInProofProvider.VerificationCode.PROVIDER_UNAVAILABLE, null, null);
+		}
+		audit.log(supervisorId, "EDU_SUPERVISION_CHECK_IN_PROOF",
+				"assignmentId=" + id + ",code=" + result.code());
+		if (result.code() == null || !result.verified()) {
+			throw proofFailure(result.code());
+		}
+		if (result.proofId() == null || result.proofId().isBlank()
+				|| result.expiresAt() == null || !result.expiresAt().isAfter(now)) {
+			throw proofFailure(SupervisionCheckInProofProvider.VerificationCode.PROOF_EXPIRED);
+		}
+		consumedProofs.entrySet().removeIf(entry -> !entry.getValue().isAfter(now));
+		Instant previous = consumedProofs.putIfAbsent(result.proofId(), result.expiresAt());
+		if (previous != null && previous.isAfter(now)) {
+			throw proofFailure(SupervisionCheckInProofProvider.VerificationCode.REPLAY_DETECTED);
+		}
 		assignment.setStatus("CHECKED_IN");
 		// 签到时间只能由服务端产生，忽略客户端传入时间。
 		assignment.setCheckedInAt(LocalDateTime.now());
+		audit.log(supervisorId, "EDU_SUPERVISION_ASSIGNMENT_CHECK_IN", "assignmentId=" + id);
+		return assignments.save(assignment);
+	}
+
+	private RuntimeException proofFailure(SupervisionCheckInProofProvider.VerificationCode code) {
+		if (code == null) {
+			return new IllegalArgumentException("SUPERVISION_CHECK_IN_INVALID_PROOF");
+		}
+		return switch (code) {
+			case CONFIGURATION_MISSING, PROVIDER_UNAVAILABLE ->
+					new IllegalStateException("SUPERVISION_CHECK_IN_" + code.name());
+			default -> new IllegalArgumentException("SUPERVISION_CHECK_IN_" + code.name());
+		};
+	}
+
+	@Transactional
+	public SupervisionAssignment completeAssignment(String id, String supervisorId) {
+		SupervisionAssignment assignment = assigned(id, supervisorId);
+		requireState(assignment.getStatus(), "SUBMITTED");
+		assignment.setStatus("COMPLETED");
+		assignment.setCompletedAt(LocalDateTime.now());
+		audit.log(supervisorId, "EDU_SUPERVISION_ASSIGNMENT_COMPLETE", "assignmentId=" + id);
 		return assignments.save(assignment);
 	}
 
@@ -160,37 +278,58 @@ public class SupervisionCenterService {
 		if (records.findByAssignmentId(assignmentId).isPresent()) {
 			throw new IllegalStateException("评价已提交且不可修改");
 		}
+		if (forms == null) {
+			throw new IllegalStateException("SUPERVISION_FORM_ENGINE_UNAVAILABLE");
+		}
+		var definition = forms.definition(formTemplateId);
+		if (!"PUBLISHED".equals(definition.getStatus())) {
+			throw new IllegalStateException("SUPERVISION_FORM_TEMPLATE_NOT_PUBLISHED");
+		}
+		FormInstance instance = forms.instance(assignmentId, formTemplateId, "SUPERVISION")
+				.orElseThrow(() -> new IllegalArgumentException("SUPERVISION_FORM_INSTANCE_REQUIRED"));
+		if (!"SUBMITTED".equals(instance.getStatus())) {
+			throw new IllegalArgumentException("SUPERVISION_FORM_INSTANCE_NOT_SUBMITTED");
+		}
+		String formSnapshot = snapshot(instance);
+		String scheduleSnapshot = scheduleSnapshot(assignment.getScheduleEntryId());
 		SupervisionRecord record = new SupervisionRecord();
 		record.setAssignmentId(assignmentId);
 		record.setSchoolId(assignment.getSchoolId());
 		record.setSupervisorId(supervisorId);
 		record.setTeacherId(assignment.getTeacherId());
 		record.setFormTemplateId(formTemplateId);
-		record.setFormSnapshotJson(formSnapshotJson);
-		record.setScheduleContextSnapshotJson(scheduleContextSnapshotJson);
+		record.setFormSnapshotJson(formSnapshot);
+		record.setScheduleContextSnapshotJson(scheduleSnapshot);
 		record.setSubmittedAt(LocalDateTime.now());
 		assignment.setStatus("SUBMITTED");
 		assignment.setSubmittedAt(record.getSubmittedAt());
 		records.save(record);
 		assignments.save(assignment);
+		audit.log(supervisorId, "EDU_SUPERVISION_RECORD_SUBMIT", "assignmentId=" + assignmentId);
 		return record;
 	}
 
 	@Transactional
-	public SupervisionIssue createIssue(String recordId, String schoolId, String severity,
+	public SupervisionIssue createIssue(String recordId, String actor, String severity,
 			String title, String description, String ownerId, LocalDateTime dueAt) {
 		if ("CRITICAL".equals(severity) && (ownerId == null || ownerId.isBlank() || dueAt == null)) {
 			throw new IllegalArgumentException("严重问题必须指定负责人和截止日期");
 		}
+		SupervisionRecord record = records.findById(recordId).orElseThrow();
+		EducationDataScope scope = dataScopes.resolve(actor);
+		dataScopes.assertTeacherAccess(scope, record.getTeacherId());
+		if (ownerId != null) dataScopes.assertTeacherAccess(scope, ownerId);
 		SupervisionIssue issue = new SupervisionIssue();
 		issue.setRecordId(recordId);
-		issue.setSchoolId(schoolId);
+		issue.setSchoolId(record.getSchoolId());
 		issue.setSeverity(severity);
 		issue.setTitle(title);
 		issue.setDescription(description);
 		issue.setOwnerId(ownerId);
 		issue.setDueAt(dueAt);
-		return issues.save(issue);
+		SupervisionIssue saved = issues.save(issue);
+		audit.log(actor, "EDU_SUPERVISION_ISSUE_CREATE", "issueId=" + saved.getId());
+		return saved;
 	}
 
 	@Transactional
@@ -209,6 +348,7 @@ public class SupervisionCenterService {
 		rectification.setStatus("SUBMITTED");
 		issue.setStatus("REVIEWING");
 		issues.save(issue);
+		audit.log(actor, "EDU_SUPERVISION_RECTIFICATION_SUBMIT", "issueId=" + issueId);
 		return rectifications.save(rectification);
 	}
 
@@ -222,6 +362,14 @@ public class SupervisionCenterService {
 		}
 		issue.setStatus(approved ? "CLOSED" : "RECTIFYING");
 		issues.save(issue);
+		SupervisionReview review = new SupervisionReview();
+		review.setIssueId(issueId);
+		review.setReviewerId(reviewerId);
+		review.setDecision(approved ? "APPROVED" : "RETURNED");
+		review.setComment(comment);
+		review.setReviewedAt(LocalDateTime.now());
+		reviews.save(review);
+		audit.log(reviewerId, "EDU_SUPERVISION_ISSUE_REVIEW", "issueId=" + issueId);
 		return issue;
 	}
 
@@ -253,6 +401,33 @@ public class SupervisionCenterService {
 			}
 		}
 		throw new IllegalStateException("非法状态转换: " + actual);
+	}
+
+	private String scopeSchool(EducationDataScope scope) {
+		return scope.fullAccess() ? "ALL" : dataScopes.requireSingleSchool(scope);
+	}
+
+	private String snapshot(FormInstance instance) {
+		try {
+			return json.writeValueAsString(java.util.Map.of(
+					"formId", instance.getFormId(),
+					"nodeKey", instance.getNodeKey(),
+					"status", instance.getStatus(),
+					"data", json.readTree(instance.getDataJson())));
+		} catch (JsonProcessingException exception) {
+			throw new IllegalStateException("SUPERVISION_FORM_SNAPSHOT_INVALID", exception);
+		}
+	}
+
+	private String scheduleSnapshot(String entryId) {
+		if (scheduleVersions == null) {
+			throw new IllegalStateException("SUPERVISION_PUBLISHED_SCHEDULE_PROVIDER_UNAVAILABLE");
+		}
+		try {
+			return json.writeValueAsString(scheduleVersions.requirePublishedEntry(entryId));
+		} catch (JsonProcessingException exception) {
+			throw new IllegalStateException("SUPERVISION_SCHEDULE_SNAPSHOT_INVALID", exception);
+		}
 	}
 
 	public record OverdueIssueReminder(String eventId, String issueId, String ownerId, LocalDateTime occurredAt) {

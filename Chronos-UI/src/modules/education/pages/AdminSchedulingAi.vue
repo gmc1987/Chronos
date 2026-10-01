@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import {
   cancelAiSchedulingRun,
+  compareAiSchedulingCandidates,
   confirmAiSchedulingRun,
   createAiSchedulingRun,
   generateAiSchedulingRun,
@@ -10,10 +13,14 @@ import {
   listAiSchedulingCandidates,
   listAcademicTerms,
   listCourseOfferings,
+  previewAiSchedulingCandidate,
+  explainAiSchedulingCandidate,
   replyAiSchedulingRun,
 } from '../../../api/admin'
 
 const POLL_INTERVAL = 2500
+const route = useRoute()
+const router = useRouter()
 const POLLING_STATUSES = ['QUEUED', 'RUNNING']
 const TERMINAL_STATUSES = ['CANDIDATES_READY', 'FAILED', 'CANCELLED', 'EXPIRED']
 const statusLabels = {
@@ -54,6 +61,10 @@ const run = ref(null)
 const candidates = ref([])
 const candidateSelection = ref([])
 const previewCandidate = ref(null)
+const previewDiff = ref(null)
+const modelExplanation = ref(null)
+let explanationRequestSequence = 0
+const comparedCandidates = ref([])
 const clarificationReply = ref('')
 const creating = ref(false)
 const loadingOfferings = ref(false)
@@ -68,16 +79,24 @@ let pollTimer = null
 const currentStatus = computed(() => run.value?.status || '')
 const statusLabel = computed(() => statusLabels[currentStatus.value] || currentStatus.value || '未创建')
 const statusType = computed(() => statusTypes[currentStatus.value] || 'info')
+const parsedPlan = computed(() => run.value?.parsedPlan || run.value?.plan || run.value?.schedulePlan || null)
 const clarificationItems = computed(() => {
-  const value = run.value?.clarifications || run.value?.clarificationMessages || run.value?.questions
+  const value = parsedPlan.value?.clarifications
+    || run.value?.clarifications
+    || run.value?.clarificationMessages
+    || run.value?.questions
   if (Array.isArray(value)) return value
   return value ? [value] : []
 })
-const parsedPlan = computed(() => run.value?.parsedPlan || run.value?.plan || run.value?.schedulePlan || null)
-const constraintDraft = computed(() => run.value?.constraintDraft || run.value?.constraints || null)
+const unsupportedItems = computed(() => parsedPlan.value?.unsupported || [])
+const unresolvedItems = computed(() => parsedPlan.value?.unresolvedClauses || [])
+const constraintDraft = computed(() => parsedPlan.value?.constraints
+  || run.value?.constraintDraft
+  || run.value?.constraints
+  || null)
 const selectedCandidateRows = computed(() => candidateSelection.value)
 const compareMetricRows = computed(() => {
-  const selected = selectedCandidateRows.value
+  const selected = comparedCandidates.value
   const keys = new Set(selected.flatMap(candidate => Object.keys(candidate.metrics || candidate.indicators || {})))
   return [...keys].map(metric => ({
     metric,
@@ -110,6 +129,23 @@ const formatJson = value => {
   return JSON.stringify(value, null, 2)
 }
 const metricEntries = candidate => Object.entries(candidate.metrics || candidate.indicators || {})
+const candidateExplanation = candidate => {
+  const metrics = candidate.metrics
+  if (!metrics) return '暂无可验证的生成指标，请勿仅凭总分判断方案。'
+  const lines = [
+    `已排 ${metrics.scheduledLessons ?? 0} 节，未排 ${metrics.unscheduledLessons ?? 0} 节；偏好时段命中 ${metrics.preferredSlotHits ?? 0} 次。`,
+  ]
+  if (metrics.consecutiveBlockHits > 0) lines.push(`本轮连堂偏好达成 ${metrics.consecutiveBlockHits} 次。`)
+  if (metrics.teacherDayConcentrationHits > 0) lines.push(`本轮教师同日集中偏好命中 ${metrics.teacherDayConcentrationHits} 次。`)
+  if (metrics.slotRuleChecks?.length) {
+    const failed = metrics.slotRuleChecks.filter(check => check.violations > 0).length
+    lines.push(`组合时段禁排逐条核验 ${metrics.slotRuleChecks.length} 项，违规 ${failed} 项。`)
+  }
+  if (metrics.unscheduledLessons > 0) lines.push('仍有未排课时，不能直接用于正式课表。')
+  if (metrics.campusSwitchPenalty > 0) lines.push(`跨校区切换惩罚 ${metrics.campusSwitchPenalty}。`)
+  if (metrics.teacherGapPenalty > 0) lines.push(`教师空档惩罚 ${metrics.teacherGapPenalty}。`)
+  return lines.join(' ')
+}
 
 const stopPolling = () => {
   if (pollTimer) {
@@ -180,7 +216,10 @@ const loadOfferings = async () => {
 const loadInitial = async () => {
   try {
     terms.value = unwrapList(await listAcademicTerms({ page: 0, size: 100 }))
-    const current = terms.value.find(term => term.currentTerm) || terms.value[0]
+    const requestedTerm = route.query.semesterCode
+    const current = terms.value.find(term => term.termCode === requestedTerm)
+      || terms.value.find(term => term.currentTerm)
+      || terms.value[0]
     if (current) {
       form.semesterCode = current.termCode
       await loadOfferings()
@@ -208,6 +247,8 @@ const createRun = async () => {
   candidates.value = []
   candidateSelection.value = []
   previewCandidate.value = null
+  modelExplanation.value = null
+  explanationRequestSequence += 1
   creating.value = true
   try {
     const payload = {
@@ -222,6 +263,10 @@ const createRun = async () => {
     const createdRun = unwrapRun(response)
     const runId = createdRun?.id || createdRun?.runId
     if (!runId) throw new Error('创建排课 Run 失败：服务端未返回 Run ID')
+    await router.replace({
+      path: route.path,
+      query: { ...route.query, semesterCode: form.semesterCode, aiRunId: runId },
+    })
     if (!await loadRun(runId, sequence)) return
     ElMessage.success('排课 Run 已创建')
   } catch (error) {
@@ -238,7 +283,10 @@ const replyToRun = async () => {
   const sequence = runRequestSequence.value
   replying.value = true
   try {
-    await replyAiSchedulingRun(runId, { message })
+    await replyAiSchedulingRun(runId, {
+      answer: message,
+      expectedPlanVersion: run.value.planVersion,
+    })
     if (sequence !== runRequestSequence.value || run.value?.id !== runId) return
     clarificationReply.value = ''
     if (!await loadRun(runId, sequence)) return
@@ -256,7 +304,9 @@ const confirmRun = async () => {
   const sequence = runRequestSequence.value
   confirming.value = true
   try {
-    await confirmAiSchedulingRun(runId)
+    await confirmAiSchedulingRun(runId, {
+      expectedPlanVersion: run.value.planVersion,
+    })
     if (sequence !== runRequestSequence.value || run.value?.id !== runId) return
     if (!await loadRun(runId, sequence)) return
     ElMessage.success('解析计划已确认')
@@ -314,11 +364,62 @@ const statusMessage = status => run.value?.errorMessage || run.value?.message ||
   CANCELLED: '该 Run 已取消。',
   EXPIRED: '该 Run 已过期，请重新创建 Run。',
 }[status] || '')
-const showCandidatePreview = candidate => { previewCandidate.value = candidate }
-const selectCandidates = rows => { candidateSelection.value = rows }
+const showCandidatePreview = async candidate => {
+  const runId = run.value?.id
+  if (!runId) return
+  previewCandidate.value = null
+  previewDiff.value = null
+  try {
+    const response = await previewAiSchedulingCandidate(runId, candidate.id)
+    if (run.value?.id !== runId) return
+    previewCandidate.value = candidate
+    previewDiff.value = unwrapData(response)
+  } catch (error) {
+    showError(error)
+  }
+}
 
-onMounted(loadInitial)
-onBeforeUnmount(stopPolling)
+const showModelExplanation = async candidate => {
+  const runId = run.value?.id
+  if (!runId) return
+  const sequence = ++explanationRequestSequence
+  modelExplanation.value = null
+  try {
+    const response = await explainAiSchedulingCandidate(runId, candidate.id)
+    if (run.value?.id !== runId || sequence !== explanationRequestSequence) return
+    modelExplanation.value = unwrapData(response)
+  } catch (error) {
+    if (sequence === explanationRequestSequence) showError(error)
+  }
+}
+const selectCandidates = rows => {
+  candidateSelection.value = rows
+  comparedCandidates.value = []
+}
+const compareCandidates = async () => {
+  const runId = run.value?.id
+  if (!runId || selectedCandidateRows.value.length < 2) return
+  try {
+    const response = await compareAiSchedulingCandidates(
+      runId, selectedCandidateRows.value.map(candidate => candidate.id),
+    )
+    if (run.value?.id !== runId) return
+    comparedCandidates.value = unwrapList(response)
+  } catch (error) {
+    showError(error)
+  }
+}
+
+onMounted(async () => {
+  await loadInitial()
+  const runId = route.query.aiRunId
+  if (typeof runId === 'string' && runId) await loadRun(runId)
+})
+onBeforeUnmount(() => {
+  runRequestSequence.value += 1
+  explanationRequestSequence += 1
+  stopPolling()
+})
 </script>
 
 <template>
@@ -328,7 +429,10 @@ onBeforeUnmount(stopPolling)
         <h2>AI 智能排课工作台</h2>
         <p>用自然语言描述排课目标，逐步检查解析结果并查看候选方案。</p>
       </div>
-      <el-tag :type="statusType">当前状态：{{ statusLabel }}</el-tag>
+      <div class="header-actions">
+        <SchedulingModeSwitch :semester-code="form.semesterCode" :run-id="run?.id" />
+        <el-tag :type="statusType">当前状态：{{ statusLabel }}</el-tag>
+      </div>
     </header>
 
     <el-card shadow="never" class="request-card">
@@ -357,7 +461,7 @@ onBeforeUnmount(stopPolling)
           </el-select>
         </el-form-item>
         <el-form-item label="候选数量">
-          <el-input-number v-model="form.candidateCount" :min="1" :max="10" />
+          <el-input-number v-model="form.candidateCount" :min="1" :max="5" />
         </el-form-item>
         <el-form-item label="自然语言需求" required>
           <el-input
@@ -366,7 +470,7 @@ onBeforeUnmount(stopPolling)
             :rows="5"
             maxlength="2000"
             show-word-limit
-            placeholder="例如：尽量避免教师连续 3 节授课，优先安排数学课在上午，并保留相邻班级的连贯时段。"
+            placeholder="例如：张老师周三下午不能上课；PLC 实训尽量连堂；PLC 实训单周第1周到第17周。保留现有课表项可写“保留PLC 实训周三第3节”；有歧义的规则会要求澄清。"
           />
         </el-form-item>
         <el-form-item>
@@ -387,6 +491,16 @@ onBeforeUnmount(stopPolling)
       </template>
 
       <el-alert v-if="statusMessage(currentStatus)" :title="statusMessage(currentStatus)" :type="currentStatus === 'FAILED' ? 'error' : 'warning'" show-icon :closable="false" />
+      <el-alert
+        v-if="unsupportedItems.length"
+        title="以下规则暂不支持，无法确认或执行；请修改需求后重试"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="unsupported-alert"
+      >
+        <ul><li v-for="(item, index) in unsupportedItems" :key="index">{{ item }}</li></ul>
+      </el-alert>
 
       <section v-if="['DRAFT', 'NEEDS_CLARIFICATION'].includes(currentStatus)" class="workflow-section">
         <h3>需求澄清</h3>
@@ -394,10 +508,15 @@ onBeforeUnmount(stopPolling)
         <ul v-else class="clarification-list">
           <li v-for="(item, index) in clarificationItems" :key="index">{{ typeof item === 'string' ? item : formatJson(item) }}</li>
         </ul>
-        <div class="reply-box">
-          <el-input v-model="clarificationReply" type="textarea" :rows="3" placeholder="补充时间、教师、教室或其他排课约束" />
+        <div v-if="unresolvedItems.length && !unsupportedItems.length" class="reply-box">
+          <div>
+            <p>请用完整新规则替换下列待澄清原文；多条时逐行输入“编号：完整规则”，并写明课程或教师、教学周、节次等必要信息。未回复的规则会继续等待澄清。</p>
+            <ol><li v-for="(item, index) in unresolvedItems" :key="index">{{ item }}</li></ol>
+          </div>
+          <el-input v-model="clarificationReply" type="textarea" :rows="3" placeholder="例如：1：张老师周三第3节不能上课" />
           <el-button type="primary" :loading="replying" @click="replyToRun">提交回复</el-button>
         </div>
+        <el-alert v-else-if="unsupportedItems.length || currentStatus === 'NEEDS_CLARIFICATION'" title="请修改原需求、新建 Run 以解决不支持的规则或学期/模式冲突。" type="info" :closable="false" />
       </section>
 
       <section v-if="currentStatus === 'READY_FOR_CONFIRMATION'" class="workflow-section">
@@ -405,12 +524,14 @@ onBeforeUnmount(stopPolling)
         <div class="json-grid">
           <div><h4>解析计划</h4><pre>{{ formatJson(parsedPlan) }}</pre></div>
           <div><h4>约束草稿</h4><pre>{{ formatJson(constraintDraft) }}</pre></div>
+          <div v-if="parsedPlan?.slotRules?.length"><h4>组合时段禁排（仅本轮）</h4><pre>{{ formatJson(parsedPlan.slotRules) }}</pre></div>
         </div>
         <el-button type="primary" :loading="confirming" @click="confirmRun">确认解析计划</el-button>
       </section>
 
       <section v-if="['CONFIRMED', 'QUEUED', 'RUNNING'].includes(currentStatus)" class="workflow-section">
         <h3>候选方案生成</h3>
+        <p>本轮确认的动态规则仅作用于候选生成；临时锁课不会修改正式课表的锁定标志，软偏好不保证全部满足。组合禁排逐条核验违规数；若仍有未排课时，候选不代表完整满足需求。</p>
         <el-alert
           v-if="currentStatus === 'QUEUED' || currentStatus === 'RUNNING'"
           title="候选方案正在生成，页面会自动刷新状态。"
@@ -446,24 +567,34 @@ onBeforeUnmount(stopPolling)
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="只读操作" width="110" fixed="right">
-            <template #default="scope"><el-button link type="primary" @click="showCandidatePreview(scope.row)">预览</el-button></template>
+          <el-table-column label="方案依据" min-width="320">
+            <template #default="scope">{{ candidateExplanation(scope.row) }}</template>
+          </el-table-column>
+          <el-table-column label="只读操作" width="170" fixed="right">
+            <template #default="scope">
+              <el-button link type="primary" @click="showCandidatePreview(scope.row)">预览</el-button>
+              <el-button link type="primary" @click="showModelExplanation(scope.row)">模型解读</el-button>
+            </template>
           </el-table-column>
         </el-table>
 
         <div v-if="selectedCandidateRows.length >= 2" class="compare-panel">
           <h3>候选对比</h3>
-          <el-table :data="compareMetricRows" border size="small">
+          <el-button @click="compareCandidates">对比所选方案</el-button>
+          <el-table v-if="comparedCandidates.length" :data="compareMetricRows" border size="small">
             <el-table-column prop="metric" label="指标" min-width="180" />
-            <el-table-column v-for="candidate in selectedCandidateRows" :key="candidate.id" :label="candidate.name || candidate.planName || candidate.id">
-              <template #default="scope">{{ scope.row.values[selectedCandidateRows.indexOf(candidate)] }}</template>
+            <el-table-column v-for="(candidate, index) in comparedCandidates" :key="candidate.id" :label="candidate.name || candidate.planName || candidate.id">
+              <template #default="scope">{{ scope.row.values[index] }}</template>
             </el-table-column>
           </el-table>
         </div>
       </section>
 
       <el-alert v-if="currentStatus === 'CANDIDATES_READY' && previewCandidate" class="preview-alert" title="候选预览（只读）" type="info" :closable="false">
-        <pre>{{ formatJson(previewCandidate.preview || previewCandidate.schedule || previewCandidate) }}</pre>
+        <pre>{{ formatJson(previewDiff) }}</pre>
+      </el-alert>
+      <el-alert v-if="currentStatus === 'CANDIDATES_READY' && modelExplanation" class="preview-alert" title="模型筛选的真实指标（仅供参考）" type="info" :closable="false">
+        <p v-for="fact in modelExplanation.facts" :key="fact.code">{{ fact.text }}</p>
       </el-alert>
     </el-card>
 
@@ -485,8 +616,9 @@ p { margin: 0; color: #84909a; }
 .request-card :deep(.el-select), .offering-select { width: min(720px, 100%); }
 .workflow-section { margin-top: 22px; }
 .clarification-list { margin: 0 0 16px; padding: 12px 12px 12px 30px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: var(--el-fill-color-light); }
-.reply-box { display: flex; align-items: flex-start; gap: 12px; max-width: 900px; }
-.reply-box .el-textarea { flex: 1; }
+.reply-box { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; max-width: 900px; }
+.reply-box .el-textarea { width: 100%; }
+.reply-box ol { margin: 8px 0 0; padding-left: 26px; }
 .json-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 pre { margin: 0; max-height: 320px; overflow: auto; padding: 12px; white-space: pre-wrap; word-break: break-word; border-radius: 4px; background: #f6f8fa; color: #334155; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .generation-row { justify-content: flex-start; }

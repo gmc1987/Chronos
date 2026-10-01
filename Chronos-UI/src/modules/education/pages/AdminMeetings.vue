@@ -177,8 +177,6 @@ async function save() {
       roomId: needsRoom.value ? form.roomId : null,
       joinUrl: needsOnline.value ? form.joinUrl : null,
       meetingProvider: needsOnline.value ? form.meetingProvider : null,
-      externalMeetingId: needsOnline.value ? form.externalMeetingId : null,
-      onlineAccessCode: needsOnline.value ? form.onlineAccessCode : null,
     }
     await (form.id ? updateMeeting(form.id, payload) : createMeeting(payload))
     dialogVisible.value = false
@@ -331,9 +329,12 @@ onMounted(load)
         </el-form-item>
         <template v-if="needsOnline">
           <el-form-item label="会议平台"><el-input v-model="form.meetingProvider" placeholder="腾讯会议、钉钉、Teams 等" /></el-form-item>
-          <el-form-item label="第三方会议号"><el-input v-model="form.externalMeetingId" /></el-form-item>
           <el-form-item label="加入链接"><el-input v-model="form.joinUrl" placeholder="https://" /></el-form-item>
-          <el-form-item label="入会密码"><el-input v-model="form.onlineAccessCode" /></el-form-item>
+          <el-alert
+            title="第三方会议凭据由集成中心托管，会议页面不展示 credential 或入会密码。"
+            type="info"
+            :closable="false"
+          />
         </template>
         <el-form-item label="参会人">
           <el-select v-model="form.participantUsernames" multiple filterable collapse-tags :max-collapse-tags="4">

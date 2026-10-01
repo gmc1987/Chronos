@@ -4,6 +4,9 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -31,17 +34,6 @@ public class HomeSchoolService {
 	private final IAuditLogService audit;
 	private final DomainEventOutboxService domainEvents;
 
-	public HomeSchoolService(ParentAccountBindingRepository bindings, HomeNoticeRepository notices,
-			HomeNoticeTargetRepository targets, ParentProfileRepository parents,
-			StudentProfileRepository students, StudentGuardianRepository guardians,
-			AdministrativeClassRepository classes, EducationDataScopeService scopeService) {
-		this.bindings = bindings; this.notices = notices; this.targets = targets; this.parents = parents;
-		this.students = students; this.guardians = guardians; this.classes = classes;
-		this.scopeService = scopeService;
-		this.audit = null;
-		this.domainEvents = null;
-	}
-
 	@Autowired
 	public HomeSchoolService(ParentAccountBindingRepository bindings, HomeNoticeRepository notices,
 			HomeNoticeTargetRepository targets, ParentProfileRepository parents,
@@ -55,6 +47,11 @@ public class HomeSchoolService {
 
 	public List<ParentBindingResponse> listBindings() {
 		return bindings.findAllByOrderByCreateTimeDesc().stream().map(this::binding).toList();
+	}
+
+	public Page<ParentBindingResponse> listBindings(int page, int size) {
+		PageRequest request = PageRequest.of(Math.max(0, page), boundedSize(size));
+		return bindings.findAll(request).map(this::binding);
 	}
 
 	@Transactional
@@ -98,14 +95,29 @@ public class HomeSchoolService {
 				.map(this::notice).toList();
 	}
 
+	public Page<NoticeResponse> listNotices(String username, int page, int size) {
+		List<NoticeResponse> visible = listNotices(username);
+		PageRequest request = PageRequest.of(Math.max(0, page), boundedSize(size));
+		int from = Math.min((int) request.getOffset(), visible.size());
+		int to = Math.min(from + request.getPageSize(), visible.size());
+		return new PageImpl<>(visible.subList(from, to), request, visible.size());
+	}
+
 	@Transactional
 	public NoticeResponse createNotice(NoticeCommand command, String username) {
 		if (command == null || command.classId() == null || command.title() == null
-				|| command.content() == null) throw new IllegalArgumentException("通知内容不完整");
+				|| command.content() == null || command.title().isBlank()
+				|| command.content().isBlank()) throw new IllegalArgumentException("通知内容不完整");
+		if (command.expireAt() != null && !command.expireAt().isAfter(LocalDateTime.now())) {
+			throw new IllegalArgumentException("通知过期时间必须晚于当前时间");
+		}
 		EducationDataScope scope = scopeService.resolve(username);
 		scopeService.assertClassAccess(scope, command.classId());
+		AdministrativeClass administrativeClass = classes.findById(command.classId())
+				.orElseThrow(() -> new IllegalArgumentException("行政班不存在"));
+		String schoolId = scopeService.requireSchoolForCampus(scope, administrativeClass.getCampusId());
 		HomeNotice value = new HomeNotice();
-		value.setSchoolId(command.schoolId()); value.setClassId(command.classId());
+		value.setSchoolId(schoolId); value.setClassId(command.classId());
 		value.setTitle(command.title()); value.setContent(command.content());
 		value.setReceiptRequired(Boolean.TRUE.equals(command.receiptRequired()));
 		value.setExpireAt(command.expireAt()); value.setPublisherUsername(username);
@@ -118,6 +130,12 @@ public class HomeSchoolService {
 		EducationDataScope scope = scopeService.resolve(username);
 		scopeService.assertClassAccess(scope, notice.getClassId());
 		if ("PUBLISHED".equals(notice.getStatus())) return notice(notice);
+		if (!"DRAFT".equals(notice.getStatus())) {
+			throw new IllegalStateException("通知当前状态不可发布");
+		}
+		if (notice.getExpireAt() != null && !notice.getExpireAt().isAfter(LocalDateTime.now())) {
+			throw new IllegalStateException("通知已过期，无法发布");
+		}
 		List<String> studentIds = students.findByAdministrativeClassId(notice.getClassId()).stream()
 				.filter(s -> "ACTIVE".equals(s.getEnrollmentStatus())).map(StudentProfile::getId).toList();
 		List<StudentGuardianRelation> relations = studentIds.stream()
@@ -126,22 +144,27 @@ public class HomeSchoolService {
 		Set<String> parentIds = relations.stream().map(StudentGuardianRelation::getParentId).collect(Collectors.toSet());
 		Set<String> bound = bindings.findByParentIdInAndStatus(new ArrayList<>(parentIds), "ACTIVE").stream()
 				.map(ParentAccountBinding::getParentId).collect(Collectors.toSet());
+		int targetCount = 0;
 		for (StudentGuardianRelation relation : relations) {
 			if (bound.contains(relation.getParentId())) {
-				HomeNoticeTarget target = new HomeNoticeTarget();
-				target.setNoticeId(notice.getId()); target.setStudentId(relation.getStudentId());
-				target.setParentId(relation.getParentId()); targets.save(target);
+				if (targets.findByNoticeIdAndStudentIdAndParentId(notice.getId(),
+						relation.getStudentId(), relation.getParentId()).isEmpty()) {
+					HomeNoticeTarget target = new HomeNoticeTarget();
+					target.setNoticeId(notice.getId()); target.setStudentId(relation.getStudentId());
+					target.setParentId(relation.getParentId()); targets.save(target);
+					targetCount++;
+				}
 			}
 		}
 		notice.setStatus("PUBLISHED"); notice.setPublishAt(LocalDateTime.now()); notice.setPublisherUsername(username);
 		NoticeResponse response = notice(notices.save(notice));
 		if (audit != null) audit.log(username, "EDU_HOME_NOTICE_PUBLISH",
-				"noticeId=" + notice.getId() + ",targetCount=" + relations.size());
+				"noticeId=" + notice.getId() + ",targetCount=" + targetCount);
 		if (domainEvents != null) {
 			HomeNoticePublishedV1 event = new HomeNoticePublishedV1(
 					"HOME_NOTICE_PUBLISHED:" + notice.getId(),
 					"HomeNoticePublishedV1", java.time.OffsetDateTime.now(), 1,
-					notice.getId(), notice.getClassId(), relations.size(), username);
+					notice.getId(), notice.getClassId(), targetCount, username);
 			domainEvents.enqueue(event.eventType(), notice.getId(), event.eventId(), event);
 		}
 		return response;
@@ -192,6 +215,12 @@ public class HomeSchoolService {
 				.toList();
 		HomeNoticeTarget target = matchingTargets.stream().findFirst()
 				.orElseThrow(() -> new AccessDeniedException("无权回执该通知"));
+		if (!"PUBLISHED".equals(notice.getStatus())) {
+			throw new IllegalStateException("通知尚未发布");
+		}
+		if (!Boolean.TRUE.equals(notice.getReceiptRequired())) {
+			throw new IllegalStateException("该通知无需回执");
+		}
 		if (notice.getExpireAt() != null && notice.getExpireAt().isBefore(LocalDateTime.now()))
 			throw new IllegalStateException("通知已过期，只读不可回执");
 		for (HomeNoticeTarget current : matchingTargets) {
@@ -218,6 +247,9 @@ public class HomeSchoolService {
 		ParentProfile p = parents.findById(b.getParentId()).orElseThrow(() -> new AccessDeniedException("家长档案不存在"));
 		if (!"ACTIVE".equals(p.getStatus())) throw new AccessDeniedException("家长档案已失效");
 		return b;
+	}
+	private int boundedSize(int size) {
+		return Math.min(Math.max(size, 1), 100);
 	}
 	private boolean canClass(EducationDataScope scope, String classId) {
 		try { scopeService.assertClassAccess(scope, classId); return true; } catch (AccessDeniedException ex) { return false; }

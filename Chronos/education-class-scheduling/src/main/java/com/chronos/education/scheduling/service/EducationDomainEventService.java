@@ -5,11 +5,10 @@ import com.chronos.education.scheduling.model.EducationDomainOutbox;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
-import java.util.List;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,16 +18,49 @@ public class EducationDomainEventService {
 	private static final String WRONG_ANSWER_CONFIRMED = "WrongAnswerConfirmed";
 	private static final int MAX_ATTEMPTS = 8;
 	private final EducationDomainOutboxRepository outbox;
-	private final ResearchErrorService errorRecords;
 	private final ObjectMapper json;
+	private final EducationDomainEventDeliveryService delivery;
+
+	@Autowired
+	public EducationDomainEventService(
+			EducationDomainOutboxRepository outbox,
+			ObjectMapper json,
+			EducationDomainEventDeliveryService delivery) {
+		this.outbox = outbox;
+		this.json = json;
+		this.delivery = delivery;
+	}
 
 	public EducationDomainEventService(
 			EducationDomainOutboxRepository outbox,
 			ResearchErrorService errorRecords,
 			ObjectMapper json) {
-		this.outbox = outbox;
-		this.errorRecords = errorRecords;
-		this.json = json;
+		this(
+				outbox,
+				json,
+				new EducationDomainEventDeliveryService(errorRecords, json, null));
+	}
+
+	@Transactional
+	public EducationDomainOutbox enqueueGradeEvent(String eventType, String aggregateId,
+			String eventId, Object event, String actor) {
+		return outbox.findByEventId(eventId).orElseGet(() -> {
+			try {
+				EducationDomainOutbox value = new EducationDomainOutbox();
+				LocalDateTime now = LocalDateTime.now();
+				value.setCreateBy(actor);
+				value.setCreateTime(now);
+				value.setEventId(eventId);
+				value.setEventType(eventType);
+				value.setAggregateId(aggregateId);
+				value.setPayloadJson(json.writeValueAsString(event));
+				value.setActor(actor);
+				value.setNextAttemptAt(now);
+				return outbox.save(value);
+			} catch (Exception exception) {
+				throw new IllegalStateException("成绩事件写入 Outbox 失败", exception);
+			}
+		});
 	}
 
 	@Transactional
@@ -60,7 +92,7 @@ public class EducationDomainEventService {
 	public void dispatch() {
 		for (EducationDomainOutbox event : outbox.lockDispatchBatch(LocalDateTime.now())) {
 			try {
-				deliver(event);
+				delivery.deliver(event);
 				event.setStatus("PROCESSED");
 				event.setProcessedAt(LocalDateTime.now());
 				event.setLastError(null);
@@ -111,20 +143,6 @@ public class EducationDomainEventService {
 			throw new IllegalStateException("只有死信事件可以执行该操作");
 		}
 		return event;
-	}
-
-	private void deliver(EducationDomainOutbox event) throws Exception {
-		if (!WRONG_ANSWER_CONFIRMED.equals(event.getEventType())) {
-			throw new IllegalArgumentException("不支持的教育领域事件：" + event.getEventType());
-		}
-		WrongAnswerConfirmed payload = json.readValue(
-				event.getPayloadJson(),
-				WrongAnswerConfirmed.class);
-		var authentication = UsernamePasswordAuthenticationToken.authenticated(
-				event.getActor(),
-				"",
-				List.of());
-		errorRecords.onTrustedWrongAnswerConfirmed(payload, authentication);
 	}
 
 	private String truncate(String value, int maxLength) {

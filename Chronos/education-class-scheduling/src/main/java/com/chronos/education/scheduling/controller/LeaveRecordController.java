@@ -4,6 +4,7 @@ import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.LeaveRequestRecord;
 import com.chronos.education.scheduling.service.LeaveRecordService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.model.workflow.WorkflowInstance;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.util.List;
@@ -27,6 +28,14 @@ public class LeaveRecordController {
 	@PreAuthorize("isAuthenticated()")
 	public ResultData<List<LeaveRequestRecord>> mine(Principal principal) {
 		return ok(service.mine(principal.getName()));
+	}
+
+	@PostMapping("/portal/education/leaves")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<WorkflowInstance> start(
+			@RequestBody Map<String, Object> command,
+			Principal principal) {
+		return ok(service.startLeave(principal.getName(), command));
 	}
 
 	@PostMapping("/portal/education/leaves/{id}/cancellation")

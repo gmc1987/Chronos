@@ -1,8 +1,10 @@
 package com.chronos.education.supervision.dto;
 
 import jakarta.validation.constraints.*;
+import jakarta.validation.Valid;
 import java.time.*;
 import java.util.*;
+import com.chronos.education.supervision.service.SupervisionCheckInProofProvider.Proof;
 
 public final class SupervisionDtos {
 	private SupervisionDtos() {}
@@ -21,9 +23,9 @@ public final class SupervisionDtos {
 			@Size(max = 64) String campusId) {}
 
 	public record EvaluationCommand(
-			@NotBlank String formTemplateId,
-			@NotBlank String formSnapshotJson,
-			@NotBlank String scheduleContextSnapshotJson) {}
+			@NotBlank String formTemplateId) {}
+
+	public record CheckInCommand(@NotNull @Valid Proof proof) {}
 
 	public record IssueCommand(
 			@NotBlank @Size(max = 16) String severity,

@@ -121,7 +121,32 @@ public class PortalServiceImpl implements IPortalService {
         UserPortalPreference preference = preferenceRepository.findByUsername(username).orElse(null);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("theme", preference == null ? "LIGHT" : preference.getTheme());
-        Object raw=parseLayout(preference == null ? DEFAULT_LAYOUT : preference.getLayoutJson());List<String> allowedCodes=widgets(username).stream().map(w->String.valueOf(w.get("code"))).toList();List<String> layout=new ArrayList<>();if(raw instanceof List<?> list)for(Object item:list){String code=String.valueOf(item);if(allowedCodes.contains(code)&&!layout.contains(code))layout.add(code);}if(preference==null)for(String code:allowedCodes)if(!layout.contains(code))layout.add(code);result.put("layout",layout);
+        Object raw = parseLayout(preference == null ? DEFAULT_LAYOUT : preference.getLayoutJson());
+        // Earlier showcase data used an object containing widgets; accept it while
+        // keeping the API response and newly saved preferences as a flat code list.
+        if (raw instanceof Map<?, ?> legacyLayout) {
+            raw = legacyLayout.get("widgets");
+        }
+        List<String> allowedCodes = widgets(username).stream()
+                .map(widget -> String.valueOf(widget.get("code")))
+                .toList();
+        List<String> layout = new ArrayList<>();
+        if (raw instanceof List<?> codes) {
+            for (Object item : codes) {
+                String code = String.valueOf(item);
+                if (allowedCodes.contains(code) && !layout.contains(code)) {
+                    layout.add(code);
+                }
+            }
+        }
+        if (preference == null) {
+            for (String code : allowedCodes) {
+                if (!layout.contains(code)) {
+                    layout.add(code);
+                }
+            }
+        }
+        result.put("layout", layout);
         return result;
     }
 

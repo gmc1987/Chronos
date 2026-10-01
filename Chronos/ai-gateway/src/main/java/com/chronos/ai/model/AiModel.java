@@ -3,10 +3,12 @@ package com.chronos.ai.model;
 import com.chronos.model.pojo.BaseEntity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -49,10 +51,22 @@ public class AiModel extends BaseEntity {
 	 * The key is accepted when a command is deserialized, but is never included
 	 * when an entity is serialized as a response.
 	 */
+	@Transient
 	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
 	@Size(max = 512)
-	@Column(name = "api_key", length = 512)
 	private String apiKey;
+
+	@JsonIgnore
+	@Column(name = "api_key_ciphertext", length = 2048)
+	private String apiKeyCiphertext;
+
+	@JsonIgnore
+	@Column(name = "api_key_key_version", length = 64)
+	private String apiKeyKeyVersion;
+
+	@JsonIgnore
+	@Column(name = "api_key_fingerprint", length = 128)
+	private String apiKeyFingerprint;
 
 	@Size(max = 255)
 	@Column(name = "signature_handler", length = 255)

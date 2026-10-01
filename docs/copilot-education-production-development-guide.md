@@ -107,8 +107,8 @@ com.chronos.education.<domain>.dao
 以下决策已经由总架构确认，Copilot不再将其作为编码阻塞项：
 
 1. `ExamItemScore.candidateId` 通过 `ExamCandidate.id` 稳定关联，学生标识读取 `ExamCandidate.studentId`。不得根据姓名、座位号或学号文本猜测学生。
-2. 当前代码尚未发布考试成绩确认领域事件。成绩中心第一片不消费考试成绩；后续由考试中心增加显式“确认成绩”命令并发布 `ExamScoresConfirmedV1`。
-3. 当前作业中心没有 `HomeworkGradesPublished` 事件，`publishGrades` 只更新 `gradesPublished`。成绩中心第一片不消费该事件；后续由作业中心发布 `HomeworkGradesPublishedV1`。
+2. 考试中心现已提供显式“确认成绩”命令，并从已确认的逐题成绩持久化来源发布 `ExamScoresConfirmedV1`。当前 `ExamSession` 没有稳定的 `offeringId` 来源，因此事件中的课程归属保持 unavailable，不得从 `subjectId` 推断。
+3. 作业中心现已在 `publishGrades` 的事务内发布 `HomeworkGradesPublishedV1`，字段来自已持久化的作业、提交和评分记录；重复发布使用稳定事件 ID 幂等。
 4. 现有 `EDU_TEACHING_CONTENT_REVIEW` 只用于教学内容审核，不能复用为成绩审核。成绩中心新建独立流程定义 `EDU_GRADEBOOK_REVIEW`。
 5. 权限按录入提交、审核、发布三类职责分离。默认禁止提交人审核本人数据，发布人使用独立权限；小型学校可给同一角色授予审核和发布权限，但同一成绩册仍不得自审。
 6. `CourseOffering` 已包含 `offeringMode` 和 `campusId`，并通过 `TeachingClassMember` 表达实际学生范围，足以支持第一片普通班、走班、合班和校区数据范围。它目前只支持一名主教师；协同教师不在成绩中心第一片扩展。
@@ -132,7 +132,7 @@ eventId eventType occurredAt payloadVersion
 assignmentId offeringId studentId score maxScore publishedAt
 ```
 
-成绩中心第一片只实现 MANUAL 来源的成绩项目和人工录入。事件DTO、消费者接口和幂等表可以预留，但不得伪造考试或作业事件，也不得直接修改考试、作业核心服务。
+成绩中心第一片只实现 MANUAL 来源的成绩项目和人工录入。数据中心只消费教育领域 Outbox 中的正式事件，并以事件 ID 投影到事实表；没有稳定校区/课程归属的维度必须标记 unavailable，不得伪造统计或直接修改考试、作业核心服务。
 
 `edu_gradebook_student` 至少保存：`gradebook_id,student_id,student_no,student_name,administrative_class_id,enrollment_status,source_member_id,enrolled_at,withdrawn_at,snapshot_version,snapshot_hash`。其中姓名和学号是创建成绩册时的追溯快照，不作为实时学生档案的事实来源。
 

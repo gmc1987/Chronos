@@ -8,6 +8,9 @@ public interface IRefreshTokenService {
   
   RefreshToken findByToken(String paramString);
   
+  RefreshToken rotate(String presentedToken, String username, String replacementToken,
+      LocalDateTime replacementExpiry);
+
   void revoke(String paramString);
   void revokeAll(String username);
 }

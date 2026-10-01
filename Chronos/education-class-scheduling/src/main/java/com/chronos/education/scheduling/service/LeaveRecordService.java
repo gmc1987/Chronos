@@ -2,15 +2,19 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.LeaveRequestRecordRepository;
+import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.LeaveRequestRecord;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.workflow.WorkflowService;
+import com.chronos.model.workflow.WorkflowInstance;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,15 +24,64 @@ import org.springframework.transaction.annotation.Transactional;
 public class LeaveRecordService {
 	private final LeaveRequestRecordRepository records;
 	private final EducationUserBindingRepository bindings;
+	private final ParentAccountBindingRepository parentBindings;
+	private final EducationApplicantResolver applicants;
+	private final WorkflowService workflows;
 	private final IAuditLogService audit;
 
 	public LeaveRecordService(
 			LeaveRequestRecordRepository records,
 			EducationUserBindingRepository bindings,
+			ParentAccountBindingRepository parentBindings,
+			EducationApplicantResolver applicants,
+			WorkflowService workflows,
 			IAuditLogService audit) {
 		this.records = records;
 		this.bindings = bindings;
+		this.parentBindings = parentBindings;
+		this.applicants = applicants;
+		this.workflows = workflows;
 		this.audit = audit;
+	}
+
+	@Transactional
+	public WorkflowInstance startLeave(String username, Map<String, Object> command) {
+		String leaveType = required(text(command, "leaveType"), "请假类型不能为空");
+		LocalDate start = LocalDate.parse(required(text(command, "startDate"), "开始日期不能为空"));
+		LocalDate end = LocalDate.parse(required(text(command, "endDate"), "结束日期不能为空"));
+		if (end.isBefore(start)) throw new IllegalArgumentException("结束日期不能早于开始日期");
+		String reason = required(text(command, "reason"), "请假原因不能为空");
+		EducationUserBinding identity = bindings.findByUsernameAndStatusOrderByProfileType(username, "ACTIVE").stream()
+				.filter(value -> "TEACHER".equals(value.getProfileType()) || "STUDENT".equals(value.getProfileType()))
+				.findFirst().orElse(null);
+		String applicantType;
+		String studentId = text(command, "studentId");
+		if (identity != null) {
+			applicantType = identity.getProfileType();
+			studentId = "STUDENT".equals(applicantType) ? identity.getProfileId() : null;
+			applicants.resolve(username, applicantType, studentId);
+		} else {
+			parentBindings.findByUsernameAndStatus(username, "ACTIVE")
+					.orElseThrow(() -> new AccessDeniedException("当前账号未绑定教师、学生或家长档案"));
+			applicantType = "STUDENT";
+			studentId = applicants.resolve(username, applicantType, studentId);
+		}
+		String flowCode = "TEACHER".equals(applicantType)
+				? "EDU_TEACHER_LEAVE_APPROVAL" : "EDU_STUDENT_LEAVE_APPROVAL";
+		Map<String, Object> form = new LinkedHashMap<>();
+		form.put("leaveType", leaveType);
+		form.put("startDate", start.toString());
+		form.put("endDate", end.toString());
+		form.put("reason", reason);
+		if ("STUDENT".equals(applicantType)) form.put("studentId", studentId);
+		WorkflowInstance instance = workflows.startByCode(
+				flowCode,
+				"EDU_LEAVE:" + UUID.randomUUID(),
+				form,
+				username);
+		audit.log(username, "EDUCATION_LEAVE_SUBMIT",
+				"workflowInstanceId=" + instance.getId() + ",applicantType=" + applicantType);
+		return instance;
 	}
 
 	@Transactional(readOnly = true)
@@ -130,5 +183,10 @@ public class LeaveRecordService {
 			throw new IllegalArgumentException(message);
 		}
 		return value.trim();
+	}
+
+	private String text(Map<String, Object> values, String key) {
+		Object value = values == null ? null : values.get(key);
+		return value == null ? null : String.valueOf(value);
 	}
 }
