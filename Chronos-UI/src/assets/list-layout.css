@@ -1,0 +1,59 @@
+/* Shared list layout, loaded after page themes and Element Plus styles. */
+#app .el-table {
+  --el-table-bg-color: #fff;
+  --el-table-tr-bg-color: #fff;
+  --el-table-row-hover-bg-color: #f0f8f6;
+}
+
+#app .el-table__body tr,
+#app .el-table__body tr > td.el-table__cell,
+#app .el-table--striped .el-table__body tr.el-table__row--striped > td.el-table__cell {
+  background-color: #fff;
+}
+
+#app .el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+  background-color: #f0f8f6;
+}
+
+#app .el-pagination {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+  margin: 10px 0 0;
+}
+
+#app :is(.pager, .pagination, .incident-pagination):has(> .el-pagination) {
+  display: flex;
+  justify-content: flex-end;
+  margin: 10px 0 0;
+}
+
+#app :is(.pager, .pagination, .incident-pagination) > .el-pagination {
+  width: auto;
+  margin: 0;
+}
+
+/* Generic admin pages have a 20px flex gap between direct children. */
+#app .admin-page > .el-table + :is(.el-pagination, .pager, .pagination) {
+  margin-top: -10px;
+}
+
+#app .el-table .adaptive-action-column .cell {
+  white-space: nowrap;
+  overflow: visible;
+}
+
+#app .adaptive-action-buttons {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: none;
+  white-space: nowrap;
+  gap: 8px;
+}
+
+#app .adaptive-action-buttons .el-button {
+  flex: none;
+  white-space: nowrap;
+  margin-left: 0;
+}

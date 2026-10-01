@@ -21,13 +21,13 @@
       <el-table-column prop="title" label="标题" width="210" />
       <el-table-column prop="content" label="内容" />
       <el-table-column prop="createTime" label="时间" width="190" />
-      <el-table-column label="操作" width="150">
+      <AdaptiveActionColumn label="操作" width="150">
         <template #default="{ row }">
           <el-button v-if="!row.readAt" link type="primary" @click="markRead(row)">标记已读</el-button>
           <el-button v-if="row.instanceId" link @click="$router.push(`/portal/workflow-instances/${row.instanceId}/forms`)">查看流程</el-button>
           <el-button v-else-if="isScheduleNotification(row)" link @click="openSchedule(row)">查看课表</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-pagination
       v-model:current-page="page"

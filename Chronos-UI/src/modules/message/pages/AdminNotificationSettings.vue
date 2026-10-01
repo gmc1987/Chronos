@@ -19,7 +19,7 @@
           <el-table-column label="每分钟上限"><template #default="scope"><el-input-number v-model="scope.row.maxPerMinute" :min="1" /></template></el-table-column>
           <el-table-column label="每日上限"><template #default="scope"><el-input-number v-model="scope.row.maxPerDay" :min="1" /></template></el-table-column>
           <el-table-column label="最小间隔（秒）"><template #default="scope"><el-input-number v-model="scope.row.minIntervalSeconds" :min="0" /></template></el-table-column>
-          <el-table-column label="操作" width="100"><template #default="scope"><el-button link type="primary" @click="savePolicy(scope.row)">保存</el-button></template></el-table-column>
+          <AdaptiveActionColumn label="操作" width="100"><template #default="scope"><el-button link type="primary" @click="savePolicy(scope.row)">保存</el-button></template></AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="消息模板">
@@ -29,7 +29,7 @@
           <el-table-column prop="templateName" label="模板名称" />
           <el-table-column prop="channel" label="渠道" width="120" />
           <el-table-column label="状态" width="100"><template #default="scope">{{ scope.row.enabled ? '启用' : '停用' }}</template></el-table-column>
-          <el-table-column label="操作" width="150"><template #default="scope"><el-button link @click="openTemplate(scope.row)">编辑</el-button><el-button link type="danger" @click="removeTemplate(scope.row)">删除</el-button></template></el-table-column>
+          <AdaptiveActionColumn label="操作" width="150"><template #default="scope"><el-button link @click="openTemplate(scope.row)">编辑</el-button><el-button link type="danger" @click="removeTemplate(scope.row)">删除</el-button></template></AdaptiveActionColumn>
         </el-table>
         <el-pagination v-model:current-page="templatePage" v-model:page-size="templatePageSize" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" :total="templateTotal" @size-change="changeTemplatePageSize" @current-change="loadTemplates" />
       </el-tab-pane>
@@ -40,11 +40,11 @@
           <el-table-column prop="channel" label="渠道" width="100" />
           <el-table-column prop="attemptCount" label="重试次数" width="100" />
           <el-table-column prop="lastError" label="最后错误" min-width="260" show-overflow-tooltip />
-          <el-table-column label="操作" width="100">
+          <AdaptiveActionColumn label="操作" width="100">
             <template #default="scope">
               <el-button link type="primary" @click="retryDelivery(scope.row)">重新投递</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <el-pagination v-model:current-page="deadPage" v-model:page-size="deadPageSize" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" :total="deadTotal" @size-change="changeDeadPageSize" @current-change="loadDeadDeliveries" />
       </el-tab-pane>

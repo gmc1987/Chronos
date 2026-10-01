@@ -31,7 +31,7 @@
               <el-tag :type="slaType(row.slaStatus)">{{ slaText(row.slaStatus) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="390">
+          <AdaptiveActionColumn label="操作" width="390">
             <template #default="{ row }">
               <el-button v-if="row.claimable && canClaim" link type="primary" @click="claim(row)">认领</el-button>
               <template v-else>
@@ -60,7 +60,7 @@
                 </template>
               </template>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
@@ -71,9 +71,9 @@
           <el-table-column prop="nodeName" label="节点" />
           <el-table-column prop="status" label="结果" width="130" />
           <el-table-column prop="comment" label="意见" />
-          <el-table-column label="操作" width="90">
+          <AdaptiveActionColumn label="操作" width="90">
             <template #default="{ row }"><el-button link @click="openForm(row)">查看</el-button></template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
@@ -84,13 +84,13 @@
           <el-table-column prop="status" label="状态" width="130" />
           <el-table-column prop="currentNodeKey" label="当前节点" />
           <el-table-column prop="createTime" label="发起时间" width="190" />
-          <el-table-column label="操作" width="210">
+          <AdaptiveActionColumn label="操作" width="210">
             <template #default="{ row }">
               <el-button link type="primary" @click="openInstance(row)">查看</el-button>
               <el-button v-if="canRemind && row.status === 'RUNNING'" link type="warning" @click="remind(row)">催办</el-button>
               <el-button v-if="canWithdraw && row.status === 'RUNNING'" link type="danger" @click="withdraw(row)">撤回</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
     </el-tabs>

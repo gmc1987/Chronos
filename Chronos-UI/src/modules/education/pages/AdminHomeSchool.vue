@@ -85,9 +85,9 @@ onMounted(load)
           <el-table-column prop="username" label="登录账号" />
           <el-table-column prop="status" label="状态" />
           <el-table-column prop="verifiedAt" label="核验时间" />
-          <el-table-column label="操作" width="120">
+          <AdaptiveActionColumn label="操作" width="120">
             <template #default="{ row }"><el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="invalidate(row)">解绑</el-button></template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="班级通知" name="notices">
@@ -96,12 +96,12 @@ onMounted(load)
           <el-table-column prop="className" label="班级" />
           <el-table-column prop="status" label="状态" />
           <el-table-column prop="publishAt" label="发布时间" />
-          <el-table-column label="操作" width="180">
+          <AdaptiveActionColumn label="操作" width="180">
             <template #default="{ row }">
               <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="publish(row)">发布</el-button>
               <el-button v-if="row.status === 'PUBLISHED'" link @click="showReceipts(row)">查看回执</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <el-card v-if="selectedNotice" class="receipts">
           <template #header>{{ selectedNotice.title }} · 回执</template>

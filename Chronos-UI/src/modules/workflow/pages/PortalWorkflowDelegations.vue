@@ -18,11 +18,11 @@
           <el-table-column prop="startAt" label="开始时间" />
           <el-table-column prop="endAt" label="结束时间" />
           <el-table-column prop="reason" label="原因" />
-          <el-table-column label="操作" width="90">
+          <AdaptiveActionColumn label="操作" width="90">
             <template #default="{ row }">
               <el-button link type="danger" @click="remove(row)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="委托给我的">

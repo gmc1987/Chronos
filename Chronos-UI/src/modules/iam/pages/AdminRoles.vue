@@ -12,13 +12,13 @@
       <el-table-column prop="roleName" label="角色名称" />
       <el-table-column prop="roleCode" label="角色编码" />
       <el-table-column prop="description" label="描述" />
-      <el-table-column label="操作" width="220">
+      <AdaptiveActionColumn label="操作" width="220">
         <template #default="scope">
           <el-button v-permission="['iam:role:update','iam:role:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
           <!-- <el-button size="small" @click="openAuth(scope.row)">授权</el-button> -->
           <el-button v-permission="['iam:role:delete','iam:role:manage']" size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <div class="pager">

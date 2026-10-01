@@ -110,7 +110,7 @@
               ></el-table-column
             >
             <el-table-column prop="notice.receiptDeadline" label="截止时间" width="180" />
-            <el-table-column label="操作" width="90"
+            <AdaptiveActionColumn label="操作" width="90"
               ><template #default="s"
                 ><el-button
                   v-if="s.row.notice.status === 'DRAFT'"
@@ -119,7 +119,7 @@
                   @click="publishNotice(s.row.notice)"
                   >发布</el-button
                 ></template
-              ></el-table-column
+              ></AdaptiveActionColumn
             >
           </el-table>
         </el-card>

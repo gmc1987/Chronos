@@ -106,13 +106,13 @@ onMounted(load)
         <el-table-column label="报到状态" width="120">
           <template #default="scope">{{ scope.row.checkedInAt ? '已报到' : '未报到' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="250">
+        <AdaptiveActionColumn label="操作" width="250">
           <template #default="scope">
             <el-button v-if="!scope.row.acknowledgedAt" link @click="acknowledge(scope.row)">确认收到</el-button>
             <el-button v-if="!scope.row.checkedInAt" link type="primary" @click="checkIn(scope.row)">报到</el-button>
             <el-button v-if="scope.row.assignmentStatus === 'ASSIGNED'" link @click="requestChange(scope.row)">申请调换</el-button>
           </template>
-        </el-table-column>
+        </AdaptiveActionColumn>
       </el-table>
     </el-card>
     <el-card shadow="never">

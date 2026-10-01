@@ -286,7 +286,7 @@ onMounted(load)
       <el-table-column label="状态" width="140">
         <template #default="scope"><el-tag>{{ statusLabels[scope.row.meeting.status] || scope.row.meeting.status }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="操作" width="300" fixed="right">
+      <AdaptiveActionColumn label="操作" width="300" fixed="right">
         <template #default="scope">
           <el-button v-if="['DRAFT', 'REJECTED', 'PUBLISHED'].includes(scope.row.meeting.status)" link type="primary" @click="openDialog(scope.row)">编辑</el-button>
           <el-button v-if="['PUBLISHED', 'COMPLETED'].includes(scope.row.meeting.status)" link type="primary" @click="openExecution(scope.row)">会议执行</el-button>
@@ -298,7 +298,7 @@ onMounted(load)
           <el-button v-if="['PENDING_ROOM', 'PUBLISHED'].includes(scope.row.meeting.status)" link type="danger" @click="cancel(scope.row)">取消</el-button>
           <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.meeting.status)" link type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-pagination
       v-model:current-page="page"
@@ -353,12 +353,12 @@ onMounted(load)
           </el-upload>
           <el-table :data="activeMeeting.materials || []" border class="execution-table">
             <el-table-column prop="title" label="材料名称" min-width="260" />
-            <el-table-column label="操作" width="150">
+            <AdaptiveActionColumn label="操作" width="150">
               <template #default="scope">
                 <el-button link type="primary" @click="downloadMaterial(scope.row)">下载</el-button>
                 <el-button link type="danger" @click="removeMaterial(scope.row)">删除</el-button>
               </template>
-            </el-table-column>
+            </AdaptiveActionColumn>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="会议纪要">

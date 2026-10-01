@@ -19,13 +19,13 @@
       <el-table-column prop="methodType" label="Method" width="100" />
       <el-table-column prop="contentType" label="content-type" width="200" />
       <el-table-column prop="timeoutMs" label="超时（ms）" width="120"/>
-      <el-table-column label="操作" width="240">
+      <AdaptiveActionColumn label="操作" width="240">
         <template #default="scope">
           <el-button size="small" @click.stop="openEdit(scope.row)">编辑</el-button>
           <el-button size="small" @click.stop="openParams(scope.row)">参数配置</el-button>
           <el-button size="small" type="danger" @click.stop="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <div class="pager">

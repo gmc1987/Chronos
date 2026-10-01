@@ -43,7 +43,7 @@
           <template #default="scope">{{ scope.row.expireAt || '永久有效' }}</template>
         </el-table-column>
         <el-table-column prop="readCount" label="阅读数" width="90" />
-        <el-table-column label="操作" width="300" fixed="right">
+        <AdaptiveActionColumn label="操作" width="300" fixed="right">
           <template #default="scope">
             <el-button size="small" @click="openEdit(scope.row)">查看/编辑</el-button>
             <el-button
@@ -90,7 +90,7 @@
               @click="archive(scope.row)"
             >归档</el-button>
           </template>
-        </el-table-column>
+        </AdaptiveActionColumn>
       </el-table>
       <el-pagination
         v-model:current-page="currentPage"
@@ -274,7 +274,7 @@
     <el-dialog v-model="versionDialog" title="版本与操作历史" width="780px">
       <el-table :data="versionRows" max-height="480">
         <el-table-column prop="versionNo" label="版本" width="80" />
-        <el-table-column prop="operation" label="操作" width="170" />
+        <AdaptiveActionColumn prop="operation" label="操作" width="170" />
         <el-table-column prop="createBy" label="操作人" width="140" />
         <el-table-column prop="createTime" label="操作时间" min-width="180" />
         <el-table-column label="处理" width="100">

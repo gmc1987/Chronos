@@ -26,12 +26,12 @@
           <span class="status-tag">{{ scope.row.status === 1 ? '启用' : '禁用' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220">
+      <AdaptiveActionColumn label="操作" width="220">
         <template #default="scope">
           <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
           <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增 Skill' : '编辑 Skill'" class="dark-dialog">

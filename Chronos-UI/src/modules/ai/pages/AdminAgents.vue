@@ -27,12 +27,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="lastUpdateTime" label="更新时间" width="180" />
-      <el-table-column label="操作" width="220">
+      <AdaptiveActionColumn label="操作" width="220">
         <template #default="scope">
           <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
           <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增 Agent' : '编辑 Agent'" width="760px" class="dark-dialog">

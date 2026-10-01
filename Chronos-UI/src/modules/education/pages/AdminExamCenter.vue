@@ -357,7 +357,7 @@ onMounted(() => {
           <el-table-column prop="startDate" label="开始日期" width="120" />
           <el-table-column prop="endDate" label="结束日期" width="120" />
           <el-table-column prop="status" label="状态" width="110" />
-          <el-table-column label="操作" width="100">
+          <AdaptiveActionColumn label="操作" width="100">
             <template #default="scope">
               <el-button
                 v-if="scope.row.status === 'DRAFT'"
@@ -371,7 +371,7 @@ onMounted(() => {
                 type="danger"
                 @click.stop="removePlan(scope.row)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
 
         <template v-if="selectedPlan">
@@ -465,7 +465,7 @@ onMounted(() => {
             <el-table-column prop="startTime" label="开始" width="110" />
             <el-table-column prop="endTime" label="结束" width="110" />
             <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column v-if="editable" label="操作" width="130">
+            <AdaptiveActionColumn v-if="editable" label="操作" width="130">
               <template #default="scope">
                 <el-button
                   v-permission="['education:exam:plan:update', 'education:exam:plan:manage']"
@@ -477,7 +477,7 @@ onMounted(() => {
                   type="danger"
                   @click.stop="removeSession(scope.row)">删除</el-button>
               </template>
-            </el-table-column>
+            </AdaptiveActionColumn>
           </el-table>
           <template v-if="selectedPlan.status !== 'DRAFT' || publishedChanges.length">
             <div class="section-heading"><h3>已发布考试变更记录</h3></div>

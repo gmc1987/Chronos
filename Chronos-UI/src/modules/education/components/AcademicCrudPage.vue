@@ -34,7 +34,7 @@
           {{ displayValue(column, scope.row[column.prop]) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" :width="actionColumnWidth" class-name="crud-actions">
+      <AdaptiveActionColumn label="操作" :width="actionColumnWidth" class-name="crud-actions">
         <template #default="scope">
           <div class="row-actions">
             <el-button
@@ -58,7 +58,7 @@
             <el-button v-if="deleter" link type="danger" @click="remove(scope.row)">删除</el-button>
           </div>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-pagination
       v-model:current-page="page"

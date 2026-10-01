@@ -38,7 +38,7 @@ onMounted(load)
     <el-table v-loading="loading" :data="groups" border @row-click="select">
       <el-table-column prop="className" label="班级" /><el-table-column prop="name" label="群名称" />
       <el-table-column prop="status" label="状态" /><el-table-column prop="memberCount" label="有效成员数" />
-      <el-table-column label="操作" width="220"><template #default="{ row }"><el-button link @click.stop="sync(row)">同步成员</el-button><el-button link @click.stop="toggle(row)">{{ row.status === 'ACTIVE' ? '暂停' : '恢复' }}</el-button></template></el-table-column>
+      <AdaptiveActionColumn label="操作" width="220"><template #default="{ row }"><el-button link @click.stop="sync(row)">同步成员</el-button><el-button link @click.stop="toggle(row)">{{ row.status === 'ACTIVE' ? '暂停' : '恢复' }}</el-button></template></AdaptiveActionColumn>
     </el-table>
     <el-pagination v-model:current-page="page" layout="prev, pager, next" :total="total" :page-size="20" @current-change="load" />
     <el-card v-if="selected" class="detail"><template #header>{{ selected.className }} · 成员与审计</template>

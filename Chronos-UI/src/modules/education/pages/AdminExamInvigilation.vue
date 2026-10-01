@@ -299,7 +299,7 @@ onMounted(() => run(async () => {
       <el-table-column prop="status" label="状态" width="120" />
       <el-table-column prop="acknowledgedAt" label="确认时间" min-width="170" />
       <el-table-column prop="checkedInAt" label="报到时间" min-width="170" />
-      <el-table-column label="操作" width="230">
+      <AdaptiveActionColumn label="操作" width="230">
         <template #default="scope">
           <el-button
             v-if="selectedPlan?.status === 'DRAFT'"
@@ -314,7 +314,7 @@ onMounted(() => run(async () => {
             v-permission="['education:exam:invigilation:manage']"
             link type="danger" @click="markAbsent(scope.row)">登记缺勤</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <div class="section-heading"><h3>本场次机动监考池</h3></div>
@@ -359,14 +359,14 @@ onMounted(() => run(async () => {
       <el-table-column label="科目" min-width="180">
         <template #default="scope">{{ subjectName(scope.row.subjectId) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="120">
+      <AdaptiveActionColumn label="操作" width="120">
         <template #default="scope">
           <el-button
             v-permission="['education:exam:invigilation:manage']"
             link type="danger"
             @click="removeQualification(scope.row.subjectId)">移除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <div class="section-heading">

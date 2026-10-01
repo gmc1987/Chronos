@@ -72,7 +72,7 @@
       <el-table-column prop="reason" label="原因" min-width="180" />
       <el-table-column prop="status" label="状态" width="100" />
       <el-table-column prop="requestedBy" label="申请人" width="110" />
-      <el-table-column label="操作" width="130">
+      <AdaptiveActionColumn label="操作" width="130">
         <template #default="scope">
           <template v-if="scope.row.status === 'PENDING'">
             <el-button
@@ -93,7 +93,7 @@
             </el-button>
           </template>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
   </el-drawer>
 </template>

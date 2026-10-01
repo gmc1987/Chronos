@@ -8,12 +8,12 @@
         <el-table-column prop="version" label="版本" width="100" />
         <el-table-column prop="status" label="状态" width="110" />
         <el-table-column prop="description" label="描述" />
-        <el-table-column label="操作" width="280"><template #default="scope">
+        <AdaptiveActionColumn label="操作" width="280"><template #default="scope">
           <el-button size="small" @click.stop="openDesigner(scope.row)">{{ scope.row.status === 'DRAFT' ? '设计' : '查看' }}</el-button>
           <el-button v-if="scope.row.status === 'PUBLISHED'" size="small" @click.stop="newVersion(scope.row)">新版本</el-button>
           <el-button v-if="scope.row.status === 'DRAFT'" size="small" type="success" @click.stop="publishCurrent(scope.row)">发布</el-button>
           <el-button v-if="scope.row.status === 'DRAFT'" size="small" type="danger" @click.stop="removeForm(scope.row)">删除</el-button>
-        </template></el-table-column>
+        </template></AdaptiveActionColumn>
       </el-table>
       <el-pagination
         v-model:current-page="formsPage"

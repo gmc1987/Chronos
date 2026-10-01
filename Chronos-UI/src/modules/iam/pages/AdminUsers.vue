@@ -15,12 +15,12 @@
       <el-table-column prop="username" label="用户名" />
       <el-table-column prop="email" label="邮箱" />
       <el-table-column prop="status" label="状态" width="100" />
-      <el-table-column label="操作" width="180">
+      <AdaptiveActionColumn label="操作" width="180">
         <template #default="scope">
           <el-button v-permission="['iam:user:update','iam:user:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
           <el-button v-permission="['iam:user:disable','iam:user:manage']" size="small" type="danger" @click="remove(scope.row)">停用</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <div class="pager">

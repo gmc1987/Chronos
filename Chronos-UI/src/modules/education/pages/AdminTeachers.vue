@@ -59,12 +59,12 @@
         min-width="180"
       />
       <el-table-column prop="status" label="记录状态" width="110" />
-      <el-table-column label="操作" width="90"
+      <AdaptiveActionColumn label="操作" width="90"
         ><template #default="s"
           ><el-button v-if="s.row.status === 'SCHEDULED'" link type="danger" @click="cancelChange(s.row)"
             >取消</el-button
           ></template
-        ></el-table-column
+        ></AdaptiveActionColumn
       >
     </el-table>
   </el-drawer>

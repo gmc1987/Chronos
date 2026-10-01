@@ -34,7 +34,7 @@
         <el-table-column prop="version" label="版本" width="120" />
         <el-table-column prop="entryNodeKey" label="入口节点" width="160" />
         <el-table-column prop="status" label="状态" width="120" />
-        <el-table-column label="操作" width="440">
+        <AdaptiveActionColumn label="操作" width="440">
           <template #default="scope">
             <el-button v-if="canUpdate" size="small" @click.stop="openEditFlow(scope.row)">编辑</el-button>
             <el-button v-if="canView" size="small" @click.stop="openVersions(scope.row)">版本</el-button>
@@ -43,7 +43,7 @@
             <el-button v-if="canPublish && scope.row.status === 'PUBLISHED'" size="small" type="warning" @click.stop="disableCurrent(scope.row)">停用</el-button>
             <el-button v-if="canDelete && scope.row.status !== 'PUBLISHED'" size="small" type="danger" @click.stop="removeFlow(scope.row)">删除</el-button>
           </template>
-        </el-table-column>
+        </AdaptiveActionColumn>
       </el-table>
 
       <div class="pager">
@@ -249,7 +249,7 @@
 
     <el-dialog v-model="showAclDialog" :title="`流程权限 - ${aclFlow?.flowName || ''}`" width="760px">
       <el-form inline><el-form-item label="主体类型"><el-select v-model="aclForm.subjectType" style="width:150px"><el-option v-for="item in aclSubjectTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="主体"><el-select v-if="aclForm.subjectType==='USER'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="u in assigneeUsers" :key="u.username" :label="u.displayName || u.username" :value="u.username" /></el-select><el-select v-else-if="aclForm.subjectType==='ROLE'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="r in assigneeRoles" :key="r.roleCode" :label="r.roleName || r.roleCode" :value="r.roleCode" /></el-select><el-input v-else v-model="aclForm.subjectId" placeholder="输入组织/部门/岗位ID" style="width:220px" /></el-form-item><el-form-item label="权限"><el-select v-model="aclForm.action" style="width:130px"><el-option v-for="item in aclActions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-button type="primary" @click="addAcl">添加</el-button></el-form>
-      <el-table :data="aclRows" border><el-table-column prop="subjectType" label="主体类型" width="120" /><el-table-column prop="subjectId" label="主体" /><el-table-column prop="action" label="权限" width="120" /><el-table-column prop="enabled" label="启用" width="80"><template #default="{row}">{{ row.enabled ? '是' : '否' }}</template></el-table-column><el-table-column label="操作" width="90"><template #default="{row}"><el-button link type="danger" @click="removeAcl(row)">删除</el-button></template></el-table-column></el-table>
+      <el-table :data="aclRows" border><el-table-column prop="subjectType" label="主体类型" width="120" /><el-table-column prop="subjectId" label="主体" /><el-table-column prop="action" label="权限" width="120" /><el-table-column prop="enabled" label="启用" width="80"><template #default="{row}">{{ row.enabled ? '是' : '否' }}</template></el-table-column><AdaptiveActionColumn label="操作" width="90"><template #default="{row}"><el-button link type="danger" @click="removeAcl(row)">删除</el-button></template></AdaptiveActionColumn></el-table>
     </el-dialog>
 
     <el-dialog v-model="showEdgeDialog" title="分支条件" width="560px">

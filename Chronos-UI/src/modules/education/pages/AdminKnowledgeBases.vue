@@ -266,12 +266,12 @@ onMounted(async () => {
                 <el-table-column prop="sourceType" label="来源" width="90" />
                 <el-table-column prop="chunkCount" label="分段数" width="90" />
                 <el-table-column prop="status" label="状态" width="90" />
-                <el-table-column label="操作" width="150">
+                <AdaptiveActionColumn label="操作" width="150">
                   <template #default="scope">
                     <el-button link type="primary" @click="rebuildDocument(scope.row)">重建索引</el-button>
                     <el-button link type="danger" @click="removeDocument(scope.row)">删除</el-button>
                   </template>
-                </el-table-column>
+                </AdaptiveActionColumn>
               </el-table>
               <el-pagination
                 v-model:current-page="documentPage"

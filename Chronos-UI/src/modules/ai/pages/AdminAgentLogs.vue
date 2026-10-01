@@ -17,12 +17,12 @@
       <el-table-column prop="logType" label="类型" width="120" />
       <el-table-column prop="content" label="内容" />
       <el-table-column prop="createTime" label="时间" width="180" />
-      <el-table-column label="操作" width="180">
+      <AdaptiveActionColumn label="操作" width="180">
         <template #default="scope">
           <el-button size="small" @click="openDetail(scope.row)">查看</el-button>
           <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <el-dialog v-model="showDetail" title="日志详情" width="640px" class="dark-dialog">

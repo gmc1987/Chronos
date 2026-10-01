@@ -38,12 +38,12 @@
         label="状态"
         width="100"
       />
-      <el-table-column prop="cancellationStatus" label="销假状态" width="110" /><el-table-column label="操作" width="90"
+      <el-table-column prop="cancellationStatus" label="销假状态" width="110" /><AdaptiveActionColumn label="操作" width="90"
         ><template #default="scope"
           ><el-button v-if="canCancel(scope.row)" link type="warning" @click="cancelLeave(scope.row)"
             >申请销假</el-button
           ></template
-        ></el-table-column
+        ></AdaptiveActionColumn
       >
     </el-table>
   </div>

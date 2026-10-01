@@ -662,7 +662,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               <el-table-column prop="studentName" label="姓名" min-width="140" />
               <el-table-column prop="totalScore" label="当前成绩" width="110" />
               <el-table-column prop="versionNo" label="版本" width="90" />
-              <el-table-column label="操作" width="180">
+              <AdaptiveActionColumn label="操作" width="180">
                 <template #default="{ row }">
                   <el-button
                     v-permission="['education:score:change:request']"
@@ -674,7 +674,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                   </el-button>
                   <el-button v-if="!row.passed" v-permission="['education:score:makeup:manage']" link type="warning" @click="openMakeup(row)">补考/重修</el-button>
                 </template>
-              </el-table-column>
+              </AdaptiveActionColumn>
             </el-table>
             <el-divider />
             <strong>更正申请</strong>
@@ -692,12 +692,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               <el-table-column prop="attemptType" label="类型" width="100" />
               <el-table-column prop="resultScore" label="成绩" width="100" />
               <el-table-column prop="status" label="状态" width="110" />
-              <el-table-column label="操作" width="180">
+              <AdaptiveActionColumn label="操作" width="180">
                 <template #default="{ row }">
                   <el-button v-if="row.status !== 'PUBLISHED'" v-permission="['education:score:makeup:manage']" link @click="enterMakeupScore(row)">录入</el-button>
                   <el-button v-if="row.status === 'SCORED'" v-permission="['education:score:makeup:manage']" link type="success" @click="publishMakeupResult(row)">发布</el-button>
                 </template>
-              </el-table-column>
+              </AdaptiveActionColumn>
             </el-table>
           </template>
         </el-card>
@@ -737,9 +737,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
           <el-table-column prop="name" label="项目" />
           <el-table-column prop="weight" label="权重%" />
           <el-table-column prop="maxScore" label="满分" />
-          <el-table-column label="操作" width="80">
+          <AdaptiveActionColumn label="操作" width="80">
             <template #default="{ $index }"><el-button link type="danger" @click="removeSchemeComponent($index)">删除</el-button></template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <div class="scheme-footer">
           <span :class="{ invalid: weightTotal !== 100 }">权重合计：{{ weightTotal }}%</span>
@@ -763,7 +763,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
           <el-table-column label="状态">
             <template #default="{ row }">{{ statusLabel[row.status] || row.status }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="160">
+          <AdaptiveActionColumn label="操作" width="160">
             <template #default="{ row }">
               <el-button
                 v-if="row.status === 'DRAFT'"
@@ -785,7 +785,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               </el-button>
               <el-tag v-else type="success" size="small">已冻结</el-tag>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
@@ -809,12 +809,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
           <el-table-column prop="retryCount" label="重试次数" width="100" />
           <el-table-column prop="lastError" label="最近错误" min-width="260" show-overflow-tooltip />
           <el-table-column prop="createTime" label="发生时间" width="180" />
-          <el-table-column v-if="incidentStatus === 'OPEN'" label="操作" width="150" fixed="right">
+          <AdaptiveActionColumn v-if="incidentStatus === 'OPEN'" label="操作" width="150" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" @click="retryIncident(row)">重试</el-button>
               <el-button link type="danger" @click="ignoreIncident(row)">忽略</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <el-pagination
           v-model:current-page="incidentPage"
