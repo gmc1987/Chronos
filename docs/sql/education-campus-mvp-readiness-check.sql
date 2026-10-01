@@ -1,5 +1,7 @@
 -- 智慧校园第一阶段 20 项 MVP 数据库就绪度检查。
 -- 只读脚本：不会创建、更新或删除任何业务数据，可在初始化、迁库和发布前重复执行。
+-- Agent 菜单操作权限在 IAM 启动时归一化到 t_role_menu_permission，
+-- 因此第 18、19 项必须检查该表，而不是迁移阶段的 t_role_permission。
 
 WITH checks(capability_no, capability, passed, evidence) AS (
     SELECT 1, '用户',
@@ -122,7 +124,7 @@ WITH checks(capability_no, capability, passed, evidence) AS (
                AND EXISTS (
                    SELECT 1
                    FROM t_role role
-                   JOIN t_role_permission role_permission
+                   JOIN t_role_menu_permission role_permission
                      ON role_permission.role_id = role.id
                    JOIN t_permission permission
                      ON permission.id = role_permission.permission_id
@@ -134,7 +136,7 @@ WITH checks(capability_no, capability, passed, evidence) AS (
                AND EXISTS (
                    SELECT 1
                    FROM t_role role
-                   JOIN t_role_permission role_permission
+                   JOIN t_role_menu_permission role_permission
                      ON role_permission.role_id = role.id
                    JOIN t_permission permission
                      ON permission.id = role_permission.permission_id
@@ -149,7 +151,7 @@ WITH checks(capability_no, capability, passed, evidence) AS (
            EXISTS (
                SELECT 1
                FROM t_role role
-               JOIN t_role_permission role_permission
+               JOIN t_role_menu_permission role_permission
                  ON role_permission.role_id = role.id
                JOIN t_permission permission
                  ON permission.id = role_permission.permission_id
