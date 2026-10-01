@@ -25,11 +25,11 @@
           <el-table-column prop="connectorType" label="类型" width="130" />
           <el-table-column prop="endpointHost" label="目标主机" min-width="220" />
           <el-table-column prop="status" label="状态" width="120" />
-          <el-table-column label="操作" width="120">
+          <AdaptiveActionColumn label="操作" width="120">
             <template #default="{ row }">
               <el-button link type="primary" :disabled="blocked" @click="testConnector(row)">连接测试</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="同步任务" name="jobs">
@@ -38,11 +38,11 @@
           <el-table-column prop="schedule" label="调度" width="160" />
           <el-table-column prop="status" label="状态" width="120" />
           <el-table-column prop="lastRunStatus" label="最近运行" width="130" />
-          <el-table-column label="操作" width="100">
+          <AdaptiveActionColumn label="操作" width="100">
             <template #default="{ row }">
               <el-button link type="primary" @click="triggerJob(row)">立即运行</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="运行记录" name="runs">
@@ -61,11 +61,11 @@
           <el-table-column prop="errorMessage" label="最后错误" min-width="260" />
           <el-table-column prop="attempts" label="尝试次数" width="100" />
           <el-table-column prop="status" label="状态" width="120" />
-          <el-table-column label="操作" width="100">
+          <AdaptiveActionColumn label="操作" width="100">
             <template #default="{ row }">
               <el-button link type="primary" @click="replay(row)">人工重放</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
     </el-tabs>

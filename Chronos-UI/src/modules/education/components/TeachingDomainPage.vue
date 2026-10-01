@@ -19,9 +19,9 @@
     </el-form>
     <el-table v-loading="loading" :data="rows" stripe border>
       <el-table-column v-for="column in columns" :key="column.prop" v-bind="column" />
-      <el-table-column label="操作" width="150" fixed="right">
+      <AdaptiveActionColumn label="操作" width="150" fixed="right">
         <template #default="{ row }"><el-button link type="primary" @click="openEdit(row)">编辑</el-button><el-button link type="danger" @click="archive(row)">归档</el-button></template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" layout="total, sizes, prev, pager, next" @change="load" />
     <el-dialog v-model="dialog" :title="`${editing ? '编辑' : '新增'}${entityLabel}`" width="680px">

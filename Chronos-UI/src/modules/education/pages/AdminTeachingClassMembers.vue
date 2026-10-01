@@ -27,7 +27,7 @@
       <el-table-column label="加入来源" width="110"><template #default="s">{{ s.row.enrollmentSource === 'SOURCE_CLASS' ? '来源班级' : '手工' }}</template></el-table-column>
       <el-table-column label="状态" width="100"><template #default="s"><el-tag :type="s.row.enrollmentStatus === 'ENROLLED' ? 'success' : 'info'">{{ s.row.enrollmentStatus === 'ENROLLED' ? '已选课' : '已退课' }}</el-tag></template></el-table-column>
       <el-table-column prop="enrolledAt" label="选课时间" width="180" /><el-table-column prop="withdrawnAt" label="退课时间" width="180" />
-      <el-table-column label="操作" width="100"><template #default="s"><el-button v-if="!isCombined && s.row.enrollmentStatus === 'ENROLLED'" link type="danger" @click="withdraw(s.row)">退课</el-button><el-button v-else-if="!isCombined" link type="primary" @click="reenroll(s.row)">重新选课</el-button></template></el-table-column>
+      <AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button v-if="!isCombined && s.row.enrollmentStatus === 'ENROLLED'" link type="danger" @click="withdraw(s.row)">退课</el-button><el-button v-else-if="!isCombined" link type="primary" @click="reenroll(s.row)">重新选课</el-button></template></AdaptiveActionColumn>
     </el-table>
     <el-dialog v-model="enrollDialog" title="添加教学班学生" width="560px">
       <el-form label-width="90px"><el-form-item label="学生"><el-select v-model="selectedStudentId" filterable class="full-width"><el-option v-for="item in selectableStudents" :key="item.id" :label="`${item.studentName}（${item.studentNo}）`" :value="item.id" /></el-select></el-form-item></el-form>

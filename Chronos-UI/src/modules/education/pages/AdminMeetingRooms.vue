@@ -122,7 +122,7 @@ onMounted(load)
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
+      <AdaptiveActionColumn label="操作" width="150" fixed="right">
         <template #default="scope">
           <el-button
             v-permission="['education:meeting:room:update', 'education:meeting:room:manage']"
@@ -133,7 +133,7 @@ onMounted(load)
             link type="danger" @click="remove(scope.row)"
           >删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑会议室' : '新增会议室'" width="640px">

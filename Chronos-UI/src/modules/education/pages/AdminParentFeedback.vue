@@ -33,7 +33,7 @@ onMounted(load)
       <el-table-column prop="content" label="反馈内容" min-width="300" show-overflow-tooltip />
       <el-table-column prop="status" label="状态" width="110" />
       <el-table-column prop="createdAt" label="提交时间" width="170" />
-      <el-table-column label="操作" width="100"><template #default="{ row }"><el-button link type="primary" @click="openReply(row)">回复</el-button></template></el-table-column>
+      <AdaptiveActionColumn label="操作" width="100"><template #default="{ row }"><el-button link type="primary" @click="openReply(row)">回复</el-button></template></AdaptiveActionColumn>
     </el-table>
     <el-empty v-if="!loading && !records.length" description="暂无家长反馈" />
     <el-dialog v-model="replyDialog" title="回复家长反馈" width="560px">

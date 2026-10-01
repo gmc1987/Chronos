@@ -16,11 +16,11 @@
       <el-table-column prop="totalHours" label="总课时" width="90" />
       <el-table-column prop="currentVersionNo" label="版本" width="80" />
       <el-table-column prop="status" label="状态" width="110" />
-      <el-table-column label="操作" width="250" fixed="right"><template #default="{ row }">
+      <AdaptiveActionColumn label="操作" width="250" fixed="right"><template #default="{ row }">
         <el-button link type="primary" @click="openWorkbench(row)">工作台</el-button>
         <el-button link @click="editPlan(row)">编辑</el-button>
         <el-button link type="danger" @click="archive(row)">归档</el-button>
-      </template></el-table-column>
+      </template></AdaptiveActionColumn>
     </el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" layout="total, sizes, prev, pager, next" @change="load" />
 
@@ -43,9 +43,9 @@
               <el-table-column label="周次" width="190"><template #default="{ row }"><div class="week-input"><el-input-number v-model="row.weekStart" :min="1" :max="60" /><span>至</span><el-input-number v-model="row.weekEnd" :min="1" :max="60" /></div></template></el-table-column>
               <el-table-column label="课时" width="105"><template #default="{ row }"><el-input-number v-model="row.lessonHours" :min="1" /></template></el-table-column>
               <el-table-column label="目标/重点" min-width="260"><template #default="{ row }"><el-input v-model="row.objectives" type="textarea" :rows="2" /></template></el-table-column>
-              <el-table-column label="操作" width="170"><template #default="{ $index }">
+              <AdaptiveActionColumn label="操作" width="170"><template #default="{ $index }">
                 <el-button link @click="moveChapter($index, -1)" :disabled="$index === 0">上移</el-button><el-button link @click="moveChapter($index, 1)" :disabled="$index === chapters.length - 1">下移</el-button><el-button link @click="duplicateChapter($index)">复制</el-button><el-button link type="danger" @click="removeChapter($index)">删除</el-button>
-              </template></el-table-column>
+              </template></AdaptiveActionColumn>
             </el-table>
             <div class="chapter-footer">章节合计 <strong>{{ chapterHours }}</strong> 课时 <el-button type="primary" :disabled="!!chapterError" @click="saveChapters">保存章节</el-button></div>
           </el-tab-pane>

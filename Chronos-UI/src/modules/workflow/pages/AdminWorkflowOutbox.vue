@@ -20,12 +20,12 @@
       <el-table-column prop="attempts" label="尝试次数" width="100" />
       <el-table-column prop="lastError" label="最后错误" />
       <el-table-column prop="createTime" label="创建时间" width="190" />
-      <el-table-column label="操作" width="150">
+      <AdaptiveActionColumn label="操作" width="150">
         <template #default="{ row }">
           <el-button link type="primary" @click="retry(row)">重试</el-button>
           <el-button link type="danger" @click="ignore(row)">忽略</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-pagination
       v-model:current-page="page"

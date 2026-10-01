@@ -24,7 +24,7 @@
       <el-table-column v-if="activeType === 'DATA'" prop="scopeType" label="范围类型" width="190" />
       <el-table-column prop="description" label="描述" min-width="180" />
       <el-table-column label="状态" width="90"><template #default="scope"><el-tag :type="scope.row.status === 1 ? 'success' : 'info'">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag></template></el-table-column>
-      <el-table-column label="操作" width="250"><template #default="scope"><el-button v-permission="['iam:permission:update','iam:permission:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button><el-button v-permission="['iam:permission:disable','iam:permission:manage']" size="small" @click="toggleStatus(scope.row)">{{ scope.row.status === 1 ? '停用' : '启用' }}</el-button><el-button v-if="!scope.row.builtIn" v-permission="['iam:permission:delete','iam:permission:manage']" size="small" type="danger" @click="remove(scope.row)">删除</el-button></template></el-table-column>
+      <AdaptiveActionColumn label="操作" width="250"><template #default="scope"><el-button v-permission="['iam:permission:update','iam:permission:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button><el-button v-permission="['iam:permission:disable','iam:permission:manage']" size="small" @click="toggleStatus(scope.row)">{{ scope.row.status === 1 ? '停用' : '启用' }}</el-button><el-button v-if="!scope.row.builtIn" v-permission="['iam:permission:delete','iam:permission:manage']" size="small" type="danger" @click="remove(scope.row)">删除</el-button></template></AdaptiveActionColumn>
     </el-table>
     <div class="pager">
       <el-pagination

@@ -14,7 +14,7 @@
       <el-table-column label="分类" width="140"><template #default="{row}">{{ labelOf(materialTypes,row.materialType||row.category) }}</template></el-table-column>
       <el-table-column label="共享范围" width="140"><template #default="{row}">{{ labelOf(scopes,row.shareScope) }}</template></el-table-column>
       <el-table-column prop="publishedVersionNo" label="当前版本" width="100" />
-      <el-table-column label="操作" width="260" fixed="right"><template #default="{row}"><el-button link @click="versions(row)">版本</el-button><el-button link @click="edit(row)">编辑</el-button><el-button link type="success" @click="submit(row)">提交审核</el-button></template></el-table-column>
+      <AdaptiveActionColumn label="操作" width="260" fixed="right"><template #default="{row}"><el-button link @click="versions(row)">版本</el-button><el-button link @click="edit(row)">编辑</el-button><el-button link type="success" @click="submit(row)">提交审核</el-button></template></AdaptiveActionColumn>
     </el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" layout="total, prev, pager, next" @change="load" />
     <el-dialog v-model="dialog" :title="editing ? '编辑教学材料' : '新建教学材料'" width="650px">
@@ -28,7 +28,7 @@
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
     </el-dialog>
-    <el-dialog v-model="versionDialog" title="材料版本" width="760px"><el-table :data="versionRows"><el-table-column prop="versionNo" label="版本" /><el-table-column prop="status" label="状态" /><el-table-column prop="uploadedAt" label="上传时间" /><el-table-column label="操作"><template #default="{row}"><el-button link @click="preview(row)">查看文件</el-button></template></el-table-column></el-table></el-dialog>
+    <el-dialog v-model="versionDialog" title="材料版本" width="760px"><el-table :data="versionRows"><el-table-column prop="versionNo" label="版本" /><el-table-column prop="status" label="状态" /><el-table-column prop="uploadedAt" label="上传时间" /><AdaptiveActionColumn label="操作"><template #default="{row}"><el-button link @click="preview(row)">查看文件</el-button></template></AdaptiveActionColumn></el-table></el-dialog>
   </section>
 </template>
 <script setup>

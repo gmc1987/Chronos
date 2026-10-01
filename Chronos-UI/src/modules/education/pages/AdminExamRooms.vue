@@ -195,11 +195,11 @@ onMounted(() => run(async () => {
       <el-table-column label="教室容量" width="110"><template #default="scope">{{ classroom(scope.row.classroomId)?.capacity }}</template></el-table-column>
       <el-table-column prop="requiredInvigilators" label="监考人数" width="110" />
       <el-table-column prop="status" label="状态" width="110" />
-      <el-table-column v-if="selectedPlan?.status === 'DRAFT'" label="操作" width="100">
+      <AdaptiveActionColumn v-if="selectedPlan?.status === 'DRAFT'" label="操作" width="100">
         <template #default="scope">
           <el-button v-permission="['education:exam:room:delete', 'education:exam:room:manage']" link type="danger" @click.stop="removeRoom(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <div class="section-heading">
@@ -212,11 +212,11 @@ onMounted(() => run(async () => {
     <el-table :data="candidates" border empty-text="请选择考场查看考生">
       <el-table-column prop="seatNo" label="座位号" width="100" />
       <el-table-column label="考生" min-width="160"><template #default="scope">{{ studentName(scope.row.studentId) }}</template></el-table-column>
-      <el-table-column v-if="selectedPlan?.status === 'DRAFT'" label="操作" width="100">
+      <AdaptiveActionColumn v-if="selectedPlan?.status === 'DRAFT'" label="操作" width="100">
         <template #default="scope">
           <el-button v-permission="['education:exam:room:delete', 'education:exam:room:manage']" link type="danger" @click="removeCandidate(scope.row)">移除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <el-dialog v-model="roomDialog" title="新增考场" width="500px">

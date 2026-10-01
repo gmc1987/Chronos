@@ -19,12 +19,12 @@
       <el-table-column prop="status" label="状态" width="100" />
       <el-table-column prop="tags" label="标签" width="140" />
       <el-table-column prop="sort" label="排序" width="80" />
-      <el-table-column label="操作" width="220">
+      <AdaptiveActionColumn label="操作" width="220">
         <template #default="scope">
           <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
           <el-button size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增节点' : '编辑节点'" width="760px" class="dark-dialog">

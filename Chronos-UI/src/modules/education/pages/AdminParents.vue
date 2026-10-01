@@ -16,13 +16,13 @@
       </el-table-column>
       <el-table-column prop="phone" label="联系电话" />
       <el-table-column prop="employment" label="工作单位或职业" />
-      <el-table-column label="操作" width="220">
+      <AdaptiveActionColumn label="操作" width="220">
         <template #default="scope">
           <el-button link type="primary" @click="editParent(scope.row)">编辑</el-button>
           <el-button link @click="openRelations(scope.row)">关联学生</el-button>
           <el-button link type="danger" @click="removeParent(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-pagination
       v-model:current-page="page"
@@ -77,9 +77,9 @@
         <el-table-column label="紧急联系人" width="110">
           <template #default="scope">{{ scope.row.emergencyContact ? '是' : '否' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80">
+        <AdaptiveActionColumn label="操作" width="80">
           <template #default="scope"><el-button link type="danger" @click="removeRelation(scope.row)">移除</el-button></template>
-        </el-table-column>
+        </AdaptiveActionColumn>
       </el-table>
     </el-dialog>
   </div>

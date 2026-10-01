@@ -23,13 +23,13 @@
       <el-table-column prop="path" label="路由路径" min-width="280"><template #default="scope"><code>{{ scope.row.path || '-' }}</code></template></el-table-column>
       <el-table-column prop="orderNum" label="同级排序" width="110" align="center" />
       <el-table-column label="子菜单" width="90" align="center"><template #default="scope">{{ scope.row.children?.length || 0 }}</template></el-table-column>
-      <el-table-column label="操作" width="260" fixed="right">
+      <AdaptiveActionColumn label="操作" width="260" fixed="right">
         <template #default="scope">
           <el-button v-permission="['iam:menu:create','iam:menu:manage']" link type="primary" @click="openCreate(scope.row)">新增子菜单</el-button>
           <el-button v-permission="['iam:menu:update','iam:menu:manage']" link @click="openEdit(scope.row)">编辑</el-button>
           <el-button v-permission="['iam:menu:delete','iam:menu:manage']" link type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-empty v-if="!loading && visibleTree.length === 0" description="没有匹配的菜单" />
     <div v-if="visibleTree.length" class="pager">

@@ -17,12 +17,12 @@
       </el-table-column>
       <el-table-column prop="tel" label="联系电话" />
       <el-table-column label="状态" width="90"><template #default="scope"><el-tag :type="scope.row.status === 1 ? 'success' : 'info'">{{ scope.row.status === 1 ? '启用' : '停用' }}</el-tag></template></el-table-column>
-      <el-table-column label="操作" width="180">
+      <AdaptiveActionColumn label="操作" width="180">
         <template #default="scope">
           <el-button v-permission="['iam:organization:update','iam:organization:manage']" size="small" @click="openEdit(scope.row)">编辑</el-button>
           <el-button v-permission="['iam:organization:delete','iam:organization:manage']" size="small" type="danger" @click="remove(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <div class="pager">

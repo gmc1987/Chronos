@@ -32,7 +32,7 @@ onMounted(loadOperational)
     <el-tabs v-model="active" @tab-change="load"><el-tab-pane label="学业概览" name="academic" /><el-tab-pane label="排课资源" name="scheduling" /><el-tab-pane label="考试" name="exams" /></el-tabs>
     <el-table v-loading="loading" :data="rows" border><el-table-column prop="metricCode" label="指标" /><el-table-column prop="metricValue" label="值" /><el-table-column prop="snapshotDate" label="日期" /></el-table>
     <el-empty v-if="!loading && !rows.length" description="暂无快照，请先生成日报" />
-    <div class="ops"><h2>报表任务</h2><el-table :data="reports" border><el-table-column prop="reportType" label="类型" /><el-table-column prop="status" label="状态" /><el-table-column prop="progress" label="进度" /><el-table-column prop="errorMessage" label="错误" /><el-table-column label="操作"><template #default="{ row }"><el-button v-if="row.status === 'FAILED'" link type="primary" @click="retry(row)">重试</el-button></template></el-table-column></el-table>
+    <div class="ops"><h2>报表任务</h2><el-table :data="reports" border><el-table-column prop="reportType" label="类型" /><el-table-column prop="status" label="状态" /><el-table-column prop="progress" label="进度" /><el-table-column prop="errorMessage" label="错误" /><AdaptiveActionColumn label="操作"><template #default="{ row }"><el-button v-if="row.status === 'FAILED'" link type="primary" @click="retry(row)">重试</el-button></template></AdaptiveActionColumn></el-table>
     <h2>数据质量</h2><el-table :data="issues" border><el-table-column prop="title" label="问题" /><el-table-column prop="severity" label="级别" /><el-table-column prop="status" label="状态" /><el-table-column prop="dueDate" label="截止日期" /></el-table>
     </div>
   </section>

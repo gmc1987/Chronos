@@ -47,7 +47,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="发生时间" width="180" />
-      <el-table-column label="操作" width="230" fixed="right">
+      <AdaptiveActionColumn label="操作" width="230" fixed="right">
         <template #default="{ row }">
           <el-button link type="info" @click="showExecutions(row)">日志</el-button>
           <template v-if="canManage && row.status === 'OPEN'">
@@ -57,7 +57,7 @@
           </template>
           <span v-else class="muted">{{ row.resolution || '-' }}</span>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-pagination
       v-model:current-page="page"

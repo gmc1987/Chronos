@@ -74,18 +74,18 @@
           <el-table-column label="周次" width="120">
             <template #default="scope">{{ scope.row.startWeek }}–{{ scope.row.endWeek }} 周</template>
           </el-table-column>
-          <el-table-column label="操作" width="140">
+          <AdaptiveActionColumn label="操作" width="140">
             <template #default="scope">
               <el-button link @click="openEntry(scope.row)">编辑</el-button>
               <el-button link type="danger" @click="removeEntry(scope.row)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
       <el-tab-pane label="日期课表" name="date-schedule">
         <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button></div>
-        <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><el-table-column label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></el-table-column></el-table>
+        <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
         <h3>日期调整历史</h3>
         <el-table :data="dateExceptionHistory" border>
           <el-table-column prop="sourceDate" label="原日期" width="120" />
@@ -94,12 +94,12 @@
           <el-table-column prop="targetPeriodNo" label="目标节次" width="100" />
           <el-table-column prop="reason" label="原因" />
           <el-table-column prop="status" label="状态" width="100" />
-          <el-table-column label="操作" width="100">
+          <AdaptiveActionColumn label="操作" width="100">
             <template #default="scope">
               <el-button v-if="scope.row.status === 'ACTIVE'" link type="danger" @click="cancelDateException(scope.row)">撤销</el-button>
               <el-button v-else link type="primary" @click="restoreDateException(scope.row)">恢复</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
@@ -117,9 +117,9 @@
           <el-table-column label="来源" width="120">
             <template #default="scope">{{ scope.row.sourceVersionNo ? `回滚自 V${scope.row.sourceVersionNo}` : '当前草稿' }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="100">
+          <AdaptiveActionColumn label="操作" width="100">
             <template #default="scope"><el-button link type="warning" @click="rollbackVersion(scope.row)">回滚</el-button></template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
@@ -213,7 +213,7 @@
           <el-table-column label="状态" width="110"><template #default="s"><el-tag :type="jobStatusType(s.row.status)">{{ jobStatusName(s.row.status) }}</el-tag></template></el-table-column>
           <el-table-column label="进度" min-width="180"><template #default="s"><el-progress :percentage="s.row.progress || 0" /></template></el-table-column>
           <el-table-column prop="errorMessage" label="失败/取消原因" min-width="220" show-overflow-tooltip />
-          <el-table-column label="操作" width="90"><template #default="s"><el-button v-if="['QUEUED', 'RUNNING'].includes(s.row.status)" link type="danger" @click="cancelGenerationJob(s.row)">取消</el-button></template></el-table-column>
+          <AdaptiveActionColumn label="操作" width="90"><template #default="s"><el-button v-if="['QUEUED', 'RUNNING'].includes(s.row.status)" link type="danger" @click="cancelGenerationJob(s.row)">取消</el-button></template></AdaptiveActionColumn>
         </el-table>
         <h3>候选方案</h3>
         <el-empty v-if="!candidates.length" description="暂无自动排课候选方案" />
@@ -260,7 +260,7 @@
           <el-table-column label="生成时间" min-width="170">
             <template #default="scope">{{ formatTime(scope.row.generatedAt) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="420" fixed="right">
+          <AdaptiveActionColumn label="操作" width="420" fixed="right">
             <template #default="scope">
               <el-button link @click="showCandidateDiff(scope.row)">预览差异</el-button>
               <template v-if="scope.row.status === 'CANDIDATE'">
@@ -285,7 +285,7 @@
                 </el-button>
               </template>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
@@ -298,13 +298,13 @@
           <el-table-column prop="teacherName" label="教师" />
           <el-table-column prop="studentCount" label="人数" width="90" />
           <el-table-column prop="weeklyLessons" label="周课时" width="90" />
-          <el-table-column label="操作" width="230">
+          <AdaptiveActionColumn label="操作" width="230">
             <template #default="scope">
               <el-button link @click="openOffering(scope.row)">编辑</el-button>
               <el-button link type="primary" @click="openCombined(scope.row)">合班设置</el-button>
               <el-button link type="danger" @click="removeOffering(scope.row)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <el-pagination
           v-model:current-page="offeringPage"
@@ -325,12 +325,12 @@
           <el-table-column prop="buildingName" label="教学楼" />
           <el-table-column prop="roomType" label="类型" />
           <el-table-column prop="capacity" label="容量" width="90" />
-          <el-table-column label="操作" width="140">
+          <AdaptiveActionColumn label="操作" width="140">
             <template #default="scope">
               <el-button link @click="openClassroom(scope.row)">编辑</el-button>
               <el-button link type="danger" @click="removeClassroom(scope.row)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <el-pagination
           v-model:current-page="classroomPage"
@@ -350,13 +350,13 @@
           <el-table-column label="时间" width="160"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }} 第 {{ s.row.periodNo }} 节</template></el-table-column>
           <el-table-column label="约束类型" width="110"><template #default="s"><el-tag :type="s.row.constraintType === 'FORBIDDEN' ? 'danger' : 'success'">{{ s.row.constraintType === 'FORBIDDEN' ? '禁止排课' : '优先安排' }}</el-tag></template></el-table-column>
           <el-table-column prop="weight" label="权重" width="80" /><el-table-column prop="reason" label="原因" min-width="180" />
-          <el-table-column label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeConstraint(s.row)">删除</el-button></template></el-table-column>
+          <AdaptiveActionColumn label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeConstraint(s.row)">删除</el-button></template></AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
       <el-tab-pane label="教室不可用时段" name="room-constraints">
         <div class="toolbar"><el-button type="primary" @click="openRoomConstraint()">新增不可用时段</el-button></div>
-        <el-table :data="roomConstraints" border><el-table-column label="教室"><template #default="s">{{ classroomName(s.row.classroomId) }}</template></el-table-column><el-table-column label="星期" width="90"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }}</template></el-table-column><el-table-column label="节次" width="120"><template #default="s">第 {{ s.row.startPeriod }}–{{ s.row.endPeriod }} 节</template></el-table-column><el-table-column prop="reason" label="原因" /><el-table-column label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openRoomConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeRoomConstraint(s.row)">删除</el-button></template></el-table-column></el-table>
+        <el-table :data="roomConstraints" border><el-table-column label="教室"><template #default="s">{{ classroomName(s.row.classroomId) }}</template></el-table-column><el-table-column label="星期" width="90"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }}</template></el-table-column><el-table-column label="节次" width="120"><template #default="s">第 {{ s.row.startPeriod }}–{{ s.row.endPeriod }} 节</template></el-table-column><el-table-column prop="reason" label="原因" /><AdaptiveActionColumn label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openRoomConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeRoomConstraint(s.row)">删除</el-button></template></AdaptiveActionColumn></el-table>
       </el-tab-pane>
 
 	  <el-tab-pane label="调课回写异常" name="incidents">
@@ -411,7 +411,7 @@
 		  </el-table-column>
 		  <el-table-column prop="message" label="失败原因" min-width="220" show-overflow-tooltip />
 		  <el-table-column prop="retryCount" label="重试次数" width="100" />
-		  <el-table-column label="操作" width="100">
+		  <AdaptiveActionColumn label="操作" width="100">
 			<template #default="scope">
 			  <el-button
 				v-if="scope.row.status === 'FAILED'"
@@ -421,7 +421,7 @@
 				重试
 			  </el-button>
 			</template>
-		  </el-table-column>
+		  </AdaptiveActionColumn>
 		</el-table>
 		<el-pagination
 		  v-model:current-page="incidentPage"

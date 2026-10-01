@@ -34,13 +34,13 @@
         </template>
       </el-table-column>
       <el-table-column prop="failureMessage" label="回写说明" min-width="180" show-overflow-tooltip />
-      <el-table-column label="操作" width="90">
+      <AdaptiveActionColumn label="操作" width="90">
         <template #default="scope">
           <el-button v-if="canCancel(scope.row)" link type="warning" @click="cancel(scope.row)">
             撤销
           </el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
   </div>
 </template>

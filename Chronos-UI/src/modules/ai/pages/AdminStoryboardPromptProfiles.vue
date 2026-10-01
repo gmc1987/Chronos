@@ -36,7 +36,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="lastUpdateTime" label="更新时间" width="180" />
-      <el-table-column label="操作" width="220">
+      <AdaptiveActionColumn label="操作" width="220">
         <template #default="scope">
           <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
           <el-popconfirm
@@ -50,7 +50,7 @@
             </template>
           </el-popconfirm>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <el-dialog

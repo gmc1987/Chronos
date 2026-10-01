@@ -252,11 +252,11 @@ onMounted(() => run(async () => {
       <el-table-column label="得分率" width="100"><template #default="scope">{{ scope.row.scoreRate == null ? '—' : `${scope.row.scoreRate}%` }}</template></el-table-column>
       <el-table-column prop="fullScoreCount" label="满分人数" width="110" />
       <el-table-column prop="zeroScoreCount" label="零分人数" width="110" />
-      <el-table-column label="操作" width="90">
+      <AdaptiveActionColumn label="操作" width="90">
         <template #default="scope">
             <el-button v-if="!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT'" v-permission="['education:exam:paper-analysis:manage']" link type="danger" @click.stop="removeItem(scope.row)">删除</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
 
     <template v-if="selectedItem">
@@ -269,11 +269,11 @@ onMounted(() => run(async () => {
             <el-input-number v-model="scoreByCandidate[scope.row.id]" :disabled="selectedSession.scoreStatus && selectedSession.scoreStatus !== 'DRAFT'" :min="0" :max="Number(selectedItem.maxScore)" :precision="2" :step="0.5" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100">
+        <AdaptiveActionColumn label="操作" width="100">
           <template #default="scope">
             <el-button v-if="!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT'" v-permission="['education:exam:paper-analysis:manage']" link type="primary" @click="saveScore(scope.row)">保存</el-button>
           </template>
-        </el-table-column>
+        </AdaptiveActionColumn>
       </el-table>
     </template>
 

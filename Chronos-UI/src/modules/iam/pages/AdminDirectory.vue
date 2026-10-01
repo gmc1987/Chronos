@@ -13,13 +13,13 @@
           <el-table-column label="状态" width="90">
             <template #default="s"><el-tag :type="s.row.status===1?'success':'info'">{{ s.row.status===1?'启用':'停用' }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="操作" width="310">
+          <AdaptiveActionColumn label="操作" width="310">
             <template #default="s">
               <el-button v-permission="['iam:directory:update','iam:directory:manage']" @click="editDepartment(s.row)">编辑</el-button>
               <el-button v-permission="['iam:directory:create','iam:directory:manage']" @click="editDepartment(null,s.row.id)">新增下级</el-button>
               <el-button v-permission="['iam:directory:delete','iam:directory:manage']" type="danger" @click="removeDepartment(s.row.id)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="岗位管理" name="positions">
@@ -36,12 +36,12 @@
               <el-tag :type="s.row.status===1?'success':'info'">{{ s.row.status===1?'启用':'停用' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="250">
+          <AdaptiveActionColumn label="操作" width="250">
             <template #default="s">
               <el-button v-permission="['iam:directory:update','iam:directory:manage']" @click="editPosition(s.row)">编辑</el-button>
               <el-button v-permission="['iam:directory:delete','iam:directory:manage']" type="danger" @click="removePosition(s.row.id)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <div class="pager"><el-pagination background layout="total, sizes, prev, pager, next" :total="positionTotal" :current-page="positionPage" :page-size="positionSize" :page-sizes="[10, 20, 50]" @current-change="onPositionPageChange" @size-change="onPositionSizeChange"/></div>
       </el-tab-pane>
@@ -57,12 +57,12 @@
               <el-tag :type="s.row.status===1?'success':'info'">{{ s.row.status===1?'启用':'停用' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="250">
+          <AdaptiveActionColumn label="操作" width="250">
             <template #default="s">
               <el-button v-permission="['iam:directory:update','iam:directory:manage']" @click="editLevel(s.row)">编辑</el-button>
               <el-button v-permission="['iam:directory:delete','iam:directory:manage']" type="danger" @click="removeLevel(s.row.id)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <div class="pager"><el-pagination background layout="total, sizes, prev, pager, next" :total="levelTotal" :current-page="levelPage" :page-size="levelSize" :page-sizes="[10, 20, 50]" @current-change="onLevelPageChange" @size-change="onLevelSizeChange"/></div>
       </el-tab-pane>
@@ -79,14 +79,14 @@
               <el-tag :type="s.row.employmentStatus==='ACTIVE'?'success':'info'">{{ statusName(s.row.employmentStatus) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="430">
+          <AdaptiveActionColumn label="操作" width="430">
             <template #default="s">
               <el-button v-permission="['iam:directory:update','iam:directory:manage']" @click="editEmployee(s.row)">编辑</el-button>
               <el-button v-permission="['iam:directory:update','iam:directory:manage']" type="primary" plain @click="manageAssignments(s.row)">任职管理</el-button>
               <el-button v-permission="['iam:user:view','iam:user:manage']" type="success" plain @click="manageAccount(s.row)">账号管理</el-button>
               <el-button v-permission="['iam:directory:delete','iam:directory:manage']" type="danger" @click="removeEmployee(s.row.id)">删除</el-button>
             </template>
-          </el-table-column>
+          </AdaptiveActionColumn>
         </el-table>
         <div class="pager"><el-pagination background layout="total, sizes, prev, pager, next" :total="employeeTotal" :current-page="employeePage" :page-size="employeeSize" :page-sizes="[10, 20, 50]" @current-change="onEmployeePageChange" @size-change="onEmployeeSizeChange"/></div>
       </el-tab-pane>
@@ -136,7 +136,7 @@
         <el-button @click="accountDialog=false">取消</el-button><el-button type="primary" @click="saveAccount">{{accountForm.id?'保存账号':'开通账号'}}</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="assignmentDialog" :title="`${activeEmployee.employeeName||''} · 任职管理`" width="900px"><div class="assignment-head"><span>一个员工可以在多个院区或部门任职，但只能有一个主任职。</span><el-button type="primary" @click="editAssignment()">新增任职</el-button></div><el-table :data="assignmentRows" border><el-table-column prop="organizationName" label="机构"/><el-table-column prop="departmentName" label="部门"/><el-table-column prop="positionName" label="岗位"/><el-table-column prop="jobLevelName" label="职级"/><el-table-column label="主任职" width="80"><template #default="s">{{s.row.primaryAssignment?'是':'否'}}</template></el-table-column><el-table-column label="操作" width="140"><template #default="s"><el-button @click="editAssignment(s.row)">编辑</el-button><el-button type="danger" @click="removeAssignment(s.row.id)">删除</el-button></template></el-table-column></el-table></el-dialog>
+    <el-dialog v-model="assignmentDialog" :title="`${activeEmployee.employeeName||''} · 任职管理`" width="900px"><div class="assignment-head"><span>一个员工可以在多个院区或部门任职，但只能有一个主任职。</span><el-button type="primary" @click="editAssignment()">新增任职</el-button></div><el-table :data="assignmentRows" border><el-table-column prop="organizationName" label="机构"/><el-table-column prop="departmentName" label="部门"/><el-table-column prop="positionName" label="岗位"/><el-table-column prop="jobLevelName" label="职级"/><el-table-column label="主任职" width="80"><template #default="s">{{s.row.primaryAssignment?'是':'否'}}</template></el-table-column><AdaptiveActionColumn label="操作" width="140"><template #default="s"><el-button @click="editAssignment(s.row)">编辑</el-button><el-button type="danger" @click="removeAssignment(s.row.id)">删除</el-button></template></AdaptiveActionColumn></el-table></el-dialog>
     <el-dialog v-model="assignmentEditDialog" :title="assignmentForm.id?'编辑任职':'新增任职'" width="620px" append-to-body><el-form label-width="90px"><el-form-item label="所属机构"><el-select v-model="assignmentForm.organizationId" @change="loadAssignmentDepartments"><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id"/></el-select></el-form-item><el-form-item label="任职部门"><el-tree-select v-model="assignmentForm.departmentId" :data="assignmentDepartmentOptions" check-strictly/></el-form-item><el-form-item label="岗位"><el-select v-model="assignmentForm.positionId"><el-option v-for="p in positionOptions" :key="p.id" :label="p.positionName" :value="p.id"/></el-select></el-form-item><el-form-item label="职级"><el-select v-model="assignmentForm.jobLevelId" clearable><el-option v-for="l in levelOptions" :key="l.id" :label="l.levelName" :value="l.id"/></el-select></el-form-item><el-form-item label="主任职"><el-switch v-model="assignmentForm.primaryAssignment"/></el-form-item><el-form-item label="部门负责人"><el-switch v-model="assignmentForm.departmentLeader"/></el-form-item><el-form-item label="生效日期"><el-date-picker v-model="assignmentForm.effectiveFrom" value-format="YYYY-MM-DD"/></el-form-item><el-form-item label="失效日期"><el-date-picker v-model="assignmentForm.effectiveTo" value-format="YYYY-MM-DD"/></el-form-item></el-form><template #footer><el-button @click="assignmentEditDialog=false">取消</el-button><el-button type="primary" @click="submitAssignment">保存</el-button></template></el-dialog>
   </div>
 </template>

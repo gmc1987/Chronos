@@ -20,11 +20,11 @@
       <el-table-column label="难度" width="100"><template #default="{ row }">{{ dictLabel(difficultyOptions, row.difficulty) }}</template></el-table-column>
       <el-table-column prop="score" label="分值" width="80" />
       <el-table-column label="状态" width="110"><template #default="{ row }">{{ dictLabel(statusOptions, row.status) }}</template></el-table-column>
-      <el-table-column label="操作" width="210" fixed="right"><template #default="{ row }">
+      <AdaptiveActionColumn label="操作" width="210" fixed="right"><template #default="{ row }">
         <el-button link type="primary" @click="openQuestion(row)">编辑</el-button>
         <el-button link type="success" :disabled="!canSubmit(row)" @click="publish(row)">提交审核</el-button>
         <el-button link @click="showVersions(row)">版本</el-button>
-      </template></el-table-column>
+      </template></AdaptiveActionColumn>
     </el-table>
 
     <el-dialog v-model="bankDialog" title="题库" width="560px"><el-form :model="bankForm" label-width="100px">

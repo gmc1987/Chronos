@@ -30,13 +30,13 @@
           prop="endDate"
           label="结束"
           width="110"
-        /><el-table-column prop="cancellationReason" label="销假原因" min-width="180" /><el-table-column
+        /><el-table-column prop="cancellationReason" label="销假原因" min-width="180" /><AdaptiveActionColumn
           label="操作"
           width="140"
           ><template #default="scope"
             ><el-button link type="success" @click="decide(scope.row, true)">通过</el-button
             ><el-button link type="danger" @click="decide(scope.row, false)">驳回</el-button></template
-          ></el-table-column
+          ></AdaptiveActionColumn
         ></el-table
       ></el-card
     >

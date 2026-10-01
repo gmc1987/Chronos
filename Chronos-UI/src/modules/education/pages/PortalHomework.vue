@@ -13,7 +13,7 @@
         <template #default="{ row }">{{ row.submission?.score ?? '—' }}</template>
       </el-table-column>
       <el-table-column prop="submission.teacherFeedback" label="教师评语" min-width="220" show-overflow-tooltip />
-      <el-table-column label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="open(row)">{{ canEdit(row) ? '作答' : '查看' }}</el-button></template></el-table-column>
+      <AdaptiveActionColumn label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="open(row)">{{ canEdit(row) ? '作答' : '查看' }}</el-button></template></AdaptiveActionColumn>
     </el-table>
     <el-empty v-if="!loading && !rows.length" description="暂无已发布作业" />
     <el-dialog v-model="dialog" :title="current?.title || '作业'" width="720px">

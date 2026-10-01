@@ -24,7 +24,7 @@
       <el-table-column prop="dueAt" label="截止时间" width="180" />
       <el-table-column prop="maxScore" label="总分" width="80" />
       <el-table-column prop="status" label="状态" width="120" />
-      <el-table-column label="操作" width="410" fixed="right">
+      <AdaptiveActionColumn label="操作" width="410" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="edit(row)">编辑</el-button>
           <el-button link @click="showSubmissions(row)">提交情况</el-button>
@@ -33,7 +33,7 @@
           <el-button v-if="['PUBLISHED','CLOSED'].includes(row.status)" link type="success" @click="publishGrades(row)">发布成绩</el-button>
           <el-button v-if="row.status === 'CLOSED'" link type="info" @click="archive(row)">归档</el-button>
         </template>
-      </el-table-column>
+      </AdaptiveActionColumn>
     </el-table>
     <el-empty v-if="!loading && !rows.length" description="当前教学班暂无作业" />
 
@@ -66,7 +66,7 @@
         <el-table-column prop="submittedAt" label="提交时间" width="180" />
         <el-table-column prop="score" label="得分" width="90" />
         <el-table-column prop="teacherFeedback" label="评语" min-width="220" show-overflow-tooltip />
-        <el-table-column label="操作" width="100"><template #default="{ row }"><el-button link type="primary" :disabled="!['SUBMITTED','RETURNED_FOR_REVISION'].includes(row.status)" @click="openGrade(row)">批改</el-button></template></el-table-column>
+        <AdaptiveActionColumn label="操作" width="100"><template #default="{ row }"><el-button link type="primary" :disabled="!['SUBMITTED','RETURNED_FOR_REVISION'].includes(row.status)" @click="openGrade(row)">批改</el-button></template></AdaptiveActionColumn>
       </el-table>
       <el-empty v-if="!submissionLoading && !submissions.length" description="暂无学生提交" />
     </el-dialog>
