@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.OptimisticLockException;
 import com.chronos.file.dao.ManagedFileRepository;
+import com.chronos.file.service.ManagedFileService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -31,6 +32,7 @@ public class TeachingPlanLessonService {
 	private final TeachingReviewService reviews;
 	private final ObjectMapper json;
 	private final ManagedFileRepository files;
+	private final ManagedFileService managedFiles;
 
 	public TeachingPlanLessonService(TeachingPlanRepository plans, TeachingPlanItemRepository items,
 			TeachingPlanVersionRepository planVersions, LessonPlanRepository lessons,
@@ -39,11 +41,12 @@ public class TeachingPlanLessonService {
 			com.chronos.education.scheduling.dao.CourseOfferingRepository offerings,
 			com.chronos.education.scheduling.dao.ScheduleEntryRepository schedules,
 			EducationDataScopeService scopes, TeachingReviewService reviews, ObjectMapper json,
-			ManagedFileRepository files) {
+			ManagedFileRepository files, ManagedFileService managedFiles) {
 		this.plans = plans; this.items = items; this.planVersions = planVersions;
 		this.lessons = lessons; this.lessonVersions = lessonVersions; this.offerings = offerings;
 		this.preparations = preparations;
 		this.schedules = schedules; this.scopes = scopes; this.reviews = reviews; this.json = json; this.files = files;
+		this.managedFiles = managedFiles;
 	}
 	private void validatePlanItem(PlanItemUpdateRequest i) {
 		if (i.weekStart() > i.weekEnd()) throw new IllegalArgumentException("章节周次范围无效");
@@ -168,6 +171,7 @@ public class TeachingPlanLessonService {
 		value.setOfferingId(offering.getId()); value.setCampusId(offering.getCampusId());
 		value.setOwnerTeacherId(offering.getTeacherId()); value.setScheduleEntryId(request.scheduleEntryId());
 		value.setScheduledAt(request.scheduledAt()); value.setAgenda(request.agenda());
+		value.setLocation(request.location());
 		value.setTitle(request.title()); value.setPreparationType(request.preparationType());
 		value.setConclusion(request.conclusion()); value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
 		value.setCreateBy(auth.getName());
@@ -184,6 +188,7 @@ public class TeachingPlanLessonService {
 		validateLessonReference(request.conclusionLessonPlanId(), value.getOfferingId(), auth);
 		value.setScheduleEntryId(request.scheduleEntryId()); value.setTitle(request.title());
 		value.setScheduledAt(request.scheduledAt()); value.setAgenda(request.agenda());
+		value.setLocation(request.location());
 		value.setPreparationType(request.preparationType()); value.setConclusion(request.conclusion());
 		value.setConclusionLessonPlanId(request.conclusionLessonPlanId());
 		return preparations.save(value);
@@ -202,6 +207,8 @@ public class TeachingPlanLessonService {
 	}
 
 	public TeachingReviewRecord submitPlan(String id, String idempotencyKey, Authentication auth) {
+		var existing = reviews.findIdempotent("PLAN", id, idempotencyKey, auth);
+		if (existing != null) return existing;
 		TeachingPlan plan = getPlan(id, auth);
 		assertDraft(plan.getStatus());
 		if (plan.getObjective() == null || plan.getObjective().isBlank()
@@ -249,7 +256,8 @@ public class TeachingPlanLessonService {
 			LessonPlanVersion draft = new LessonPlanVersion();
 			draft.setLessonPlanId(saved.getId()); draft.setVersionNo(1); draft.setFileId(request.fileId());
 			draft.setStatus("DRAFT"); draft.setCreateBy(auth.getName()); draft.setCreateTime(Instant.now());
-			lessonVersions.save(draft);
+			draft = lessonVersions.save(draft);
+			managedFiles.bind(List.of(request.fileId()), "EDUCATION_TEACHING", draft.getId(), auth.getName());
 		}
 		return saved;
 	}
@@ -274,7 +282,8 @@ public class TeachingPlanLessonService {
 			LessonPlanVersion draft = new LessonPlanVersion();
 			draft.setLessonPlanId(id); draft.setVersionNo(next); draft.setFileId(request.fileId());
 			draft.setStatus("DRAFT"); draft.setCreateBy(auth.getName()); draft.setCreateTime(Instant.now());
-			lessonVersions.save(draft);
+			draft = lessonVersions.save(draft);
+			managedFiles.bind(List.of(request.fileId()), "EDUCATION_TEACHING", draft.getId(), auth.getName());
 		}
 		return saved;
 	}
@@ -291,8 +300,9 @@ public class TeachingPlanLessonService {
 	}
 
 	public TeachingReviewRecord submitLesson(String id, String idempotencyKey, Authentication auth) {
+		TeachingReviewRecord existing = reviews.findIdempotent("LESSON_PLAN", id, idempotencyKey, auth);
+		if (existing != null) return existing;
 		LessonPlan lesson = getLesson(id, auth); assertDraft(lesson.getStatus());
-		TeachingReviewRecord existing = null;
 		LessonPlanVersion version = new LessonPlanVersion();
 		version.setLessonPlanId(id); version.setVersionNo(lessonVersions.findByLessonPlanIdOrderByVersionNoDesc(id)
 				.stream().findFirst().map(v -> v.getVersionNo() + 1).orElse(1));
@@ -357,11 +367,10 @@ public class TeachingPlanLessonService {
 		if (fileId.length() > 64 || fileId.contains("/") || fileId.contains("\\") || fileId.startsWith("http"))
 			throw new IllegalArgumentException("附件只能使用受控 fileId");
 		var file = files.findById(fileId).orElseThrow(() -> new IllegalArgumentException("文件不存在"));
-		if (!Objects.equals(file.getOwnerUsername(), auth.getName())
-				&& !"ACTIVE".equals(file.getStatus()) && !"PENDING_BIND".equals(file.getStatus()))
+		if (!Objects.equals(file.getOwnerUsername(), auth.getName()))
+			throw new org.springframework.security.access.AccessDeniedException("只能绑定本人上传的文件");
+		if (!"ACTIVE".equals(file.getStatus()) || !"PENDING_BIND".equals(file.getBindState()))
 			throw new IllegalArgumentException("文件不可绑定");
-		if (!Set.of("ACTIVE", "PENDING_BIND").contains(file.getStatus()))
-			throw new IllegalArgumentException("文件尚未通过扫描");
 	}
 	private void copyLesson(LessonPlan l, int no, int week, int hours, LessonType type, String o, String k,
 			String d, String method, String activity, String assessment, String reflection, String safety, String equipment) {

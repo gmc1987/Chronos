@@ -15,6 +15,7 @@ import com.chronos.education.scheduling.service.EducationDataScopeService;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
 class CourseAdjustmentRecoveryControllerTest {
@@ -76,6 +77,38 @@ class CourseAdjustmentRecoveryControllerTest {
 						new CourseAdjustmentIncidentBatchCommand(List.of()),
 						authentication));
 		assertEquals("至少选择一条调课事故", exception.getMessage());
+	}
+
+	@Test
+	void restrictedRoleCannotReplayCourseAdjustmentIncident() {
+		CourseAdjustmentApplicationService application = mock(
+				CourseAdjustmentApplicationService.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		Authentication authentication = mock(Authentication.class);
+		when(authentication.getName()).thenReturn("campus.teacher");
+		when(scopes.resolve("campus.teacher")).thenReturn(new EducationDataScope(
+				false,
+				Set.of("campus-a"),
+				Set.of(),
+				Set.of(),
+				Set.of()));
+		org.mockito.Mockito.doThrow(new AccessDeniedException("该操作需要全校数据权限"))
+				.when(scopes).assertFullAccess(
+						new EducationDataScope(
+								false,
+								Set.of("campus-a"),
+								Set.of(),
+								Set.of(),
+								Set.of()));
+
+		CourseAdjustmentRecoveryController controller = new CourseAdjustmentRecoveryController(
+				application,
+				scopes);
+
+		assertThrows(
+				AccessDeniedException.class,
+				() -> controller.retry("incident-1", authentication));
+		org.mockito.Mockito.verifyNoInteractions(application);
 	}
 
 	private CourseAdjustmentRecord record(

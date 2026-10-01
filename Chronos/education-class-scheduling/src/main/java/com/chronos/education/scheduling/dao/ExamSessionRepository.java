@@ -5,10 +5,15 @@ import java.time.LocalTime;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 import com.chronos.education.scheduling.model.ExamSession;
+import jakarta.persistence.LockModeType;
 
 public interface ExamSessionRepository extends JpaRepository<ExamSession, String> {
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	java.util.Optional<ExamSession> findLockedById(String id);
+
 	List<ExamSession> findByPlanIdOrderByExamDateAscStartTimeAsc(String planId);
 	List<ExamSession> findByExamDateBetweenAndStatus(
 			LocalDate startDate,

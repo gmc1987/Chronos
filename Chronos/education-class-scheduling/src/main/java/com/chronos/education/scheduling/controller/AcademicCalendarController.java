@@ -16,20 +16,26 @@ import com.chronos.education.scheduling.model.AcademicCalendarDay;
 import com.chronos.education.scheduling.model.BellPeriod;
 import com.chronos.education.scheduling.model.BellSchedule;
 import com.chronos.education.scheduling.service.AcademicCalendarService;
+import com.chronos.education.scheduling.service.EducationDataScopeService;
+import org.springframework.security.core.Authentication;
 
 @RestController
 public class AcademicCalendarController {
 	private final AcademicCalendarService service;
+	private final EducationDataScopeService dataScopes;
 
-	public AcademicCalendarController(AcademicCalendarService service) {
+	public AcademicCalendarController(AcademicCalendarService service, EducationDataScopeService dataScopes) {
 		this.service = service;
+		this.dataScopes = dataScopes;
 	}
 
 	@GetMapping("/admin/education/term-progress")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
 	public ResultData<?> termProgress(
 			@RequestParam String termCode,
-			@RequestParam(required = false) LocalDate date) {
+			@RequestParam(required = false) LocalDate date,
+			Authentication authentication) {
+		dataScopes.assertTermAccess(dataScopes.resolve(authentication.getName()), termCode);
 		return ok(service.termProgress(termCode, date));
 	}
 

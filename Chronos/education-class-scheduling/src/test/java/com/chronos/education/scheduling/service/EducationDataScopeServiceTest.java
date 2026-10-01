@@ -21,8 +21,10 @@ import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.model.TeachingClassMember;
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.service.iService.IDataScopeService;
 import com.chronos.model.vo.DataScopeContext;
+import com.chronos.model.pojo.Organization;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +40,7 @@ class EducationDataScopeServiceTest {
 	private CourseOfferingRepository offerings;
 	private TeachingClassMemberRepository members;
 	private ClassroomRepository classrooms;
+	private IOrganizationRepository organizations;
 	private EducationDataScopeService service;
 
 	@BeforeEach
@@ -48,6 +51,7 @@ class EducationDataScopeServiceTest {
 		offerings = mock(CourseOfferingRepository.class);
 		members = mock(TeachingClassMemberRepository.class);
 		classrooms = mock(ClassroomRepository.class);
+		organizations = mock(IOrganizationRepository.class);
 		service = new EducationDataScopeService(
 				platformScopes,
 				mock(TeacherAcademicProfileRepository.class),
@@ -59,7 +63,8 @@ class EducationDataScopeServiceTest {
 				offerings,
 				members,
 				classrooms,
-				mock(ScheduleEntryRepository.class));
+				mock(ScheduleEntryRepository.class),
+				organizations);
 	}
 
 	@Test
@@ -75,11 +80,20 @@ class EducationDataScopeServiceTest {
 				Set.of(),
 				Set.of("CUSTOM_ORGANIZATION"),
 				Map.of()));
+		Organization campus = new Organization();
+		campus.setId("campus-1");
+		campus.setOrganizationType("CAMPUS");
+		Organization school = new Organization();
+		school.setId("school-1");
+		school.setOrganizationType("SCHOOL");
+		campus.setParentOrgId(school);
+		when(organizations.findById("campus-1")).thenReturn(Optional.of(campus));
 		when(classes.findByCampusIdIn(List.of("campus-1")))
 				.thenReturn(List.of(administrativeClass));
 
 		EducationDataScope scope = service.resolve("campus.manager");
 
+		assertThat(scope.schoolIds()).containsExactly("school-1");
 		assertThat(scope.campusIds()).containsExactly("campus-1");
 		assertThat(scope.administrativeClassIds()).containsExactly("class-campus-1");
 	}
@@ -209,6 +223,18 @@ class EducationDataScopeServiceTest {
 
 		assertThat(service.visibleOfferings(scope, List.of(enrolled, other)))
 				.containsExactly(enrolled);
+	}
+
+	@Test
+	void rejectsTermWithoutVisibleCourseOffering() {
+		EducationDataScope scope = new EducationDataScope(
+				false, Set.of("campus-1"), Set.of(), Set.of(), Set.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("term-2"))
+				.thenReturn(List.of(offering("offering-2", "campus-2")));
+
+		assertThatThrownBy(() -> service.assertTermAccess(scope, "term-2"))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("无权访问该学期数据");
 	}
 
 	private EducationDataScope scope(Set<String> gradeIds, Set<String> classIds) {

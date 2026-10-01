@@ -8,6 +8,7 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -33,4 +34,19 @@ public class ExamSession extends BaseEntity {
 
 	@Column(name = "status", nullable = false, length = 24)
 	private String status = "DRAFT";
+
+	/** 逐题成绩独立于考试排期状态，确认后冻结，发布后才允许向下游产生业务事实。 */
+	@Column(name = "score_status", nullable = false, length = 24)
+	private String scoreStatus = "DRAFT";
+
+	@Column(name = "scores_confirmed_at")
+	private java.time.LocalDateTime scoresConfirmedAt;
+
+	@Column(name = "scores_published_at")
+	private java.time.LocalDateTime scoresPublishedAt;
+
+	/** 防止重复确认、重复发布请求并发覆盖同一个考试场次。 */
+	@Version
+	@Column(name = "row_version", nullable = false)
+	private Long rowVersion = 0L;
 }

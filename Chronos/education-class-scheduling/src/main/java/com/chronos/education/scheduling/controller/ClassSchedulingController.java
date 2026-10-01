@@ -37,6 +37,7 @@ import com.chronos.education.scheduling.model.SchedulePlanVersionView;
 import com.chronos.education.scheduling.model.SchedulePolicy;
 import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.chronos.education.scheduling.service.AutoSchedulingService;
+import com.chronos.education.scheduling.service.AcademicDataService;
 import com.chronos.education.scheduling.service.ClassSchedulingService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.SchedulePlanVersionService;
@@ -48,6 +49,7 @@ import com.chronos.education.scheduling.service.SchedulePolicyService;
 @RestController
 public class ClassSchedulingController {
 	private final ClassSchedulingService service;
+	private final AcademicDataService academicData;
 	private final SchedulePlanVersionService planVersions;
 	private final AutoSchedulingService autoScheduling;
 	private final EducationDataScopeService dataScopes;
@@ -58,6 +60,7 @@ public class ClassSchedulingController {
 
 	public ClassSchedulingController(
 			ClassSchedulingService service,
+			AcademicDataService academicData,
 			SchedulePlanVersionService planVersions,
 			AutoSchedulingService autoScheduling,
 			EducationDataScopeService dataScopes,
@@ -66,6 +69,7 @@ public class ClassSchedulingController {
 			SchedulePolicyService schedulePolicies,
 			ScheduleGenerationJobService generationJobs) {
 		this.service = service;
+		this.academicData = academicData;
 		this.planVersions = planVersions;
 		this.autoScheduling = autoScheduling;
 		this.dataScopes = dataScopes;
@@ -73,6 +77,30 @@ public class ClassSchedulingController {
 		this.qualityAnalysis = qualityAnalysis;
 		this.schedulePolicies = schedulePolicies;
 		this.generationJobs = generationJobs;
+	}
+
+	@GetMapping("/admin/education/schedule-dimension-options")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
+	public ResultData<Map<String, ?>> scheduleDimensionOptions(
+			@RequestParam String semesterCode,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+
+		/*
+		 * 周课表的查询对象属于排课上下文，不能依赖教师、学生等基础数据菜单权限。
+		 * 在一个接口内按当前用户的数据范围返回五类选项，既避免前端部分失败，
+		 * 也防止通过下拉列表越权看到不在管理范围内的师生和教学资源。
+		 */
+		return ok(Map.of(
+				"teachers", academicData.teachers(scope),
+				"teachingClasses", dataScopes.visibleOfferings(
+						scope,
+						service.offerings(semesterCode)),
+				"administrativeClasses", academicData.administrativeClasses(scope),
+				"students", academicData.students(scope),
+				"classrooms", dataScopes.visibleClassrooms(
+						scope,
+						service.classrooms())));
 	}
 
 	@PostMapping("/admin/education/schedule-generation-jobs")

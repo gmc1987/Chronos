@@ -1,8 +1,8 @@
 export {
   dictListByCode,
   listUsers, listRoles,
-  workflowMonitor,
-  listWorkflows, workflowDetail, createWorkflow, updateWorkflow, deleteWorkflow, disableWorkflow, createWorkflowVersion, listWorkflowAcls, createWorkflowAcl, deleteWorkflowAcl, listWorkflowExecutors,
+  workflowMonitor, workflowOperationsHealth, workflowRecoveryCheck, exportWorkflowArchivePackage, listWorkflowFormRevisions,
+  listWorkflows, workflowDetail, createWorkflow, updateWorkflow, deleteWorkflow, disableWorkflow, createWorkflowVersion, listWorkflowVersions, compareWorkflowVersions, listWorkflowAcls, createWorkflowAcl, deleteWorkflowAcl, listWorkflowExecutors,
   listWorkflowNodes, createWorkflowNode, updateWorkflowNode, deleteWorkflowNode,
   listForms, listFormFields,
   getWorkflowByProject, getWorkflowLocks, lockWorkflowNode, unlockWorkflowNode,

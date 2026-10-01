@@ -77,6 +77,74 @@ class TeachingCollaborationServiceTest {
 		verifyNoInteractions(offerings, coursewares);
 	}
 
+	@Test
+	void rejectsCollectivePreparationWithoutTwoAcceptedMembersAndAgenda() {
+		var service = service();
+		var preparation = new Preparation();
+		preparation.setId("prep-collective");
+		preparation.setOfferingId("offering-1");
+		preparation.setPreparationType("COLLECTIVE");
+		when(preparations.findById("prep-collective")).thenReturn(Optional.of(preparation));
+		when(authentication.getName()).thenReturn("teacher-1");
+		when(scopes.resolve("teacher-1"))
+				.thenReturn(new EducationDataScope(true, java.util.Set.of(), java.util.Set.of(),
+						java.util.Set.of(), java.util.Set.of()));
+		when(members.findByPreparationId("prep-collective")).thenReturn(java.util.List.of());
+
+		assertThrows(IllegalStateException.class,
+				() -> service.submitPreparation("prep-collective", authentication));
+		verifyNoInteractions(reviews);
+	}
+
+	@Test
+	void submitsBoundDraftVersionAndStartsReviewInOneServiceCommand() {
+		var service = service();
+		var courseware = new Courseware();
+		courseware.setId("courseware-1");
+		courseware.setOfferingId("offering-1");
+		var version = new CoursewareVersion();
+		version.setId("version-1");
+		version.setCoursewareId(courseware.getId());
+		version.setStatus("DRAFT");
+		version.setBindState("BOUND");
+		when(authentication.getName()).thenReturn("teacher-1");
+		when(coursewareVersions.findById(version.getId())).thenReturn(Optional.of(version));
+		when(coursewares.findById(courseware.getId())).thenReturn(Optional.of(courseware));
+
+		service.submitVersionReview(true, version.getId(), authentication);
+
+		assertEquals("SUBMITTED", version.getStatus());
+		verify(coursewareVersions).save(version);
+		verify(reviews).submit(
+				eq("COURSEWARE"),
+				eq(courseware.getId()),
+				eq(courseware.getOfferingId()),
+				argThat(value -> version.getId().equals(value.get("versionId"))),
+				eq(authentication));
+	}
+
+	@Test
+	void rejectsDirectSubmitTransitionWithoutStartingWorkflow() {
+		var service = service();
+		var courseware = new Courseware();
+		courseware.setId("courseware-1");
+		courseware.setOfferingId("offering-1");
+		var version = new CoursewareVersion();
+		version.setId("version-1");
+		version.setCoursewareId(courseware.getId());
+		version.setStatus("DRAFT");
+		when(authentication.getName()).thenReturn("teacher-1");
+		when(coursewareVersions.findById(version.getId())).thenReturn(Optional.of(version));
+		when(coursewares.findById(courseware.getId())).thenReturn(Optional.of(courseware));
+
+		assertThrows(
+				IllegalStateException.class,
+				() -> service.transition(true, version.getId(), "submit", authentication));
+
+		verify(coursewareVersions, never()).save(any());
+		verifyNoInteractions(reviews);
+	}
+
 	private TeachingCollaborationService service() {
 		return new TeachingCollaborationService(
 				preparations, members, prepMaterials, comments, coursewares, coursewareVersions,

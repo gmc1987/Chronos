@@ -45,7 +45,10 @@ public class LeaveWorkflowListener {
 		record.setBusinessKey(event.businessKey());
 		record.setApplicantType(applicantType);
 		// 申请人必须由认证账号映射，不能依赖可被客户端篡改、也可能未配置的隐藏表单字段。
-		record.setApplicantId(applicants.resolve(event.initiatedBy(), applicantType));
+		record.setApplicantId(applicants.resolve(
+				event.initiatedBy(),
+				applicantType,
+				form.get("studentId") == null ? null : String.valueOf(form.get("studentId"))));
 		record.setLeaveType(required(form, "leaveType"));
 		record.setStartDate(LocalDate.parse(required(form, "startDate")));
 		record.setEndDate(LocalDate.parse(required(form, "endDate")));

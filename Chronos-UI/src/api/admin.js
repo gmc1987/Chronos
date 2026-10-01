@@ -1,9 +1,7 @@
 import { http } from './http'
 
 const qs = (params = {}) => {
-  const cleaned = Object.fromEntries(
-    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
-  )
+  const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''))
   return new URLSearchParams(cleaned).toString()
 }
 
@@ -54,26 +52,29 @@ export const deleteOrg = (id) => http.delete(`/admin/organizations/${id}`)
 export const orgImpact = (id) => http.get(`/admin/organizations/${id}/impact`)
 
 export const organizationUnits = (organizationId) => http.get(`/admin/iam/organization-units?${qs({ organizationId })}`)
-export const saveOrganizationUnit = (payload) => payload.id
-  ? http.put(`/admin/iam/organization-units/${payload.id}`, payload) : http.post('/admin/iam/organization-units', payload)
+export const saveOrganizationUnit = (payload) => (payload.id ? http.put(`/admin/iam/organization-units/${payload.id}`, payload) : http.post('/admin/iam/organization-units', payload))
 export const deleteOrganizationUnit = (id) => http.delete(`/admin/iam/organization-units/${id}`)
 export const positions = (params) => http.get(`/admin/iam/positions?${qs(params)}`)
-export const savePosition = (payload) => payload.id ? http.put(`/admin/iam/positions/${payload.id}`, payload) : http.post('/admin/iam/positions', payload)
+export const savePosition = (payload) => (payload.id ? http.put(`/admin/iam/positions/${payload.id}`, payload) : http.post('/admin/iam/positions', payload))
 export const deletePosition = (id) => http.delete(`/admin/iam/positions/${id}`)
 export const jobTitles = () => http.get('/admin/iam/job-titles')
-export const saveJobTitle = (payload) => payload.id ? http.put(`/admin/iam/job-titles/${payload.id}`, payload) : http.post('/admin/iam/job-titles', payload)
+export const saveJobTitle = (payload) => (payload.id ? http.put(`/admin/iam/job-titles/${payload.id}`, payload) : http.post('/admin/iam/job-titles', payload))
 export const deleteJobTitle = (id) => http.delete(`/admin/iam/job-titles/${id}`)
 export const jobLevels = (params) => http.get(`/admin/iam/job-levels?${qs(params)}`)
-export const saveJobLevel = (payload) => payload.id ? http.put(`/admin/iam/job-levels/${payload.id}`, payload) : http.post('/admin/iam/job-levels', payload)
+export const saveJobLevel = (payload) => (payload.id ? http.put(`/admin/iam/job-levels/${payload.id}`, payload) : http.post('/admin/iam/job-levels', payload))
 export const deleteJobLevel = (id) => http.delete(`/admin/iam/job-levels/${id}`)
 export const employees = (params) => http.get(`/admin/iam/employees?${qs(params)}`)
-export const saveEmployee = (payload) => payload.id ? http.put(`/admin/iam/employees/${payload.id}`, payload) : http.post('/admin/iam/employees', payload)
+export const saveEmployee = (payload) => (payload.id ? http.put(`/admin/iam/employees/${payload.id}`, payload) : http.post('/admin/iam/employees', payload))
 export const deleteEmployee = (id) => http.delete(`/admin/iam/employees/${id}`)
 export const employeeAssignments = (employeeId) => http.get(`/admin/iam/assignments?${qs({ employeeId })}`)
-export const saveEmployeeAssignment = (payload) => payload.id ? http.put(`/admin/iam/assignments/${payload.id}`, payload) : http.post('/admin/iam/assignments', payload)
+export const saveEmployeeAssignment = (payload) => (payload.id ? http.put(`/admin/iam/assignments/${payload.id}`, payload) : http.post('/admin/iam/assignments', payload))
 export const deleteEmployeeAssignment = (id) => http.delete(`/admin/iam/assignments/${id}`)
 export const downloadDirectoryImportTemplate = (type) => http.download(`/admin/iam/import/templates/${type}`)
-export const importDirectoryData = (type, file, dryRun = false) => { const data = new FormData(); data.append('file', file); return http.upload(`/admin/iam/import/${type}?${qs({ dryRun })}`, data) }
+export const importDirectoryData = (type, file, dryRun = false) => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload(`/admin/iam/import/${type}?${qs({ dryRun })}`, data)
+}
 
 export const dictTree = () => http.get('/admin/dicts/tree')
 export const dictListByCode = (dictCode) => http.get(`/admin/dicts/list?${qs({ dictCode })}`)
@@ -83,7 +84,7 @@ export const dictionaryOptions = async (dictCode) => {
   const response = await http.get(`/dicts/list?${qs({ dictCode })}`)
   return {
     ...response,
-    data: (response?.data || []).filter((item) => item.status === 1),
+    data: (response?.data || []).filter((item) => item.status === 1)
   }
 }
 export const createDict = (payload) => http.post('/admin/dicts', payload)
@@ -92,6 +93,15 @@ export const deleteDict = (id) => http.delete(`/admin/dicts/${id}`)
 
 export const auditLogs = (params) => http.get(`/admin/audit-logs?${qs(params)}`)
 export const exportAuditLogs = (params) => http.download(`/admin/audit-logs/export?${qs(params)}`)
+
+// Integration center
+export const listIntegrationConnectors = (params) => http.get(`/admin/integrations/connectors?${qs(params)}`)
+export const testIntegrationConnector = (id) => http.post(`/admin/integrations/connectors/${id}/test`)
+export const listIntegrationSyncJobs = (params) => http.get(`/admin/integrations/jobs?${qs(params)}`)
+export const triggerIntegrationSyncJob = (id) => http.post(`/admin/integrations/jobs/${id}/run`)
+export const listIntegrationRuns = (params) => http.get(`/admin/integrations/runs?${qs(params)}`)
+export const listIntegrationDeadLetters = (params) => http.get(`/admin/integrations/dead-letters?${qs(params)}`)
+export const replayIntegrationDeadLetter = (id) => http.post(`/admin/integrations/dead-letters/${id}/replay`)
 
 export const customerList = (params) => http.get(`/admin/customers/list?${qs(params)}`)
 export const customerDetail = (id) => http.get(`/admin/customers/${id}`)
@@ -128,6 +138,8 @@ export const updateWorkflow = (payload) => http.put('/admin/workflows', payload)
 export const deleteWorkflow = (id) => http.delete(`/admin/workflows/${id}`)
 export const disableWorkflow = (id) => http.post(`/admin/workflows/${id}/disable`)
 export const createWorkflowVersion = (id, version) => http.post(`/admin/workflows/${id}/versions`, { version })
+export const listWorkflowVersions = (id) => http.get(`/admin/workflows/${id}/versions`)
+export const compareWorkflowVersions = (id, targetId) => http.get(`/admin/workflows/${id}/compare?${qs({ targetId })}`)
 export const listWorkflowAcls = (id) => http.get(`/admin/workflows/${id}/acls`)
 export const createWorkflowAcl = (id, payload) => http.post(`/admin/workflows/${id}/acls`, payload)
 export const deleteWorkflowAcl = (id) => http.delete(`/admin/workflow-acls/${id}`)
@@ -154,6 +166,8 @@ export const updateForm = (payload) => http.put('/admin/forms', payload)
 export const deleteForm = (id) => http.delete(`/admin/forms/${id}`)
 export const publishForm = (id) => http.post(`/admin/forms/${id}/publish`)
 export const createFormVersion = (id, version) => http.post(`/admin/forms/${id}/versions`, { version })
+export const listFormVersions = (id) => http.get(`/admin/forms/${id}/versions`)
+export const compareFormVersions = (id, targetId) => http.get(`/admin/forms/${id}/compare?${qs({ targetId })}`)
 export const createFormField = (payload) => http.post('/admin/form-fields', payload)
 export const updateFormField = (payload) => http.put('/admin/form-fields', payload)
 export const deleteFormField = (id) => http.delete(`/admin/form-fields/${id}`)
@@ -161,6 +175,7 @@ export const listAvailableWorkflows = () => http.get('/workflows/available')
 export const getWorkflowStartForm = (id) => http.get(`/workflows/${id}/start-form`)
 export const startWorkflow = (id, payload) => http.post(`/workflows/${id}/start`, payload)
 export const getWorkflowRuntimeForms = (id) => http.get(`/workflow-instances/${id}/forms`)
+export const getWorkflowInstanceVersion = (id) => http.get(`/workflow-instances/${id}/version`)
 export const saveWorkflowRuntimeForm = (id, formId, payload) => http.put(`/workflow-instances/${id}/forms/${formId}`, payload)
 export const uploadManagedFile = (file, businessType = 'WORKFLOW_FORM_DRAFT', businessId) => {
   const data = new FormData()
@@ -173,11 +188,115 @@ export const pendingWorkflowTasks = (params) => http.get(`/workflow-tasks/pendin
 export const handledWorkflowTasks = (params) => http.get(`/workflow-tasks/handled?${qs(params)}`)
 export const initiatedWorkflowInstances = (params) => http.get(`/workflow-instances/initiated?${qs(params)}`)
 export const completeWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/complete`, payload)
+export const batchApproveWorkflowTasks = (payload) => http.post('/workflow-tasks/batch-approve', payload)
 export const rejectWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/reject`, payload)
 export const resubmitWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/resubmit`, payload)
 export const transferWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/transfer`, payload)
 export const addSignWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/add-sign`, payload)
 export const ccWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/cc`, payload)
+
+// 会议中心：会议与会议室分开管理，发布时由后端完成最终冲突校验。
+export const listMeetingRooms = () => http.get('/admin/education/meeting/rooms')
+export const listMeetingParticipantOptions = (keyword = '') => http.get(`/admin/education/meeting/participant-options?${qs({ keyword })}`)
+export const createMeetingRoom = (payload) => http.post('/admin/education/meeting/rooms', payload)
+export const updateMeetingRoom = (id, payload) => http.put(`/admin/education/meeting/rooms/${id}`, payload)
+export const deleteMeetingRoom = (id) => http.delete(`/admin/education/meeting/rooms/${id}`)
+export const listMeetings = () => http.get('/admin/education/meetings')
+export const pageMeetings = (params = {}) => http.get(`/admin/education/meetings/page?${qs(params)}`)
+export const createMeeting = (payload) => http.post('/admin/education/meetings', payload)
+export const listHomeSchoolBindings = (params = {}) => http.get(`/admin/education/home-school/parent-bindings?${new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+)}`)
+export const createHomeSchoolBinding = (payload) => http.post('/admin/education/home-school/parent-bindings', payload)
+export const invalidateHomeSchoolBinding = (id) => http.post(`/admin/education/home-school/parent-bindings/${id}/invalidate`)
+export const listHomeSchoolNotices = (params = {}) => http.get(`/admin/education/home-school/notices?${new URLSearchParams(
+  Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+)}`)
+export const createHomeSchoolNotice = (payload) => http.post('/admin/education/home-school/notices', payload)
+export const publishHomeSchoolNotice = (id) => http.post(`/admin/education/home-school/notices/${id}/publish`)
+export const createParentMeeting = (payload) => http.post('/admin/education/parent-meetings', payload)
+export const listParentMeetings = () => http.get('/portal/education/parent-meetings')
+export const respondParentMeeting = (id, payload) => http.post(`/portal/education/parent-meetings/${id}/response`, payload)
+
+export const listSupervisionPlans = () => http.get('/admin/education/supervision/plans')
+export const createSupervisionPlan = (payload) => http.post('/admin/education/supervision/plans', payload)
+export const publishSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/publish`)
+export const startSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/start`)
+export const createSupervisionAssignment = (payload) => http.post('/admin/education/supervision/assignments', payload)
+export const createSupervisionIssue = (recordId, payload) => http.post(`/admin/education/supervision/records/${recordId}/issues`, payload)
+export const reviewSupervisionIssue = (id, payload) => http.post(`/admin/education/supervision/issues/${id}/review`, payload)
+export const homeSchoolNoticeReceipts = (id) => http.get(`/admin/education/home-school/notices/${id}/receipts`)
+export const pageClassGroups = (params = {}) => http.get(`/admin/education/home-school/class-groups?${qs(params)}`)
+export const createClassGroup = (payload, key) => http.post('/admin/education/home-school/class-groups', payload,
+  key ? { headers: { 'Idempotency-Key': key } } : undefined)
+export const changeClassGroupStatus = (id, payload) => http.post(`/admin/education/home-school/class-groups/${id}/status`, payload)
+export const syncClassGroup = (id, payload = {}) => http.post(`/admin/education/home-school/class-groups/${id}/sync`, payload)
+export const pageClassGroupMembers = (id, params = {}) => http.get(`/admin/education/home-school/class-groups/${id}/members?${qs(params)}`)
+export const pageClassGroupAudit = (id, params = {}) => http.get(`/admin/education/home-school/class-groups/${id}/audit?${qs(params)}`)
+export const listParentFeedback = (params = {}) => http.get(`/admin/education/home-school/feedback?${qs(params)}`)
+export const replyParentFeedback = (id, payload) => http.post(`/admin/education/home-school/feedback/${id}/reply`, payload)
+export const listCommunicationRecords = (params = {}) => http.get(`/admin/education/home-school/communications?${qs(params)}`)
+export const updateMeeting = (id, payload) => http.put(`/admin/education/meetings/${id}`, payload)
+export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id}`)
+export const publishMeeting = (id) => http.post(`/admin/education/meetings/${id}/publish`)
+export const decideMeetingRoom = (id, payload) => http.post(`/admin/education/meetings/${id}/room-decision`, payload)
+export const cancelMeeting = (id, payload) => http.post(`/admin/education/meetings/${id}/cancel`, payload)
+export const addMeetingMaterial = (id, payload) => http.post(`/admin/education/meetings/${id}/materials`, payload)
+export const deleteMeetingMaterial = (id, materialId) => http.delete(`/admin/education/meetings/${id}/materials/${materialId}`)
+export const saveMeetingMinutes = (id, payload) => http.put(`/admin/education/meetings/${id}/minutes`, payload)
+export const publishMeetingMinutes = (id) => http.post(`/admin/education/meetings/${id}/minutes/publish`)
+export const addMeetingActionItem = (id, payload) => http.post(`/admin/education/meetings/${id}/action-items`, payload)
+export const updateMeetingActionItem = (id, itemId, payload) => http.put(`/admin/education/meetings/${id}/action-items/${itemId}`, payload)
+export const previewRecurringMeeting = (payload) => http.post('/admin/education/meetings/recurring/preview', payload)
+export const createRecurringMeeting = (payload) => http.post('/admin/education/meetings/recurring', payload)
+export const recurringMeetingInstances = (id) => http.get(`/admin/education/meetings/${id}/series`)
+export const changeRecurringMeeting = (id, payload) => http.post(`/admin/education/meetings/${id}/series/change`, payload)
+export const cancelRecurringMeetingSeries = (id) => http.post(`/admin/education/meetings/${id}/series/cancel`)
+export const calendarBindingStatus = () => http.get('/admin/education/calendar/binding')
+export const saveCalendarBinding = (payload) => http.post('/admin/education/calendar/binding', payload)
+
+// 成绩中心使用独立 score 路由，避免与年级管理的 grades 路由冲突。
+export const listAssessmentSchemes = (params = {}) => http.get(`/admin/education/grades/schemes?${qs(params)}`)
+export const getAssessmentScheme = (id) => http.get(`/admin/education/grades/schemes/${id}`)
+export const listGradeOfferingOptions = () => http.get('/admin/education/grades/offerings')
+export const createAssessmentScheme = (payload) => http.post('/admin/education/grades/schemes', payload)
+export const updateAssessmentScheme = (id, payload) => http.put(`/admin/education/grades/schemes/${id}`, payload)
+export const publishAssessmentScheme = (id, payload = {}) => http.post(`/admin/education/grades/schemes/${id}/publish`, payload)
+export const listGradebooks = (params = {}) => http.get(`/admin/education/grades/gradebooks?${qs(params)}`)
+export const createGradebook = (payload) => http.post('/admin/education/grades/gradebooks', payload)
+export const getGradebook = (id) => http.get(`/admin/education/grades/gradebooks/${id}`)
+export const listGradebookSnapshots = (id) => http.get(`/admin/education/grades/gradebooks/${id}/snapshots`)
+export const updateGradebookItems = (id, payload) => http.put(`/admin/education/grades/gradebooks/${id}/items`, payload)
+export const submitGradebook = (id, payload = {}) => http.post(`/admin/education/grades/gradebooks/${id}/submit`, payload)
+export const publishGradebook = (id, payload = {}) => http.post(`/admin/education/grades/gradebooks/${id}/publish`, payload)
+export const exportGradebook = (id) => http.download(`/admin/education/grades/gradebooks/${id}/export`)
+export const importGradebook = (id, file, dryRun = false) => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.post(`/admin/education/grades/gradebooks/${id}/import?dryRun=${dryRun}`, data)
+}
+export const getGradeAnalysisFilters = () => http.get('/admin/education/grade-analysis/filters')
+export const getClassGradeAnalysis = (params = {}) => http.get(`/admin/education/grade-analysis/class?${qs(params)}`)
+export const getGradeLevelAnalysis = (params = {}) => http.get(`/admin/education/grade-analysis/grade?${qs(params)}`)
+export const getSubjectGradeAnalysis = (params = {}) => http.get(`/admin/education/grade-analysis/subject?${qs(params)}`)
+export const getGradeTrendAnalysis = (params = {}) => http.get(`/admin/education/grade-analysis/trend?${qs(params)}`)
+export const getKnowledgeGradeAnalysis = (params = {}) => http.get(`/admin/education/grade-analysis/knowledge?${qs(params)}`)
+export const exportClassGradeAnalysis = (params = {}) => http.download(`/admin/education/grade-analysis/class/export?${qs(params)}`)
+export const exportGradeLevelAnalysis = (params = {}) => http.download(`/admin/education/grade-analysis/grade/export?${qs(params)}`)
+export const exportSubjectGradeAnalysis = (params = {}) => http.download(`/admin/education/grade-analysis/subject/export?${qs(params)}`)
+export const exportGradeTrendAnalysis = (params = {}) => http.download(`/admin/education/grade-analysis/trend/export?${qs(params)}`)
+export const exportKnowledgeGradeAnalysis = (params = {}) => http.download(`/admin/education/grade-analysis/knowledge/export?${qs(params)}`)
+export const listPublishedGrades = (gradebookId) => http.get(`/admin/education/grade-production/gradebooks/${gradebookId}/published-grades`)
+export const listGradeChanges = (gradebookId) => http.get(`/admin/education/grade-production/gradebooks/${gradebookId}/changes`)
+export const requestGradeChange = (gradebookId, payload) => http.post(`/admin/education/grade-production/gradebooks/${gradebookId}/changes`, payload)
+export const decideGradeChange = (id, payload) => http.post(`/admin/education/grade-production/changes/${id}/decision`, payload)
+export const listGradeMakeups = (gradebookId) => http.get(`/admin/education/grade-production/gradebooks/${gradebookId}/makeups`)
+export const registerGradeMakeup = (gradebookId, payload) => http.post(`/admin/education/grade-production/gradebooks/${gradebookId}/makeups`, payload)
+export const saveGradeMakeupResult = (id, payload) => http.put(`/admin/education/grade-production/makeups/${id}/result`, payload)
+export const publishGradeMakeup = (id) => http.post(`/admin/education/grade-production/makeups/${id}/publish`)
+export const listGradeChangeIncidents = (params = {}) => http.get(`/admin/education/grade-change-incidents?${qs(params)}`)
+export const retryGradeChangeIncident = (id) => http.post(`/admin/education/grade-change-incidents/${id}/retry`)
+export const ignoreGradeChangeIncident = (id, reason) => http.post(`/admin/education/grade-change-incidents/${id}/ignore`, { reason })
 export const returnWorkflowTask = (id, payload) => http.post(`/workflow-tasks/${id}/return`, payload)
 export const withdrawWorkflowInstance = (id, payload) => http.post(`/workflow-instances/${id}/withdraw`, payload)
 export const remindWorkflowTask = (id) => http.post(`/workflow-tasks/${id}/remind`)
@@ -194,12 +313,25 @@ export const readAllWorkflowNotifications = () => http.post('/workflow-notificat
 export const listDeadWorkflowOutbox = (params) => http.get(`/admin/workflow-outbox/dead?${qs(params)}`)
 export const retryWorkflowOutbox = (id) => http.post(`/admin/workflow-outbox/${id}/retry`)
 export const ignoreWorkflowOutbox = (id) => http.post(`/admin/workflow-outbox/${id}/ignore`)
+// 教育领域事件使用独立 Outbox；管理入口与流程消息并列展示，但不能混用重试接口。
+export const listDeadEducationOutbox = (params) => http.get(`/admin/education/domain-outbox/dead?${qs(params)}`)
+export const retryEducationOutbox = (id) => http.post(`/admin/education/domain-outbox/${id}/retry`)
+export const ignoreEducationOutbox = (id) => http.post(`/admin/education/domain-outbox/${id}/ignore`)
+// 成绩发布事件由独立的跨系统 Outbox 投递，使用单独接口避免与错题内部事件混淆。
+export const listDeadGradeOutbox = (params) => http.get(`/admin/education/grade-domain-outbox/dead?${qs(params)}`)
+export const retryGradeOutbox = (id) => http.post(`/admin/education/grade-domain-outbox/${id}/retry`)
+export const ignoreGradeOutbox = (id) => http.post(`/admin/education/grade-domain-outbox/${id}/ignore`)
 export const listWorkflowIncidents = (status = 'OPEN', params) => http.get(`/admin/workflow-incidents?${qs({ status, ...params })}`)
 export const retryWorkflowIncident = (id) => http.post(`/admin/workflow-incidents/${id}/retry`)
 export const skipWorkflowIncident = (id, payload) => http.post(`/admin/workflow-incidents/${id}/skip`, payload)
 export const terminateWorkflowIncident = (id, payload) => http.post(`/admin/workflow-incidents/${id}/terminate`, payload)
 export const listWorkflowExecutions = (instanceId) => http.get(`/admin/workflow-executions?${qs({ instanceId })}`)
 export const workflowMonitor = () => http.get('/admin/workflows/monitor')
+export const workflowOperationsHealth = () => http.get('/admin/workflow-operations/health')
+export const workflowRecoveryCheck = () => http.get('/admin/workflow-operations/recovery-check')
+export const exportWorkflowArchivePackage = (id) => http.get(`/admin/workflow-instances/${id}/archive-package`)
+export const listWorkflowFormRevisions = (instanceId, formId, nodeKey) =>
+  http.get(`/admin/workflow-instances/${encodeURIComponent(instanceId)}/forms/${encodeURIComponent(formId)}/revisions?${qs({ nodeKey })}`)
 export const workflowDirectoryUsers = () => http.get('/workflow-directory/users')
 
 // 通知公告管理
@@ -242,56 +374,49 @@ export const updateCourseOffering = (id, payload) => http.put(`/admin/education/
 export const deleteCourseOffering = (id) => http.delete(`/admin/education/course-offerings/${id}`)
 export const getCombinedOffering = (id) => http.get(`/admin/education/course-offerings/${id}/combined-classes`)
 export const configureCombinedOffering = (id, administrativeClassIds) =>
-  http.put(`/admin/education/course-offerings/${id}/combined-classes`, { administrativeClassIds })
+  http.put(`/admin/education/course-offerings/${id}/combined-classes`, {
+    administrativeClassIds
+  })
 export const syncCombinedOffering = (id) => http.post(`/admin/education/course-offerings/${id}/combined-classes/sync`)
 export const deleteCombinedOffering = (id) => http.delete(`/admin/education/course-offerings/${id}/combined-classes`)
 export const listClassrooms = (params) => http.get(`/admin/education/classrooms?${qs(params)}`)
+export const listScheduleDimensionOptions = (semesterCode) =>
+  http.get(`/admin/education/schedule-dimension-options?${qs({ semesterCode })}`)
 export const createClassroom = (payload) => http.post('/admin/education/classrooms', payload)
 export const updateClassroom = (id, payload) => http.put(`/admin/education/classrooms/${id}`, payload)
 export const deleteClassroom = (id) => http.delete(`/admin/education/classrooms/${id}`)
-export const listClassSchedule = (semesterCode, dimension = 'ALL', targetId) =>
-  http.get(`/admin/education/schedules?${qs({ semesterCode, dimension, targetId })}`)
+export const listClassSchedule = (semesterCode, dimension = 'ALL', targetId) => http.get(`/admin/education/schedules?${qs({ semesterCode, dimension, targetId })}`)
 export const createScheduleEntry = (payload) => http.post('/admin/education/schedules', payload)
 export const updateScheduleEntry = (id, payload) => http.put(`/admin/education/schedules/${id}`, payload)
 export const deleteScheduleEntry = (id) => http.delete(`/admin/education/schedules/${id}`)
-export const downloadScheduleImportTemplate = () =>
-  http.download('/admin/education/schedules/import-template')
+export const downloadScheduleImportTemplate = () => http.download('/admin/education/schedules/import-template')
 export const importClassSchedule = (semesterCode, file, dryRun = false) => {
   const data = new FormData()
   data.append('file', file)
   return http.upload(`/admin/education/schedules/import?${qs({ semesterCode, dryRun })}`, data)
 }
-export const exportClassSchedule = (semesterCode, dimension = 'ALL', targetId) =>
-  http.download(`/admin/education/schedules/export?${qs({ semesterCode, dimension, targetId })}`)
-export const getScheduleQualityAnalysis = semesterCode =>
-  http.get(`/admin/education/schedules/quality-analysis?${qs({ semesterCode })}`)
-export const listCourseAdjustmentIncidents = (params) =>
-  http.get(`/admin/education/course-adjustment-incidents?${qs(params)}`)
+export const exportClassSchedule = (semesterCode, dimension = 'ALL', targetId) => http.download(`/admin/education/schedules/export?${qs({ semesterCode, dimension, targetId })}`)
+export const getScheduleQualityAnalysis = (semesterCode) => http.get(`/admin/education/schedules/quality-analysis?${qs({ semesterCode })}`)
+export const listCourseAdjustmentIncidents = (params) => http.get(`/admin/education/course-adjustment-incidents?${qs(params)}`)
 export const retryCourseAdjustmentIncident = (id) => http.post(`/admin/education/course-adjustment-incidents/${id}/retry`)
 export const batchRetryCourseAdjustmentIncidents = (ids) =>
-  http.post('/admin/education/course-adjustment-incidents/batch-retry', { ids })
+  http.post('/admin/education/course-adjustment-incidents/batch-retry', {
+    ids
+  })
 export const listScheduleVersions = (semesterCode) => http.get(`/admin/education/schedule-versions?${qs({ semesterCode })}`)
 export const publishScheduleVersion = (semesterCode) => http.post(`/admin/education/schedule-versions/publish?${qs({ semesterCode })}`)
 export const rollbackScheduleVersion = (id) => http.post(`/admin/education/schedule-versions/${id}/rollback`)
-export const previewSchedulePublication = (semesterCode) =>
-  http.get(`/admin/education/schedule-versions/publication-preview?${qs({ semesterCode })}`)
-export const listScheduleCandidates = (semesterCode) =>
-  http.get(`/admin/education/schedule-candidates?${qs({ semesterCode })}`)
-export const compareScheduleCandidates = ids =>
-  http.get(`/admin/education/schedule-candidates/compare?${qs({ ids })}`)
-export const generateScheduleCandidates = (payload) =>
-  http.post('/admin/education/schedule-candidates/generate', payload)
-export const previewScheduleCandidate = (id) =>
-  http.get(`/admin/education/schedule-candidates/${id}/preview`)
-export const applyScheduleCandidate = (id) =>
-  http.post(`/admin/education/schedule-candidates/${id}/apply`)
-export const discardScheduleCandidate = (id) =>
-  http.post(`/admin/education/schedule-candidates/${id}/discard`)
+export const previewSchedulePublication = (semesterCode) => http.get(`/admin/education/schedule-versions/publication-preview?${qs({ semesterCode })}`)
+export const listScheduleCandidates = (semesterCode) => http.get(`/admin/education/schedule-candidates?${qs({ semesterCode })}`)
+export const compareScheduleCandidates = (ids) => http.get(`/admin/education/schedule-candidates/compare?${qs({ ids })}`)
+export const generateScheduleCandidates = (payload) => http.post('/admin/education/schedule-candidates/generate', payload)
+export const previewScheduleCandidate = (id) => http.get(`/admin/education/schedule-candidates/${id}/preview`)
+export const applyScheduleCandidate = (id) => http.post(`/admin/education/schedule-candidates/${id}/apply`)
+export const discardScheduleCandidate = (id) => http.post(`/admin/education/schedule-candidates/${id}/discard`)
 export const listAcademicTerms = (params) => http.get(`/admin/education/terms?${qs(params)}`)
 export const createAcademicTerm = (payload) => http.post('/admin/education/terms', payload)
 export const updateAcademicTerm = (id, payload) => http.put(`/admin/education/terms/${id}`, payload)
-export const listAcademicCalendarDays = (termId) =>
-  http.get(`/admin/education/calendar-days?${qs({ termId })}`)
+export const listAcademicCalendarDays = (termId) => http.get(`/admin/education/calendar-days?${qs({ termId })}`)
 export const createAcademicCalendarDay = (payload) => http.post('/admin/education/calendar-days', payload)
 export const updateAcademicCalendarDay = (id, payload) => http.put(`/admin/education/calendar-days/${id}`, payload)
 export const deleteAcademicCalendarDay = (id) => http.delete(`/admin/education/calendar-days/${id}`)
@@ -302,38 +427,22 @@ export const deleteBellSchedule = (id) => http.delete(`/admin/education/bell-sch
 export const createBellPeriod = (payload) => http.post('/admin/education/bell-periods', payload)
 export const updateBellPeriod = (id, payload) => http.put(`/admin/education/bell-periods/${id}`, payload)
 export const deleteBellPeriod = (id) => http.delete(`/admin/education/bell-periods/${id}`)
-export const getAcademicTermProgress = (termCode) =>
-  http.get(`/admin/education/term-progress?${qs({ termCode })}`)
-export const listTeacherTimeConstraints = (semesterCode) =>
-  http.get(`/admin/education/teacher-time-constraints?${qs({ semesterCode })}`)
-export const createTeacherTimeConstraint = (payload) =>
-  http.post('/admin/education/teacher-time-constraints', payload)
-export const updateTeacherTimeConstraint = (id, payload) =>
-  http.put(`/admin/education/teacher-time-constraints/${id}`, payload)
-export const deleteTeacherTimeConstraint = (id) =>
-  http.delete(`/admin/education/teacher-time-constraints/${id}`)
-export const listClassroomUnavailableSlots = (semesterCode) =>
-  http.get(`/admin/education/classroom-unavailable-slots?${qs({ semesterCode })}`)
-export const createClassroomUnavailableSlot = (payload) =>
-  http.post('/admin/education/classroom-unavailable-slots', payload)
-export const updateClassroomUnavailableSlot = (id, payload) =>
-  http.put(`/admin/education/classroom-unavailable-slots/${id}`, payload)
-export const deleteClassroomUnavailableSlot = (id) =>
-  http.delete(`/admin/education/classroom-unavailable-slots/${id}`)
-export const listScheduleOccurrences = (semesterCode, date) =>
-  http.get(`/admin/education/schedule-occurrences?${qs({ semesterCode, date })}`)
-export const listScheduleDateExceptions = (semesterCode, startDate, endDate) =>
-  http.get(`/admin/education/schedule-date-exceptions?${qs({ semesterCode, startDate, endDate })}`)
-export const createScheduleDateException = (payload) =>
-  http.post('/admin/education/schedule-date-exceptions', payload)
-export const updateScheduleDateException = (id, payload) =>
-  http.put(`/admin/education/schedule-date-exceptions/${id}`, payload)
-export const cancelScheduleDateException = (id) =>
-  http.delete(`/admin/education/schedule-date-exceptions/${id}`)
-export const listScheduleDateExceptionHistory = semesterCode =>
-  http.get(`/admin/education/schedule-date-exceptions/history?${qs({ semesterCode })}`)
-export const restoreScheduleDateException = id =>
-  http.post(`/admin/education/schedule-date-exceptions/${id}/restore`)
+export const getAcademicTermProgress = (termCode) => http.get(`/admin/education/term-progress?${qs({ termCode })}`)
+export const listTeacherTimeConstraints = (semesterCode) => http.get(`/admin/education/teacher-time-constraints?${qs({ semesterCode })}`)
+export const createTeacherTimeConstraint = (payload) => http.post('/admin/education/teacher-time-constraints', payload)
+export const updateTeacherTimeConstraint = (id, payload) => http.put(`/admin/education/teacher-time-constraints/${id}`, payload)
+export const deleteTeacherTimeConstraint = (id) => http.delete(`/admin/education/teacher-time-constraints/${id}`)
+export const listClassroomUnavailableSlots = (semesterCode) => http.get(`/admin/education/classroom-unavailable-slots?${qs({ semesterCode })}`)
+export const createClassroomUnavailableSlot = (payload) => http.post('/admin/education/classroom-unavailable-slots', payload)
+export const updateClassroomUnavailableSlot = (id, payload) => http.put(`/admin/education/classroom-unavailable-slots/${id}`, payload)
+export const deleteClassroomUnavailableSlot = (id) => http.delete(`/admin/education/classroom-unavailable-slots/${id}`)
+export const listScheduleOccurrences = (semesterCode, date) => http.get(`/admin/education/schedule-occurrences?${qs({ semesterCode, date })}`)
+export const listScheduleDateExceptions = (semesterCode, startDate, endDate) => http.get(`/admin/education/schedule-date-exceptions?${qs({ semesterCode, startDate, endDate })}`)
+export const createScheduleDateException = (payload) => http.post('/admin/education/schedule-date-exceptions', payload)
+export const updateScheduleDateException = (id, payload) => http.put(`/admin/education/schedule-date-exceptions/${id}`, payload)
+export const cancelScheduleDateException = (id) => http.delete(`/admin/education/schedule-date-exceptions/${id}`)
+export const listScheduleDateExceptionHistory = (semesterCode) => http.get(`/admin/education/schedule-date-exceptions/history?${qs({ semesterCode })}`)
+export const restoreScheduleDateException = (id) => http.post(`/admin/education/schedule-date-exceptions/${id}/restore`)
 export const listEducationGrades = (params) => http.get(`/admin/education/grades?${qs(params)}`)
 export const createEducationGrade = (payload) => http.post('/admin/education/grades', payload)
 export const updateEducationGrade = (id, payload) => http.put(`/admin/education/grades/${id}`, payload)
@@ -357,6 +466,16 @@ export const listEducationStudents = (params) => http.get(`/admin/education/stud
 export const exportEducationStudents = () => http.download('/admin/education/students/export')
 export const createEducationStudent = (payload) => http.post('/admin/education/students', payload)
 export const updateEducationStudent = (id, payload) => http.put(`/admin/education/students/${id}`, payload)
+export const listStudentStatusChanges = (studentId, params = {}) => http.get(`/admin/education/student-status-changes?${qs({ studentId, ...params })}`)
+export const requestStudentStatusChange = (studentId, payload) => http.post(`/admin/education/student-status-changes/${studentId}`, payload)
+export const approveStudentStatusChange = (id, comment = '') =>
+  http.post(`/admin/education/student-status-changes/${id}/approve`, {
+    comment
+  })
+export const rejectStudentStatusChange = (id, comment) =>
+  http.post(`/admin/education/student-status-changes/${id}/reject`, {
+    comment
+  })
 export const listEducationTeachers = (params) => http.get(`/admin/education/teachers?${qs(params)}`)
 
 // 考试计划、考场与监考排班共用同一组考试中心业务接口。
@@ -382,30 +501,20 @@ export const assignExamInvigilator = (roomId, payload) => http.post(`/admin/educ
 export const autoAssignExamInvigilators = (planId) => http.post(`/admin/education/exam/plans/${planId}/auto-invigilation`)
 export const previewExamConflicts = (planId) => http.get(`/admin/education/exam/plans/${planId}/conflicts`)
 export const publishExamPlan = (planId) => http.post(`/admin/education/exam/plans/${planId}/publish`)
-export const previewExamSuspensionImpacts = (planId, scopeMode) => http.get(
-  `/admin/education/exam/plans/${planId}/suspension-impacts?${qs({ scopeMode })}`,
-)
-export const listExamSuspensionRequests = (planId) => http.get(
-  `/admin/education/exam/plans/${planId}/suspension-requests`,
-)
-export const listExamSuspensionItems = (requestId) => http.get(
-  `/admin/education/exam/suspension-requests/${requestId}/items`,
-)
-export const requestExamSuspension = (planId, payload) => http.post(
-  `/admin/education/exam/plans/${planId}/suspension-requests`, payload,
-)
-export const decideExamSuspension = (requestId, approve) => http.post(
-  `/admin/education/exam/suspension-requests/${requestId}/decide`, { approve },
-)
-export const listExamPublishedChanges = (planId) => http.get(
-  `/admin/education/exam/plans/${planId}/published-changes`,
-)
-export const requestExamPublishedChange = (planId, payload) => http.post(
-  `/admin/education/exam/plans/${planId}/published-changes`, payload,
-)
-export const decideExamPublishedChange = (changeId, approve) => http.post(
-  `/admin/education/exam/published-changes/${changeId}/decide`, { approve },
-)
+export const previewExamSuspensionImpacts = (planId, scopeMode) => http.get(`/admin/education/exam/plans/${planId}/suspension-impacts?${qs({ scopeMode })}`)
+export const listExamSuspensionRequests = (planId) => http.get(`/admin/education/exam/plans/${planId}/suspension-requests`)
+export const listExamSuspensionItems = (requestId) => http.get(`/admin/education/exam/suspension-requests/${requestId}/items`)
+export const requestExamSuspension = (planId, payload) => http.post(`/admin/education/exam/plans/${planId}/suspension-requests`, payload)
+export const decideExamSuspension = (requestId, approve) =>
+  http.post(`/admin/education/exam/suspension-requests/${requestId}/decide`, {
+    approve
+  })
+export const listExamPublishedChanges = (planId) => http.get(`/admin/education/exam/plans/${planId}/published-changes`)
+export const requestExamPublishedChange = (planId, payload) => http.post(`/admin/education/exam/plans/${planId}/published-changes`, payload)
+export const decideExamPublishedChange = (changeId, approve) =>
+  http.post(`/admin/education/exam/published-changes/${changeId}/decide`, {
+    approve
+  })
 export const listInvigilationChanges = () => http.get('/admin/education/exam/invigilation-changes')
 export const requestInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilations/${id}/change-requests`, payload)
 export const decideInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilation-changes/${id}/decide`, payload)
@@ -417,20 +526,41 @@ export const listExamTeacherQualifications = (teacherId) => http.get(`/admin/edu
 export const addExamTeacherQualification = (teacherId, subjectId) => http.post(`/admin/education/exam/teachers/${teacherId}/qualifications/${subjectId}`)
 export const removeExamTeacherQualification = (teacherId, subjectId) => http.delete(`/admin/education/exam/teachers/${teacherId}/qualifications/${subjectId}`)
 export const listExamPaperItems = (sessionId) => http.get(`/admin/education/exam/sessions/${sessionId}/paper-items`)
+export const listAvailableExamPaperQuestions = () => http.get('/admin/education/exam/paper-questions')
 export const createExamPaperItem = (sessionId, payload) => http.post(`/admin/education/exam/sessions/${sessionId}/paper-items`, payload)
 export const deleteExamPaperItem = (sessionId, itemId) => http.delete(`/admin/education/exam/sessions/${sessionId}/paper-items/${itemId}`)
 export const listExamItemScores = (sessionId, itemId) => http.get(`/admin/education/exam/sessions/${sessionId}/paper-items/${itemId}/scores`)
 export const saveExamItemScore = (sessionId, itemId, payload) => http.put(`/admin/education/exam/sessions/${sessionId}/paper-items/${itemId}/scores`, payload)
+export const confirmExamScores = (sessionId) => http.post(`/admin/education/exam/sessions/${sessionId}/scores/confirm`)
+export const publishExamScores = (sessionId) => http.post(`/admin/education/exam/sessions/${sessionId}/scores/publish`)
 export const getExamPaperAnalysis = (sessionId) => http.get(`/admin/education/exam/sessions/${sessionId}/paper-analysis`)
 export const createEducationTeacher = (payload) => http.post('/admin/education/teachers', payload)
 export const updateEducationTeacher = (id, payload) => http.put(`/admin/education/teachers/${id}`, payload)
 export const bindEducationTeacherAccount = (id) => http.post(`/admin/education/teachers/${id}/account`)
 export const unbindEducationTeacherAccount = (id) => http.delete(`/admin/education/teachers/${id}/account`)
+export const listTeacherEmploymentChanges = (teacherId, params = {}) => http.get(`/admin/education/teacher-employment-changes?${qs({ teacherId, ...params })}`)
+export const registerTeacherEmploymentChange = (teacherId, payload) => http.post(`/admin/education/teacher-employment-changes/${teacherId}`, payload)
+export const cancelTeacherEmploymentChange = (id) => http.post(`/admin/education/teacher-employment-changes/${id}/cancel`)
+export const leaveStatistics = (startDate, endDate) => http.get(`/admin/education/leaves/statistics?${qs({ startDate, endDate })}`)
+export const pendingLeaveCancellations = () => http.get('/admin/education/leaves/cancellations')
+export const decideLeaveCancellation = (id, payload) => http.post(`/admin/education/leaves/${id}/cancellation-decision`, payload)
 export const deleteEducationTeacher = (id) => http.delete(`/admin/education/teachers/${id}`)
 export const listEducationParents = (params) => http.get(`/admin/education/parents?${qs(params)}`)
 export const createEducationParent = (payload) => http.post('/admin/education/parents', payload)
 export const updateEducationParent = (id, payload) => http.put(`/admin/education/parents/${id}`, payload)
 export const deleteEducationParent = (id) => http.delete(`/admin/education/parents/${id}`)
+export const listEducationDataMetrics = () => http.get('/admin/education/data-center/metrics')
+export const getEducationDataDashboard = (dashboard, date, campusId) =>
+  http.get(`/admin/education/data-center/dashboards/${dashboard}?date=${encodeURIComponent(date)}${campusId ? `&campusId=${encodeURIComponent(campusId)}` : ''}`)
+export const createEducationDataSnapshot = (date, campusId) =>
+  http.post(`/admin/education/data-center/snapshots?date=${encodeURIComponent(date)}${campusId ? `&campusId=${encodeURIComponent(campusId)}` : ''}`)
+export const requestEducationDataReport = (payload) => http.post('/admin/education/data-center/reports', payload)
+export const listEducationDataReports = () => http.get('/admin/education/data-center/reports')
+export const retryEducationDataReport = (id) => http.post(`/admin/education/data-center/reports/${id}/retry`)
+export const listEducationQualityIssues = (status) => http.get(`/admin/education/data-center/quality-issues${status ? `?status=${encodeURIComponent(status)}` : ''}`)
+export const createEducationQualityIssue = (payload) => http.post('/admin/education/data-center/quality-issues', payload)
+export const transitionEducationQualityIssue = (id, status, resolution) =>
+  http.put(`/admin/education/data-center/quality-issues/${id}?status=${encodeURIComponent(status)}`, { resolution })
 export const listStudentGuardians = (params) => http.get(`/admin/education/student-guardians?${qs(params)}`)
 export const createStudentGuardian = (payload) => http.post('/admin/education/student-guardians', payload)
 export const updateStudentGuardian = (id, payload) => http.put(`/admin/education/student-guardians/${id}`, payload)
@@ -445,9 +575,7 @@ export const listKnowledgeBases = (params) => http.get(`/admin/knowledge-bases?$
 export const createKnowledgeBase = (payload) => http.post('/admin/knowledge-bases', payload)
 export const updateKnowledgeBase = (id, payload) => http.put(`/admin/knowledge-bases/${id}`, payload)
 export const deleteKnowledgeBase = (id) => http.delete(`/admin/knowledge-bases/${id}`)
-export const listKnowledgeDocuments = (knowledgeBaseId, params) => (
-  http.get(`/admin/knowledge-documents?${qs({ knowledgeBaseId, ...params })}`)
-)
+export const listKnowledgeDocuments = (knowledgeBaseId, params) => http.get(`/admin/knowledge-documents?${qs({ knowledgeBaseId, ...params })}`)
 export const createKnowledgeTextDocument = (payload) => http.post('/admin/knowledge-documents/text', payload)
 export const importKnowledgeDocument = (knowledgeBaseId, title, file) => {
   const data = new FormData()
@@ -456,45 +584,91 @@ export const importKnowledgeDocument = (knowledgeBaseId, title, file) => {
 }
 export const deleteKnowledgeDocument = (id) => http.delete(`/admin/knowledge-documents/${id}`)
 export const rebuildKnowledgeDocument = (id) => http.post(`/admin/knowledge-documents/${id}/rebuild`)
-export const searchKnowledge = (knowledgeBaseId, keyword, limit = 20) => (
-  http.get(`/admin/knowledge-search?${qs({ knowledgeBaseId, keyword, limit })}`)
-)
+export const searchKnowledge = (knowledgeBaseId, keyword, limit = 20) => http.get(`/admin/knowledge-search?${qs({ knowledgeBaseId, keyword, limit })}`)
 export const askEducationAssistant = (payload) => http.post('/education/ai/assistant/ask', payload)
 export const getAiModelStatus = () => http.get('/ai/model/status')
-export const getSchedulePolicy = (semesterCode) => (
-  http.get(`/admin/education/schedule-policy?${qs({ semesterCode })}`)
-)
+export const getSchedulePolicy = (semesterCode) => http.get(`/admin/education/schedule-policy?${qs({ semesterCode })}`)
 export const saveSchedulePolicy = (payload) => http.put('/admin/education/schedule-policy', payload)
-export const submitScheduleGenerationJob = (payload) => (
-  http.post('/admin/education/schedule-generation-jobs', payload)
-)
-export const listScheduleGenerationJobs = (semesterCode) => (
-  http.get(`/admin/education/schedule-generation-jobs?${qs({ semesterCode })}`)
-)
-export const cancelScheduleGenerationJob = (id) => (
-  http.post(`/admin/education/schedule-generation-jobs/${id}/cancel`)
-)
-export const updateScheduleCandidateGovernance = (id, payload) => (
-  http.put(`/admin/education/schedule-candidates/${id}/governance`, payload)
-)
-export const submitScheduleCandidateReview = (id) => (
-  http.post(`/admin/education/schedule-candidates/${id}/submit-review`)
-)
-export const reviewScheduleCandidate = (id, approved, comment) => (
-  http.post(`/admin/education/schedule-candidates/${id}/review?${qs({ approved, comment })}`)
-)
-export const listSchedulingAgentProposals = (semesterCode, params) => (
-  http.get(`/education/agents/scheduling/proposals?${qs({ semesterCode, ...params })}`)
-)
+export const submitScheduleGenerationJob = (payload) => http.post('/admin/education/schedule-generation-jobs', payload)
+export const listScheduleGenerationJobs = (semesterCode) => http.get(`/admin/education/schedule-generation-jobs?${qs({ semesterCode })}`)
+export const cancelScheduleGenerationJob = (id) => http.post(`/admin/education/schedule-generation-jobs/${id}/cancel`)
+export const updateScheduleCandidateGovernance = (id, payload) => http.put(`/admin/education/schedule-candidates/${id}/governance`, payload)
+export const submitScheduleCandidateReview = (id) => http.post(`/admin/education/schedule-candidates/${id}/submit-review`)
+export const reviewScheduleCandidate = (id, approved, comment) => http.post(`/admin/education/schedule-candidates/${id}/review?${qs({ approved, comment })}`)
+export const listSchedulingAgentProposals = (semesterCode, params) => http.get(`/education/agents/scheduling/proposals?${qs({ semesterCode, ...params })}`)
 export const createSchedulingAgentProposal = (payload) => http.post('/education/agents/scheduling/proposals', payload)
 export const confirmSchedulingAgentProposal = (id) => http.post(`/education/agents/scheduling/proposals/${id}/confirm`)
 export const rejectSchedulingAgentProposal = (id) => http.post(`/education/agents/scheduling/proposals/${id}/reject`)
-export const analyzeAcademicSchedule = (semesterCode) => (
-  http.get(`/education/agents/academic/analyze?${qs({ semesterCode })}`)
+export const analyzeAcademicSchedule = (semesterCode) => http.get(`/education/agents/academic/analyze?${qs({ semesterCode })}`)
+
+/**
+ * @typedef {Object} AiSchedulingRunCreatePayload
+ * @property {string} clientRequestId 客户端幂等请求标识
+ * @property {string} semesterCode 学期编码
+ * @property {string} requestText 自然语言排课需求
+ * @property {'GLOBAL'|'LOCAL'} mode 排课范围
+ * @property {string[]} [selectedOfferingIds] LOCAL 模式选中的教学任务
+ * @property {number} [candidateCount] 请求生成的候选数量
+ */
+
+/**
+ * @param {AiSchedulingRunCreatePayload} payload
+ */
+export const createAiSchedulingRun = (payload) => http.post('/admin/education/scheduling/ai/runs', payload)
+
+/**
+ * @param {string} id
+ */
+export const getAiSchedulingRun = (id) => http.get(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}`)
+
+/**
+ * @param {string} id
+ * @param {{ answer: string, expectedPlanVersion: number }} payload
+ */
+export const replyAiSchedulingRun = (id, payload) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/reply`, payload)
+
+/**
+ * @param {string} id
+ * @param {{ expectedPlanVersion: number }} payload
+ */
+export const confirmAiSchedulingRun = (id, payload) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/confirm`, payload)
+
+/**
+ * @param {string} id
+ */
+export const generateAiSchedulingRun = (id) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/generate`)
+
+/**
+ * @param {string} id
+ */
+export const listAiSchedulingCandidates = (id) => http.get(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates`)
+
+export const compareAiSchedulingCandidates = (id, candidateIds) => http.post(
+  `/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/compare`, candidateIds,
 )
+
+export const previewAiSchedulingCandidate = (id, candidateId) => http.get(
+  `/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/preview`,
+)
+
+export const explainAiSchedulingCandidate = (id, candidateId) => http.get(
+  `/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/candidates/${encodeURIComponent(candidateId)}/explanation`,
+)
+
+/**
+ * @param {string} id
+ */
+export const cancelAiSchedulingRun = (id) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/cancel`)
+
 export const listTeachingClassMembers = (offeringId) => http.get(`/admin/education/teaching-class-members?${qs({ offeringId })}`)
-export const enrollTeachingClassStudent = (offeringId, studentId) => http.post(`/admin/education/course-offerings/${offeringId}/enroll`, { studentId })
-export const withdrawTeachingClassStudent = (offeringId, studentId) => http.post(`/admin/education/course-offerings/${offeringId}/withdraw`, { studentId })
+export const enrollTeachingClassStudent = (offeringId, studentId) =>
+  http.post(`/admin/education/course-offerings/${offeringId}/enroll`, {
+    studentId
+  })
+export const withdrawTeachingClassStudent = (offeringId, studentId) =>
+  http.post(`/admin/education/course-offerings/${offeringId}/withdraw`, {
+    studentId
+  })
 
 // Workflow Node Templates
 export const listWorkflowNodeTemplates = (params) => http.get(`/admin/workflow-node-templates/list?${qs(params)}`)

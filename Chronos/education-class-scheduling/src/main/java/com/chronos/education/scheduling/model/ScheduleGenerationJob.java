@@ -38,11 +38,20 @@ public class ScheduleGenerationJob extends BaseEntity {
 	@Column(name = "requested_by", length = 128, nullable = false)
 	private String requestedBy;
 
+	@Column(name = "agent_run_id", length = 64)
+	private String agentRunId;
+
 	@Column(name = "started_at")
 	private LocalDateTime startedAt;
 
 	@Column(name = "finished_at")
 	private LocalDateTime finishedAt;
+
+	@Column(name = "lease_owner", length = 64)
+	private String leaseOwner;
+
+	@Column(name = "lease_expires_at")
+	private LocalDateTime leaseExpiresAt;
 
 	@Version
 	@Column(name = "lock_version", nullable = false)

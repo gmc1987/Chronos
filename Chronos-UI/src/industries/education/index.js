@@ -1,5 +1,6 @@
 // 行业页面也按路由拆包，未启用教育模板时不会进入核心首屏包。
 const AdminClassScheduling = () => import('../../modules/education/pages/AdminClassScheduling.vue')
+const AdminSchedulingAi = () => import('../../modules/education/pages/AdminSchedulingAi.vue')
 const AdminExamCenter = () => import('../../modules/education/pages/AdminExamCenter.vue')
 const AdminExamInvigilation = () => import('../../modules/education/pages/AdminExamInvigilation.vue')
 const AdminExamRooms = () => import('../../modules/education/pages/AdminExamRooms.vue')
@@ -28,6 +29,8 @@ const AdminKnowledgePoints = () => import('../../modules/education/pages/AdminKn
 const AdminResearch = () => import('../../modules/education/pages/AdminResearch.vue')
 const AdminMistakes = () => import('../../modules/education/pages/AdminMistakes.vue')
 const PortalTeachingCenter = () => import('../../modules/education/pages/PortalTeachingCenter.vue')
+const AdminMeetings = () => import('../../modules/education/pages/AdminMeetings.vue')
+const AdminMeetingRooms = () => import('../../modules/education/pages/AdminMeetingRooms.vue')
 
 export const educationIndustry = {
   code: 'EDUCATION',
@@ -46,15 +49,32 @@ export const educationIndustry = {
     { path: '/admin/education/exam/invigilation', name: 'admin-education-exam-invigilation', component: AdminExamInvigilation },
     { path: '/admin/education/exam/rooms', name: 'admin-education-exam-rooms', component: AdminExamRooms },
     { path: '/admin/education/exam/paper-analysis', name: 'admin-education-exam-paper-analysis', component: AdminExamPaperAnalysis },
+    { path: '/admin/education/meeting/manage', name: 'admin-education-meetings', component: AdminMeetings },
+    { path: '/admin/education/meeting/rooms', name: 'admin-education-meeting-rooms', component: AdminMeetingRooms },
     { path: '/admin/education/knowledge', name: 'admin-education-knowledge', component: AdminKnowledgeBases },
     { path: '/admin/education/agents', name: 'admin-education-agents', component: AdminEducationAgents },
     { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },
     { path: '/admin/education/teaching-center', name: 'admin-education-teaching-center', component: AdminTeachingCenter },
     { path: '/portal/education/teaching-center', name: 'portal-education-teaching-center', component: PortalTeachingCenter },
+    // 教师门户复用已经完成业务校验的领域页面，不再走早期通用 CRUD 页面。
+    { path: '/portal/education/teaching/plans', name: 'portal-education-teaching-plans', component: AdminTeachingPlan },
+    { path: '/portal/education/teaching/lessons', name: 'portal-education-teaching-lessons', component: AdminLessonPlans },
+    { path: '/portal/education/teaching/preparations', name: 'portal-education-teaching-preparations', component: AdminPreparation },
+    { path: '/portal/education/teaching/courseware', name: 'portal-education-teaching-courseware', component: AdminCourseware },
+    { path: '/portal/education/teaching/materials', name: 'portal-education-teaching-materials', component: AdminMaterials },
+    { path: '/portal/education/teaching/questions', name: 'portal-education-teaching-questions', component: AdminQuestionBank },
+    { path: '/portal/education/teaching/knowledge-points', name: 'portal-education-teaching-knowledge-points', component: AdminKnowledgePoints },
+    { path: '/portal/education/teaching/research', name: 'portal-education-teaching-research', component: AdminResearch },
+    { path: '/portal/education/teaching/mistakes', name: 'portal-education-teaching-mistakes', component: AdminMistakes },
     {
       path: '/admin/education/scheduling',
       name: 'admin-education-class-scheduling',
       component: AdminClassScheduling,
+    },
+    {
+      path: '/admin/education/scheduling/ai',
+      name: 'admin-education-scheduling-ai',
+      component: AdminSchedulingAi,
     },
   ],
   branding: {

@@ -1,0 +1,22 @@
+// !$*UTF8*$!
+{
+ archiveVersion = 1;
+ objectVersion = 56;
+ objects = {
+  000000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChronosMobileApp.swift; sourceTree = "<group>";};
+  000000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>";};
+  000000000000000000000014 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChronosMobile.app; sourceTree = BUILT_PRODUCTS_DIR;};
+  000000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/ChronosMobileCore.swift; sourceTree = "<group>";};
+  000000000000000000000002 = {isa = PBXGroup; children = (000000000000000000000001,000000000000000000000009,000000000000000000000011); path = ChronosMobile; sourceTree = "<group>";};
+  000000000000000000000003 = {isa = PBXBuildFile; fileRef = 000000000000000000000001;};
+  000000000000000000000010 = {isa = PBXBuildFile; fileRef = 000000000000000000000009;};
+  000000000000000000000004 = {isa = PBXSourcesBuildPhase; files = (000000000000000000000003,000000000000000000000010);};
+  000000000000000000000005 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000012; buildPhases = (000000000000000000000004); name = ChronosMobile; productName = ChronosMobile; productReference = 000000000000000000000014; productType = "com.apple.product-type.application";};
+  000000000000000000000006 = {isa = PBXProject; buildConfigurationList = 000000000000000000000007; compatibilityVersion = "Xcode 14.0"; mainGroup = 000000000000000000000002; targets = (000000000000000000000005);};
+  000000000000000000000007 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000008); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug;};
+  000000000000000000000008 = {isa = XCBuildConfiguration; buildSettings = { SDKROOT = iphoneos; SWIFT_VERSION = 5.0;}; name = Debug;};
+  000000000000000000000012 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000013); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug;};
+  000000000000000000000013 = {isa = XCBuildConfiguration; buildSettings = { PRODUCT_NAME = ChronosMobile; PRODUCT_BUNDLE_IDENTIFIER = com.gmc1987.chronos.mobile; INFOPLIST_FILE = ChronosMobile/Info.plist; SWIFT_VERSION = 5.0; IPHONEOS_DEPLOYMENT_TARGET = 16.0; TARGETED_DEVICE_FAMILY = "1,2";}; name = Debug;};
+ };
+ rootObject = 000000000000000000000006;
+}

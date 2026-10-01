@@ -5,9 +5,12 @@
         <h2>走班排课</h2>
         <p>按教学班安排教师、教室、星期、节次和授课周次，保存时自动检查冲突。</p>
       </div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="loadAll">
-        <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
-      </el-select>
+      <div class="scheduling-header-actions">
+        <SchedulingModeSwitch :semester-code="semesterCode" />
+        <el-select v-model="semesterCode" placeholder="选择学期" @change="loadAll">
+          <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
+        </el-select>
+      </div>
     </header>
 
     <el-tabs v-model="activeTab">
@@ -28,7 +31,9 @@
               class="target-select"
               filterable
               clearable
-              placeholder="请选择查询对象"
+              :loading="dimensionOptionsLoading"
+              :disabled="dimensionOptionsLoading || dimensionOptionsError"
+              :placeholder="scheduleTargetPlaceholder"
               @change="loadSchedule">
               <el-option
                 v-for="item in dimensionOptions"
@@ -36,6 +41,7 @@
                 :label="item.label"
                 :value="item.value" />
             </el-select>
+            <el-button v-if="dimensionOptionsError && scheduleDimension !== 'ALL'" link type="danger" @click="loadDimensionOptions">选项加载失败，重试</el-button>
           </div>
           <div class="schedule-actions">
             <el-radio-group v-model="scheduleView" class="view-switch">
@@ -53,8 +59,8 @@
         <el-empty
           v-if="scheduleDimension !== 'ALL' && !scheduleTargetId"
           description="选择教师、班级、学生或教室后查看课表" />
-        <ScheduleGrid v-if="scheduleView === 'grid'" :entries="schedule" :periods="schedulePeriods" @edit="openEntry" @move="moveEntry" />
-        <el-table v-else :data="schedule">
+        <ScheduleGrid v-if="(scheduleDimension === 'ALL' || scheduleTargetId) && scheduleView === 'grid'" :entries="schedule" :periods="schedulePeriods" @edit="openEntry" @move="moveEntry" />
+        <el-table v-else-if="scheduleDimension === 'ALL' || scheduleTargetId" :data="schedule">
           <el-table-column label="时间" width="160">
             <template #default="scope">周{{ dayName(scope.row.dayOfWeek) }} 第 {{ scope.row.periodNo }} 节</template>
           </el-table-column>
@@ -623,8 +629,9 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import ScheduleGrid from '../components/ScheduleGrid.vue'
+import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   applyScheduleCandidate,
@@ -654,12 +661,9 @@ import {
   listClassrooms,
   listClassSchedule,
   listAcademicTerms,
-  listAdministrativeClasses,
   listCourseCatalog,
   listCourseOfferings,
   listCourseAdjustmentIncidents,
-  listEducationTeachers,
-  listEducationStudents,
   listScheduleVersions,
   listScheduleCandidates,
   previewScheduleCandidate,
@@ -682,6 +686,7 @@ import {
   listTeacherTimeConstraints,
   listClassroomUnavailableSlots,
   listScheduleOccurrences,
+  listScheduleDimensionOptions,
   listScheduleDateExceptionHistory,
   cancelScheduleDateException,
   restoreScheduleDateException,
@@ -690,7 +695,8 @@ import {
   updateClassroomUnavailableSlot,
 } from '../../../api/admin'
 
-const semesterCode = ref('2026-2027-1')
+const route = useRoute()
+const semesterCode = ref(typeof route.query.semesterCode === 'string' ? route.query.semesterCode : '')
 const scheduleFileInput = ref(null)
 const router = useRouter()
 const activeTab = ref('schedule')
@@ -717,6 +723,8 @@ const quality = ref({})
 const policy = reactive({})
 const scheduleDimension = ref('ALL')
 const scheduleTargetId = ref('')
+const dimensionOptionsLoading = ref(false)
+const dimensionOptionsError = ref(false)
 const incidents = ref([])
 const incidentSelection = ref([])
 const incidentStatus = ref('FAILED')
@@ -762,6 +770,9 @@ const candidateForm = reactive({})
 const constraintForm = reactive({})
 const roomConstraintForm = reactive({})
 const dateExceptionForm = reactive({})
+let loadSequence = 0
+let dimensionOptionsSequence = 0
+let scheduleSequence = 0
 const orgName = item => item.organizationName || item.orgName || item.name || item.id
 const selectedTerm = computed(() => terms.value.find(item => item.termCode === semesterCode.value))
 const availableCombinedClasses = computed(() => administrativeClasses.value.filter(item =>
@@ -806,41 +817,154 @@ const dimensionOptions = computed(() => {
   }
   return []
 })
+const scheduleTargetPlaceholder = computed(() => ({
+  TEACHER: '请选择教师',
+  TEACHING_CLASS: '请选择教学班',
+  ADMIN_CLASS: '请选择行政班',
+  STUDENT: '请选择学生',
+  CLASSROOM: '请选择教室',
+})[scheduleDimension.value] || '请选择查询对象')
 const reset = (target, value) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, value) }
+const responseData = response => response?.data
+const responseList = response => {
+  const data = responseData(response)
+  return Array.isArray(data) ? data : data?.content || []
+}
+const loadResult = (results, index, fallback) => {
+  const result = results[index]
+  return result?.status === 'fulfilled' ? result.value : fallback
+}
+const clearSemesterData = () => {
+  ++dimensionOptionsSequence
+  ++scheduleSequence
+  dimensionOptionsLoading.value = false
+  dimensionOptionsError.value = false
+  schedule.value = []
+  offerings.value = []
+  classrooms.value = []
+  courses.value = []
+  versions.value = []
+  candidates.value = []
+  generationJobs.value = []
+  teacherConstraints.value = []
+  roomConstraints.value = []
+  occurrences.value = []
+  dateExceptionHistory.value = []
+  quality.value = {}
+  reset(policy, {})
+  campuses.value = []
+  roomTypes.value = []
+  teachers.value = []
+  students.value = []
+  administrativeClasses.value = []
+  offeringOptions.value = []
+  classroomOptions.value = []
+  bellSchedules.value = []
+  offeringTotal.value = 0
+  classroomTotal.value = 0
+  scheduleTargetId.value = ''
+}
+const loadDimensionOptions = async () => {
+  const sequence = ++dimensionOptionsSequence
+  const semester = semesterCode.value
+  dimensionOptionsLoading.value = true
+  dimensionOptionsError.value = false
+  try {
+    const response = await listScheduleDimensionOptions(semester)
+    if (sequence !== dimensionOptionsSequence || semester !== semesterCode.value) return
+    const dimensions = responseData(response) || {}
+    if (!['teachers', 'students', 'administrativeClasses', 'teachingClasses', 'classrooms']
+      .every(key => Array.isArray(dimensions[key]))) {
+      throw new Error('接口返回的查询对象格式不正确')
+    }
+    teachers.value = dimensions.teachers || []
+    students.value = dimensions.students || []
+    administrativeClasses.value = dimensions.administrativeClasses || []
+    offeringOptions.value = dimensions.teachingClasses || []
+    classroomOptions.value = dimensions.classrooms || []
+  } catch (error) {
+    if (sequence !== dimensionOptionsSequence || semester !== semesterCode.value) return
+    dimensionOptionsError.value = true
+    ElMessage.error(`课表查询对象加载失败：${error.message}`)
+  } finally {
+    if (sequence === dimensionOptionsSequence) dimensionOptionsLoading.value = false
+  }
+}
 const loadAll = async () => {
-  const [termResponse, courseResponse, teacherResponse, studentResponse, classResponse, offeringResponse, classroomResponse, roomTypeResponse, versionResponse, candidateResponse, campusResponse] = await Promise.all([
-    listAcademicTerms(),
+  const sequence = ++loadSequence
+  ++dimensionOptionsSequence
+  ++scheduleSequence
+  scheduleTargetId.value = ''
+  schedule.value = []
+  teachers.value = []
+  students.value = []
+  administrativeClasses.value = []
+  offeringOptions.value = []
+  classroomOptions.value = []
+  dimensionOptionsLoading.value = false
+  dimensionOptionsError.value = false
+  let termResponse
+  try {
+    termResponse = await listAcademicTerms()
+  } catch (error) {
+    if (sequence !== loadSequence) return
+    terms.value = []
+    semesterCode.value = ''
+    clearSemesterData()
+    ElMessage.error(`学期加载失败：${error.message}`)
+    return
+  }
+  if (sequence !== loadSequence) return
+  terms.value = responseList(termResponse)
+  const preferredTerm = terms.value.find(item => item.currentTerm) || terms.value[0]
+  if (!terms.value.some(item => item.termCode === semesterCode.value)) {
+    semesterCode.value = preferredTerm?.termCode || ''
+  }
+  if (!semesterCode.value) {
+    clearSemesterData()
+    return
+  }
+  const currentTerm = terms.value.find(item => item.termCode === semesterCode.value)
+  const dimensionOptionsRequest = loadDimensionOptions()
+  const results = await Promise.allSettled([
     listCourseCatalog(),
-    listEducationTeachers(),
-    listEducationStudents(),
-    listAdministrativeClasses(),
-    listCourseOfferings(semesterCode.value),
-    listClassrooms(),
     dictionaryOptions('EDU_ROOM_TYPE'),
     listScheduleVersions(semesterCode.value),
     listScheduleCandidates(semesterCode.value),
     orgList({ page: 0, size: 200 }),
+    currentTerm ? listBellSchedules(currentTerm.id) : Promise.resolve({ data: [] }),
+    listTeacherTimeConstraints(semesterCode.value),
+    listClassroomUnavailableSlots(semesterCode.value),
   ])
-  terms.value = termResponse.data || []
-  courses.value = courseResponse.data || []
-  teachers.value = teacherResponse.data || []
-  students.value = studentResponse.data || []
-  administrativeClasses.value = classResponse.data || []
-  offeringOptions.value = offeringResponse.data || []
-  classroomOptions.value = classroomResponse.data || []
-  roomTypes.value = (roomTypeResponse?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
-  versions.value = versionResponse.data || []
-  candidates.value = candidateResponse.data || []
+  const courseResponse = loadResult(results, 0, { data: [] })
+  const roomTypeResponse = loadResult(results, 1, { data: [] })
+  const versionResponse = loadResult(results, 2, { data: [] })
+  const candidateResponse = loadResult(results, 3, { data: [] })
+  const campusResponse = loadResult(results, 4, { data: [] })
+  const bellScheduleResponse = loadResult(results, 5, { data: [] })
+  const teacherConstraintResponse = loadResult(results, 6, { data: [] })
+  const roomConstraintResponse = loadResult(results, 7, { data: [] })
+  if (sequence !== loadSequence) return
+  courses.value = responseList(courseResponse)
+  roomTypes.value = responseList(roomTypeResponse).map(item => ({ label: item.dictName, value: item.dictValue }))
+  versions.value = responseList(versionResponse)
+  candidates.value = responseList(candidateResponse)
   const organizations = campusResponse.data?.content || campusResponse.data || []
   campuses.value = organizations.filter(item => ['CAMPUS', 'SCHOOL'].includes(item.organizationType || item.orgType))
-  bellSchedules.value = selectedTerm.value
-    ? (await listBellSchedules(selectedTerm.value.id)).data || []
-    : []
-  teacherConstraints.value = (await listTeacherTimeConstraints(semesterCode.value)).data || []
-  roomConstraints.value = (await listClassroomUnavailableSlots(semesterCode.value)).data || []
+  bellSchedules.value = responseList(bellScheduleResponse)
+  teacherConstraints.value = responseList(teacherConstraintResponse)
+  roomConstraints.value = responseList(roomConstraintResponse)
   offeringPage.value = 1
   classroomPage.value = 1
-  await Promise.all([loadOfferingsPage(), loadClassroomsPage(), loadSchedule(), loadDateSchedule(), loadQualityAnalysis(), loadPolicy()])
+  await Promise.allSettled([
+    dimensionOptionsRequest,
+    loadOfferingsPage(),
+    loadClassroomsPage(),
+    loadSchedule(),
+    loadDateSchedule(),
+    loadQualityAnalysis(),
+    loadPolicy(),
+  ])
 }
 const loadOfferingsPage = async () => {
   const response = await listCourseOfferings(semesterCode.value, {
@@ -861,16 +985,23 @@ const loadClassroomsPage = async () => {
 const changeOfferingPageSize = () => { offeringPage.value = 1; loadOfferingsPage() }
 const changeClassroomPageSize = () => { classroomPage.value = 1; loadClassroomsPage() }
 const loadSchedule = async () => {
+  const sequence = ++scheduleSequence
   if (scheduleDimension.value !== 'ALL' && !scheduleTargetId.value) {
     schedule.value = []
     return
   }
+  const semester = semesterCode.value
+  const dimension = scheduleDimension.value
+  const target = scheduleTargetId.value
   const response = await listClassSchedule(
-    semesterCode.value,
-    scheduleDimension.value,
-    scheduleTargetId.value || undefined,
+    semester,
+    dimension,
+    target || undefined,
   )
-  schedule.value = response.data || []
+  if (sequence === scheduleSequence && semester === semesterCode.value
+    && dimension === scheduleDimension.value && target === scheduleTargetId.value) {
+    schedule.value = response.data || []
+  }
 }
 const loadQualityAnalysis = async () => {
   quality.value = (await getScheduleQualityAnalysis(semesterCode.value)).data || {}
@@ -895,7 +1026,8 @@ const loadDateExceptionHistory = async () => {
 const loadDateSchedule = async () => Promise.all([loadOccurrences(), loadDateExceptionHistory()])
 const changeDimension = async () => {
   scheduleTargetId.value = ''
-  await loadSchedule()
+  schedule.value = []
+  await Promise.allSettled([loadDimensionOptions(), loadSchedule()])
 }
 const openEntry = (row) => { reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, durationPeriods: 1, weekPattern: 'ALL', startWeek: 1, endWeek: selectedTerm.value?.weekCount || 20, locked: false }); entryDialog.value = true }
 const saveEntry = async () => { const payload = { ...entryForm, semesterCode: semesterCode.value }; await (entryForm.id ? updateScheduleEntry(entryForm.id, payload) : createScheduleEntry(payload)); entryDialog.value = false; ElMessage.success('课表已保存'); await loadAll() }
@@ -1250,6 +1382,17 @@ header h2 {
 header p {
   margin: 0;
   color: #84909a;
+}
+.scheduling-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+@media (max-width: 800px) {
+  header { flex-wrap: wrap; }
+  .scheduling-header-actions { justify-content: flex-start; }
 }
 header .el-input {
   width: 260px;

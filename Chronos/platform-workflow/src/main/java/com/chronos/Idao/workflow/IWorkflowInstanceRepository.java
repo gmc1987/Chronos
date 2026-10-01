@@ -11,6 +11,8 @@ public interface IWorkflowInstanceRepository extends JpaRepository<WorkflowInsta
 	java.util.List<WorkflowInstance> findByInitiatorOrderByCreateTimeDesc(String initiator);
 	Optional<WorkflowInstance> findByEngineInstanceId(String engineInstanceId);
 	java.util.List<WorkflowInstance> findByEngineTypeAndStatus(String engineType, String status);
+	java.util.List<WorkflowInstance> findTop200ByStatusOrderByCreateTimeDesc(String status);
+	long countByStatus(String status);
 
 	/** 审批事务先锁实例，串行化同一流程的并发通过、拒绝、退回操作。 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)

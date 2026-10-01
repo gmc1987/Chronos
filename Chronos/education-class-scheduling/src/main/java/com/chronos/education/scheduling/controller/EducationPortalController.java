@@ -37,6 +37,20 @@ public class EducationPortalController {
 		return ok(portal.personalSchedule(principal.getName(), studentId, date));
 	}
 
+	@GetMapping("/portal/education/schedule/calendar")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<Map<String, Object>> scheduleCalendar(
+			@RequestParam(required = false) String studentId,
+			@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+			@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+			Principal principal) {
+		return ok(portal.personalScheduleCalendar(
+				principal.getName(),
+				studentId,
+				startDate,
+				endDate));
+	}
+
 	private <T> ResultData<T> ok(T data) {
 		return ResultData.<T>builder()
 				.code("200")

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import com.chronos.ai.dao.AiModelRepository;
 import com.chronos.ai.model.AiModel;
 import com.chronos.ai.service.AiModelChatService;
+import com.chronos.ai.service.AiModelTypes;
 import com.chronos.commons.eumns.LLMProviderEnum;
 import com.chronos.service.factory.LLMServiceStrategy;
 
@@ -16,10 +17,12 @@ import com.chronos.service.factory.LLMServiceStrategy;
 public class DeepseekServiceImpl implements LLMServiceStrategy {
 	private final AiModelRepository models;
 	private final AiModelChatService runtime;
+	private final AiModelTypes modelTypes;
 
-	public DeepseekServiceImpl(AiModelRepository models, AiModelChatService runtime) {
+	public DeepseekServiceImpl(AiModelRepository models, AiModelChatService runtime, AiModelTypes modelTypes) {
 		this.models = models;
 		this.runtime = runtime;
+		this.modelTypes = modelTypes;
 	}
 
 	@Override
@@ -45,10 +48,11 @@ public class DeepseekServiceImpl implements LLMServiceStrategy {
 
 	private boolean isUsable(AiModel model) {
 		return Integer.valueOf(1).equals(model.getStatus())
-				&& "deepseek".equalsIgnoreCase(model.getProvider())
-				&& "CHAT".equalsIgnoreCase(model.getModelType())
-				&& model.getApiKey() != null
-				&& !model.getApiKey().isBlank()
+				&& provider().equalsIgnoreCase(model.getProvider())
+				&& modelTypes.isText(model.getModelType())
+				&& ((model.getApiKey() != null && !model.getApiKey().isBlank())
+						|| (model.getApiKeyCiphertext() != null
+								&& !model.getApiKeyCiphertext().isBlank()))
 				&& model.getModelName() != null
 				&& !model.getModelName().isBlank();
 	}

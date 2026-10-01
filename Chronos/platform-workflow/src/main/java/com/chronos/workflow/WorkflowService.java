@@ -118,6 +118,165 @@ public class WorkflowService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<WorkflowDefinition> versions(String id, String actor) {
+		WorkflowDefinition source = requireDefinition(id);
+		return definitions.findByFlowCodeOrderByCreateTimeDesc(source.getFlowCode())
+				.stream()
+				.filter(version -> security.canDefinition(actor, version.getId(), "VIEW"))
+				.toList();
+	}
+
+	/**
+	 * An instance remains pinned to its original definition and form versions.
+	 * A newly published definition never silently migrates a running instance.
+	 */
+	@Transactional(readOnly = true)
+	public InstanceVersionView instanceVersion(String instanceId) {
+		WorkflowInstance instance = requireInstance(instanceId);
+		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+		String formId = definition.getMainFormId();
+		FormDefinition form = formId == null || formId.isBlank()
+				? null
+				: formDefinitions.findById(formId).orElse(null);
+		return new InstanceVersionView(
+				instance.getId(),
+				definition.getId(),
+				definition.getFlowCode(),
+				instance.getDefinitionVersion(),
+				definition.getFlowableDeploymentId(),
+				instance.getEngineType(),
+				instance.getEngineInstanceId(),
+				formId,
+				form == null ? null : form.getFormKey(),
+				form == null ? null : form.getVersion());
+	}
+
+	@Transactional(readOnly = true)
+	public List<FormInstanceRevision> formRevisions(
+			String instanceId,
+			String formId,
+			String nodeKey) {
+		requireInstance(instanceId);
+		return formService.revisions(instanceId, formId, nodeKey);
+	}
+
+	public record InstanceVersionView(
+			String instanceId,
+			String definitionId,
+			String flowCode,
+			String definitionVersion,
+			String flowableDeploymentId,
+			String engineType,
+			String engineInstanceId,
+			String mainFormId,
+			String mainFormKey,
+			String mainFormVersion) {
+	}
+
+	@Transactional(readOnly = true)
+	public WorkflowVersionComparison compareVersions(String sourceId, String targetId) {
+		WorkflowDefinition source = requireDefinition(sourceId);
+		WorkflowDefinition target = requireDefinition(targetId);
+		if (!Objects.equals(source.getFlowCode(), target.getFlowCode())) {
+			throw new IllegalArgumentException("只能比较同一流程编码的版本");
+		}
+		List<WorkflowVersionChange> changes = new ArrayList<>();
+		if (!Objects.equals(source.getMainFormId(), target.getMainFormId())) {
+			changes.add(new WorkflowVersionChange("MAIN_FORM_CHANGED", "mainFormId", true));
+		}
+		if (!Objects.equals(source.getEntryNodeKey(), target.getEntryNodeKey())) {
+			changes.add(new WorkflowVersionChange("ENTRY_CHANGED", "entryNodeKey", true));
+		}
+		if (!Objects.equals(source.getStarterScopeJson(), target.getStarterScopeJson())) {
+			changes.add(new WorkflowVersionChange("START_SCOPE_CHANGED", "starterScopeJson", true));
+		}
+		if (!Objects.equals(source.getConfigJson(), target.getConfigJson())) {
+			changes.add(new WorkflowVersionChange("CONFIG_CHANGED", "configJson", true));
+		}
+		Map<String, WorkflowNode> oldNodes = new LinkedHashMap<>();
+		Map<String, WorkflowNode> newNodes = new LinkedHashMap<>();
+		nodes(sourceId).forEach(node -> oldNodes.put(node.getNodeKey(), node));
+		nodes(targetId).forEach(node -> newNodes.put(node.getNodeKey(), node));
+		for (String key : oldNodes.keySet()) {
+			WorkflowNode before = oldNodes.get(key);
+			WorkflowNode after = newNodes.get(key);
+			if (after == null) {
+				changes.add(new WorkflowVersionChange("NODE_REMOVED", key, true));
+				continue;
+			}
+			if (!Objects.equals(before.getNodeType(), after.getNodeType())
+					|| !Objects.equals(before.getExecutor(), after.getExecutor())
+					|| !Objects.equals(before.getTimeoutSec(), after.getTimeoutSec())
+					|| !Objects.equals(before.getRetryMax(), after.getRetryMax())
+					|| !Objects.equals(before.getRetryIntervalSec(), after.getRetryIntervalSec())
+					|| !Objects.equals(before.getInputSchema(), after.getInputSchema())
+					|| !Objects.equals(before.getOutputSchema(), after.getOutputSchema())
+					|| !Objects.equals(before.getPropertiesJson(), after.getPropertiesJson())
+					|| !Objects.equals(before.getFieldPermissionsJson(), after.getFieldPermissionsJson())
+					|| !Objects.equals(before.getAdditionalFormIds(), after.getAdditionalFormIds())) {
+				changes.add(new WorkflowVersionChange("NODE_BEHAVIOR_CHANGED", key, true));
+			} else if (!Objects.equals(before.getNodeName(), after.getNodeName())) {
+				changes.add(new WorkflowVersionChange("NODE_RENAMED", key, false));
+			}
+		}
+		for (String key : newNodes.keySet()) {
+			if (!oldNodes.containsKey(key)) {
+				changes.add(new WorkflowVersionChange("NODE_ADDED", key, true));
+			}
+		}
+		Set<EdgeSignature> oldEdges = edgeSignatures(sourceId);
+		Set<EdgeSignature> newEdges = edgeSignatures(targetId);
+		for (EdgeSignature edge : oldEdges) {
+			if (!newEdges.contains(edge)) {
+				changes.add(new WorkflowVersionChange("EDGE_REMOVED", edge.path(), true));
+			}
+		}
+		for (EdgeSignature edge : newEdges) {
+			if (!oldEdges.contains(edge)) {
+				changes.add(new WorkflowVersionChange("EDGE_ADDED", edge.path(), true));
+			}
+		}
+		return new WorkflowVersionComparison(
+				sourceId,
+				targetId,
+				source.getVersion(),
+				target.getVersion(),
+				changes.stream().anyMatch(WorkflowVersionChange::requiresReview),
+				changes);
+	}
+
+	private Set<EdgeSignature> edgeSignatures(String flowId) {
+		Set<EdgeSignature> signatures = new LinkedHashSet<>();
+		for (WorkflowEdge edge : edges(flowId)) {
+			signatures.add(new EdgeSignature(
+					edge.getFromNodeKey(),
+					edge.getToNodeKey(),
+					edge.getConditionExpr(),
+					edge.getIsDefault()));
+		}
+		return signatures;
+	}
+
+	private record EdgeSignature(String from, String to, String condition, Boolean defaultEdge) {
+		String path() {
+			return Objects.toString(from, "") + " -> " + Objects.toString(to, "")
+					+ (condition == null ? "" : " [" + condition + "]");
+		}
+	}
+
+	public record WorkflowVersionChange(String change, String path, boolean requiresReview) {
+	}
+
+	public record WorkflowVersionComparison(
+			String sourceId,
+			String targetId,
+			String sourceVersion,
+			String targetVersion,
+			boolean requiresReview,
+			List<WorkflowVersionChange> changes) {
+	}
+
+	@Transactional(readOnly = true)
 	public List<Map<String, Object>> available(String actor) {
 		Map<String, WorkflowDefinition> latestByFlowCode = new HashMap<>();
 		for (WorkflowDefinition definition : definitions.findByStatusOrderByFlowNameAsc("PUBLISHED")) {
@@ -2070,8 +2229,13 @@ public class WorkflowService {
 				formService.fields(formId),
 				permissions,
 				storedData);
-		return Map.of("formId", formId, "formName", definition.getFormName(), "role", role, "fields", schema, "data",
-				data);
+		return Map.of(
+				"formId", formId,
+				"formName", definition.getFormName(),
+				"formVersion", definition.getVersion(),
+				"role", role,
+				"fields", schema,
+				"data", data);
 	}
 
 	Map<String, Object> visibleRuntimeData(
