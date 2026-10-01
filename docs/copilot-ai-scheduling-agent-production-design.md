@@ -274,6 +274,16 @@ Agent Run 状态：`DRAFT → NEEDS_CLARIFICATION → READY_FOR_CONFIRMATION →
 
 **模型调用标识**：模型管理的“供应商”不是“模型名称”；后者须填写与 Base URL 对应的 API 模型标识。将供应商名误填为模型名时，在保存或调用前明确提示；提供方返回“不支持此模型标识”的请求错误时，也提示管理员检查配置，不回显原始提供方响应。具体支持列表因地址与账号而异，服务端不写死列表，不自动改动已有配置或替换为猜测的标识。
 
-**组合时段规则端到端业务验收**：`SchedulingAiBusinessAcceptanceTests` 只在同时设置 `CHRONOS_ACCEPTANCE_CLONE=true`、`CHRONOS_AI_BUSINESS_ACCEPTANCE=true` 且 `CHRONOS_DB_URL` 的数据库名包含 `test`/`verify` 时执行；必须使用**可销毁的隔离库**，并配置可解密、可实际调用的默认文本模型。测试会在隔离库中创建完整的学期、教师、课程、教室及两个验收账号，发起自然语言禁排 Run，核对模型原文和授权对象、确认与持久化任务状态、两份候选逐条核验、比较和预览、普通排课不带禁排规则、负责人不能自审、异人审核、应用与发布后的正式课表。运行时会在该隔离库写入验收数据与版本；**不得指向共享业务库**。验收时曾尝试把现有 `ChronosEducation` 复制到隔离容器，但源库历史中的 `V20270108__education_agent_academic_approver_permissions.sql` 与当前代码同版本的 `V20270108__education_schedule_job_lease.sql` 不一致；未对源库执行 repair 或关闭 Flyway 校验，改用当前迁移从空库创建的隔离库，复制加密模型配置后完成此端到端验证。此结果证明已支持的组合禁排切片在验收数据上可用，不代表真实学校全量数据和未知日期级规则已完成生产验收。
+**组合时段规则端到端业务验收**：`SchedulingAiBusinessAcceptanceTests` 只在同时设置 `CHRONOS_ACCEPTANCE_CLONE=true`、`CHRONOS_AI_BUSINESS_ACCEPTANCE=true` 且 `CHRONOS_DB_URL` 的数据库名包含 `test`/`verify` 时执行；必须使用**可销毁的隔离库**，并配置可解密、可实际调用的默认文本模型。先用当前代码迁移全新隔离库，在其中配置 `acceptance_admin` 超级管理员和有效的默认模型；从安全环境注入 `CHRONOS_DB_URL`、`CHRONOS_DB_USERNAME`、`CHRONOS_DB_PASSWORD`、`CHRONOS_ENCRYPTION_KEY` 与首次启动所需的 `CHRONOS_BOOTSTRAP_ADMIN_*`，再运行：
+
+```bash
+cd Chronos
+CHRONOS_ACCEPTANCE_CLONE=true CHRONOS_AI_BUSINESS_ACCEPTANCE=true \
+  ./mvnw -pl education-app -am \
+  -Dtest=ChronosEducationApplicationTests,SchedulingAiBusinessAcceptanceTests \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+测试会在隔离库中创建完整的学期、教师、课程、教室及两个验收账号，发起自然语言禁排 Run，核对模型原文和授权对象、确认与持久化任务状态、两份候选逐条核验、比较和预览、普通排课不带禁排规则、负责人不能自审、异人审核、应用与发布后的正式课表。运行时会在该隔离库写入验收数据与版本；**不得指向共享业务库**。验收时曾尝试把现有 `ChronosEducation` 复制到隔离容器，但源库历史中的 `V20270108__education_agent_academic_approver_permissions.sql` 与当前代码同版本的 `V20270108__education_schedule_job_lease.sql` 不一致；未对源库执行 repair 或关闭 Flyway 校验，改用当前迁移从空库创建的隔离库，复制加密模型配置后完成此端到端验证。**现有库迁移版本冲突在部署前仍需按真实迁移历史制订兼容修复，不能用本次全新库验收替代升级验收。**此结果证明已支持的组合禁排切片在验收数据上可用，不代表真实学校全量数据和未知日期级规则已完成生产验收。
 
 **下一阶段扩展方向（尚未实现）**：当前结构化 `SLOT_RULE` 是多时段禁排的可验证切片，并不是可以执行任意自然语言规则的引擎。下一阶段需要受权限和分页限制的 Tool 查询校历、考试、班级和资源，按版本注册新的业务规则原语及冲突优先级，扩展到真实日期/周次和全局资源约束，并逐项报告未满足原因；未知意图、无基础数据、越权或互相矛盾的条件必须进入澄清/拒绝，不得忽略或假装满足，也不得让模型自行执行 SQL 或发布课表。比如“排出周末、节假日、考试安排计划”需要澄清是避开日期还是生成这些计划；“所有老师不得连堂”与“公共课、合班课默认两节连堂”需要定义适用范围和例外优先级。当前受限语义和原文校验是确定性护栏，不是任意规则自动求解引擎；新增意图还须配套数据源、规则编译、求解器及验收用例。
