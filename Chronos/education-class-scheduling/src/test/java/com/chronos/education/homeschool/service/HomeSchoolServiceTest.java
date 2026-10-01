@@ -12,6 +12,8 @@ import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
 import com.chronos.education.homeschool.model.ParentAccountBinding;
 import com.chronos.education.homeschool.dto.HomeSchoolDtos.ParentBindingCommand;
 import com.chronos.education.grade.service.DomainEventOutboxService;
+import com.chronos.education.grade.service.GradeCenterService;
+import com.chronos.education.grade.model.CourseGrade;
 import com.chronos.education.scheduling.model.ParentProfile;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.StudentProfile;
@@ -44,6 +46,7 @@ class HomeSchoolServiceTest {
 	@Mock EducationDataScopeService scopes;
 	@Mock IAuditLogService audit;
 	@Mock DomainEventOutboxService domainEvents;
+	@Mock GradeCenterService gradeCenter;
 	@InjectMocks HomeSchoolService service;
 
 	@Test
@@ -104,5 +107,55 @@ class HomeSchoolServiceTest {
 		verify(audit).log(eq("teacher"), eq("EDU_HOME_NOTICE_PUBLISH"), any());
 		verify(domainEvents).enqueue(eq("HomeNoticePublishedV1"), eq("notice-1"),
 				eq("HOME_NOTICE_PUBLISHED:notice-1"), any());
+	}
+
+	@Test
+	void familyGradesOnlyReadsPublishedGradesForActiveChildren() {
+		ParentAccountBinding binding = new ParentAccountBinding();
+		binding.setParentId("parent-1");
+		ParentProfile parent = new ParentProfile();
+		parent.setId("parent-1");
+		parent.setStatus("ACTIVE");
+		StudentGuardianRelation relation = new StudentGuardianRelation();
+		relation.setParentId("parent-1");
+		relation.setStudentId("student-1");
+		StudentProfile student = new StudentProfile();
+		student.setId("student-1");
+		student.setEnrollmentStatus("ACTIVE");
+		CourseGrade grade = new CourseGrade();
+		grade.setStudentId("student-1");
+		when(bindings.findByUsernameAndStatus("parent@example.test", "ACTIVE")).thenReturn(java.util.Optional.of(binding));
+		when(parents.findById("parent-1")).thenReturn(java.util.Optional.of(parent));
+		when(guardians.findByParentIdOrderByCreateTime("parent-1")).thenReturn(java.util.List.of(relation));
+		when(students.findById("student-1")).thenReturn(java.util.Optional.of(student));
+		when(gradeCenter.studentGrades("student-1")).thenReturn(java.util.List.of(grade));
+
+		var result = service.familyGrades("parent@example.test");
+
+		org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of(grade), result);
+		verify(gradeCenter).studentGrades("student-1");
+		verify(audit).log(eq("parent@example.test"), eq("EDU_HOME_PARENT_GRADE_VIEW"), org.mockito.ArgumentMatchers.any());
+	}
+
+	@Test
+	void familyGradesExcludesInactiveChildren() {
+		ParentAccountBinding binding = new ParentAccountBinding();
+		binding.setParentId("parent-1");
+		ParentProfile parent = new ParentProfile();
+		parent.setId("parent-1");
+		parent.setStatus("ACTIVE");
+		StudentGuardianRelation relation = new StudentGuardianRelation();
+		relation.setParentId("parent-1");
+		relation.setStudentId("student-1");
+		StudentProfile student = new StudentProfile();
+		student.setId("student-1");
+		student.setEnrollmentStatus("WITHDRAWN");
+		when(bindings.findByUsernameAndStatus("parent@example.test", "ACTIVE")).thenReturn(java.util.Optional.of(binding));
+		when(parents.findById("parent-1")).thenReturn(java.util.Optional.of(parent));
+		when(guardians.findByParentIdOrderByCreateTime("parent-1")).thenReturn(java.util.List.of(relation));
+		when(students.findById("student-1")).thenReturn(java.util.Optional.of(student));
+
+		org.junit.jupiter.api.Assertions.assertTrue(service.familyGrades("parent@example.test").isEmpty());
+		org.mockito.Mockito.verifyNoInteractions(gradeCenter);
 	}
 }

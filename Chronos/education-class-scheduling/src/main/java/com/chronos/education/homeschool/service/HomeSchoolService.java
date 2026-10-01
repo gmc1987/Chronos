@@ -19,6 +19,8 @@ import com.chronos.education.scheduling.dao.*;
 import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.grade.service.DomainEventOutboxService;
+import com.chronos.education.grade.service.GradeCenterService;
+import com.chronos.education.grade.model.CourseGrade;
 import com.chronos.service.iService.IAuditLogService;
 
 @Service
@@ -33,16 +35,18 @@ public class HomeSchoolService {
 	private final EducationDataScopeService scopeService;
 	private final IAuditLogService audit;
 	private final DomainEventOutboxService domainEvents;
+	private final GradeCenterService gradeCenter;
 
 	@Autowired
 	public HomeSchoolService(ParentAccountBindingRepository bindings, HomeNoticeRepository notices,
 			HomeNoticeTargetRepository targets, ParentProfileRepository parents,
 			StudentProfileRepository students, StudentGuardianRepository guardians,
 			AdministrativeClassRepository classes, EducationDataScopeService scopeService,
-			IAuditLogService audit, DomainEventOutboxService domainEvents) {
+			IAuditLogService audit, DomainEventOutboxService domainEvents, GradeCenterService gradeCenter) {
 		this.bindings = bindings; this.notices = notices; this.targets = targets; this.parents = parents;
 		this.students = students; this.guardians = guardians; this.classes = classes;
 		this.scopeService = scopeService; this.audit = audit; this.domainEvents = domainEvents;
+		this.gradeCenter = gradeCenter;
 	}
 
 	public List<ParentBindingResponse> listBindings() {
@@ -184,6 +188,24 @@ public class HomeSchoolService {
 						new ChildResponse(s.getId(), s.getStudentNo(), s.getStudentName(),
 								s.getAdministrativeClassId(), r.getRelationship(), r.getPrimaryGuardian())).orElse(null))
 				.filter(Objects::nonNull).toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<CourseGrade> familyGrades(String username) {
+		String parentId = activeParent(username).getParentId();
+		List<String> activeChildren = guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.map(StudentGuardianRelation::getStudentId)
+				.map(students::findById)
+				.flatMap(Optional::stream)
+				.filter(s -> "ACTIVE".equals(s.getEnrollmentStatus()))
+				.map(StudentProfile::getId)
+				.toList();
+		List<CourseGrade> result = activeChildren.stream()
+				.flatMap(studentId -> gradeCenter.studentGrades(studentId).stream())
+				.toList();
+		if (audit != null) audit.log(username, "EDU_HOME_PARENT_GRADE_VIEW",
+				"parentId=" + parentId + ",studentCount=" + activeChildren.size() + ",gradeCount=" + result.size());
+		return result;
 	}
 
 	@Transactional
