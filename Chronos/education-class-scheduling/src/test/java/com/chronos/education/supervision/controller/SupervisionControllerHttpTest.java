@@ -12,7 +12,9 @@ import com.chronos.education.supervision.service.SupervisionCenterService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -21,6 +23,12 @@ class SupervisionControllerHttpTest {
 	private final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new SupervisionController(service))
 			.defaultRequest(post("/").principal(new UsernamePasswordAuthenticationToken("QA-SUPERVISOR-20260920", "n/a")))
 			.build();
+
+	@BeforeEach
+	void authenticate() {
+		SecurityContextHolder.getContext().setAuthentication(
+				new UsernamePasswordAuthenticationToken("QA-SUPERVISOR-20260920", "n/a"));
+	}
 
 	@Test
 	void supervisorTaskLifecycleKeepsAuthenticatedActorAndSnapshotsEvaluation() throws Exception {
@@ -31,8 +39,8 @@ class SupervisionControllerHttpTest {
 		assignment.setScheduleEntryId("QA-SCHEDULE-20260920");
 		assignment.setStatus("ACCEPTED");
 		assignment.setCheckedInAt(LocalDateTime.parse("2026-09-20T09:00:00"));
-		when(service.accept("QA-ASSIGNMENT-20260920", "QA-SUPERVISOR-20260920")).thenReturn(assignment);
-		when(service.checkIn("QA-ASSIGNMENT-20260920", "QA-SUPERVISOR-20260920")).thenReturn(assignment);
+		when(service.accept(anyString(), anyString())).thenReturn(assignment);
+		when(service.checkIn(anyString(), anyString(), any())).thenReturn(assignment);
 
 		SupervisionRecord record = new SupervisionRecord();
 		record.setId("QA-RECORD-20260920");
@@ -44,7 +52,7 @@ class SupervisionControllerHttpTest {
 		record.setScheduleContextSnapshotJson("{\"lesson\":\"QA\"}");
 		record.setSubmittedAt(LocalDateTime.parse("2026-09-20T09:30:00"));
 		when(service.submit(eq(assignment.getId()), eq("QA-SUPERVISOR-20260920"),
-				eq("{\"score\":4}"), eq("{\"lesson\":\"QA\"}"), eq("QA-FORM-20260920"))).thenReturn(record);
+				isNull(), isNull(), eq("QA-FORM-20260920"))).thenReturn(record);
 
 		mockMvc.perform(post("/portal/education/supervision/tasks/{id}/accept", assignment.getId()))
 				.andExpect(status().isOk())
@@ -55,15 +63,15 @@ class SupervisionControllerHttpTest {
 		mockMvc.perform(post("/portal/education/supervision/tasks/{id}/submit", assignment.getId())
 						.contentType("application/json")
 						.content("""
-								{"formTemplateId":"QA-FORM-20260920","formSnapshotJson":"{\\"score\\":4}","scheduleContextSnapshotJson":"{\\"lesson\\":\\"QA\\"}"}
+								{"formTemplateId":"QA-FORM-20260920"}
 								"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.formSnapshotJson").value("{\"score\":4}"));
 
 		verify(service).accept(assignment.getId(), "QA-SUPERVISOR-20260920");
-		verify(service).checkIn(assignment.getId(), "QA-SUPERVISOR-20260920");
+		verify(service).checkIn(assignment.getId(), "QA-SUPERVISOR-20260920", null);
 		verify(service).submit(assignment.getId(), "QA-SUPERVISOR-20260920",
-				"{\"score\":4}", "{\"lesson\":\"QA\"}", "QA-FORM-20260920");
+				null, null, "QA-FORM-20260920");
 	}
 
 	@Test

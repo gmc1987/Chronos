@@ -42,8 +42,8 @@ class EducationDataCenterServiceTest {
   DataMetricDefinitionRepository definitions=mock(DataMetricDefinitionRepository.class);
   DataDailySnapshotRepository snapshots=mock(DataDailySnapshotRepository.class);
   DataMetricDefinition definition=new DataMetricDefinition();
-  definition.setMetricCode("QA_STUDENT_COUNT_20260920"); definition.setCategory("ACADEMIC");
-  definition.setSourceVersion("qa-v1"); definition.setEnabled(true);
+  definition.setMetricCode("STUDENT_COUNT"); definition.setCategory("ACADEMIC");
+  definition.setSourceVersion("v1"); definition.setEnabled(true);
   when(definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc()).thenReturn(List.of(definition));
   when(snapshots.findBySnapshotDateAndCampusIdAndMetricCode(
     LocalDate.of(2026,9,20),"QA-CAMPUS-20260920",definition.getMetricCode())).thenReturn(Optional.empty());
@@ -62,8 +62,8 @@ class EducationDataCenterServiceTest {
 
   assertThat(result).singleElement().satisfies(snapshot -> {
    assertThat(snapshot.getCampusId()).isEqualTo("QA-CAMPUS-20260920");
-   assertThat(snapshot.getMetricCode()).isEqualTo("QA_STUDENT_COUNT_20260920");
-   assertThat(snapshot.getSourceVersion()).isEqualTo("qa-v1");
+   assertThat(snapshot.getMetricCode()).isEqualTo("STUDENT_COUNT");
+   assertThat(snapshot.getSourceVersion()).isEqualTo("v1");
    assertThat(snapshot.getMetricValue()).isEqualByComparingTo(BigDecimal.ZERO);
   });
   verify(snapshots).save(any(DataDailySnapshot.class));
