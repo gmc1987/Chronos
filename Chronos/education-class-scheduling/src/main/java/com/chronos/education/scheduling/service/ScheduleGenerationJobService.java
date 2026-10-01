@@ -101,7 +101,8 @@ public class ScheduleGenerationJobService {
 						|| !runConstraints.offeringDurations().isEmpty()
 						|| !runConstraints.weekRules().isEmpty()
 						|| !runConstraints.lockedEntries().isEmpty()
-						|| !runConstraints.softPriorities().isEmpty()))) {
+						|| !runConstraints.softPriorities().isEmpty()
+						|| !runConstraints.slotExclusions().isEmpty()))) {
 			throw new IllegalArgumentException("动态排课规则只能由 AI Run 提交");
 		}
 		String requestJson = agentRunId == null

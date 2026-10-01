@@ -218,6 +218,21 @@ class AiModelChatServiceImplTest {
 				"规则")).isInstanceOf(AiStructuredOutputException.class);
 	}
 
+	@Test
+	void malformedClauseListGetsOnlyOneBoundedCorrection() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		var service = service();
+		when(chatModel.call("需求")).thenReturn("{\"clauses\":[]}");
+		when(chatModel.call(org.mockito.ArgumentMatchers.startsWith("需求\n上次响应")))
+				.thenReturn("{\"clauses\":[{\"text\":\"张老师周三第1节不能排课\","
+						+ "\"classification\":\"TEACHER_SLOT\"}]}");
+
+		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1", "需求"))
+				.contains("TEACHER_SLOT");
+		verify(chatModel).call("需求");
+		verify(chatModel).call(org.mockito.ArgumentMatchers.startsWith("需求\n上次响应"));
+	}
+
 	private AiModel validModel(String id) {
 		AiModel value = new AiModel();
 		value.setId(id);

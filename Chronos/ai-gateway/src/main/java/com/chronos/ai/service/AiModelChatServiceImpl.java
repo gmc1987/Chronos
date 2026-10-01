@@ -80,6 +80,24 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 			throw new AiStructuredOutputException("结构化模型输入超过长度限制");
 		}
 		String response = chat(modelId, message);
+		try {
+			return validateStructuredResponse(schemaId, response);
+		} catch (AiStructuredOutputException exception) {
+			if (!SCHEDULING_CLAUSES_SCHEMA.equals(schemaId)
+					|| !java.util.Set.of("模型未返回合法的子句列表", "模型未返回有效 JSON")
+							.contains(exception.getMessage())) {
+				throw exception;
+			}
+			String correction = "\n上次响应未符合格式要求。请重新按上方原需求逐条分类；仅返回一个 JSON 对象，"
+					+ "唯一顶层字段为非空 clauses 数组，不要 Markdown、解释或额外字段。";
+			if (message.length() + correction.length() > 6000) {
+				throw exception;
+			}
+			return validateStructuredResponse(schemaId, chat(modelId, message + correction));
+		}
+	}
+
+	private String validateStructuredResponse(String schemaId, String response) {
 		if (response == null || response.length() > 16_000) {
 			throw new AiStructuredOutputException("模型结构化输出长度无效");
 		}

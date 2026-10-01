@@ -49,6 +49,20 @@ public class SchedulingAiModelClassifier {
 		String response = models.chatStructured(null, "schedule.requirement.clauses.v1",
 				INSTRUCTIONS + input);
 		try {
+			return parseClauses(original, response);
+		} catch (AiStructuredOutputException exception) {
+			if (!"模型遗漏或新增需求子句".equals(exception.getMessage())) {
+				throw exception;
+			}
+			String correction = "上一次响应遗漏或新增了子句。本次仅处理最后的待分类输入，clauses 长度必须是 "
+					+ original.size() + "，逐条原样复制原文，不能生成空子句或额外子句。\n";
+			return parseClauses(original, models.chatStructured(null,
+					"schedule.requirement.clauses.v1", correction + INSTRUCTIONS + input));
+		}
+	}
+
+	private List<Clause> parseClauses(List<String> original, String response) {
+		try {
 			JsonNode root = json.readTree(response);
 			if (root == null || !root.isObject() || root.size() != 1
 					|| !root.has("clauses") || !root.path("clauses").isArray()

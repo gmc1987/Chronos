@@ -59,7 +59,10 @@ class ScheduleGenerationJobServiceTest {
 						List.of(new ScheduleRunConstraints.LockedEntry("entry-1", "offering-1", 1, 1)),
 						List.of()),
 				new ScheduleRunConstraints(List.of(), List.of(), List.of(), List.of(),
-						List.of(new ScheduleRunConstraints.SoftPriority("TEACHER_GAP", "teacher-1"))));
+						List.of(new ScheduleRunConstraints.SoftPriority("TEACHER_GAP", "teacher-1"))),
+				new ScheduleRunConstraints(List.of(), List.of(), List.of(), List.of(),
+						List.of(), List.of(new ScheduleRunConstraints.SlotExclusion(
+								"TEACHER", "teacher-1", 3, 1))));
 	}
 
 	@Test
