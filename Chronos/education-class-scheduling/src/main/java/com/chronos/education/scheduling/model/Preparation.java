@@ -20,6 +20,10 @@ public class Preparation extends BaseEntity {
 	private String offeringId;
 	@Column(name="campus_id", length=64) private String campusId;
 	@Column(name="schedule_entry_id", length=64) private String scheduleEntryId;
+	@Column(columnDefinition="text") private String objective;
+	@Column(name="key_points", columnDefinition="text") private String keyPoints;
+	@Column(name="difficult_points", columnDefinition="text") private String difficultPoints;
+	@Column(columnDefinition="text") private String discussion;
 	@Column(name="scheduled_at") private LocalDateTime scheduledAt;
 	@Column(name="owner_teacher_id", length=64) private String ownerTeacherId;
 	@Column(length=200) private String location;

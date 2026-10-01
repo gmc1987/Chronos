@@ -14,8 +14,10 @@ public final class TeachingPlanDtos {
 	public record PlanItemRequest(
 			@NotNull @Positive Integer chapterNo,
 			@NotBlank @Size(max = 200) String chapterName,
+			@Size(max = 200) String knowledgeUnit,
 			@NotNull @Min(1) @Max(60) Integer weekStart,
 			@NotNull @Min(1) @Max(60) Integer weekEnd,
+			java.time.LocalDate expectedDate,
 			@NotNull @Positive Integer lessonHours,
 			@Min(0) Integer trainingHours,
 			@NotBlank String objectives,
@@ -23,7 +25,8 @@ public final class TeachingPlanDtos {
 			@NotBlank String difficultPoints,
 			String assessmentMethod,
 			@Size(max = 64) String linkedKnowledgePointId,
-			@NotNull @Min(0) Integer sortOrder) {}
+			@NotNull @Min(0) Integer sortOrder,
+			@Size(max = 24) String completionStatus) {}
 
 	public record PlanCreateRequest(
 			@NotBlank @Size(max = 64) String offeringId,
@@ -49,13 +52,16 @@ public final class TeachingPlanDtos {
 	public record PlanItemUpdateRequest(
 			@NotNull @Positive Integer chapterNo,
 			@NotBlank @Size(max = 200) String chapterName,
+			@Size(max = 200) String knowledgeUnit,
 			@NotNull @Min(1) @Max(60) Integer weekStart,
 			@NotNull @Min(1) @Max(60) Integer weekEnd,
+			java.time.LocalDate expectedDate,
 			@NotNull @Positive Integer lessonHours,
 			@Min(0) Integer trainingHours, @NotBlank String objectives,
 			@NotBlank String keyPoints, @NotBlank String difficultPoints,
 			String assessmentMethod, @Size(max = 64) String linkedKnowledgePointId,
-			@NotNull @Min(0) Integer sortOrder) {}
+			@NotNull @Min(0) Integer sortOrder,
+			@Size(max = 24) String completionStatus) {}
 
 	public record PreparationCreateRequest(
 			@NotBlank @Size(max = 64) String offeringId,
@@ -63,11 +69,12 @@ public final class TeachingPlanDtos {
 			@NotBlank @Size(max = 200) String title,
 			@NotBlank @Size(max = 16) String preparationType,
 			String conclusion, @Size(max = 64) String conclusionLessonPlanId,
-			java.time.LocalDateTime scheduledAt, String location, String agenda) {
+			String objective, String keyPoints, String difficultPoints, String discussion,
+			java.time.LocalDateTime scheduledAt, String agenda, @Size(max = 200) String location) {
 		public PreparationCreateRequest(String offeringId, String scheduleEntryId, String title,
 				String preparationType, String conclusion, String conclusionLessonPlanId) {
 			this(offeringId, scheduleEntryId, title, preparationType, conclusion,
-					conclusionLessonPlanId, null, null, null);
+					conclusionLessonPlanId, null, null, null, null, null, null, null);
 		}
 	}
 
@@ -77,11 +84,12 @@ public final class TeachingPlanDtos {
 			@NotBlank @Size(max = 200) String title,
 			@NotBlank @Size(max = 16) String preparationType,
 			String conclusion, @Size(max = 64) String conclusionLessonPlanId,
-			java.time.LocalDateTime scheduledAt, String location, String agenda) {
+			String objective, String keyPoints, String difficultPoints, String discussion,
+			java.time.LocalDateTime scheduledAt, String agenda, @Size(max = 200) String location) {
 		public PreparationUpdateRequest(Long rowVersion, String scheduleEntryId, String title,
 				String preparationType, String conclusion, String conclusionLessonPlanId) {
 			this(rowVersion, scheduleEntryId, title, preparationType, conclusion,
-					conclusionLessonPlanId, null, null, null);
+					conclusionLessonPlanId, null, null, null, null, null, null, null);
 		}
 	}
 
