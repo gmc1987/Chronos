@@ -16,3 +16,11 @@ BEGIN
         );
     END IF;
 END $$;
+
+INSERT INTO public.t_role_permission (role_id, permission_id)
+SELECT existing.role_id, grade.id
+FROM public.t_role_permission existing
+JOIN public.t_permission parent_view ON parent_view.id = existing.permission_id
+JOIN public.t_permission grade ON grade.permission_code = 'education:home-school:grade:view'
+WHERE parent_view.permission_code = 'education:home-school:parent:view'
+ON CONFLICT DO NOTHING;
