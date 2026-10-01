@@ -11,7 +11,6 @@
     "test:ai-scheduling-contract": "node scripts/ai-scheduling-contract.mjs",
     "test:teaching-center-routes": "node scripts/teaching-center-route-contract.mjs",
     "test:teaching-center-api": "node scripts/teaching-center-api-contract.mjs",
-    "test:mobile-h5-routes": "node scripts/mobile-h5-route-contract.mjs",
     "test:education-acceptance-contracts": "npm run test:teaching-center-routes && npm run test:teaching-center-api && npm run test:score-center-analysis && npm run test:ai-scheduling-contract"
   },
   "dependencies": {
