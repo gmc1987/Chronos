@@ -268,22 +268,22 @@ Agent Run 状态：`DRAFT → NEEDS_CLARIFICATION → READY_FOR_CONFIRMATION →
 4. 排课员提交候选审核，验证本人不能自审；另一名审核员通过后由管理员按原有界面应用/发布。若生成后基线发生变化，旧候选应用必须失败。核对原走班排课菜单、普通生成及已发布版本，无 AI 动态规则泄漏。
 5. 记录模型超时、无模型、提示词注入、权限不足、任务取消与重复请求的实际错误和恢复动作；核查迁移在隔离空库及历史升级副本上的结果。任何一步未能用真实数据、账号和服务端日志证实，就不得标记生产验收通过。
 
-**现有数据副本验收（部分完成）**：只读清点 `ChronosEducation`：`2026-2027-1` 有 17 个教学任务、21 条课表项，教师档案 64 条、教室 63 间；教学任务和课表项的周模式均为 `ALL`，课表项均未正式锁定。已将约 45 MB 的现有数据库复制到独立的 `chronos_agent_verify` PostgreSQL 容器；只在副本运行教育应用，将 Flyway 从 `20270106` 升至 `20270108`，再用 `SchedulingExistingDataAcceptanceTests` 验证真实课表项的本轮临时锁课、真实教学任务的单双周覆盖，以及事务内补建单双周教学任务后同一教师/教室可以错周共用资源，而普通生成保持原行为。测试事务回滚；副本原有课表项 21 条、候选 1 条未增加，现有业务库没有写入。此测试仅在 `CHRONOS_ACCEPTANCE_CLONE=true` 且 `CHRONOS_DB_URL` 指向名称包含 `test` 或 `verify` 的**隔离副本**时执行，可通过 `./mvnw -pl education-app -am -Dtest=ChronosEducationApplicationTests,SchedulingExistingDataAcceptanceTests -Dsurefire.failIfNoSpecifiedTests=false test` 复现；须同时显式设置隔离库连接环境变量。现有库没有已启用的默认模型，不能以测试密钥代替真实模型；自然语言端到端、双角色人工审核/发布仍未验收通过。
+**现有数据副本验收（分阶段证据）**：先前只读清点 `ChronosEducation`：`2026-2027-1` 有 17 个教学任务、21 条课表项，教师档案 64 条、教室 63 间。早期曾在副本中测试课表项临时锁课、单双周覆盖和普通生成隔离；当时尚未执行真实模型的自然语言端到端验收。现已在与 main 迁移版本一致的**新隔离副本**上重新执行 `ChronosEducationApplicationTests`、`SchedulingExistingDataAcceptanceTests` 和下述真实模型业务闭环验收，三组测试分别为 3、3、1 项且全部通过。源库未写入；对真实学校所有学期和全部自然语言语义的验收仍未完成。
 
-**模型类型兼容**：现有 DeepSeek 配置已启用且有加密密钥，但 `is_default=false`；其 `model_type` 使用 `DICT_MODEL_TEXT` 对应的字典值。模型管理设置默认、聊天调用及旧 DeepSeek 适配器现统一按该字典项判断文本模型，不再要求数据库记录写入 `CHAT`；实际类型值由字典决定，字典缺失/禁用时报配置错误。修复类型判断并不自动改变默认模型或发起真实模型调用，需由管理员确认模型配置后另行验收。
+**模型类型兼容**：DeepSeek 配置的 `model_type` 使用 `DICT_MODEL_TEXT` 对应的字典值。模型管理设置默认、聊天调用及旧 DeepSeek 适配器统一按该字典项判断文本模型，不再要求数据库记录写入 `CHAT`；字典缺失/禁用时报配置错误。本次隔离副本已确认默认模型可实际调用并完成组合禁排业务验收；没有把模型密钥写入源码或改动原库模型配置。
 
 **模型调用标识**：模型管理的“供应商”不是“模型名称”；后者须填写与 Base URL 对应的 API 模型标识。将供应商名误填为模型名时，在保存或调用前明确提示；提供方返回“不支持此模型标识”的请求错误时，也提示管理员检查配置，不回显原始提供方响应。具体支持列表因地址与账号而异，服务端不写死列表，不自动改动已有配置或替换为猜测的标识。
 
-**组合时段规则端到端业务验收**：`SchedulingAiBusinessAcceptanceTests` 只在同时设置 `CHRONOS_ACCEPTANCE_CLONE=true`、`CHRONOS_AI_BUSINESS_ACCEPTANCE=true` 且 `CHRONOS_DB_URL` 的数据库名包含 `test`/`verify` 时执行；必须使用**可销毁的隔离库**，并配置可解密、可实际调用的默认文本模型。先用当前代码迁移全新隔离库，在其中配置 `acceptance_admin` 超级管理员和有效的默认模型；从安全环境注入 `CHRONOS_DB_URL`、`CHRONOS_DB_USERNAME`、`CHRONOS_DB_PASSWORD`、`CHRONOS_ENCRYPTION_KEY` 与首次启动所需的 `CHRONOS_BOOTSTRAP_ADMIN_*`，再运行：
+**组合时段规则端到端业务验收**：`SchedulingAiBusinessAcceptanceTests` 只在同时设置 `CHRONOS_ACCEPTANCE_CLONE=true`、`CHRONOS_AI_BUSINESS_ACCEPTANCE=true` 且 `CHRONOS_DB_URL` 的数据库名包含 `test`/`verify` 时执行；必须使用**可销毁的隔离库**，并配置可解密、可实际调用的默认文本模型。可从当前代码迁移全新隔离库（首次启动需设置 `CHRONOS_BOOTSTRAP_ADMIN_*`），或者复制已有业务库到独立容器；测试仅在隔离库中创建 `acceptance_admin` 与 `acceptance_reviewer` 验收账号。从安全环境注入 `CHRONOS_DB_URL`、`CHRONOS_DB_USERNAME`、`CHRONOS_DB_PASSWORD`、`CHRONOS_ENCRYPTION_KEY`，再运行：
 
 ```bash
 cd Chronos
 CHRONOS_ACCEPTANCE_CLONE=true CHRONOS_AI_BUSINESS_ACCEPTANCE=true \
-  ./mvnw -pl education-app -am \
+  ./mvnw -pl education-app -am clean test \
   -Dtest=ChronosEducationApplicationTests,SchedulingAiBusinessAcceptanceTests \
-  -Dsurefire.failIfNoSpecifiedTests=false test
+  -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-测试会在隔离库中创建完整的学期、教师、课程、教室及两个验收账号，发起自然语言禁排 Run，核对模型原文和授权对象、确认与持久化任务状态、两份候选逐条核验、比较和预览、普通排课不带禁排规则、负责人不能自审、异人审核、应用与发布后的正式课表。运行时会在该隔离库写入验收数据与版本；**不得指向共享业务库**。验收时曾尝试把现有 `ChronosEducation` 复制到隔离容器，但源库历史中的 `V20270108__education_agent_academic_approver_permissions.sql` 与当前代码同版本的 `V20270108__education_schedule_job_lease.sql` 不一致；未对源库执行 repair 或关闭 Flyway 校验，改用当前迁移从空库创建的隔离库，复制加密模型配置后完成此端到端验证。**现有库迁移版本冲突在部署前仍需按真实迁移历史制订兼容修复，不能用本次全新库验收替代升级验收。**此结果证明已支持的组合禁排切片在验收数据上可用，不代表真实学校全量数据和未知日期级规则已完成生产验收。
+测试会在隔离库中创建完整的验收学期、教师、课程、教室及两个验收账号，发起自然语言禁排 Run，核对模型原文和授权对象、确认与持久化任务状态、两份候选逐条核验、比较和预览、普通排课不带禁排规则、负责人不能自审、异人审核、应用与发布后的正式课表。运行时会在该隔离库写入验收数据与版本；**不得指向共享业务库**。首次复制现有 `ChronosEducation` 时遇到源库 `V20270108__education_agent_academic_approver_permissions.sql` 与旧工作分支中同版本的租约脚本冲突；合入 main 的版本调整后，当前代码将租约脚本作为 `V20270109`，与源库历史相符。清理 Maven 旧 `target/classes` 迁移资源后，现有数据隔离副本的 `ChronosEducationApplicationTests`、`SchedulingExistingDataAcceptanceTests` 及本测试一起通过；未对原库执行 repair、忽略校验或写入。此结果证明已支持的组合禁排切片在真实数据副本和独立验收学期上可用，不代表所有学校业务数据和未知日期级规则已完成生产验收。
 
 **下一阶段扩展方向（尚未实现）**：当前结构化 `SLOT_RULE` 是多时段禁排的可验证切片，并不是可以执行任意自然语言规则的引擎。下一阶段需要受权限和分页限制的 Tool 查询校历、考试、班级和资源，按版本注册新的业务规则原语及冲突优先级，扩展到真实日期/周次和全局资源约束，并逐项报告未满足原因；未知意图、无基础数据、越权或互相矛盾的条件必须进入澄清/拒绝，不得忽略或假装满足，也不得让模型自行执行 SQL 或发布课表。比如“排出周末、节假日、考试安排计划”需要澄清是避开日期还是生成这些计划；“所有老师不得连堂”与“公共课、合班课默认两节连堂”需要定义适用范围和例外优先级。当前受限语义和原文校验是确定性护栏，不是任意规则自动求解引擎；新增意图还须配套数据源、规则编译、求解器及验收用例。

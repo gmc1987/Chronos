@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IRoleDataScopeRepository;
+import com.chronos.Idao.IRoleRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
@@ -38,6 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Runs only on an explicitly selected disposable PostgreSQL acceptance database. */
@@ -61,8 +63,10 @@ class SchedulingAiBusinessAcceptanceTests {
 	@Autowired private ObjectMapper json;
 	@Autowired private IAdminUserRepository users;
 	@Autowired private IRoleDataScopeRepository roleScopes;
+	@Autowired private IRoleRepository roles;
 	@Autowired private AdminUserDetailsService identities;
 	@Autowired private SchedulePlanVersionService versions;
+	@Autowired private PasswordEncoder passwordEncoder;
 
 	@AfterEach
 	void clearAuthentication() {
@@ -75,6 +79,18 @@ class SchedulingAiBusinessAcceptanceTests {
 		String actor = "acceptance_admin";
 		transactions.executeWithoutResult(ignored -> {
 			var user = users.findByUsername(actor);
+			if (user == null) {
+				var role = roles.findByRoleCode("SUPER_ADMIN");
+				assertThat(role).as("the copied database needs the platform administrator role")
+						.isNotNull();
+				user = new AdminUser();
+				user.setUsername(actor);
+				user.setPassword(passwordEncoder.encode("Aa!1" + UUID.randomUUID()));
+				user.setDisplayName("隔离验收排课员");
+				user.setStatus(1);
+				user.getRoles().add(role);
+				user = users.saveAndFlush(user);
+			}
 			assertThat(user).isNotNull();
 			String roleId = user.getRoles().iterator().next().getId();
 			if (roleScopes.findByRoleIdIn(List.of(roleId)).stream()
