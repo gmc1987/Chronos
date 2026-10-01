@@ -101,6 +101,12 @@ public class ResearchErrorController {
 	@PostMapping("/research-activities/{id}/members")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> activityMember(@PathVariable String id,@Valid @RequestBody MemberRequest r,Authentication a) { return ok(service.inviteActivityMember(id,r,a)); }
+	@PostMapping("/research-activities/{id}/invite-response")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	public ResultData<?> inviteResponse(@PathVariable String id,
+			@Valid @RequestBody ActivityInviteResponse r, Authentication a) {
+		return ok(service.respondActivityInvite(id, r, a));
+	}
 	@PostMapping("/research-activities/{id}/attendance")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> attendance(@PathVariable String id,@Valid @RequestBody AttendanceRequest r,Authentication a) { return ok(service.attendance(id,r,a)); }

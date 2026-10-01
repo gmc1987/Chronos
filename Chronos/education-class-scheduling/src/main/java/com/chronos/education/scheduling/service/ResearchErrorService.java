@@ -227,6 +227,25 @@ public class ResearchErrorService {
 		if(notifications!=null)notifications.researchInvited(x,r.teacherId());
 		return saved;
 	}
+	public ResearchActivityMember respondActivityInvite(String activityId, ActivityInviteResponse request,
+			Authentication a) {
+		ResearchActivity activity = activities.findById(activityId)
+				.orElseThrow(() -> new NoSuchElementException("活动不存在"));
+		if (!Set.of("ACCEPTED", "DECLINED").contains(request.status()))
+			throw new IllegalArgumentException("邀请回应状态无效");
+		Set<String> teacherIds = currentTeacherIds(a);
+		if (teacherIds.isEmpty())
+			throw new AccessDeniedException("当前账号未绑定教师档案");
+		List<ResearchActivityMember> matches = activityMembers.findByActivityId(activityId).stream()
+				.filter(member -> teacherIds.contains(member.getTeacherId()))
+				.toList();
+		if (matches.size() != 1)
+			throw new AccessDeniedException("当前账号没有唯一对应的活动邀请");
+		ResearchActivityMember member = matches.get(0);
+		member.setInvitationStatus(request.status());
+		member.setRespondedAt(LocalDateTime.now());
+		return activityMembers.save(member);
+	}
 	public void removeActivityMember(String activityId, String teacherId, Authentication a) {
 		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(), a);assertActivityOrganizer(x,a);
@@ -241,7 +260,7 @@ public class ResearchErrorService {
 		if (!currentTeacherIds(a).contains(r.teacherId()) && !scope(a).fullAccess()) throw new AccessDeniedException("只能为本人签到或请假");
 		if (!Set.of("SIGNED_IN","LEAVE","ABSENT").contains(r.status())) throw new IllegalArgumentException("签到状态无效");
 		if ("LEAVE".equals(r.status()) && (r.leaveReason()==null || r.leaveReason().isBlank())) throw new IllegalArgumentException("请假必须填写原因");
-		m.setAttendanceStatus(r.status()); m.setLeaveReason(r.leaveReason()); m.setRespondedAt(LocalDateTime.now());
+		m.setAttendanceStatus(r.status()); m.setLeaveReason(r.leaveReason()); m.setAttendanceUpdatedBy(a.getName()); m.setRespondedAt(LocalDateTime.now());
 		if ("SIGNED_IN".equals(r.status())) m.setAttendanceAt(LocalDateTime.now()); return activityMembers.save(m);
 	}
 	public ResearchActivity updateMinutes(String activityId, MinutesRequest r, Authentication a) {

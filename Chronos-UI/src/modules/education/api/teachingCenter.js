@@ -197,6 +197,8 @@ export const transitionResearchActivity = (id, action) =>
 export const researchResults = (id, params = {}) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/results?${queryString(params)}`)
 export const researchActivityMembers = (id) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members`)
 export const removeResearchActivityMember = (id, teacherId) => http.delete(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members/${encodeURIComponent(teacherId)}`)
+export const respondResearchInvite = (id, status) =>
+  http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/invite-response`, { status })
 export const researchMaterials = (id) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/materials`)
 export const createResearchMaterial = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/materials`, body)
 export const createResearchResult = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/results`, body)
