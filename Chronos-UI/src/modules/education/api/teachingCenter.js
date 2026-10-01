@@ -123,17 +123,20 @@ export const resourceVersions = (domain, id) =>
   http.get(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions`)
 export const addResourceVersion = (domain, id, body) =>
   http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions`, body)
-export const uploadTeachingFile = (file, businessType, businessId, onProgress) => {
+// 教学附件统一先上传为临时草稿；业务服务校验教学数据权限后再完成正式绑定。
+// 禁止浏览器直接声明正式 businessType/businessId，避免伪造附件归属。
+export const uploadTeachingFile = (file, onProgress) => {
   const data = new FormData()
   data.append('file', file)
-  return http.upload(`/files?${queryString({ businessType, businessId })}`, data, onProgress)
+  return http.upload('/files?businessType=WORKFLOW_FORM_DRAFT', data, onProgress)
 }
 export const setCurrentResourceVersion = (domain, id, versionId) =>
   http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/current`)
 export const transitionResourceVersion = (domain, versionId, action) =>
   http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(versionId)}/${encodeURIComponent(action)}`)
 export const submitResource = async (domain, id) => {
-  await http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(id)}/submit`)
+  // 服务端在同一事务内完成状态切换、审核记录和工作流启动。
+  // 禁止拆成两次请求，否则工作流启动失败会遗留“假审核中”版本。
   return http.post(`/education/teaching-center/${domain}/versions/${encodeURIComponent(id)}/submit-review`)
 }
 
@@ -189,6 +192,8 @@ export const createResearchActivity = (id, body) => http.post(`/education/teachi
 export const updateResearchActivity = (id, body) => http.put(`/education/teaching-center/research-activities/${encodeURIComponent(id)}`, body)
 export const cancelResearchActivity = (id, reason) =>
   http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/cancel`, { reason })
+export const transitionResearchActivity = (id, action) =>
+  http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/${encodeURIComponent(action)}`)
 export const researchResults = (id, params = {}) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/results?${queryString(params)}`)
 export const researchActivityMembers = (id) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members`)
 export const removeResearchActivityMember = (id, teacherId) => http.delete(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members/${encodeURIComponent(teacherId)}`)
@@ -198,7 +203,11 @@ export const createResearchResult = (id, body) => http.post(`/education/teaching
 export const updateResearchResult = (id, body) => http.put(`/education/teaching-center/research-results/${encodeURIComponent(id)}`, body)
 export const researchAttendance = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/attendance`, body)
 export const researchMinutes = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/minutes`, body)
-export const submitResearchResult = (id) => http.post(`/education/teaching-center/research-results/${encodeURIComponent(id)}/submit`)
+export const submitResearchResult = (id, idempotencyKey) => http.post(
+  `/education/teaching-center/research-results/${encodeURIComponent(id)}/submit`,
+  undefined,
+  idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined,
+)
 export const archiveResearchResult = (id) => http.post(`/education/teaching-center/research-results/${encodeURIComponent(id)}/archive`)
 export const researchReviewStatus = (id) => http.get(`/education/teaching-center/domain/RESEARCH_RESULT/${encodeURIComponent(id)}/review-status`)
 export const researchChildren = (id, child, params = {}) =>

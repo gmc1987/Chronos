@@ -3,34 +3,35 @@ package com.chronos.education.scheduling.controller;
 import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.TeachingCenterResource;
-import com.chronos.education.scheduling.model.TeachingCenterResourceCommand;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.TeachingCenterService;
-import com.chronos.education.scheduling.service.TeachingReviewService;
 import java.util.List;
-import java.util.Map;
-import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 教学中心公共上下文与旧资源只读兼容入口。
+ *
+ * <p>旧资源表不再开放写接口；各教学领域使用自己的强类型控制器完成新增、审核和发布。</p>
+ */
 @RestController
 @RequestMapping("/education/teaching-center")
 public class TeachingCenterController {
 	private final TeachingCenterService service;
-	private final TeachingReviewService reviews;
 	private final CourseOfferingRepository offerings;
 	private final EducationDataScopeService scopes;
 
 	public TeachingCenterController(
 			TeachingCenterService service,
-			TeachingReviewService reviews,
 			CourseOfferingRepository offerings,
 			EducationDataScopeService scopes) {
 		this.service = service;
-		this.reviews = reviews;
 		this.offerings = offerings;
 		this.scopes = scopes;
 	}
@@ -51,45 +52,6 @@ public class TeachingCenterController {
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
 		return ok(service.page(type, offeringId, page, size, authentication));
-	}
-
-	@PostMapping("/resources")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:create','education:teaching:manage')")
-	public ResultData<TeachingCenterResource> create(
-			@Valid @RequestBody TeachingCenterResourceCommand command,
-			Authentication authentication) {
-		return ok(service.create(command, authentication));
-	}
-
-	@PutMapping("/resources/{id}")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:update','education:teaching:manage')")
-	public ResultData<TeachingCenterResource> update(
-			@PathVariable String id, @Valid @RequestBody TeachingCenterResourceCommand command,
-			Authentication authentication) {
-		return ok(service.update(id, command, authentication));
-	}
-
-	@PostMapping("/resources/{id}/status")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:update','education:teaching:manage')")
-	public ResultData<TeachingCenterResource> transition(
-			@PathVariable String id, @RequestParam String status,
-			Authentication authentication) {
-		return ok(service.transition(id, status, authentication));
-	}
-
-	@PostMapping("/resources/{id}/submit-review")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:create','education:teaching:update','education:teaching:manage')")
-	public ResultData<?> submitReview(@PathVariable String id, @RequestBody(required=false) Map<String,Object> body,
-			Authentication authentication) {
-		TeachingCenterResource resource = service.get(id, authentication);
-		return ok(reviews.submit(resource.getResourceType(), id, resource.getOfferingId(), body, authentication));
-	}
-
-	@GetMapping("/resources/{id}/review-status")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
-	public ResultData<?> reviewStatus(@PathVariable String id, Authentication authentication) {
-		TeachingCenterResource resource = service.get(id, authentication);
-		return ok(reviews.status(resource.getResourceType(), id, authentication));
 	}
 
 	private <T> ResultData<T> ok(T value) {

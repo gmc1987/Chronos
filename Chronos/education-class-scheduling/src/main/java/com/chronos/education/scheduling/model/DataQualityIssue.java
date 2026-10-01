@@ -19,4 +19,5 @@ public class DataQualityIssue extends BaseEntity {
  @Column(name="due_date") private LocalDate dueDate;
  @Column(columnDefinition="text") private String resolution;
  @Column(name="resolved_at") private LocalDateTime resolvedAt;
+ @Column(name="detected_date") private LocalDate detectedDate;
 }

@@ -31,4 +31,10 @@ public class MeetingParticipant extends BaseEntity {
 
 	@Column(name = "responded_at")
 	private LocalDateTime respondedAt;
+
+	@Column(name = "checked_in_at")
+	private LocalDateTime checkedInAt;
+
+	@Column(name = "check_in_method", length = 24)
+	private String checkInMethod;
 }

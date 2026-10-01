@@ -62,6 +62,20 @@ public class FormController {
 		return ok(service.createVersion(id, body.get("version")));
 	}
 
+	@GetMapping("/admin/forms/{id}/versions")
+	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:form:manage','workflow:manage')")
+	public ResultData<List<FormDefinition>> versions(@PathVariable String id) {
+		return ok(service.versions(id));
+	}
+
+	@GetMapping("/admin/forms/{id}/compare")
+	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:form:manage','workflow:manage')")
+	public ResultData<FormService.FormVersionComparison> compare(
+			@PathVariable String id,
+			@RequestParam String targetId) {
+		return ok(service.compareVersions(id, targetId));
+	}
+
 	@GetMapping("/admin/form-fields/list")
 	@PreAuthorize("@iamAuthorization.any(authentication,'workflow:form:manage','workflow:manage')")
 	public ResultData<List<FormField>> fields(@RequestParam String formId) {

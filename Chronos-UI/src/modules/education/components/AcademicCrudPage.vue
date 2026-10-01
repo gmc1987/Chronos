@@ -72,12 +72,12 @@
     <el-dialog v-model="dialog" :title="`${form.id ? '编辑' : '新增'}${entityLabel}`" width="640px">
       <el-form label-width="110px">
         <el-form-item v-for="field in fields" :key="field.prop" :label="field.label">
-          <el-select v-if="field.dictCode" v-model="form[field.prop]"><el-option v-for="option in dictionaryData[field.dictCode] || []" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-          <el-select v-else-if="field.options" v-model="form[field.prop]"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+          <el-select v-if="field.dictCode" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in dictionaryData[field.dictCode] || []" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+          <el-select v-else-if="field.options" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /></el-select>
           <el-date-picker v-else-if="field.type === 'date'" v-model="form[field.prop]" value-format="YYYY-MM-DD" />
           <el-input-number v-else-if="field.type === 'number'" v-model="form[field.prop]" :min="field.min ?? 0" />
           <el-switch v-else-if="field.type === 'boolean'" v-model="form[field.prop]" />
-          <el-select v-else-if="field.lookup" v-model="form[field.prop]" filterable><el-option v-for="option in lookupData[field.lookup] || []" :key="option.id" :label="option[field.labelProp]" :value="option.id" /></el-select>
+          <el-select v-else-if="field.lookup" v-model="form[field.prop]" filterable :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in lookupData[field.lookup] || []" :key="option.id" :label="option[field.labelProp]" :value="option.id" /></el-select>
           <el-input v-else v-model="form[field.prop]" />
         </el-form-item>
       </el-form>
@@ -117,8 +117,8 @@ const openEdit = row => { reset({ ...row }); dialog.value = true }
 const save = async () => { await (form.id ? props.updater(form.id, form) : props.creator(form)); dialog.value = false; ElMessage.success('保存成功'); await load(); await loadLookups() }
 const runRowAction = async (action, row) => {
   await action.run(row)
-  ElMessage.success(`${action.label}成功`)
-  await load()
+  if (action.successMessage !== false) ElMessage.success(`${action.label}成功`)
+  if (action.reload !== false) await load()
 }
 const displayValue = (column, value) => {
   if (column.dictCode) {

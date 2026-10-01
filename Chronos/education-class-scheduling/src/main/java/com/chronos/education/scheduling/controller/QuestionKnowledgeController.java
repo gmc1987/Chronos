@@ -52,12 +52,6 @@ public class QuestionKnowledgeController {
 	public ResultData<Question> submit(@PathVariable String id, Authentication user) {
 		return ok(service.submitQuestion(id, user));
 	}
-	@PostMapping("/questions/{id}/approve")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:review','education:question-bank:manage','education:teaching:manage')")
-	public ResultData<Question> approve(@PathVariable String id, Authentication user) { return ok(service.approveQuestion(id, user)); }
-	@PostMapping("/questions/{id}/publish")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:publish','education:question-bank:manage','education:teaching:manage')")
-	public ResultData<Question> publish(@PathVariable String id, Authentication user) { return ok(service.publishQuestion(id, user)); }
 	@PostMapping("/questions/{id}/withdraw")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:question-bank:publish','education:question-bank:manage','education:teaching:manage')")
 	public ResultData<Question> withdraw(@PathVariable String id, Authentication user) { return ok(service.withdrawQuestion(id, user)); }

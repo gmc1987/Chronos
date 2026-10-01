@@ -7,6 +7,7 @@
           <div class="subtitle">维护工作流定义列表</div>
         </div>
         <div class="header-actions">
+          <el-button v-if="canOperate" @click="openOperations">运维检查</el-button>
           <el-button v-if="canMonitor" @click="$router.push('/admin/workflow/outbox')">消息死信</el-button>
           <el-button v-if="canIncidentView" @click="$router.push('/admin/workflow/incidents')">流程事故</el-button>
           <el-button v-if="canFormManage" @click="$router.push('/admin/workflow/forms')">表单设计器</el-button>
@@ -19,6 +20,12 @@
       <div v-if="canMonitor" class="monitor-cards">
         <el-card v-for="item in monitorCards" :key="item.label" shadow="never"><div class="monitor-value">{{ item.value }}</div><div class="monitor-label">{{ item.label }}</div></el-card>
       </div>
+      <el-alert
+        v-if="canOperate && operationsHealth?.alert"
+        type="warning"
+        :closable="false"
+        :title="`流程运维预警：积压 ${operationsHealth.oldTasks} 项、事故 ${operationsHealth.openIncidents} 项、死信 ${operationsHealth.deadEvents} 项`"
+      />
 
       <el-table :data="flows" border style="width: 100%" @row-click="openEditFlow">
         <el-table-column prop="flowCode" label="流程编码" width="170" />
@@ -27,9 +34,10 @@
         <el-table-column prop="version" label="版本" width="120" />
         <el-table-column prop="entryNodeKey" label="入口节点" width="160" />
         <el-table-column prop="status" label="状态" width="120" />
-        <el-table-column label="操作" width="380">
+        <el-table-column label="操作" width="440">
           <template #default="scope">
             <el-button v-if="canUpdate" size="small" @click.stop="openEditFlow(scope.row)">编辑</el-button>
+            <el-button v-if="canView" size="small" @click.stop="openVersions(scope.row)">版本</el-button>
             <el-button v-if="canUpdate" size="small" @click.stop="openAclDialog(scope.row)">权限</el-button>
             <el-button v-if="canCreate && scope.row.status === 'PUBLISHED'" size="small" @click.stop="newVersion(scope.row)">新版本</el-button>
             <el-button v-if="canPublish && scope.row.status === 'PUBLISHED'" size="small" type="warning" @click.stop="disableCurrent(scope.row)">停用</el-button>
@@ -165,6 +173,78 @@
         <el-button @click="showFlowDialog = false">取消</el-button>
         <el-button type="primary" @click="submitFlow">保存</el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="showVersionsDialog" :title="`流程版本 - ${versionFlow?.flowName || ''}`" width="700px">
+      <el-alert title="已有实例始终绑定发起时的流程版本；发布新版本不会迁移运行中实例。" type="info" :closable="false" />
+      <el-table :data="versionRows" border style="margin-top: 12px">
+        <el-table-column prop="version" label="版本" width="100" />
+        <el-table-column prop="status" label="状态" width="120" />
+        <el-table-column prop="publishedAt" label="发布时间" width="180" />
+        <el-table-column prop="flowableProcessKey" label="引擎流程 Key" />
+      </el-table>
+      <el-form-item label="比较版本" style="margin-top: 16px">
+        <el-select v-model="comparisonTargetId" placeholder="选择目标版本" style="width: 100%" @change="loadWorkflowComparison">
+          <el-option
+            v-for="version in versionRows.filter(item => item.id !== versionFlow?.id)"
+            :key="version.id"
+            :label="`${version.version} · ${version.status}`"
+            :value="version.id"
+          />
+        </el-select>
+      </el-form-item>
+      <template v-if="workflowComparison">
+        <el-alert
+          :title="workflowComparison.requiresReview ? '存在结构或行为变化，发布前必须复核' : '仅展示性变化或无差异'"
+          :type="workflowComparison.requiresReview ? 'warning' : 'success'"
+          :closable="false"
+        />
+        <el-table :data="workflowComparison.changes" border style="margin-top: 12px">
+          <el-table-column prop="change" label="变化" width="210" />
+          <el-table-column prop="path" label="节点 / 路径" />
+          <el-table-column label="复核" width="90">
+            <template #default="{ row }">{{ row.requiresReview ? '必需' : '一般' }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showOperationsDialog" title="流程运维检查" width="760px">
+      <el-descriptions :column="3" border>
+        <el-descriptions-item :label="`超 ${operationsHealth?.oldTaskHours || 24} 小时待办`">{{ operationsHealth?.oldTasks ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="逾期待办">{{ operationsHealth?.overdueTasks ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="未处理事故">{{ operationsHealth?.openIncidents ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="待投递事件">{{ operationsHealth?.pendingEvents ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="死信事件">{{ operationsHealth?.deadEvents ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="运行实例抽查">{{ recoveryReport?.checkedInstances ?? '—' }} / {{ recoveryReport?.runningInstances ?? '—' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-alert v-if="recoveryReport?.truncated" title="运行实例超过 200 条，本次仅抽查最近 200 条。" type="warning" :closable="false" style="margin-top: 12px" />
+      <el-table :data="recoveryReport?.issues || []" border style="margin-top: 12px">
+        <el-table-column prop="instanceId" label="实例 ID" />
+        <el-table-column prop="code" label="异常代码" width="230" />
+      </el-table>
+      <el-form-item label="归档实例 ID" style="margin-top: 16px">
+        <el-input v-model="archiveInstanceId" placeholder="仅支持已结束、无待处理任务和事故的实例">
+          <template #append><el-button @click="downloadArchive">导出核验包</el-button></template>
+        </el-input>
+      </el-form-item>
+      <el-alert title="核验包包含表单和审批数据，请保存到受控存储。导出不会删除源数据，也不能代替数据库与 MinIO 备份。" type="info" :closable="false" />
+      <el-divider content-position="left">表单提交修订记录</el-divider>
+      <el-form inline>
+        <el-form-item label="实例 ID"><el-input v-model="revisionQuery.instanceId" placeholder="流程实例 ID" /></el-form-item>
+        <el-form-item label="表单 ID"><el-input v-model="revisionQuery.formId" placeholder="表单定义 ID" /></el-form-item>
+        <el-form-item label="节点 Key"><el-input v-model="revisionQuery.nodeKey" placeholder="节点 Key" /></el-form-item>
+        <el-button @click="loadFormRevisions">查询历史</el-button>
+      </el-form>
+      <el-table :data="formRevisions" border max-height="280">
+        <el-table-column type="expand">
+          <template #default="{ row }"><pre class="revision-json">{{ row.dataJson }}</pre></template>
+        </el-table-column>
+        <el-table-column prop="revisionNo" label="修订序号" width="110" />
+        <el-table-column prop="status" label="状态" width="110" />
+        <el-table-column prop="owner" label="提交人" />
+        <el-table-column prop="createTime" label="记录时间" width="180" />
+      </el-table>
     </el-dialog>
 
     <el-dialog v-model="showAclDialog" :title="`流程权限 - ${aclFlow?.flowName || ''}`" width="760px">
@@ -382,6 +462,8 @@ import {
   deleteWorkflow,
   disableWorkflow,
   createWorkflowVersion,
+  listWorkflowVersions,
+  compareWorkflowVersions,
   listWorkflowAcls,
   createWorkflowAcl,
   deleteWorkflowAcl,
@@ -404,12 +486,18 @@ import {
   listUsers,
   listRoles,
   workflowMonitor,
+  workflowOperationsHealth,
+  workflowRecoveryCheck,
+  exportWorkflowArchivePackage,
+  listWorkflowFormRevisions,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { hasAdminPermission } from '../../../store/auth'
 
 const { fitView } = useVueFlow()
 const canCreate = hasAdminPermission('workflow:definition:create','workflow:manage')
+const canView = hasAdminPermission('workflow:definition:view','workflow:manage')
+const canOperate = hasAdminPermission('workflow:manage')
 const canUpdate = hasAdminPermission('workflow:definition:update','workflow:manage')
 const canDelete = hasAdminPermission('workflow:definition:delete','workflow:manage')
 const canPublish = hasAdminPermission('workflow:definition:publish','workflow:manage')
@@ -422,6 +510,16 @@ const aiSetting = ref({ enabled: false, providerMode: 'LOCAL_PRIVATE', allowExte
 const reviewFindings = ref([])
 const showReviewDialog = ref(false)
 const showAclDialog = ref(false)
+const showVersionsDialog = ref(false)
+const showOperationsDialog = ref(false)
+const versionFlow = ref(null)
+const versionRows = ref([])
+const comparisonTargetId = ref('')
+const workflowComparison = ref(null)
+const recoveryReport = ref(null)
+const archiveInstanceId = ref('')
+const revisionQuery = ref({ instanceId: '', formId: '', nodeKey: '' })
+const formRevisions = ref([])
 const aclFlow = ref(null)
 const aclRows = ref([])
 const aclForm = ref({ subjectType: 'USER', subjectId: '', action: 'START' })
@@ -430,6 +528,7 @@ const aclActions = [{label:'发起',value:'START'},{label:'查看',value:'VIEW'}
 
 const flows = ref([])
 const monitor = ref({})
+const operationsHealth = ref(null)
 const monitorCards = computed(() => [
   { label: '流程实例', value: monitor.value.instances || 0 },
   { label: '运行中', value: monitor.value.running || 0 },
@@ -588,6 +687,67 @@ const loadFlows = async () => {
   total.value = res?.data?.totalElements || 0
 }
 const loadMonitor = async () => { const res = await workflowMonitor(); monitor.value = res?.data || {} }
+const loadOperationsHealth = async () => {
+  if (!canOperate) return
+  const response = await workflowOperationsHealth()
+  operationsHealth.value = response?.data || null
+}
+
+const openVersions = async flow => {
+  versionFlow.value = flow
+  const response = await listWorkflowVersions(flow.id)
+  versionRows.value = response?.data || []
+  comparisonTargetId.value = ''
+  workflowComparison.value = null
+  showVersionsDialog.value = true
+}
+
+const loadWorkflowComparison = async () => {
+  if (!comparisonTargetId.value || !versionFlow.value?.id) return
+  const response = await compareWorkflowVersions(versionFlow.value.id, comparisonTargetId.value)
+  workflowComparison.value = response?.data || null
+}
+
+const openOperations = async () => {
+  const [health, recovery] = await Promise.all([
+    workflowOperationsHealth(),
+    workflowRecoveryCheck()
+  ])
+  operationsHealth.value = health?.data || null
+  recoveryReport.value = recovery?.data || null
+  archiveInstanceId.value = ''
+  revisionQuery.value = { instanceId: '', formId: '', nodeKey: '' }
+  formRevisions.value = []
+  showOperationsDialog.value = true
+}
+
+const loadFormRevisions = async () => {
+  const { instanceId, formId, nodeKey } = revisionQuery.value
+  if (!instanceId.trim() || !formId.trim() || !nodeKey.trim()) {
+    return ElMessage.warning('请填写实例 ID、表单 ID 和节点 Key')
+  }
+  // Historical form values can include fields hidden at a later node. Only the
+  // workflow manager reaches this endpoint, and the server rechecks instance ACL.
+  const response = await listWorkflowFormRevisions(instanceId.trim(), formId.trim(), nodeKey.trim())
+  formRevisions.value = response?.data || []
+}
+
+const downloadArchive = async () => {
+  if (!archiveInstanceId.value.trim()) {
+    return ElMessage.warning('请输入流程实例 ID')
+  }
+  const response = await exportWorkflowArchivePackage(archiveInstanceId.value.trim())
+  const archive = response?.data
+  if (!archive) return
+  const blob = new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `workflow-${archive.instanceId}-archive.json`
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  ElMessage.success('归档核验包已导出')
+}
 
 const loadAiSetting = async () => {
   const res = await getWorkflowAiSetting()
@@ -1129,7 +1289,7 @@ const resetView = () => {
   fitView({ padding: 0.2 })
 }
 
-Promise.all([loadFlows(), loadMonitor(), loadAiSetting(), loadForms(), loadExecutors(), loadAssigneeOptions(), loadFlowCategoryOptions()])
+Promise.all([loadFlows(), loadMonitor(), loadOperationsHealth(), loadAiSetting(), loadForms(), loadExecutors(), loadAssigneeOptions(), loadFlowCategoryOptions()])
 </script>
 
 <style scoped>
@@ -1178,6 +1338,7 @@ Promise.all([loadFlows(), loadMonitor(), loadAiSetting(), loadForms(), loadExecu
 .node-tab-tip { margin: 10px 0 0; }
 .advanced-config { margin-top: 16px; }
 .canvas-error { margin-bottom: 8px; }
+.revision-json { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 16px; }
 :deep(.vue-flow__node-default) {
   min-width: 108px;
   max-width: 150px;

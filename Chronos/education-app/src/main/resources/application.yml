@@ -16,6 +16,8 @@ spring:
     name: Chronos-Education
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
+    # Local defaults keep the app runnable; deployment acceptance still requires
+    # explicit CHRONOS_DB_* values and an acknowledged target database.
     url: ${CHRONOS_DB_URL:jdbc:postgresql://localhost:5432/ChronosEducation}
     username: ${CHRONOS_DB_USERNAME:Chronos}
     password: ${CHRONOS_DB_PASSWORD:Chronos123}
@@ -48,7 +50,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
       probes:
@@ -57,8 +59,12 @@ management:
         liveness:
           include: ping
         readiness:
-          include: db
+          include: db,domainEventOutbox
       show-details: never
+  metrics:
+    export:
+      prometheus:
+        enabled: ${CHRONOS_METRICS_PROMETHEUS_ENABLED:false}
   data:
     redis:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}
@@ -77,6 +83,9 @@ minio:
   secretKey: ${CHRONOS_MINIO_SECRET_KEY:minioadmin}
 
 chronos:
+  security:
+    # Required in every deployment; provide a Base64 AES-128/192/256 key via the secret manager.
+    encryption-key: ${CHRONOS_ENCRYPTION_KEY:}
   industry:
     active: EDUCATION
   domain-events:
@@ -105,3 +114,9 @@ chronos:
       agent:
         enabled: ${WORKFLOW_AGENT_EXECUTOR_ENABLED:false}
         base-url: ${WORKFLOW_AGENT_BASE_URL:}
+  supervision:
+    check-in:
+      # No location/QR provider is bundled. Register a SupervisionCheckInProofProvider
+      # bean in the deployment and configure its endpoint/credentials in a secret manager.
+      provider-id: ${CHRONOS_SUPERVISION_CHECK_IN_PROVIDER_ID:}
+      endpoint: ${CHRONOS_SUPERVISION_CHECK_IN_PROVIDER_ENDPOINT:}

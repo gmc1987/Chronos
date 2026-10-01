@@ -1,8 +1,11 @@
 import { readFile } from 'node:fs/promises'
 
 const routerSource = await readFile(new URL('../src/router/index.ts', import.meta.url), 'utf8')
+const industrySource = await readFile(new URL('../src/industries/education/index.js', import.meta.url), 'utf8')
+const routeSource = `${routerSource}\n${industrySource}`
 
 const menuRoutes = {
+  '/admin/education/teaching-center': 'AdminTeachingCenter',
   '/admin/education/teaching-center/plan': 'AdminTeachingPlan',
   '/admin/education/teaching-center/lesson-plan': 'AdminLessonPlans',
   '/admin/education/teaching-center/preparation': 'AdminPreparation',
@@ -17,13 +20,17 @@ const menuRoutes = {
 
 for (const [path, component] of Object.entries(menuRoutes)) {
   const nestedPath = path.replace(/^\/admin\//, '')
-  const routePattern = new RegExp(`path:\\s*['"]${nestedPath.replaceAll('/', '\\/')}['"][\\s\\S]*?component:\\s*${component}`)
-  if (!routePattern.test(routerSource)) {
+  const routePattern = new RegExp(`path:\\s*['"](?:\\/admin\\/)?${nestedPath.replaceAll('/', '\\/')}['"][\\s\\S]*?component:\\s*${component}`)
+  if (!routePattern.test(routeSource)) {
     throw new Error(`教学中心菜单缺少真实页面路由: ${path} -> ${component}`)
   }
 }
 
-const routePaths = [...routerSource.matchAll(/path:\s*['"]([^'"]*education\/teaching-center[^'"]*)['"]/g)]
+if (!/admin-education-teaching-center['"][\s\S]*component:\s*AdminTeachingCenter/.test(routeSource)) {
+  throw new Error('教学中心入口缺少独立导航工作台')
+}
+
+const routePaths = [...routeSource.matchAll(/path:\s*['"]([^'"]*education\/teaching-center[^'"]*)['"]/g)]
   .map(match => match[1])
 const duplicatePaths = routePaths.filter((path, index) => routePaths.indexOf(path) !== index)
 if (duplicatePaths.length) {
@@ -39,7 +46,7 @@ const aliasRoutes = {
 }
 for (const [path, name] of Object.entries(aliasRoutes)) {
   const aliasPattern = new RegExp(`path:\\s*['"]${path}['"][\\s\\S]*?redirect:\\s*\\{\\s*name:\\s*['"]${name}['"]`)
-  if (!aliasPattern.test(routerSource)) {
+  if (!aliasPattern.test(routeSource)) {
     throw new Error(`兼容路径未统一重定向: ${path} -> ${name}`)
   }
 }

@@ -5,6 +5,8 @@ import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 import com.chronos.education.meeting.model.Meeting;
+import com.chronos.education.meeting.model.MeetingActionItem;
+import com.chronos.education.meeting.model.MeetingMinutes;
 import com.chronos.workflow.WorkflowNotificationService;
 
 import lombok.RequiredArgsConstructor;
@@ -77,6 +79,32 @@ public class MeetingNotificationService {
 				"您已不在会议参会名单中",
 				meeting.getTitle() + "，" + meeting.getStartTime(),
 				"REMOVED:" + fingerprint(meeting));
+	}
+
+	public void minutesPublished(
+			Meeting meeting,
+			MeetingMinutes minutes,
+			String username) {
+		notifications.enqueueUserEvent(
+				"EDUCATION_MEETING_MINUTES_PUBLISHED",
+				meeting.getId(),
+				username,
+				"会议纪要已发布：" + meeting.getTitle(),
+				"请查看会议纪要、会议决议和本人行动项。",
+				"MINUTES_PUBLISHED:" + minutes.getRecordVersion());
+	}
+
+	public void actionAssigned(
+			Meeting meeting,
+			MeetingActionItem item) {
+		notifications.enqueueUserEvent(
+				"EDUCATION_MEETING_ACTION_ASSIGNED",
+				item.getId(),
+				item.getAssigneeUsername(),
+				"会议行动项：" + item.getTitle(),
+				meeting.getTitle() + (item.getDueAt() == null
+						? "" : "，截止时间：" + item.getDueAt()),
+				"ACTION_ASSIGNED:" + item.getRecordVersion());
 	}
 
 	private String fingerprint(Meeting meeting) {

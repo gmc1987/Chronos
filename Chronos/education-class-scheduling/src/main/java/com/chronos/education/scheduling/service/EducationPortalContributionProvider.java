@@ -14,6 +14,7 @@ import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.ScheduleEntry;
+import com.chronos.education.scheduling.model.ScheduleOccurrenceView;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.portal.spi.PortalContribution;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.stream.Collectors;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
@@ -192,6 +194,15 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 		Map<String, Object> data = new LinkedHashMap<>();
 		data.put("selectedStudentId", selectedStudentId == null ? "" : selectedStudentId);
 		data.put("studentContexts", studentContextViews(contexts));
+		Set<String> allTeacherIds = resolveTeacherProfileIds(username);
+		Set<String> occurrenceTeacherIds = selectedStudentId == null
+				? allTeacherIds
+				: Set.of();
+		data.put("headTeacherClassCount", allTeacherIds.stream()
+				.flatMap(id -> classes.findByHeadTeacherId(id).stream())
+				.map(value -> value.getId())
+				.distinct()
+				.count());
 
 		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
 				.ifPresentOrElse(term -> {
@@ -205,6 +216,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 					Set<String> allowedOfferingIds = selectedStudentId == null
 							? resolvePersonalOfferingIds(username, byId)
 							: studentOfferingIds(selectedStudentId);
+					Set<String> teacherIds = occurrenceTeacherIds;
+					Map<String, String> teacherNames = teacherNameById();
 					data.put("termName", term.getTermName());
 					List<ScheduleEntry> published = planVersions.latestPublishedEntries(term.getTermCode());
 					data.put("schedule", published.stream()
@@ -219,7 +232,11 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 					data.put("occurrences", occurrences
 							.publishedOccurrences(term.getTermCode(), selectedDate, published)
 							.stream()
-							.filter(item -> allowedOfferingIds.contains(item.entry().offeringId()))
+							.filter(item -> canViewOccurrence(
+									item,
+									allowedOfferingIds,
+									teacherIds))
+							.map(item -> occurrenceItem(item, byId, teacherNames))
 							.toList());
 				}, () -> {
 					data.put("termName", "");
@@ -228,6 +245,124 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 					data.put("occurrences", List.of());
 				});
 		return data;
+	}
+
+	/**
+	 * 返回最多 31 天的个人日期课表。代课教师按日期例外中的实际教师匹配，
+	 * 避免只能看到原任课教师课表、却看不到本人临时代课任务。
+	 */
+	@Transactional(readOnly = true)
+	public Map<String, Object> personalScheduleCalendar(
+			String username,
+			String requestedStudentId,
+			LocalDate startDate,
+			LocalDate endDate) {
+		if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+			throw new IllegalArgumentException("课表日期范围不正确");
+		}
+		if (ChronoUnit.DAYS.between(startDate, endDate) > 30) {
+			throw new IllegalArgumentException("单次最多查询31天课表");
+		}
+
+		Map<String, StudentContext> contexts = resolveStudentContexts(username);
+		String selectedStudentId = selectStudentId(contexts, requestedStudentId);
+		Map<String, Object> result = new LinkedHashMap<>();
+		result.put("selectedStudentId", selectedStudentId == null ? "" : selectedStudentId);
+		result.put("studentContexts", studentContextViews(contexts));
+		result.put("startDate", startDate);
+		result.put("endDate", endDate);
+
+		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
+				.ifPresentOrElse(term -> {
+					Map<String, CourseOffering> byId = offerings
+							.findBySemesterCodeOrderByOfferingCode(term.getTermCode())
+							.stream()
+							.collect(Collectors.toMap(CourseOffering::getId, value -> value));
+					Set<String> allowedOfferingIds = selectedStudentId == null
+							? resolvePersonalOfferingIds(username, byId)
+							: studentOfferingIds(selectedStudentId);
+					Set<String> teacherIds = selectedStudentId == null
+							? resolveTeacherProfileIds(username)
+							: Set.of();
+					Map<String, String> teacherNames = teacherNameById();
+					List<ScheduleEntry> published = planVersions
+							.latestPublishedEntries(term.getTermCode());
+					List<Map<String, Object>> values = startDate.datesUntil(endDate.plusDays(1))
+							.flatMap(date -> occurrences
+									.publishedOccurrences(term.getTermCode(), date, published)
+									.stream())
+							.filter(item -> canViewOccurrence(
+									item,
+									allowedOfferingIds,
+									teacherIds))
+							.map(item -> occurrenceItem(item, byId, teacherNames))
+							.toList();
+					result.put("termName", term.getTermName());
+					result.put("occurrences", values);
+				}, () -> {
+					result.put("termName", "");
+					result.put("occurrences", List.of());
+				});
+		return result;
+	}
+
+	private boolean canViewOccurrence(
+			ScheduleOccurrenceView occurrence,
+			Set<String> allowedOfferingIds,
+			Set<String> teacherIds) {
+		return allowedOfferingIds.contains(occurrence.entry().offeringId())
+				|| occurrence.substituteTeacherId() != null
+				&& teacherIds.contains(occurrence.substituteTeacherId());
+	}
+
+	private Map<String, Object> occurrenceItem(
+			ScheduleOccurrenceView occurrence,
+			Map<String, CourseOffering> offeringById,
+			Map<String, String> teacherNames) {
+		CourseOffering offering = offeringById.get(occurrence.entry().offeringId());
+		String originalTeacherId = offering == null ? "" : offering.getTeacherId();
+		String effectiveTeacherId = occurrence.substituteTeacherId() == null
+				? originalTeacherId
+				: occurrence.substituteTeacherId();
+		String effectiveTeacherName = teacherNames.getOrDefault(
+				effectiveTeacherId,
+				occurrence.entry().teacherName());
+		Map<String, Object> value = new LinkedHashMap<>();
+		value.put("occurrenceKey", occurrence.occurrenceKey());
+		value.put("date", occurrence.date());
+		value.put("entry", occurrence.entry());
+		value.put("occurrenceStatus", occurrence.occurrenceStatus());
+		value.put("exceptionType", occurrence.exceptionType());
+		value.put("exceptionId", occurrence.exceptionId());
+		value.put("reason", occurrence.reason());
+		value.put("effectivePeriodNo", occurrence.effectivePeriodNo());
+		value.put("effectiveClassroomId", occurrence.effectiveClassroomId());
+		value.put("effectiveTeacherId", effectiveTeacherId);
+		value.put("effectiveTeacherName", effectiveTeacherName);
+		value.put("substituteTeacherId", occurrence.substituteTeacherId());
+		return value;
+	}
+
+	private Map<String, String> teacherNameById() {
+		return teachers.findAll().stream().collect(Collectors.toMap(
+				value -> value.getId(),
+				value -> value.getTeacherName()));
+	}
+
+	private Set<String> resolveTeacherProfileIds(String username) {
+		Set<String> result = bindings
+				.findByUsernameAndStatusOrderByProfileType(username, "ACTIVE")
+				.stream()
+				.filter(item -> "TEACHER".equals(item.getProfileType()))
+				.map(EducationUserBinding::getProfileId)
+				.collect(Collectors.toSet());
+		var account = users.findByUsername(username);
+		if (account != null && account.getEmployeeId() != null) {
+			teachers.findByEmployeeId(account.getEmployeeId())
+					.map(value -> value.getId())
+					.ifPresent(result::add);
+		}
+		return result;
 	}
 
 	private Map<String, StudentContext> resolveStudentContexts(String username) {

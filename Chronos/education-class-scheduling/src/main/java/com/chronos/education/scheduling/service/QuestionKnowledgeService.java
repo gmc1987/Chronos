@@ -13,6 +13,7 @@ import java.util.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /** Strongly typed third-slice application service. It deliberately has no
  * assignment, submission, grading or examination operations. */
@@ -35,6 +36,7 @@ public class QuestionKnowledgeService {
 	private final CourseOfferingRepository offerings;
 	private final EducationDataScopeService scopes;
 	private final ObjectMapper json;
+	private TeachingReviewService reviews;
 
 	public QuestionKnowledgeService(QuestionBankRepository banks, QuestionRepository questions,
 			QuestionOptionRepository options, QuestionKnowledgePointRepository links,
@@ -46,6 +48,19 @@ public class QuestionKnowledgeService {
 		this.points = points; this.versions = versions; this.references = references;
 		this.files = files; this.managedFiles = managedFiles;
 		this.offerings = offerings; this.scopes = scopes; this.json = json;
+	}
+
+	@Autowired
+	public QuestionKnowledgeService(QuestionBankRepository banks, QuestionRepository questions,
+			QuestionOptionRepository options, QuestionKnowledgePointRepository links,
+			KnowledgePointRepository points, QuestionVersionRepository versions,
+			QuestionReferenceRepository references, QuestionFileRepository files,
+			ManagedFileService managedFiles, CourseOfferingRepository offerings,
+			EducationDataScopeService scopes, ObjectMapper json,
+			TeachingReviewService reviews) {
+		this(banks, questions, options, links, points, versions, references, files,
+				managedFiles, offerings, scopes, json);
+		this.reviews = reviews;
 	}
 
 	public QuestionBank createBank(BankRequest request, Authentication user) {
@@ -182,9 +197,21 @@ public class QuestionKnowledgeService {
 		authorizeBank(bank, user);
 		if (!"DRAFT".equals(question.getStatus()) && !"REVISED".equals(question.getStatus()))
 			throw new IllegalStateException("只有草稿或修订题目可以提交审核");
-		persistVersion(question, "REVIEW");
+		QuestionVersion version = persistVersion(question, "SUBMITTED");
 		question.setStatus("REVIEW");
-		return questions.save(question);
+		Question saved = questions.save(question);
+		if (reviews == null) {
+			throw new IllegalStateException("题目审核服务未配置");
+		}
+		reviews.submit(
+				"QUESTION",
+				question.getId(),
+				bank.getOfferingId(),
+				Map.of(
+						"versionId", version.getId(),
+						"snapshotHash", version.getSnapshotHash()),
+				user);
+		return saved;
 	}
 
 	public Question approveQuestion(String id, Authentication user) {
@@ -278,7 +305,9 @@ public class QuestionKnowledgeService {
 	public List<KnowledgePoint> knowledgeTree(String courseId, Authentication user) {
 		EducationDataScope scope = scopes.resolve(user.getName());
 		scopes.assertCourseAccess(scope, courseId);
-		return points.findByCourseIdAndArchivedFalseOrderByParentIdAscSortOrderAscNameAsc(courseId).stream().filter(p -> p.isEnabled() && Objects.equals(courseId, p.getCourseId())
+		// 维护端必须返回已停用节点，否则管理员停用后将永远无法在界面重新启用。
+		// enabled 只控制业务选择器是否可选，不再承担审核状态含义。
+		return points.findByCourseIdAndArchivedFalseOrderByParentIdAscSortOrderAscNameAsc(courseId).stream().filter(p -> Objects.equals(courseId, p.getCourseId())
 				&& scopes.canAccessCourse(scope, p.getCourseId()))
 				.sorted(Comparator.comparing(KnowledgePoint::getSortOrder).thenComparing(KnowledgePoint::getName)).toList();
 	}
@@ -395,7 +424,7 @@ public class QuestionKnowledgeService {
 		q.setScore(r.score()); q.setAnswer(r.answer()); q.setAnalysis(r.analysis()); q.setAnswerSchemaJson(r.answerSchemaJson());
 		q.setUsableFrom(r.usableFrom()); q.setUsableUntil(r.usableUntil()); q.setStatus("DRAFT");
 	}
-	private void persistVersion(Question q, String status) {
+	private QuestionVersion persistVersion(Question q, String status) {
 		try {
 			Map<String, Object> snapshot = new LinkedHashMap<>();
 			snapshot.put("questionType", q.getQuestionType()); snapshot.put("difficulty", q.getDifficulty());
@@ -416,8 +445,9 @@ public class QuestionKnowledgeService {
 			int next = (q.getCurrentVersionNo() == null ? 0 : q.getCurrentVersionNo()) + 1; q.setCurrentVersionNo(next);
 			QuestionVersion version = new QuestionVersion(); version.setQuestionId(q.getId());
 			version.setVersionNo(next); version.setSnapshotJson(body); version.setSnapshotHash(hash(body)); version.setStatus(status);
-			versions.save(version);
+			version = versions.save(version);
 			questions.save(q);
+			return version;
 		} catch (JsonProcessingException ex) { throw new IllegalStateException("题目版本快照失败", ex); }
 	}
 	private void authorizeBank(QuestionBank b, Authentication u) {

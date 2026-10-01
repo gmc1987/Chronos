@@ -90,7 +90,7 @@ com.chronos.education.<domain>.dao
 
 ## 5 数据库与Flyway规则
 
-当前 `V20261121` 已由 Codex 用于会议中心执行闭环。Copilot 开工时必须重新扫描迁移目录，不得再使用该版本；后续版本仍以实际目录和 `flyway_schema_history` 为准。
+当前教育迁移目录已经使用到 `V20261202`。`V20261127` 至 `V20261137` 保留已经执行或已规划的会议、考试、Outbox、作业、学籍、督导、家校通知、请假和教室申请迁移；合并后的家校中心、数据中心与教师任职生命周期顺延为 `V20261138` 至 `V20261142`，数据中心种子和领域事件权限使用 `V20261201`、`V20261202`。Copilot 开工时必须同时扫描迁移目录和 `flyway_schema_history`，不得复用任何已执行版本。
 
 1. 修改前查询迁移目录和 `flyway_schema_history`，选择下一个未占用版本。
 2. 不得修改已经执行的迁移文件。
@@ -107,14 +107,14 @@ com.chronos.education.<domain>.dao
 以下决策已经由总架构确认，Copilot不再将其作为编码阻塞项：
 
 1. `ExamItemScore.candidateId` 通过 `ExamCandidate.id` 稳定关联，学生标识读取 `ExamCandidate.studentId`。不得根据姓名、座位号或学号文本猜测学生。
-2. 当前代码尚未发布考试成绩确认领域事件。成绩中心第一片不消费考试成绩；后续由考试中心增加显式“确认成绩”命令并发布 `ExamScoresConfirmedV1`。
-3. 当前作业中心没有 `HomeworkGradesPublished` 事件，`publishGrades` 只更新 `gradesPublished`。成绩中心第一片不消费该事件；后续由作业中心发布 `HomeworkGradesPublishedV1`。
+2. 考试中心现已提供显式“确认成绩”命令，并从已确认的逐题成绩持久化来源发布 `ExamScoresConfirmedV1`。当前 `ExamSession` 没有稳定的 `offeringId` 来源，因此事件中的课程归属保持 unavailable，不得从 `subjectId` 推断。
+3. 作业中心现已在 `publishGrades` 的事务内发布 `HomeworkGradesPublishedV1`，字段来自已持久化的作业、提交和评分记录；重复发布使用稳定事件 ID 幂等。
 4. 现有 `EDU_TEACHING_CONTENT_REVIEW` 只用于教学内容审核，不能复用为成绩审核。成绩中心新建独立流程定义 `EDU_GRADEBOOK_REVIEW`。
 5. 权限按录入提交、审核、发布三类职责分离。默认禁止提交人审核本人数据，发布人使用独立权限；小型学校可给同一角色授予审核和发布权限，但同一成绩册仍不得自审。
 6. `CourseOffering` 已包含 `offeringMode` 和 `campusId`，并通过 `TeachingClassMember` 表达实际学生范围，足以支持第一片普通班、走班、合班和校区数据范围。它目前只支持一名主教师；协同教师不在成绩中心第一片扩展。
 7. 成绩册成员以规范化的 `edu_gradebook_student` 表作为事实来源，同时保存不可变快照和SHA-256。不能只用一个可变JSON字段承载全部成员。
 8. 学生成绩使用独立门户路由 `/portal/education/grades`，后端增加独立 `GradePortalContributionProvider`，providerCode 为 `GRADE`；不要把成绩逻辑继续塞入现有 `DATA` provider。
-9. `V20261121` 已分配给会议中心。仓库级为成绩中心预留 `V20261122` 至 `V20261124`，分别用于领域结构、菜单权限字典、审核流程初始化。真正执行前仍须核对实际 `flyway_schema_history`；如果数据库已有冲突，整体顺延，禁止修改已执行脚本。
+9. 当前数据库已经执行到 `V20261134`，其中 `V20261134` 是督导中心迁移，禁止修改或复用；仓库目录已经占用至 `V20261202`。新增迁移必须从实际未占用版本开始，并先核对目标数据库 `flyway_schema_history`。
 10. 成绩通知不使用 Publication API。Publication 面向人工发布的通知公告；成绩发布使用 `WorkflowNotificationService.enqueueUserEvent` 封装成独立 `GradeNotificationService`，通过现有Outbox可靠投递。
 
 考试事件的课程归属不能仅从 `ExamSession.subjectId` 推断。后续考试集成新增 `edu_exam_session_offering(session_id, offering_id)` 多对多映射，因为同一考试场次可能覆盖多个课程开设或行政班。事件按 offeringId 分组，至少包含：
@@ -132,7 +132,7 @@ eventId eventType occurredAt payloadVersion
 assignmentId offeringId studentId score maxScore publishedAt
 ```
 
-成绩中心第一片只实现 MANUAL 来源的成绩项目和人工录入。事件DTO、消费者接口和幂等表可以预留，但不得伪造考试或作业事件，也不得直接修改考试、作业核心服务。
+成绩中心第一片只实现 MANUAL 来源的成绩项目和人工录入。数据中心只消费教育领域 Outbox 中的正式事件，并以事件 ID 投影到事实表；没有稳定校区/课程归属的维度必须标记 unavailable，不得伪造统计或直接修改考试、作业核心服务。
 
 `edu_gradebook_student` 至少保存：`gradebook_id,student_id,student_no,student_name,administrative_class_id,enrollment_status,source_member_id,enrolled_at,withdrawn_at,snapshot_version,snapshot_hash`。其中姓名和学号是创建成绩册时的追溯快照，不作为实时学生档案的事实来源。
 

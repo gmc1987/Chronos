@@ -18,6 +18,11 @@ public interface MeetingRepository extends JpaRepository<Meeting, String> {
 
 	List<Meeting> findByOrganizerUsernameOrderByStartTimeDesc(String username);
 
+	List<Meeting> findBySeriesIdOrderByStartTimeAsc(String seriesId);
+
+	List<Meeting> findBySeriesIdAndStartTimeGreaterThanEqualOrderByStartTimeAsc(
+			String seriesId, LocalDateTime startTime);
+
 	@Query("""
 			select meeting from Meeting meeting
 			where (:status = '' or meeting.status = :status)

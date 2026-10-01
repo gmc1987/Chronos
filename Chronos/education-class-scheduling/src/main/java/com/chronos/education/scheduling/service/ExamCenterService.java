@@ -36,6 +36,7 @@ import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamPublishedChangeRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
+import com.chronos.education.scheduling.dao.ExamSessionOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.ExamTeacherQualificationRepository;
 import com.chronos.education.scheduling.dao.LeaveRequestRecordRepository;
@@ -60,6 +61,7 @@ import com.chronos.education.scheduling.model.ExamPlan;
 import com.chronos.education.scheduling.model.ExamPublishedChange;
 import com.chronos.education.scheduling.model.ExamRoom;
 import com.chronos.education.scheduling.model.ExamSession;
+import com.chronos.education.scheduling.model.ExamSessionOffering;
 import com.chronos.education.scheduling.model.ExamStudentView;
 import com.chronos.education.scheduling.model.ExamTeacherSuggestion;
 import com.chronos.education.scheduling.model.ExamTeacherQualification;
@@ -76,6 +78,7 @@ import lombok.RequiredArgsConstructor;
 public class ExamCenterService {
 	private final ExamPlanRepository plans;
 	private final ExamSessionRepository sessions;
+	private final ExamSessionOfferingRepository sessionOfferings;
 	private final ExamRoomRepository rooms;
 	private final ExamCandidateRepository candidates;
 	private final ExamInvigilationRepository assignments;
@@ -104,6 +107,7 @@ public class ExamCenterService {
 	private final ExamPaperAnalysisService paperAnalysis;
 	private final EducationResourceTransactionLock resourceLock;
 	private final IAuditLogService audit;
+	private final ExamOperationsService examOperations;
 
 	@Transactional(readOnly = true)
 	public List<ExamPlan> plans(String semesterCode) {
@@ -403,6 +407,12 @@ public class ExamCenterService {
 				|| command.examDate().isAfter(plan.getEndDate())) {
 			throw new IllegalArgumentException("考试场次日期或时间无效");
 		}
+		List<String> offeringIds = command.offeringIds() == null ? List.of()
+				: command.offeringIds().stream().filter(Objects::nonNull).map(String::trim)
+						.filter(id -> !id.isEmpty()).distinct().toList();
+		if (!offeringIds.isEmpty() && offeringIds.stream().anyMatch(id -> !offerings.existsById(id))) {
+			throw new IllegalArgumentException("课程开设不存在，不能建立考试场次映射");
+		}
 		ExamSession value = sessionId == null ? new ExamSession() : session(sessionId);
 		if (sessionId != null && (!value.getPlanId().equals(planId)
 				|| !rooms.findBySessionId(sessionId).isEmpty())) {
@@ -413,7 +423,15 @@ public class ExamCenterService {
 		value.setExamDate(command.examDate());
 		value.setStartTime(command.startTime());
 		value.setEndTime(command.endTime());
-		return sessions.save(value);
+		value = sessions.save(value);
+		sessionOfferings.deleteBySessionId(value.getId());
+		for (String offeringId : offeringIds) {
+			ExamSessionOffering mapping = new ExamSessionOffering();
+			mapping.setSessionId(value.getId());
+			mapping.setOfferingId(offeringId);
+			sessionOfferings.save(mapping);
+		}
+		return value;
 	}
 
 	@Transactional
@@ -894,6 +912,7 @@ public class ExamCenterService {
 		plan.setStatus("PUBLISHED");
 		plan.setPublishedVersion(1);
 		ExamPlan published = plans.save(plan);
+		examOperations.generateTickets(planId, actor);
 		audit.log(actor, "EDUCATION_EXAM_PUBLISH",
 				"planId=" + planId + ", semester=" + plan.getSemesterCode());
 		examNotifications.planPublished(published);
@@ -999,6 +1018,11 @@ public class ExamCenterService {
 			plan.setPublishedVersion(plan.getPublishedVersion() + 1);
 			change.setAppliedPlanVersion(plan.getPublishedVersion());
 			plans.save(plan);
+			if ("PUBLISHED".equals(plan.getStatus())) {
+				examOperations.generateTickets(plan.getId(), actor);
+			} else {
+				examOperations.revokeTicketsForPlan(plan.getId());
+			}
 		}
 		change.setStatus(approve ? "APPROVED" : "REJECTED");
 		change.setDecidedBy(actor);

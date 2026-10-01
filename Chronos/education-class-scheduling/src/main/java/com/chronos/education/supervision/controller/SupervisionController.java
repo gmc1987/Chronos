@@ -44,6 +44,18 @@ public class SupervisionController {
 		return ok(plan(service.startPlan(id, auth.getName())));
 	}
 
+	@PostMapping("/admin/education/supervision/plans/{id}/complete")
+	@PreAuthorize("hasAuthority('education:supervision:plan:update')")
+	public ResultData<PlanResponse> completePlan(@PathVariable String id, Authentication auth) {
+		return ok(plan(service.completePlan(id, auth.getName())));
+	}
+
+	@PostMapping("/admin/education/supervision/plans/{id}/archive")
+	@PreAuthorize("hasAuthority('education:supervision:plan:update')")
+	public ResultData<PlanResponse> archivePlan(@PathVariable String id, Authentication auth) {
+		return ok(plan(service.archivePlan(id, auth.getName())));
+	}
+
 	@PostMapping("/admin/education/supervision/assignments")
 	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
 	public ResultData<AssignmentResponse> assign(@Valid @RequestBody AssignmentCommand command, Authentication auth) {
@@ -65,16 +77,22 @@ public class SupervisionController {
 
 	@PostMapping("/portal/education/supervision/tasks/{id}/check-in")
 	@PreAuthorize("hasAuthority('education:supervision:assignment:check-in')")
-	public ResultData<AssignmentResponse> checkIn(@PathVariable String id, Authentication auth) {
-		return ok(assignment(service.checkIn(id, auth.getName())));
+	public ResultData<AssignmentResponse> checkIn(@PathVariable String id,
+			@RequestBody(required = false) CheckInCommand command, Authentication auth) {
+		return ok(assignment(service.checkIn(id, auth.getName(), command == null ? null : command.proof())));
+	}
+
+	@PostMapping("/portal/education/supervision/tasks/{id}/complete")
+	@PreAuthorize("hasAuthority('education:supervision:assignment:update')")
+	public ResultData<AssignmentResponse> complete(@PathVariable String id, Authentication auth) {
+		return ok(assignment(service.completeAssignment(id, auth.getName())));
 	}
 
 	@PostMapping("/portal/education/supervision/tasks/{id}/submit")
 	@PreAuthorize("hasAuthority('education:supervision:record:create')")
 	public ResultData<RecordResponse> submit(@PathVariable String id, @Valid @RequestBody EvaluationCommand command,
 			Authentication auth) {
-		return ok(record(service.submit(id, auth.getName(), command.formSnapshotJson(),
-				command.scheduleContextSnapshotJson(), command.formTemplateId())));
+		return ok(record(service.submit(id, auth.getName(), null, null, command.formTemplateId())));
 	}
 
 	@GetMapping("/portal/education/supervision/tasks/{id}/record")

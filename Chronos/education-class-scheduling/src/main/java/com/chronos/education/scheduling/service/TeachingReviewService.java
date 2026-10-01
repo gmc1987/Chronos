@@ -22,9 +22,18 @@ public class TeachingReviewService {
 	private final TeachingReviewRecordRepository records;
 	private final WorkflowService workflows;
 	private final EducationDataScopeService scopes;
+	private final TeachingCollaborationNotificationService collaborationNotifications;
 	@PersistenceContext private EntityManager em;
-	public TeachingReviewService(TeachingReviewRecordRepository records, WorkflowService workflows,
-			EducationDataScopeService scopes) { this.records=records; this.workflows=workflows; this.scopes=scopes; }
+	public TeachingReviewService(
+			TeachingReviewRecordRepository records,
+			WorkflowService workflows,
+			EducationDataScopeService scopes,
+			TeachingCollaborationNotificationService collaborationNotifications) {
+		this.records = records;
+		this.workflows = workflows;
+		this.scopes = scopes;
+		this.collaborationNotifications = collaborationNotifications;
+	}
 
 	public TeachingReviewRecord submit(String type, String id, String offeringId, Map<String,Object> form,
 			Authentication auth) {
@@ -183,6 +192,38 @@ public class TeachingReviewService {
 			scopes.assertCourseAccess(scope, point.getCourseId());
 			return;
 		}
+		if ("QUESTION".equals(type)) {
+			var question = em.find(com.chronos.education.scheduling.model.Question.class, id);
+			if (question == null) throw new IllegalArgumentException("题目不存在");
+			var bank = em.find(com.chronos.education.scheduling.model.QuestionBank.class, question.getBankId());
+			if (bank == null) throw new IllegalArgumentException("题库不存在");
+			if (bank.getOfferingId() != null && !bank.getOfferingId().isBlank()) {
+				scopes.assertOfferingAccess(scope, bank.getOfferingId());
+			} else {
+				scopes.assertCourseAccess(scope, bank.getCourseId());
+			}
+			return;
+		}
+		if ("RESEARCH_RESULT".equals(type)) {
+			var result = em.find(com.chronos.education.scheduling.model.ResearchResult.class, id);
+			if (result == null) throw new IllegalArgumentException("教研成果不存在");
+			var activity = em.find(com.chronos.education.scheduling.model.ResearchActivity.class, result.getActivityId());
+			if (activity == null) throw new IllegalArgumentException("教研活动不存在");
+			var group = em.find(com.chronos.education.scheduling.model.ResearchGroup.class, activity.getGroupId());
+			if (group == null) throw new IllegalArgumentException("教研组不存在");
+			if (scope.fullAccess() || scope.teacherIds().contains(group.getLeaderTeacherId())) return;
+			if (scope.teacherIds().isEmpty()) {
+				throw new org.springframework.security.access.AccessDeniedException("无权访问该教研成果");
+			}
+			Long membership = em.createQuery(
+					"select count(m) from ResearchGroupMember m where m.groupId=:groupId and m.teacherId in :teacherIds",
+					Long.class)
+					.setParameter("groupId", group.getId())
+					.setParameter("teacherIds", scope.teacherIds())
+					.getSingleResult();
+			if (membership > 0) return;
+			throw new org.springframework.security.access.AccessDeniedException("无权访问该教研成果");
+		}
 		if ("MISTAKE".equals(type) || "ERROR_BOOK".equals(type)) {
 			var book = em.find(com.chronos.education.scheduling.model.ErrorBook.class, id);
 			if (book == null) throw new IllegalArgumentException("错题本不存在");
@@ -203,7 +244,8 @@ public class TeachingReviewService {
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void rejected(WorkflowRejectedEvent event) {
 		if (!FLOW.equals(event.flowCode())) return;
-		writeBack(event.businessKey(), "DRAFT", "REJECTED", event.comment());
+		// 驳回是不可丢失的审核事实，不能伪装成从未提交过的草稿状态。
+		writeBack(event.businessKey(), "REJECTED", "REJECTED", event.comment());
 	}
 	private void writeBack(String key, String resourceStatus, String decision, String comment) {
 		records.findByBusinessKey(key).ifPresent(r -> {
@@ -228,7 +270,7 @@ public class TeachingReviewService {
 				} else if ("COURSEWARE".equals(r.getResourceType())) {
 					var version = em.find(com.chronos.education.scheduling.model.CoursewareVersion.class, r.getVersionId());
 					if (version != null) {
-						version.setStatus("PUBLISHED".equals(resourceStatus) ? "APPROVED" : resourceStatus);
+						version.setStatus(resourceStatus);
 						if ("PUBLISHED".equals(resourceStatus)) {
 							version.setPublishedAt(java.time.Instant.now());
 							var courseware = em.find(com.chronos.education.scheduling.model.Courseware.class, r.getResourceId());
@@ -238,11 +280,21 @@ public class TeachingReviewService {
 				} else if ("MATERIAL".equals(r.getResourceType())) {
 					var version = em.find(com.chronos.education.scheduling.model.TeachingMaterialVersion.class, r.getVersionId());
 					if (version != null) {
-						version.setStatus("PUBLISHED".equals(resourceStatus) ? "APPROVED" : resourceStatus);
+						version.setStatus(resourceStatus);
 						if ("PUBLISHED".equals(resourceStatus)) {
 							version.setPublishedAt(java.time.Instant.now());
 							var material = em.find(com.chronos.education.scheduling.model.TeachingMaterial.class, r.getResourceId());
 							if (material != null) material.setPublishedVersionNo(version.getVersionNo());
+						}
+					}
+				} else if ("QUESTION".equals(r.getResourceType())) {
+					var version = em.find(com.chronos.education.scheduling.model.QuestionVersion.class, r.getVersionId());
+					if (version != null) {
+						version.setStatus(resourceStatus);
+						if ("PUBLISHED".equals(resourceStatus)) {
+							version.setPublishedAt(java.time.LocalDateTime.now());
+							var question = em.find(com.chronos.education.scheduling.model.Question.class, r.getResourceId());
+							if (question != null) question.setPublishedVersionId(version.getId());
 						}
 					}
 				}
@@ -261,6 +313,9 @@ public class TeachingReviewService {
 								&& entity instanceof com.chronos.education.scheduling.model.ResearchResult result) {
 							result.setPublishedAt(java.time.LocalDateTime.now());
 						}
+						if (entity instanceof com.chronos.education.scheduling.model.ResearchResult result) {
+							notifyResearchResultDecision(result, resourceStatus, comment);
+						}
 					} catch (NoSuchMethodException ignored) {
 						if (entity instanceof com.chronos.education.scheduling.model.KnowledgePoint point)
 							point.setEnabled("PUBLISHED".equals(resourceStatus));
@@ -270,6 +325,42 @@ public class TeachingReviewService {
 				}
 			}
 		});
+	}
+
+	private void notifyResearchResultDecision(
+			com.chronos.education.scheduling.model.ResearchResult result,
+			String resourceStatus,
+			String comment) {
+		if (!java.util.Set.of("PUBLISHED", "REJECTED").contains(resourceStatus)) {
+			return;
+		}
+		var activity = em.find(
+				com.chronos.education.scheduling.model.ResearchActivity.class,
+				result.getActivityId());
+		if (activity == null) {
+			return;
+		}
+		var group = em.find(
+				com.chronos.education.scheduling.model.ResearchGroup.class,
+				activity.getGroupId());
+		if (group == null) {
+			return;
+		}
+		java.util.Set<String> recipients = new java.util.LinkedHashSet<>();
+		if (group.getLeaderTeacherId() != null && !group.getLeaderTeacherId().isBlank()) {
+			recipients.add(group.getLeaderTeacherId());
+		}
+		recipients.addAll(em.createQuery(
+				"select member.teacherId from ResearchGroupMember member where member.groupId=:groupId",
+				String.class)
+				.setParameter("groupId", group.getId())
+				.getResultList());
+		collaborationNotifications.researchResultReviewed(
+				result,
+				activity.getTitle(),
+				recipients,
+				"PUBLISHED".equals(resourceStatus),
+				comment);
 	}
 	private Object entity(String type,String id) {
 		return switch(type) {

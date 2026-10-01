@@ -97,8 +97,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 							response.getWriter().write(this.objectMapper.writeValueAsString(ResultData.builder().code("403").msg("必须先修改初始密码").data(null).build())); return;
 						}
 						UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+						List<SimpleGrantedAuthority> authorities = new java.util.ArrayList<>(
+								userDetails.getAuthorities().stream()
+										.map(authority -> new SimpleGrantedAuthority(authority.getAuthority()))
+										.toList());
+						if (Boolean.TRUE.equals(claims.get("mfaVerified", Boolean.class))) {
+							authorities.add(new SimpleGrantedAuthority("MFA_VERIFIED"));
+						}
 						UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(userDetails,
-								null, userDetails.getAuthorities());
+								null, authorities);
 						auth.setDetails((new WebAuthenticationDetailsSource()).buildDetails(request));
 						SecurityContextHolder.getContext().setAuthentication((Authentication) auth);
 					}

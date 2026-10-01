@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -38,6 +39,10 @@ public class DomainEventOutbox extends BaseEntity {
 	@Column(name = "lease_until")
 	private LocalDateTime leaseUntil;
 
+	/** 每次领取都会刷新令牌，拒绝租约过期工作线程的迟到回写。 */
+	@Column(name = "claim_token", length = 64)
+	private String claimToken;
+
 	@Column(name = "sent_at")
 	private LocalDateTime sentAt;
 
@@ -46,4 +51,9 @@ public class DomainEventOutbox extends BaseEntity {
 
 	@Column(name = "deduplication_key", nullable = false, length = 200, unique = true)
 	private String deduplicationKey;
+
+	/** 防止后台投递与管理员重试、忽略操作并发覆盖事件状态。 */
+	@Version
+	@Column(name = "row_version", nullable = false)
+	private Long rowVersion = 0L;
 }

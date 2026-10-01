@@ -1,6 +1,6 @@
 package com.chronos.integration.security;
 
-/** Platform-owned secret encryption boundary. Implement with the deployment KMS before enabling credentials. */
+/** Integration-center view of the platform-owned secret encryption boundary. */
 public interface PlatformSecretCipher {
     String encrypt(String plaintext);
     String decrypt(String ciphertext);
