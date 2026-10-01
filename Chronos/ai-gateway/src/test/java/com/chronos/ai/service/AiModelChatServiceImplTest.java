@@ -13,6 +13,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.retry.NonTransientAiException;
 
 import com.chronos.Idao.IDictRepository;
 import com.chronos.ai.dao.AiModelRepository;
@@ -88,6 +89,45 @@ class AiModelChatServiceImplTest {
 		assertThat(new AiModelChatServiceImpl(models, factory, encryption, types)
 				.chat(null, "hello")).isEqualTo("world");
 		verify(encryption).decrypt("encrypted");
+	}
+
+	@Test
+	void existingProviderNameIsRejectedBeforeCallingTheProvider() {
+		model.setModelName("Deepseek");
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+
+		assertThatThrownBy(() -> service().chat(null, "hello"))
+				.isInstanceOf(AiModelConfigurationException.class)
+				.hasMessageContaining("模型管理");
+		verify(factory, times(0)).create(any());
+	}
+
+	@Test
+	void unsupportedProviderModelIdYieldsSafeConfigurationError() {
+		model.setModelName("custom-text-model");
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		when(chatModel.call("hello")).thenThrow(new NonTransientAiException(
+				"400 - {\"error\":{\"message\":\"The supported API model names are alpha, beta, "
+						+ "but you passed invalid. (request_id: example)\","
+						+ "\"type\":\"invalid_request_error\"}}"));
+
+		assertThatThrownBy(() -> service().chat(null, "hello"))
+				.isInstanceOf(AiModelConfigurationException.class)
+				.hasMessageContaining("Base URL")
+				.hasMessageNotContaining("alpha")
+				.hasMessageNotContaining("beta")
+				.hasMessageNotContaining("request_id");
+	}
+
+	@Test
+	void unrelatedProviderBadRequestIsNotMisreportedAsInvalidModelId() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		NonTransientAiException error = new NonTransientAiException(
+				"400 - {\"error\":{\"message\":\"insufficient balance\","
+						+ "\"type\":\"invalid_request_error\"}}");
+		when(chatModel.call("hello")).thenThrow(error);
+
+		assertThatThrownBy(() -> service().chat(null, "hello")).isSameAs(error);
 	}
 
 	@Test

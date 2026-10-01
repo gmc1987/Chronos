@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientException;
@@ -140,6 +141,11 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		ChatModel chatModel = cachedModel(model).chatModel();
 		try {
 			return chatModel.call(message);
+		} catch (NonTransientAiException exception) {
+			if (AiModelNameValidation.isUnsupportedModel(exception)) {
+				throw AiModelNameValidation.unsupportedModel();
+			}
+			throw exception;
 		} catch (RestClientException | WebClientException | IllegalStateException exception) {
 			throw new AiModelInvocationException(label + "调用失败，请稍后重试", exception);
 		}
@@ -160,6 +166,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		if (!modelTypes.isText(model.getModelType())) {
 			throw new AiModelConfigurationException(label + "不是文本模型");
 		}
+		AiModelNameValidation.validate(model);
 		if (model.getApiKey() == null || model.getApiKey().isBlank()) {
 			if (model.getApiKeyCiphertext() == null || model.getApiKeyCiphertext().isBlank()) {
 				throw new AiModelConfigurationException(label + "未配置 API Key");
