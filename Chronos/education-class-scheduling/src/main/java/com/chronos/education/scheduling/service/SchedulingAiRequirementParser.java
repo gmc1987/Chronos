@@ -12,6 +12,7 @@ import com.chronos.education.scheduling.model.SchedulingAiLockedEntry;
 import com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
 import com.chronos.education.scheduling.model.SchedulingAiSoftPriority;
+import com.chronos.education.scheduling.model.SchedulingAiSlotRule;
 import com.chronos.education.scheduling.model.SchedulingAiWeekRule;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
@@ -143,6 +144,7 @@ public class SchedulingAiRequirementParser {
 		List<SchedulingAiWeekRule> weekRules = new java.util.ArrayList<>();
 		List<SchedulingAiLockedEntry> lockedEntries = new java.util.ArrayList<>();
 		List<SchedulingAiSoftPriority> softPriorities = new java.util.ArrayList<>();
+		List<SchedulingAiSlotRule> slotRules = new java.util.ArrayList<>();
 		List<String> unsupported = new java.util.ArrayList<>();
 		List<String> unresolvedClauses = new java.util.ArrayList<>();
 		String text = request.requestText();
@@ -156,6 +158,11 @@ public class SchedulingAiRequirementParser {
 				: modelClassifier.classify(text);
 		for (SchedulingAiModelClassifier.Clause clause : clauses) {
 			String rule = clause.text();
+			if ("SLOT_RULE".equals(clause.classification())) {
+				parseSlotRule(request, scope, selected, clause, slotRules,
+						clarifications, unsupported, unresolvedClauses);
+				continue;
+			}
 			if ("UNSUPPORTED".equals(clause.classification())) {
 				unsupported.add("模型无法确认该需求：" + rule);
 				unresolvedClauses.add(rule);
@@ -353,8 +360,126 @@ public class SchedulingAiRequirementParser {
 				offeringConstraints,
 				weekRules,
 				lockedEntries,
-				softPriorities);
+				softPriorities,
+				slotRules);
 		return new ParsedRequirement(plan);
+	}
+
+	private void parseSlotRule(SchedulingAiRunRequest request, EducationDataScope scope,
+			Set<String> selected, SchedulingAiModelClassifier.Clause clause,
+			List<SchedulingAiSlotRule> parsed, List<String> clarifications,
+			List<String> unsupported, List<String> unresolved) {
+		String source = clause.text();
+		var rule = clause.rule();
+		Set<Integer> sourceDays = SchedulingAiSlotEvidence.days(source);
+		Set<Integer> sourcePeriods = SchedulingAiSlotEvidence.periods(source);
+		if (rule == null || sourceDays.isEmpty() || sourcePeriods.contains(null)
+				|| sourcePeriods.isEmpty()
+				|| !sourceDays.equals(Set.copyOf(rule.days()))
+				|| !sourcePeriods.equals(Set.copyOf(rule.periods()))
+				|| !SchedulingAiSlotEvidence.forbidden(source)) {
+			unsupported.add("组合时段规则无法从原文核实对象、时段或禁排含义：" + source);
+			unresolved.add(source);
+			return;
+		}
+		if (timetable == null) {
+			throw new IllegalStateException("AI 作息映射服务不可用");
+		}
+		var dimensions = timetable.dimensions(request.semesterCode(), request.mode(), selected);
+		if (rule.days().stream().anyMatch(day -> day > dimensions.weekdays())
+				|| rule.periods().stream().anyMatch(period -> period > dimensions.periodsPerDay())) {
+			unsupported.add("组合时段规则超出当前排课范围：" + source);
+			unresolved.add(source);
+			return;
+		}
+		List<SchedulingAiSlotRule> resolved = new java.util.ArrayList<>();
+		String reference = rule.reference().strip();
+		if ("ALL_TEACHERS".equals(rule.subject())) {
+			if (!reference.isEmpty() || !containsAny(source, "所有老师", "所有教师", "全体老师", "全体教师")) {
+				unsupported.add("全体教师规则未在原文中明确指定：" + source);
+				unresolved.add(source);
+				return;
+			}
+			var teachingStaff = targetOfferings(scope, request.semesterCode(), request.mode(), selected)
+					.stream().map(CourseOffering::getTeacherId).distinct().toList();
+			if (teachingStaff.isEmpty()) {
+				clarifications.add("当前排课范围内没有可用的教师教学任务：" + source);
+				unresolved.add(source);
+				return;
+			}
+			if (teachingStaff.stream().anyMatch(id -> !dataScopes.canAccessTeacher(scope, id)
+					|| teachers.findById(id)
+							.filter(item -> Boolean.TRUE.equals(item.getEnabled())).isEmpty())) {
+				clarifications.add("全体教师规则包含无权限或已停用的教师，请调整排课范围：" + source);
+				unresolved.add(source);
+				return;
+			}
+			for (String teacherId : teachingStaff) {
+				for (int day : rule.days()) {
+					for (int period : rule.periods()) {
+						resolved.add(new SchedulingAiSlotRule("ALL_TEACHERS", teacherId, "全部教师",
+								day, period, source));
+					}
+				}
+			}
+		} else if (reference.isEmpty() || !source.contains(reference)) {
+			clarifications.add("请用原文中的教师或课程名称指明组合规则对象：" + source);
+			unresolved.add(source);
+			return;
+		} else if ("TEACHER".equals(rule.subject())) {
+			var matched = resolveTeacher(reference, scope).candidates().stream()
+					.filter(item -> reference.equals(item.getTeacherName())
+							|| reference.equals(item.getTeacherNo()))
+					.filter(item -> targetOfferings(scope, request.semesterCode(), request.mode(),
+							selected).stream().anyMatch(offering ->
+									item.getId().equals(offering.getTeacherId())))
+					.toList();
+			if (matched.size() != 1) {
+				clarifications.add("请指定排课范围内唯一的教师姓名或工号：" + source);
+				unresolved.add(source);
+				return;
+			}
+			boolean namesOthers = teachers.findAllByOrderByTeacherNo().stream()
+					.filter(item -> !matched.getFirst().getId().equals(item.getId()))
+					.filter(item -> targetOfferings(scope, request.semesterCode(), request.mode(),
+							selected).stream().anyMatch(offering ->
+									item.getId().equals(offering.getTeacherId())))
+					.anyMatch(item -> item.getTeacherName() != null
+							&& source.contains(item.getTeacherName()));
+			if (namesOthers) {
+				clarifications.add("组合规则同时提及多位教师，请逐条明确：" + source);
+				unresolved.add(source);
+				return;
+			}
+			for (int day : rule.days()) {
+				for (int period : rule.periods()) {
+					resolved.add(new SchedulingAiSlotRule("TEACHER", matched.getFirst().getId(),
+							matched.getFirst().getTeacherName(), day, period, source));
+				}
+			}
+		} else if ("OFFERING".equals(rule.subject())) {
+			var matched = targetOfferings(scope, request.semesterCode(), request.mode(), selected)
+					.stream().filter(item -> offeringAliases(item).contains(reference)).toList();
+			if (matched.size() != 1) {
+				clarifications.add("请指定排课范围内唯一的课程或教学任务：" + source);
+				unresolved.add(source);
+				return;
+			}
+			for (CourseOffering offering : matched) {
+				for (int day : rule.days()) {
+					for (int period : rule.periods()) {
+						resolved.add(new SchedulingAiSlotRule("OFFERING", offering.getId(),
+								offering.getCourseName(), day, period, source));
+					}
+				}
+			}
+		}
+		if (parsed.size() + resolved.size() > 200 || resolved.stream().anyMatch(parsed::contains)) {
+			unsupported.add("组合规则展开数量过多或存在重复：" + source);
+			unresolved.add(source);
+			return;
+		}
+		parsed.addAll(resolved);
 	}
 
 	private void parseWeekRule(SchedulingAiRunRequest request, EducationDataScope scope,

@@ -78,7 +78,8 @@
     <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增模型' : '编辑模型'">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="模型名称" prop="modelName">
-          <el-input v-model="form.modelName" />
+          <el-input v-model="form.modelName" placeholder="填写当前服务地址支持的 API 模型标识" />
+          <span class="form-tip">这里是调用 API 的模型标识，不是供应商名称（如 DeepSeek）；请以当前 Base URL 的模型列表为准。</span>
         </el-form-item>
         <el-form-item label="版本">
           <el-input v-model="form.version" />

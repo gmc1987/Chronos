@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientException;
@@ -79,6 +80,24 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 			throw new AiStructuredOutputException("结构化模型输入超过长度限制");
 		}
 		String response = chat(modelId, message);
+		try {
+			return validateStructuredResponse(schemaId, response);
+		} catch (AiStructuredOutputException exception) {
+			if (!SCHEDULING_CLAUSES_SCHEMA.equals(schemaId)
+					|| !java.util.Set.of("模型未返回合法的子句列表", "模型未返回有效 JSON")
+							.contains(exception.getMessage())) {
+				throw exception;
+			}
+			String correction = "\n上次响应未符合格式要求。请重新按上方原需求逐条分类；仅返回一个 JSON 对象，"
+					+ "唯一顶层字段为非空 clauses 数组，不要 Markdown、解释或额外字段。";
+			if (message.length() + correction.length() > 6000) {
+				throw exception;
+			}
+			return validateStructuredResponse(schemaId, chat(modelId, message + correction));
+		}
+	}
+
+	private String validateStructuredResponse(String schemaId, String response) {
 		if (response == null || response.length() > 16_000) {
 			throw new AiStructuredOutputException("模型结构化输出长度无效");
 		}
@@ -107,15 +126,44 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 				throw new AiStructuredOutputException("模型未返回合法的子句列表");
 			}
 			for (JsonNode clause : root.get("clauses")) {
-				if (!clause.isObject() || clause.size() != 2
+				if (!clause.isObject() || clause.size() != ("SLOT_RULE".equals(
+						clause.path("classification").asText()) ? 3 : 2)
 						|| !clause.path("text").isTextual()
 						|| clause.path("text").asText().isBlank()
 						|| clause.path("text").asText().length() > 2000
 						|| !clause.path("classification").isTextual()
 						|| !java.util.Set.of("TEACHER_SLOT", "OFFERING_BLOCK", "WEEK_RULE",
-								"LOCK_ENTRY", "TEACHER_PRIORITY", "GENERATION", "UNSUPPORTED")
+								"LOCK_ENTRY", "TEACHER_PRIORITY", "GENERATION", "UNSUPPORTED",
+								"SLOT_RULE")
 								.contains(clause.path("classification").asText())) {
 					throw new AiStructuredOutputException("模型子句格式或分类无效");
+				}
+				if ("SLOT_RULE".equals(clause.path("classification").asText())) {
+					JsonNode rule = clause.path("rule");
+					if (!rule.isObject() || rule.size() != 5
+							|| !rule.path("subject").isTextual()
+							|| !java.util.Set.of("TEACHER", "OFFERING", "ALL_TEACHERS")
+									.contains(rule.path("subject").asText())
+							|| !rule.path("reference").isTextual()
+							|| rule.path("reference").asText().length() > 128
+							|| !rule.path("action").isTextual()
+							|| !"FORBID".equals(rule.path("action").asText())
+							|| !rule.path("days").isArray() || rule.path("days").isEmpty()
+							|| rule.path("days").size() > 7
+							|| !rule.path("periods").isArray() || rule.path("periods").isEmpty()
+							|| rule.path("periods").size() > 20) {
+						throw new AiStructuredOutputException("模型组合时段规则格式无效");
+					}
+					for (JsonNode day : rule.path("days")) {
+						if (!day.canConvertToInt() || day.asInt() < 1 || day.asInt() > 7) {
+							throw new AiStructuredOutputException("模型星期无效");
+						}
+					}
+					for (JsonNode period : rule.path("periods")) {
+						if (!period.canConvertToInt() || period.asInt() < 1 || period.asInt() > 20) {
+							throw new AiStructuredOutputException("模型节次无效");
+						}
+					}
 				}
 			}
 			return root.toString();
@@ -140,6 +188,11 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		ChatModel chatModel = cachedModel(model).chatModel();
 		try {
 			return chatModel.call(message);
+		} catch (NonTransientAiException exception) {
+			if (AiModelNameValidation.isUnsupportedModel(exception)) {
+				throw AiModelNameValidation.unsupportedModel();
+			}
+			throw exception;
 		} catch (RestClientException | WebClientException | IllegalStateException exception) {
 			throw new AiModelInvocationException(label + "调用失败，请稍后重试", exception);
 		}
@@ -160,6 +213,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 		if (!modelTypes.isText(model.getModelType())) {
 			throw new AiModelConfigurationException(label + "不是文本模型");
 		}
+		AiModelNameValidation.validate(model);
 		if (model.getApiKey() == null || model.getApiKey().isBlank()) {
 			if (model.getApiKeyCiphertext() == null || model.getApiKeyCiphertext().isBlank()) {
 				throw new AiModelConfigurationException(label + "未配置 API Key");

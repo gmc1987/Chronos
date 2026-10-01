@@ -117,6 +117,7 @@ public class AiModelService {
 		target.setVersion(trimToNull(source.getVersion()));
 		target.setModelType(required(source.getModelType(), "模型类型不能为空"));
 		target.setProvider(required(source.getProvider(), "供应商不能为空").toLowerCase(Locale.ROOT));
+		AiModelNameValidation.validate(target);
 		target.setModelType(target.getModelType().toUpperCase(Locale.ROOT));
 		String apiKey = trimToNull(source.getApiKey());
 		if (creating) {

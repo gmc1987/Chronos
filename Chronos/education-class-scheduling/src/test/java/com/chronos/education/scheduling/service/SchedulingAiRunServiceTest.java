@@ -25,6 +25,7 @@ import com.chronos.education.scheduling.model.SchedulingAiLockedEntry;
 import com.chronos.education.scheduling.model.SchedulingAiReplyRequest;
 import com.chronos.education.scheduling.model.SchedulingAiRunRequest;
 import com.chronos.education.scheduling.model.SchedulingAiSoftPriority;
+import com.chronos.education.scheduling.model.SchedulingAiSlotRule;
 import com.chronos.education.scheduling.model.SchedulingAiWeekRule;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
@@ -262,6 +263,31 @@ class SchedulingAiRunServiceTest {
 		assertThat(result.status()).isEqualTo("READY_FOR_CONFIRMATION");
 		assertThat(result.plan().constraints()).containsExactly(first, second);
 		assertThat(result.plan().unresolvedClauses()).isEmpty();
+	}
+
+	@Test
+	void clarificationReplyPreservesPreviouslyGroundedSlotRules() throws Exception {
+		var oldRule = new SchedulingAiSlotRule("TEACHER", "teacher-old", "张老师",
+				3, 1, "张老师周三第1节不能上课");
+		var previous = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(),
+				List.of("请明确课程"), List.of(), List.of("待补充课程规则"),
+				List.of(), List.of(), List.of(), List.of(), List.of(oldRule));
+		clarifyingRun(previous);
+		var newRule = new SchedulingAiSlotRule("OFFERING", "offering-new", "化学",
+				4, 2, "化学周四第2节不能排课");
+		when(parser.parse(any(SchedulingAiRunRequest.class),
+				org.mockito.ArgumentMatchers.eq("admin")))
+				.thenReturn(parsed(new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+						"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of(),
+						List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+						List.of(newRule))));
+
+		var result = service.reply("run-1", new SchedulingAiReplyRequest(
+				"1：化学周四第2节不能排课", 1), "admin");
+
+		assertThat(result.status()).isEqualTo("READY_FOR_CONFIRMATION");
+		assertThat(result.plan().slotRules()).containsExactly(oldRule, newRule);
 	}
 
 	@Test

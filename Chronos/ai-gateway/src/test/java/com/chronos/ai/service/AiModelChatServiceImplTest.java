@@ -13,6 +13,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.retry.NonTransientAiException;
 
 import com.chronos.Idao.IDictRepository;
 import com.chronos.ai.dao.AiModelRepository;
@@ -91,6 +92,45 @@ class AiModelChatServiceImplTest {
 	}
 
 	@Test
+	void existingProviderNameIsRejectedBeforeCallingTheProvider() {
+		model.setModelName("Deepseek");
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+
+		assertThatThrownBy(() -> service().chat(null, "hello"))
+				.isInstanceOf(AiModelConfigurationException.class)
+				.hasMessageContaining("模型管理");
+		verify(factory, times(0)).create(any());
+	}
+
+	@Test
+	void unsupportedProviderModelIdYieldsSafeConfigurationError() {
+		model.setModelName("custom-text-model");
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		when(chatModel.call("hello")).thenThrow(new NonTransientAiException(
+				"400 - {\"error\":{\"message\":\"The supported API model names are alpha, beta, "
+						+ "but you passed invalid. (request_id: example)\","
+						+ "\"type\":\"invalid_request_error\"}}"));
+
+		assertThatThrownBy(() -> service().chat(null, "hello"))
+				.isInstanceOf(AiModelConfigurationException.class)
+				.hasMessageContaining("Base URL")
+				.hasMessageNotContaining("alpha")
+				.hasMessageNotContaining("beta")
+				.hasMessageNotContaining("request_id");
+	}
+
+	@Test
+	void unrelatedProviderBadRequestIsNotMisreportedAsInvalidModelId() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		NonTransientAiException error = new NonTransientAiException(
+				"400 - {\"error\":{\"message\":\"insufficient balance\","
+						+ "\"type\":\"invalid_request_error\"}}");
+		when(chatModel.call("hello")).thenThrow(error);
+
+		assertThatThrownBy(() -> service().chat(null, "hello")).isSameAs(error);
+	}
+
+	@Test
 	void disabledAndUnsupportedModelsFailClearly() {
 		model.setStatus(0);
 		when(models.findById("model-1")).thenReturn(Optional.of(model));
@@ -149,6 +189,48 @@ class AiModelChatServiceImplTest {
 				"禁止脚本")).isInstanceOf(AiStructuredOutputException.class);
 		assertThatThrownBy(() -> service.chatStructured(null, "unknown", "需求"))
 				.isInstanceOf(AiStructuredOutputException.class);
+	}
+
+	@Test
+	void structuredSlotRuleRejectsArbitraryOperationsAndUnknownFields() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		var service = service();
+		when(chatModel.call("规则")).thenReturn("""
+				{"clauses":[{"text":"张老师周三第1节不能上课","classification":"SLOT_RULE",
+				"rule":{"subject":"TEACHER","reference":"张老师","action":"FORBID",
+				"days":[3],"periods":[1]}}]}
+				""");
+		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1", "规则"))
+				.contains("SLOT_RULE");
+		when(chatModel.call("规则")).thenReturn("""
+				{"clauses":[{"text":"张老师周三第1节不能上课","classification":"SLOT_RULE",
+				"rule":{"subject":"TEACHER","reference":"张老师","action":"EXECUTE_SQL",
+				"days":[3],"periods":[1]}}]}
+				""");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"规则")).isInstanceOf(AiStructuredOutputException.class);
+		when(chatModel.call("规则")).thenReturn("""
+				{"clauses":[{"text":"张老师周三第1节不能上课","classification":"SLOT_RULE",
+				"rule":{"subject":"TEACHER","reference":"张老师","action":"FORBID",
+				"days":[3],"periods":[1],"tool":"any"}}]}
+				""");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"规则")).isInstanceOf(AiStructuredOutputException.class);
+	}
+
+	@Test
+	void malformedClauseListGetsOnlyOneBoundedCorrection() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		var service = service();
+		when(chatModel.call("需求")).thenReturn("{\"clauses\":[]}");
+		when(chatModel.call(org.mockito.ArgumentMatchers.startsWith("需求\n上次响应")))
+				.thenReturn("{\"clauses\":[{\"text\":\"张老师周三第1节不能排课\","
+						+ "\"classification\":\"TEACHER_SLOT\"}]}");
+
+		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1", "需求"))
+				.contains("TEACHER_SLOT");
+		verify(chatModel).call("需求");
+		verify(chatModel).call(org.mockito.ArgumentMatchers.startsWith("需求\n上次响应"));
 	}
 
 	private AiModel validModel(String id) {

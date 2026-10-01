@@ -197,6 +197,15 @@ public class AutoSchedulingService {
 						!= runConstraints.softPriorities().size()) {
 			throw new IllegalArgumentException("动态教师软偏好不在当前排课范围");
 		}
+		if (runConstraints.slotExclusions().stream().anyMatch(rule ->
+				!("OFFERING".equals(rule.targetType())
+						? targetIds.contains(rule.targetId()) : teacherIds.contains(rule.targetId()))
+						|| rule.dayOfWeek() > request.weekdays()
+						|| rule.periodNo() > request.periodsPerDay())
+				|| runConstraints.slotExclusions().stream().distinct().count()
+						!= runConstraints.slotExclusions().size()) {
+			throw new IllegalArgumentException("组合禁排规则不在当前排课范围或存在重复");
+		}
 		List<ScheduleCandidateView> result = new ArrayList<>();
 		for (int index = 0; index < request.candidateCount(); index++) {
 			checkCancelled(cancelled);
@@ -524,6 +533,7 @@ public class AutoSchedulingService {
 		int consecutiveBlockHits = 0;
 		int teacherDayConcentrationHits = 0;
 		int scopedPreferenceAdjustment = 0;
+		List<ScheduleRunConstraints.SlotExclusion> slotExclusions = runConstraints.slotExclusions();
 		Map<String, Set<Integer>> periodsByCampus = new HashMap<>();
 		for (CourseOffering offering : targets) {
 			checkCancelled(cancelled);
@@ -574,7 +584,7 @@ public class AutoSchedulingService {
 						duration,
 						roomUnavailableSlots,
 						teacherById.get(offering.getTeacherId()),
-						policy, activeWeeks, runConstraints.softPriorities());
+						policy, activeWeeks, runConstraints.softPriorities(), slotExclusions);
 				if (placement == null && duration == 2
 						&& localDurations.containsKey(offering.getId())) {
 					duration = 1;
@@ -583,7 +593,7 @@ public class AutoSchedulingService {
 							teacherConstraints.getOrDefault(offering.getTeacherId(), List.of()),
 							allowedPeriods, duration, roomUnavailableSlots,
 							teacherById.get(offering.getTeacherId()), policy,
-							activeWeeks, runConstraints.softPriorities());
+							activeWeeks, runConstraints.softPriorities(), slotExclusions);
 				}
 				if (placement == null) {
 					unscheduled += duration;
@@ -630,6 +640,20 @@ public class AutoSchedulingService {
 			}
 		}
 		result.sort(entryComparator());
+		List<ScheduleCandidateMetrics.SlotRuleCheck> slotRuleChecks = slotExclusions.stream()
+				.map(rule -> new ScheduleCandidateMetrics.SlotRuleCheck(
+						rule.targetType(), rule.targetId(), rule.dayOfWeek(), rule.periodNo(),
+						(int) result.stream()
+								.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
+								.filter(entry -> entry.getDayOfWeek() == rule.dayOfWeek()
+										&& entry.getPeriodNo() <= rule.periodNo()
+										&& entry.getPeriodNo() + entry.getDurationPeriods() > rule.periodNo())
+								.filter(entry -> matchesSlotRule(rule, offeringById.get(entry.getOfferingId()),
+										entry.getOfferingId())).count()))
+				.toList();
+		if (slotRuleChecks.stream().anyMatch(check -> check.violations() != 0)) {
+			throw new IllegalStateException("现有课表保留项与本轮组合禁排规则冲突");
+		}
 		int score = scheduled * policy.getScheduledLessonReward()
 				+ preferredHits * policy.getPreferredSlotReward()
 				- sameCourseDayPenalty * policy.getSameCourseDayPenalty()
@@ -652,7 +676,15 @@ public class AutoSchedulingService {
 						teacherGapPenalty,
 						score,
 						consecutiveBlockHits,
-						teacherDayConcentrationHits));
+						teacherDayConcentrationHits,
+						slotRuleChecks));
+	}
+
+	private boolean matchesSlotRule(ScheduleRunConstraints.SlotExclusion rule,
+			CourseOffering offering, String offeringId) {
+		return "OFFERING".equals(rule.targetType())
+				? rule.targetId().equals(offeringId)
+				: offering != null && rule.targetId().equals(offering.getTeacherId());
 	}
 
 	private void checkCancelled(BooleanSupplier cancelled) {
@@ -673,13 +705,23 @@ public class AutoSchedulingService {
 			TeacherAcademicProfile teacher,
 			SchedulePolicy policy,
 			long weeks,
-			List<ScheduleRunConstraints.SoftPriority> softPriorities) {
+			List<ScheduleRunConstraints.SoftPriority> softPriorities,
+			List<ScheduleRunConstraints.SlotExclusion> slotExclusions) {
 		Placement best = null;
 		Set<String> priorities = softPriorities.stream()
 				.filter(rule -> offering.getTeacherId().equals(rule.teacherId()))
 				.map(ScheduleRunConstraints.SoftPriority::kind)
 				.collect(Collectors.toSet());
 		for (Slot slot : slots) {
+			if (slotExclusions.stream().anyMatch(rule ->
+					rule.dayOfWeek() == slot.day()
+							&& rule.periodNo() >= slot.period()
+							&& rule.periodNo() < slot.period() + duration
+							&& ("OFFERING".equals(rule.targetType())
+									? rule.targetId().equals(offering.getId())
+									: rule.targetId().equals(offering.getTeacherId())))) {
+				continue;
+			}
 			int maxDaily = teacher == null || teacher.getMaxDailyLessons() == null
 					? policy.getDefaultMaxDailyLessons() : teacher.getMaxDailyLessons();
 			int maxConsecutive = teacher == null || teacher.getMaxConsecutiveLessons() == null

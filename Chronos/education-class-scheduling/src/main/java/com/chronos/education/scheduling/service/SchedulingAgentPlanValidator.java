@@ -14,6 +14,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -216,13 +217,103 @@ public class SchedulingAgentPlanValidator {
 					}
 					return new ScheduleRunConstraints.SoftPriority(item.kind(), item.teacherId());
 				}).toList();
+		Set<String> targetTeachers = sourceOfferings.values().stream()
+				.map(CourseOffering::getTeacherId).collect(Collectors.toSet());
+		if (plan.slotRules().stream().map(item -> item.targetType() + "|" + item.targetId()
+				+ "|" + item.dayOfWeek() + "|" + item.periodNo()).distinct().count()
+				!= plan.slotRules().size()) {
+			throw new IllegalStateException("组合时段规则重复");
+		}
+		List<ScheduleRunConstraints.SlotExclusion> slotExclusions = plan.slotRules().stream()
+				.map(item -> {
+					if (item.sourceText() == null || item.sourceText().isBlank()
+							|| item.dayOfWeek() < 1 || item.dayOfWeek() > dimensions.weekdays()
+							|| item.periodNo() < 1 || item.periodNo() > dimensions.periodsPerDay()) {
+						throw new IllegalStateException("组合时段规则超出排课范围");
+					}
+					if ("OFFERING".equals(item.targetType())) {
+						CourseOffering offering = requireSourceOffering(
+								sourceOfferings, item.targetId(), item.sourceText());
+						if (!identifiesOffering(item.sourceText(), offering)
+								|| !java.util.Objects.equals(item.targetName(), offering.getCourseName())) {
+							throw new IllegalStateException("组合规则课程与当前授权数据不一致");
+						}
+						return new ScheduleRunConstraints.SlotExclusion(
+								"OFFERING", item.targetId(), item.dayOfWeek(), item.periodNo());
+					}
+					if (!Set.of("TEACHER", "ALL_TEACHERS").contains(item.targetType())
+							|| !targetTeachers.contains(item.targetId())) {
+						throw new IllegalStateException("组合规则教师不在当前授权排课范围");
+					}
+					scopes.assertTeacherAccess(scope, item.targetId());
+					TeacherAcademicProfile teacher = teachers.findById(item.targetId()).orElse(null);
+					if (teacher == null || !Boolean.TRUE.equals(teacher.getEnabled())) {
+						throw new IllegalStateException("组合规则教师已不存在或已停用");
+					}
+					if ("ALL_TEACHERS".equals(item.targetType())) {
+						if (!java.util.List.of("所有老师", "所有教师", "全体老师", "全体教师")
+								.stream().anyMatch(item.sourceText()::contains)
+								|| !"全部教师".equals(item.targetName())) {
+							throw new IllegalStateException("全体教师规则来源无效");
+						}
+					} else {
+						if (!sameTeacherSource(item.sourceText(), teacher)
+								|| !java.util.Objects.equals(item.targetName(), teacher.getTeacherName())) {
+							throw new IllegalStateException("组合规则教师与当前授权数据不一致");
+						}
+					}
+					return new ScheduleRunConstraints.SlotExclusion(
+							"TEACHER", item.targetId(), item.dayOfWeek(), item.periodNo());
+				}).toList();
+		for (var group : plan.slotRules().stream()
+				.filter(item -> "ALL_TEACHERS".equals(item.targetType()))
+				.collect(Collectors.groupingBy(item -> item.sourceText() + "|"
+						+ item.dayOfWeek() + "|" + item.periodNo())).values()) {
+			if (!group.stream().map(com.chronos.education.scheduling.model.SchedulingAiSlotRule::targetId)
+					.collect(Collectors.toSet()).equals(targetTeachers)) {
+				throw new IllegalStateException("全体教师规则未覆盖当前排课范围");
+			}
+		}
+		for (var group : plan.slotRules().stream()
+				.collect(Collectors.groupingBy(
+						com.chronos.education.scheduling.model.SchedulingAiSlotRule::sourceText))
+				.entrySet()) {
+			Set<Integer> days = group.getValue().stream()
+					.map(com.chronos.education.scheduling.model.SchedulingAiSlotRule::dayOfWeek)
+					.collect(Collectors.toSet());
+			Set<Integer> periods = group.getValue().stream()
+					.map(com.chronos.education.scheduling.model.SchedulingAiSlotRule::periodNo)
+					.collect(Collectors.toSet());
+			if (!SchedulingAiSlotEvidence.forbidden(group.getKey())
+					|| !days.equals(SchedulingAiSlotEvidence.days(group.getKey()))
+					|| !periods.equals(SchedulingAiSlotEvidence.periods(group.getKey()))) {
+				throw new IllegalStateException("组合规则的时段与用户原文不一致");
+			}
+			for (var targetGroup : group.getValue().stream().collect(Collectors.groupingBy(
+					item -> item.targetType() + "|" + item.targetId())).values()) {
+				if (targetGroup.size() != days.size() * periods.size()) {
+					throw new IllegalStateException("组合规则的时段组合未完整覆盖用户原文");
+				}
+			}
+			Set<String> mentionedTeachers = group.getValue().stream()
+					.filter(item -> "TEACHER".equals(item.targetType()))
+					.map(com.chronos.education.scheduling.model.SchedulingAiSlotRule::targetId)
+					.collect(Collectors.toSet());
+			if (!mentionedTeachers.isEmpty() && targetTeachers.stream()
+					.filter(id -> !mentionedTeachers.contains(id))
+					.map(teachers::findById).flatMap(Optional::stream)
+					.anyMatch(item -> item.getTeacherName() != null
+							&& group.getKey().contains(item.getTeacherName()))) {
+				throw new IllegalStateException("组合规则含有未解析的教师");
+			}
+		}
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				plan.semesterCode(), "AI-" + plan.semesterCode(),
 				"LOCAL".equals(plan.mode()) ? "LOCAL" : "FULL",
 				plan.selectedOfferingIds(), plan.candidateCount(),
 				dimensions.weekdays(), dimensions.periodsPerDay(), 1, dimensions.endWeek());
 		return new Parameters(command, new ScheduleRunConstraints(
-				rules, durationRules, weekRules, lockedEntries, softPriorities));
+				rules, durationRules, weekRules, lockedEntries, softPriorities, slotExclusions));
 	}
 
 	private Map<String, CourseOffering> sourceOfferings(SchedulingAiPlan plan, Set<String> targetIds,

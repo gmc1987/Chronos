@@ -16,6 +16,7 @@ import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulingAiLockedEntry;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
 import com.chronos.education.scheduling.model.SchedulingAiSoftPriority;
+import com.chronos.education.scheduling.model.SchedulingAiSlotRule;
 import com.chronos.education.scheduling.model.SchedulingAiWeekRule;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,6 +26,66 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class SchedulingAgentPlanValidatorTest {
+	@Test
+	void revalidatesRuleEvidenceAndTeacherAgainstCurrentScope() throws Exception {
+		var scopes = mock(EducationDataScopeService.class);
+		var timetable = mock(SchedulingAgentTimetableService.class);
+		var offerings = mock(CourseOfferingRepository.class);
+		var teachers = mock(TeacherAcademicProfileRepository.class);
+		var scope = new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		var offering = new CourseOffering();
+		offering.setId("offering-1");
+		offering.setTeacherId("teacher-1");
+		offering.setCourseName("生物实验");
+		offering.setStatus("ACTIVE");
+		var teacher = new TeacherAcademicProfile();
+		teacher.setId("teacher-1");
+		teacher.setTeacherName("张老师");
+		teacher.setEnabled(true);
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(timetable.dimensions("2026-2027-1", "GLOBAL", Set.of()))
+				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 18));
+		when(timetable.targetOfferingIds("2026-2027-1", "GLOBAL", Set.of()))
+				.thenReturn(Set.of("offering-1"));
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(offering));
+		when(scopes.visibleOfferings(scope, List.of(offering))).thenReturn(List.of(offering));
+		when(teachers.findById("teacher-1")).thenReturn(Optional.of(teacher));
+		var validator = new SchedulingAgentPlanValidator(scopes,
+				new ObjectMapper().findAndRegisterModules(), timetable, offerings,
+				mock(ScheduleEntryRepository.class), teachers);
+		var rule = new SchedulingAiSlotRule("TEACHER", "teacher-1",
+				"张老师", 3, 1, "张老师周三第1节不能上课");
+		var plan = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of(), List.of(),
+				List.of(), List.of(), List.of(), List.of(), List.of(), List.of(rule));
+
+		assertThat(validator.parameters(plan, "admin").constraints().slotExclusions())
+				.containsExactly(new com.chronos.education.scheduling.model.ScheduleRunConstraints.SlotExclusion(
+						"TEACHER", "teacher-1", 3, 1));
+		var stale = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of(), List.of(),
+				List.of(), List.of(), List.of(), List.of(), List.of(),
+				List.of(new SchedulingAiSlotRule("TEACHER", "teacher-1", "张老师", 4, 1,
+						"张老师周三第1节不能上课")));
+		assertThatThrownBy(() -> validator.parameters(stale, "admin"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("用户原文");
+		String multiple = "张老师周一、周三第1节和第2节不能上课";
+		var incomplete = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 1, List.of(), List.of(), List.of(),
+				List.of(), List.of(), List.of(), List.of(), List.of(),
+				List.of(new SchedulingAiSlotRule("TEACHER", "teacher-1", "张老师", 1, 1, multiple),
+						new SchedulingAiSlotRule("TEACHER", "teacher-1", "张老师", 1, 2, multiple),
+						new SchedulingAiSlotRule("TEACHER", "teacher-1", "张老师", 3, 1, multiple)));
+		assertThatThrownBy(() -> validator.parameters(incomplete, "admin"))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("完整覆盖");
+		teacher.setEnabled(false);
+		assertThatThrownBy(() -> validator.parameters(plan, "admin"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("教师");
+	}
+
 	@Test
 	void confirmedRunRebuildsRulesOnlyWhenTheirSourceRecordsStillMatch() throws Exception {
 		EducationDataScopeService scopes = mock(EducationDataScopeService.class);

@@ -85,4 +85,45 @@ class SchedulingAiModelClassifierTest {
 				.extracting(SchedulingAiModelClassifier.Clause::classification)
 				.containsExactly("WEEK_RULE", "LOCK_ENTRY", "TEACHER_PRIORITY");
 	}
+
+	@Test
+	void composesGroundedMultiSlotRuleWithoutAcceptingInventedFields() {
+		String input = "张老师周三第1节和第2节不要上课";
+		when(models.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
+				.thenReturn("""
+						{"clauses":[{"text":"张老师周三第1节和第2节不要上课",
+						"classification":"SLOT_RULE","rule":{"subject":"TEACHER",
+						"reference":"张老师","action":"FORBID","days":[3],"periods":[1,2]}}]}
+						""");
+		assertThat(classifier.classify(input)).singleElement().satisfies(clause -> {
+			assertThat(clause.rule().subject()).isEqualTo("TEACHER");
+			assertThat(clause.rule().periods()).containsExactly(1, 2);
+		});
+	}
+
+	@Test
+	void retriesOnlyWhenModelChangesTheOriginalClauseCount() {
+		String input = "张老师周三第1节和第2节不要上课";
+		when(models.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
+				.thenReturn("""
+						{"clauses":[{"text":"张老师周三第1节和第2节不要上课",
+						"classification":"SLOT_RULE","rule":{"subject":"TEACHER",
+						"reference":"张老师","action":"FORBID","days":[3],"periods":[1,2]}},
+						{"text":"额外规则","classification":"UNSUPPORTED"}]}
+						""", """
+						{"clauses":[{"text":"张老师周三第1节和第2节不要上课",
+						"classification":"SLOT_RULE","rule":{"subject":"TEACHER",
+						"reference":"张老师","action":"FORBID","days":[3],"periods":[1,2]}}]}
+						""");
+		assertThat(classifier.classify(input)).singleElement()
+				.satisfies(clause -> assertThat(clause.rule().periods()).containsExactly(1, 2));
+		org.mockito.Mockito.verify(models, org.mockito.Mockito.times(2)).chatStructured(
+				org.mockito.ArgumentMatchers.isNull(),
+				org.mockito.ArgumentMatchers.eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input));
+	}
 }

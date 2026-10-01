@@ -87,6 +87,27 @@ class AiModelServiceTest {
 		verify(repository).clearDefaultsExcept("model-1");
 	}
 
+	@Test
+	void refusesProviderDisplayNameAsDeepSeekModelIdOnCreateAndUpdate() {
+		AiModelRepository repository = mock(AiModelRepository.class);
+		AiModel existing = model("model-1");
+		existing.setApiKey(null);
+		existing.setApiKeyCiphertext("encrypted");
+		when(repository.findById("model-1")).thenReturn(Optional.of(existing));
+		AiModelService service = new AiModelService(repository, mock(AiModelChatService.class),
+				mock(SecretEncryptionProvider.class), mock(IAuditLogService.class), textTypes());
+		AiModel command = model("model-1");
+		command.setModelName("Deepseek");
+
+		assertThatThrownBy(() -> service.update(command))
+				.isInstanceOf(AiModelConfigurationException.class)
+				.hasMessageContaining("API 模型标识");
+		assertThatThrownBy(() -> service.create(command))
+				.isInstanceOf(AiModelConfigurationException.class)
+				.hasMessageContaining("API 模型标识");
+		org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).save(any());
+	}
+
 	private AiModel model(String id) {
 		AiModel value = new AiModel();
 		value.setId(id);

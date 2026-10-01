@@ -7,13 +7,21 @@ public record ScheduleRunConstraints(List<TeacherSlot> teacherSlots,
 		List<OfferingDuration> offeringDurations,
 		List<WeekRule> weekRules,
 		List<LockedEntry> lockedEntries,
-		List<SoftPriority> softPriorities) {
+		List<SoftPriority> softPriorities,
+		List<SlotExclusion> slotExclusions) {
 	public ScheduleRunConstraints {
 		teacherSlots = teacherSlots == null ? List.of() : List.copyOf(teacherSlots);
 		offeringDurations = offeringDurations == null ? List.of() : List.copyOf(offeringDurations);
 		weekRules = weekRules == null ? List.of() : List.copyOf(weekRules);
 		lockedEntries = lockedEntries == null ? List.of() : List.copyOf(lockedEntries);
 		softPriorities = softPriorities == null ? List.of() : List.copyOf(softPriorities);
+		slotExclusions = slotExclusions == null ? List.of() : List.copyOf(slotExclusions);
+	}
+
+	public ScheduleRunConstraints(List<TeacherSlot> teacherSlots,
+			List<OfferingDuration> offeringDurations, List<WeekRule> weekRules,
+			List<LockedEntry> lockedEntries, List<SoftPriority> softPriorities) {
+		this(teacherSlots, offeringDurations, weekRules, lockedEntries, softPriorities, List.of());
 	}
 
 	public ScheduleRunConstraints(List<TeacherSlot> teacherSlots) {
@@ -26,6 +34,17 @@ public record ScheduleRunConstraints(List<TeacherSlot> teacherSlots,
 
 	public static ScheduleRunConstraints empty() {
 		return new ScheduleRunConstraints(List.of(), List.of(), List.of(), List.of(), List.of());
+	}
+
+	public record SlotExclusion(String targetType, String targetId, int dayOfWeek, int periodNo) {
+		public SlotExclusion {
+			if (!List.of("TEACHER", "OFFERING").contains(targetType)
+					|| targetId == null || targetId.isBlank()
+					|| dayOfWeek < 1 || dayOfWeek > 7
+					|| periodNo < 1 || periodNo > 20) {
+				throw new IllegalArgumentException("AI 组合禁排规则无效");
+			}
+		}
 	}
 
 	public record WeekRule(String offeringId, String weekPattern, int startWeek, int endWeek) {

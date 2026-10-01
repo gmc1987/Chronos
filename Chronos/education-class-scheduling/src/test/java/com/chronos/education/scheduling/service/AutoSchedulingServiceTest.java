@@ -255,6 +255,38 @@ class AutoSchedulingServiceTest {
 
 		assertThat(readEntries(saved.get(0).getSnapshotJson()).getFirst().getPeriodNo()).isEqualTo(2);
 		assertThat(readEntries(saved.get(1).getSnapshotJson()).getFirst().getPeriodNo()).isEqualTo(1);
+		var slotRule = new ScheduleRunConstraints(List.of(), List.of(), List.of(),
+				List.of(), List.of(), List.of(new ScheduleRunConstraints.SlotExclusion(
+						"TEACHER", "teacher-0", 1, 1)));
+		service.generate(command, "admin", () -> false, progress -> { }, slotRule);
+		assertThat(readEntries(saved.get(2).getSnapshotJson()).getFirst().getPeriodNo()).isEqualTo(2);
+		assertThat(new ObjectMapper().readValue(saved.get(2).getMetricsJson(),
+				com.chronos.education.scheduling.model.ScheduleCandidateMetrics.class)
+				.slotRuleChecks()).containsExactly(
+						new com.chronos.education.scheduling.model.ScheduleCandidateMetrics.SlotRuleCheck(
+								"TEACHER", "teacher-0", 1, 1, 0));
+		var existing = new ScheduleEntry();
+		existing.setId("existing-1");
+		existing.setSemesterCode("2026-2027-1");
+		existing.setOfferingId("offering-0");
+		existing.setClassroomId("room-0");
+		existing.setDayOfWeek(1);
+		existing.setPeriodNo(1);
+		existing.setDurationPeriods(2);
+		existing.setWeekPattern("ALL");
+		existing.setStartWeek(1);
+		existing.setEndWeek(20);
+		existing.setStatus("SCHEDULED");
+		existing.setLocked(true);
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of(existing));
+		var overlappingBlock = new ScheduleRunConstraints(List.of(), List.of(), List.of(),
+				List.of(), List.of(), List.of(new ScheduleRunConstraints.SlotExclusion(
+						"TEACHER", "teacher-0", 1, 2)));
+		assertThatThrownBy(() -> service.generate(command, "admin", () -> false,
+				progress -> { }, overlappingBlock))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("禁排规则冲突");
+		assertThat(saved).hasSize(3);
 		verify(constraints, org.mockito.Mockito.never()).save(any());
 	}
 
