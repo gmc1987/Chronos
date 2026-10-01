@@ -377,18 +377,19 @@ const showCandidatePreview = async candidate => {
   } catch (error) {
     showError(error)
   }
-  const showModelExplanation = async candidate => {
-    const runId = run.value?.id
-    if (!runId) return
-    const sequence = ++explanationRequestSequence
-    modelExplanation.value = null
-    try {
-      const response = await explainAiSchedulingCandidate(runId, candidate.id)
-      if (run.value?.id !== runId || sequence !== explanationRequestSequence) return
-      modelExplanation.value = unwrapData(response)
-    } catch (error) {
-      if (sequence === explanationRequestSequence) showError(error)
-    }
+}
+
+const showModelExplanation = async candidate => {
+  const runId = run.value?.id
+  if (!runId) return
+  const sequence = ++explanationRequestSequence
+  modelExplanation.value = null
+  try {
+    const response = await explainAiSchedulingCandidate(runId, candidate.id)
+    if (run.value?.id !== runId || sequence !== explanationRequestSequence) return
+    modelExplanation.value = unwrapData(response)
+  } catch (error) {
+    if (sequence === explanationRequestSequence) showError(error)
   }
 }
 const selectCandidates = rows => {
