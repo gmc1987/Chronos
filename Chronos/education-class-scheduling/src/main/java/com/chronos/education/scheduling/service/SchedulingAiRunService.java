@@ -193,6 +193,9 @@ public class SchedulingAiRunService {
 		updated.softPriorities().stream()
 				.map(com.chronos.education.scheduling.model.SchedulingAiSoftPriority::sourceText)
 				.forEach(parsedSources::add);
+		updated.slotRules().stream()
+				.map(com.chronos.education.scheduling.model.SchedulingAiSlotRule::sourceText)
+				.forEach(parsedSources::add);
 		if (!updated.readyForConfirmation()
 				|| parsedSources.size() != replacements.size()
 				|| !parsedSources.containsAll(replacements.values())) {
@@ -270,11 +273,27 @@ public class SchedulingAiRunService {
 				combinedPriorities.add(priority);
 			}
 		}
+		List<com.chronos.education.scheduling.model.SchedulingAiSlotRule> combinedSlotRules =
+				new ArrayList<>(previous.slotRules());
+		for (var rule : updated.slotRules()) {
+			if (combinedSlotRules.stream().anyMatch(existing ->
+					existing.targetType().equals(rule.targetType())
+							&& existing.targetId().equals(rule.targetId())
+							&& existing.dayOfWeek() == rule.dayOfWeek()
+							&& existing.periodNo() == rule.periodNo()
+							&& !existing.sourceText().equals(rule.sourceText()))) {
+				throw new IllegalStateException("补充需求与已解析组合时段规则重复，请重新创建请求");
+			}
+			if (!combinedSlotRules.contains(rule)) combinedSlotRules.add(rule);
+		}
+		if (combinedSlotRules.size() > 200) {
+			throw new IllegalStateException("组合规则超出本轮排课数量上限");
+		}
 		SchedulingAiPlan plan = new SchedulingAiPlan(updated.schemaVersion(),
 				updated.skillCode(), updated.semesterCode(), updated.mode(),
 				updated.selectedOfferingIds(), updated.candidateCount(), combined,
 				remainingClarifications, List.of(), remainingUnresolved, combinedOfferings,
-				combinedWeekRules, combinedLocks, combinedPriorities);
+				combinedWeekRules, combinedLocks, combinedPriorities, combinedSlotRules);
 		return transactions.execute(status -> {
 			AgentRun locked = lockedOwner(id, actor);
 			requireVersion(locked, request.expectedPlanVersion());

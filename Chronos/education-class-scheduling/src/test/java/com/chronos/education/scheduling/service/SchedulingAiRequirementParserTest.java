@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +22,113 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 class SchedulingAiRequirementParserTest {
+	@Test
+	void rangesCannotBeMistakenForJustTheirEndpoints() {
+		assertThat(SchedulingAiSlotEvidence.forbidden("张老师周一到周五第1节不能上课")).isFalse();
+		assertThat(SchedulingAiSlotEvidence.forbidden("张老师周三第1至3节不能上课")).isFalse();
+		assertThat(SchedulingAiSlotEvidence.forbidden("张老师周一、周三第1节和第2节不能上课")).isTrue();
+	}
+
+	@Test
+	void groundedRuleExpandsTwoDaysAndTwoPeriodsForAuthorizedTeacher() {
+		AcademicTermRepository terms = mock(AcademicTermRepository.class);
+		CourseOfferingRepository offerings = mock(CourseOfferingRepository.class);
+		TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
+		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
+		AiModelChatService model = mock(AiModelChatService.class);
+		SchedulingAgentTimetableService timetable = mock(SchedulingAgentTimetableService.class);
+		var scope = new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		String input = "张老师周一、周三第1节和第2节不能上课";
+		when(model.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
+				.thenReturn("""
+						{"clauses":[{"text":"张老师周一、周三第1节和第2节不能上课",
+						"classification":"SLOT_RULE","rule":{"subject":"TEACHER",
+						"reference":"张老师","action":"FORBID",
+						"days":[1,3],"periods":[1,2]}}]}
+						""");
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(timetable.dimensions("2026-2027-1", "GLOBAL", Set.of()))
+				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 18));
+		when(teachers.findAllByOrderByTeacherNo()).thenReturn(List.of(teacher("teacher-1", "张老师", "T001")));
+		when(scopes.canAccessTeacher(scope, "teacher-1")).thenReturn(true);
+		var offering = new com.chronos.education.scheduling.model.CourseOffering();
+		offering.setId("offering-1");
+		offering.setTeacherId("teacher-1");
+		offering.setStatus("ACTIVE");
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1")).thenReturn(List.of(offering));
+		when(scopes.visibleOfferings(scope, List.of(offering))).thenReturn(List.of(offering));
+		var parser = new SchedulingAiRequirementParser(terms, offerings, teachers, scopes,
+				new SchedulingAiModelClassifier(model, new ObjectMapper()), timetable);
+		var request = new SchedulingAiRunRequest("multi-slot", "2026-2027-1", "GLOBAL",
+				Set.of(), 1, input);
+
+		var plan = parser.parse(request, "admin").plan();
+
+		assertThat(plan.readyForConfirmation()).isTrue();
+		assertThat(plan.slotRules()).hasSize(4)
+				.extracting(com.chronos.education.scheduling.model.SchedulingAiSlotRule::targetId)
+				.containsOnly("teacher-1");
+		assertThat(plan.slotRules()).extracting(item -> item.dayOfWeek() + ":" + item.periodNo())
+				.containsExactlyInAnyOrder("1:1", "1:2", "3:1", "3:2");
+	}
+
+	@Test
+	void allTeachersRuleUsesCurrentTeachingStaffAndRefusesInaccessibleTeachers() {
+		var terms = mock(AcademicTermRepository.class);
+		var offerings = mock(CourseOfferingRepository.class);
+		var teachers = mock(TeacherAcademicProfileRepository.class);
+		var scopes = mock(EducationDataScopeService.class);
+		var timetable = mock(SchedulingAgentTimetableService.class);
+		var model = mock(AiModelChatService.class);
+		var scope = new EducationDataScope(true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+		var first = new com.chronos.education.scheduling.model.CourseOffering();
+		first.setId("offering-1");
+		first.setTeacherId("teacher-1");
+		first.setStatus("ACTIVE");
+		var second = new com.chronos.education.scheduling.model.CourseOffering();
+		second.setId("offering-2");
+		second.setTeacherId("teacher-2");
+		second.setStatus("ACTIVE");
+		String input = "所有老师周三第1节不能排课";
+		when(model.chatStructured(org.mockito.ArgumentMatchers.isNull(),
+				eq("schedule.requirement.clauses.v1"),
+				org.mockito.ArgumentMatchers.endsWith(input)))
+				.thenReturn("""
+						{"clauses":[{"text":"所有老师周三第1节不能排课",
+						"classification":"SLOT_RULE","rule":{"subject":"ALL_TEACHERS",
+						"reference":"","action":"FORBID","days":[3],"periods":[1]}}]}
+						""");
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(scopes.resolve("admin")).thenReturn(scope);
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(first, second));
+		when(scopes.visibleOfferings(scope, List.of(first, second)))
+				.thenReturn(List.of(first, second));
+		when(timetable.dimensions("2026-2027-1", "GLOBAL", Set.of()))
+				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 18));
+		when(teachers.findById("teacher-1"))
+				.thenReturn(Optional.of(teacher("teacher-1", "张老师", "T001")));
+		when(teachers.findById("teacher-2"))
+				.thenReturn(Optional.of(teacher("teacher-2", "李老师", "T002")));
+		when(scopes.canAccessTeacher(scope, "teacher-1")).thenReturn(true);
+		when(scopes.canAccessTeacher(scope, "teacher-2")).thenReturn(true);
+		var parser = new SchedulingAiRequirementParser(terms, offerings, teachers, scopes,
+				new SchedulingAiModelClassifier(model, new ObjectMapper()), timetable);
+		var request = new SchedulingAiRunRequest("all-teachers", "2026-2027-1", "GLOBAL",
+				Set.of(), 1, input);
+
+		assertThat(parser.parse(request, "admin").plan().slotRules())
+				.extracting(com.chronos.education.scheduling.model.SchedulingAiSlotRule::targetId)
+				.containsExactlyInAnyOrder("teacher-1", "teacher-2");
+		when(scopes.canAccessTeacher(scope, "teacher-2")).thenReturn(false);
+		var denied = parser.parse(request, "admin").plan();
+		assertThat(denied.readyForConfirmation()).isFalse();
+		assertThat(denied.slotRules()).isEmpty();
+	}
+
 	@Test
 	void modelMayRejectButCannotOverrideServerTeacherResolution() {
 		AcademicTermRepository terms = mock(AcademicTermRepository.class);

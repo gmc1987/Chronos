@@ -191,6 +191,33 @@ class AiModelChatServiceImplTest {
 				.isInstanceOf(AiStructuredOutputException.class);
 	}
 
+	@Test
+	void structuredSlotRuleRejectsArbitraryOperationsAndUnknownFields() {
+		when(models.findFirstDefault()).thenReturn(Optional.of(model));
+		var service = service();
+		when(chatModel.call("规则")).thenReturn("""
+				{"clauses":[{"text":"张老师周三第1节不能上课","classification":"SLOT_RULE",
+				"rule":{"subject":"TEACHER","reference":"张老师","action":"FORBID",
+				"days":[3],"periods":[1]}}]}
+				""");
+		assertThat(service.chatStructured(null, "schedule.requirement.clauses.v1", "规则"))
+				.contains("SLOT_RULE");
+		when(chatModel.call("规则")).thenReturn("""
+				{"clauses":[{"text":"张老师周三第1节不能上课","classification":"SLOT_RULE",
+				"rule":{"subject":"TEACHER","reference":"张老师","action":"EXECUTE_SQL",
+				"days":[3],"periods":[1]}}]}
+				""");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"规则")).isInstanceOf(AiStructuredOutputException.class);
+		when(chatModel.call("规则")).thenReturn("""
+				{"clauses":[{"text":"张老师周三第1节不能上课","classification":"SLOT_RULE",
+				"rule":{"subject":"TEACHER","reference":"张老师","action":"FORBID",
+				"days":[3],"periods":[1],"tool":"any"}}]}
+				""");
+		assertThatThrownBy(() -> service.chatStructured(null, "schedule.requirement.clauses.v1",
+				"规则")).isInstanceOf(AiStructuredOutputException.class);
+	}
+
 	private AiModel validModel(String id) {
 		AiModel value = new AiModel();
 		value.setId(id);

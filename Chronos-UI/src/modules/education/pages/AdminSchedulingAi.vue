@@ -137,6 +137,10 @@ const candidateExplanation = candidate => {
   ]
   if (metrics.consecutiveBlockHits > 0) lines.push(`本轮连堂偏好达成 ${metrics.consecutiveBlockHits} 次。`)
   if (metrics.teacherDayConcentrationHits > 0) lines.push(`本轮教师同日集中偏好命中 ${metrics.teacherDayConcentrationHits} 次。`)
+  if (metrics.slotRuleChecks?.length) {
+    const failed = metrics.slotRuleChecks.filter(check => check.violations > 0).length
+    lines.push(`组合时段禁排逐条核验 ${metrics.slotRuleChecks.length} 项，违规 ${failed} 项。`)
+  }
   if (metrics.unscheduledLessons > 0) lines.push('仍有未排课时，不能直接用于正式课表。')
   if (metrics.campusSwitchPenalty > 0) lines.push(`跨校区切换惩罚 ${metrics.campusSwitchPenalty}。`)
   if (metrics.teacherGapPenalty > 0) lines.push(`教师空档惩罚 ${metrics.teacherGapPenalty}。`)
@@ -519,13 +523,14 @@ onBeforeUnmount(() => {
         <div class="json-grid">
           <div><h4>解析计划</h4><pre>{{ formatJson(parsedPlan) }}</pre></div>
           <div><h4>约束草稿</h4><pre>{{ formatJson(constraintDraft) }}</pre></div>
+          <div v-if="parsedPlan?.slotRules?.length"><h4>组合时段禁排（仅本轮）</h4><pre>{{ formatJson(parsedPlan.slotRules) }}</pre></div>
         </div>
         <el-button type="primary" :loading="confirming" @click="confirmRun">确认解析计划</el-button>
       </section>
 
       <section v-if="['CONFIRMED', 'QUEUED', 'RUNNING'].includes(currentStatus)" class="workflow-section">
         <h3>候选方案生成</h3>
-        <p>本轮确认的动态规则仅作用于候选生成；临时锁课不会修改正式课表的锁定标志，软偏好不保证全部满足。</p>
+        <p>本轮确认的动态规则仅作用于候选生成；临时锁课不会修改正式课表的锁定标志，软偏好不保证全部满足。组合禁排逐条核验违规数；若仍有未排课时，候选不代表完整满足需求。</p>
         <el-alert
           v-if="currentStatus === 'QUEUED' || currentStatus === 'RUNNING'"
           title="候选方案正在生成，页面会自动刷新状态。"

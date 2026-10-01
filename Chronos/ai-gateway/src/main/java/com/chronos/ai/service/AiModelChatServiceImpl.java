@@ -108,15 +108,44 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 				throw new AiStructuredOutputException("模型未返回合法的子句列表");
 			}
 			for (JsonNode clause : root.get("clauses")) {
-				if (!clause.isObject() || clause.size() != 2
+				if (!clause.isObject() || clause.size() != ("SLOT_RULE".equals(
+						clause.path("classification").asText()) ? 3 : 2)
 						|| !clause.path("text").isTextual()
 						|| clause.path("text").asText().isBlank()
 						|| clause.path("text").asText().length() > 2000
 						|| !clause.path("classification").isTextual()
 						|| !java.util.Set.of("TEACHER_SLOT", "OFFERING_BLOCK", "WEEK_RULE",
-								"LOCK_ENTRY", "TEACHER_PRIORITY", "GENERATION", "UNSUPPORTED")
+								"LOCK_ENTRY", "TEACHER_PRIORITY", "GENERATION", "UNSUPPORTED",
+								"SLOT_RULE")
 								.contains(clause.path("classification").asText())) {
 					throw new AiStructuredOutputException("模型子句格式或分类无效");
+				}
+				if ("SLOT_RULE".equals(clause.path("classification").asText())) {
+					JsonNode rule = clause.path("rule");
+					if (!rule.isObject() || rule.size() != 5
+							|| !rule.path("subject").isTextual()
+							|| !java.util.Set.of("TEACHER", "OFFERING", "ALL_TEACHERS")
+									.contains(rule.path("subject").asText())
+							|| !rule.path("reference").isTextual()
+							|| rule.path("reference").asText().length() > 128
+							|| !rule.path("action").isTextual()
+							|| !"FORBID".equals(rule.path("action").asText())
+							|| !rule.path("days").isArray() || rule.path("days").isEmpty()
+							|| rule.path("days").size() > 7
+							|| !rule.path("periods").isArray() || rule.path("periods").isEmpty()
+							|| rule.path("periods").size() > 20) {
+						throw new AiStructuredOutputException("模型组合时段规则格式无效");
+					}
+					for (JsonNode day : rule.path("days")) {
+						if (!day.canConvertToInt() || day.asInt() < 1 || day.asInt() > 7) {
+							throw new AiStructuredOutputException("模型星期无效");
+						}
+					}
+					for (JsonNode period : rule.path("periods")) {
+						if (!period.canConvertToInt() || period.asInt() < 1 || period.asInt() > 20) {
+							throw new AiStructuredOutputException("模型节次无效");
+						}
+					}
 				}
 			}
 			return root.toString();
