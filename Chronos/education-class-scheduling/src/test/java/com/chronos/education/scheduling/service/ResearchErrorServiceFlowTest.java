@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ResearchErrorServiceFlowTest {
 	private ResearchGroupRepository groups;
@@ -24,6 +25,7 @@ class ResearchErrorServiceFlowTest {
 	private ResearchResultRepository results;
 	private TeachingReviewService reviews;
 	private EducationDataScopeService scopes;
+	private EducationIdentityService identities;
 	private Authentication auth;
 	private ResearchErrorService service;
 
@@ -37,15 +39,22 @@ class ResearchErrorServiceFlowTest {
 		results = mock(ResearchResultRepository.class);
 		reviews = mock(TeachingReviewService.class);
 		scopes = mock(EducationDataScopeService.class);
+		identities = mock(EducationIdentityService.class);
 		auth = mock(Authentication.class);
 		when(auth.getName()).thenReturn("teacher-1");
+		when(identities.teacherIds("teacher-1")).thenReturn(Set.of("teacher-profile-1"));
+		when(activityMembers.save(any(ResearchActivityMember.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
 		when(scopes.resolve("teacher-1")).thenReturn(new EducationDataScope(
 				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
 		service = new ResearchErrorService(groups, groupMembers, activities, activityMembers,
 				materials, results, mock(ErrorBookRepository.class), mock(ErrorItemRepository.class),
 				scopes, mock(ManagedFileRepository.class), reviews,
 				mock(QuestionRepository.class), mock(KnowledgePointRepository.class),
-				mock(QuestionKnowledgePointRepository.class), mock(QuestionBankRepository.class));
+				mock(QuestionKnowledgePointRepository.class), mock(QuestionBankRepository.class),
+				mock(ErrorReviewRepository.class), mock(QuestionVersionRepository.class),
+				mock(com.chronos.file.service.ManagedFileService.class), identities,
+				mock(TeachingCollaborationNotificationService.class));
 	}
 
 	@Test
@@ -86,6 +95,62 @@ class ResearchErrorServiceFlowTest {
 		service.attendance("activity-1",
 				new AttendanceRequest("teacher-1", "LEAVE", "公出"), auth);
 		assertThat(member.getAttendanceStatus()).isEqualTo("LEAVE");
+	}
+
+	@Test
+	void respondsUsingBoundTeacherIdWhenUsernameDiffersAndGroupMembershipIsMissing() {
+		ResearchActivity activity = new ResearchActivity();
+		activity.setId("activity-1");
+		activity.setGroupId("group-1");
+		when(activities.findById("activity-1")).thenReturn(Optional.of(activity));
+		ResearchActivityMember invited = new ResearchActivityMember();
+		invited.setActivityId("activity-1");
+		invited.setTeacherId("teacher-profile-1");
+		when(activityMembers.findByActivityId("activity-1")).thenReturn(java.util.List.of(invited));
+
+		ResearchActivityMember result = service.respondActivityInvite("activity-1",
+				new ActivityInviteResponse("ACCEPTED"), auth);
+
+		assertThat(result).isSameAs(invited);
+		assertThat(result.getInvitationStatus()).isEqualTo("ACCEPTED");
+		verify(groupMembers, never()).findByGroupId(anyString());
+		verify(activityMembers).save(invited);
+	}
+
+	@Test
+	void rejectsInviteResponseWhenNoUniqueBoundTeacherInviteMatches() {
+		ResearchActivity activity = new ResearchActivity();
+		activity.setId("activity-1");
+		when(activities.findById("activity-1")).thenReturn(Optional.of(activity));
+		ResearchActivityMember other = new ResearchActivityMember();
+		other.setTeacherId("teacher-profile-2");
+		when(activityMembers.findByActivityId("activity-1")).thenReturn(java.util.List.of(other));
+
+		assertThatThrownBy(() -> service.respondActivityInvite("activity-1",
+				new ActivityInviteResponse("DECLINED"), auth))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("当前账号没有唯一对应的活动邀请");
+		verify(activityMembers, never()).save(any());
+	}
+
+	@Test
+	void rejectsAmbiguousMultipleBoundTeacherInvitesEvenForFullAccess() {
+		when(scopes.resolve("teacher-1")).thenReturn(new EducationDataScope(
+				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
+		ResearchActivity activity = new ResearchActivity();
+		activity.setId("activity-1");
+		when(activities.findById("activity-1")).thenReturn(Optional.of(activity));
+		ResearchActivityMember first = new ResearchActivityMember();
+		first.setTeacherId("teacher-profile-1");
+		ResearchActivityMember second = new ResearchActivityMember();
+		second.setTeacherId("teacher-profile-1");
+		when(activityMembers.findByActivityId("activity-1")).thenReturn(java.util.List.of(first, second));
+
+		assertThatThrownBy(() -> service.respondActivityInvite("activity-1",
+				new ActivityInviteResponse("ACCEPTED"), auth))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("当前账号没有唯一对应的活动邀请");
+		verify(activityMembers, never()).save(any());
 	}
 
 	@Test
@@ -187,6 +252,7 @@ class ResearchErrorServiceFlowTest {
 
 	@Test
 	void failsClosedWhenTeacherIdentityBindingIsUnavailable() {
+		ReflectionTestUtils.setField(service, "identities", null);
 		ResearchGroup group = new ResearchGroup();
 		group.setId("group-1");
 		when(groups.findById("group-1")).thenReturn(Optional.of(group));

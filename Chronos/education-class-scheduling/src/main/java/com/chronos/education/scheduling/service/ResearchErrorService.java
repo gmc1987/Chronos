@@ -231,12 +231,17 @@ public class ResearchErrorService {
 			Authentication a) {
 		ResearchActivity activity = activities.findById(activityId)
 				.orElseThrow(() -> new NoSuchElementException("活动不存在"));
-		group(activity.getGroupId(), a);
 		if (!Set.of("ACCEPTED", "DECLINED").contains(request.status()))
 			throw new IllegalArgumentException("邀请回应状态无效");
-		ResearchActivityMember member = activityMembers
-				.findByActivityIdAndTeacherId(activityId, a.getName())
-				.orElseThrow(() -> new AccessDeniedException("当前账号不是活动成员"));
+		Set<String> teacherIds = currentTeacherIds(a);
+		if (teacherIds.isEmpty())
+			throw new AccessDeniedException("当前账号未绑定教师档案");
+		List<ResearchActivityMember> matches = activityMembers.findByActivityId(activityId).stream()
+				.filter(member -> teacherIds.contains(member.getTeacherId()))
+				.toList();
+		if (matches.size() != 1)
+			throw new AccessDeniedException("当前账号没有唯一对应的活动邀请");
+		ResearchActivityMember member = matches.get(0);
 		member.setInvitationStatus(request.status());
 		member.setRespondedAt(LocalDateTime.now());
 		return activityMembers.save(member);
