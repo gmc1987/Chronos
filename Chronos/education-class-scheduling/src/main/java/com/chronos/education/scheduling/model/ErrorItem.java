@@ -12,6 +12,7 @@ public class ErrorItem {
 	@Id @Column(length = 64) private String id;
 	@Column(name = "book_id", nullable = false, length = 64) private String bookId;
 	@Column(name = "question_id", length = 64) private String questionId;
+	@Column(name = "question_version_id", length = 64) private String questionVersionId;
 	@Column(name = "knowledge_point_id", length = 64) private String knowledgePointId;
 	@Column(name = "error_reason", length = 32) private String errorReason;
 	@Column(name = "source_ref", length = 64) private String sourceRef;
@@ -22,6 +23,7 @@ public class ErrorItem {
 	@Column(nullable = false, length = 24) private String status = "OPEN";
 	@Column(name = "wrong_count", nullable = false) private int wrongCount = 1;
 	@Column(name = "last_wrong_at") private java.time.LocalDateTime lastWrongAt;
+	@Column(name = "occurred_at") private java.time.LocalDateTime occurredAt;
 	@Column(name = "mastery_status", nullable = false, length = 24) private String masteryStatus = "NEEDS_PRACTICE";
 	@Column(name = "student_note", columnDefinition = "text") private String studentNote;
 	@Column(name = "teacher_note", columnDefinition = "text") private String teacherNote;

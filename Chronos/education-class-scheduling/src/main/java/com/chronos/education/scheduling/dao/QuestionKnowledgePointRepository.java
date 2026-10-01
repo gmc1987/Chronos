@@ -6,6 +6,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface QuestionKnowledgePointRepository extends JpaRepository<QuestionKnowledgePoint, QuestionKnowledgePointId> {
 	List<QuestionKnowledgePoint> findByQuestionId(String questionId);
+
+	boolean existsByQuestionId(String questionId);
+
 	void deleteByQuestionId(String questionId);
+
 	long countByKnowledgePointId(String knowledgePointId);
 }

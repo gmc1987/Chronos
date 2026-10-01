@@ -5,10 +5,16 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
 import com.chronos.education.scheduling.model.StudentProfile;
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
 
 public interface StudentProfileRepository extends JpaRepository<StudentProfile, String> {
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	Optional<StudentProfile> findLockedById(String id);
+
 	List<StudentProfile> findAllByOrderByStudentNo();
 	Page<StudentProfile> findAllByOrderByStudentNo(Pageable pageable);
 

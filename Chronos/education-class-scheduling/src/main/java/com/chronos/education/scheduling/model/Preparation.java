@@ -26,6 +26,7 @@ public class Preparation extends BaseEntity {
 	@Column(columnDefinition="text") private String discussion;
 	@Column(name="scheduled_at") private LocalDateTime scheduledAt;
 	@Column(name="owner_teacher_id", length=64) private String ownerTeacherId;
+	@Column(length=200) private String location;
 	@Column(nullable = false, length = 200)
 	private String title;
 	@Column(name = "preparation_type", nullable = false, length = 16)

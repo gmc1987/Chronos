@@ -25,6 +25,16 @@
 		</dependency>
 		<dependency>
 			<groupId>com.chronos</groupId>
+			<artifactId>agent-runtime</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.chronos</groupId>
+			<artifactId>ai-gateway</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.chronos</groupId>
 			<artifactId>platform-workflow</artifactId>
 			<version>${project.version}</version>
 		</dependency>
@@ -47,6 +57,10 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 	</dependencies>
 </project>

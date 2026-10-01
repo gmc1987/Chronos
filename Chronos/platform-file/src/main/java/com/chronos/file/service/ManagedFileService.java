@@ -17,10 +17,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class ManagedFileService {
+	private static final Logger log = LoggerFactory.getLogger(ManagedFileService.class);
 	private static final long MAX_SIZE = 20L * 1024 * 1024;
 	private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
 			"pdf", "doc", "docx", "xls", "xlsx", "txt", "md", "png", "jpg", "jpeg");
@@ -83,6 +86,8 @@ public class ManagedFileService {
 			throw exception;
 		} catch (Exception exception) {
 			deleteOrphan(storedKey, exception);
+			log.error("Managed file upload failed: businessType={}, businessId={}, actor={}",
+					businessType, businessId, actor, exception);
 			throw new IllegalStateException("文件上传失败", exception);
 		}
 	}
@@ -281,9 +286,7 @@ public class ManagedFileService {
 			}
 			return;
 		}
-		if (!"WORKFLOW_FORM".equals(businessType)
-				|| businessId == null
-				|| businessId.isBlank()) {
+		if (businessId == null || businessId.isBlank()) {
 			throw new IllegalArgumentException("不支持的文件业务类型");
 		}
 		boolean writable = accessPolicies.stream()
@@ -298,6 +301,9 @@ public class ManagedFileService {
 				.orElseThrow(() -> new IllegalArgumentException("文件不存在"));
 		if (!"ACTIVE".equals(file.getStatus())) {
 			throw new IllegalArgumentException("文件已删除");
+		}
+		if (file.getExpiresAt() != null && file.getExpiresAt().isBefore(LocalDateTime.now())) {
+			throw new IllegalArgumentException("文件已过期");
 		}
 		return file;
 	}

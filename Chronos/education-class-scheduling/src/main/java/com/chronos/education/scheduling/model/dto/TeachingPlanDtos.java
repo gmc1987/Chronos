@@ -70,11 +70,11 @@ public final class TeachingPlanDtos {
 			@NotBlank @Size(max = 16) String preparationType,
 			String conclusion, @Size(max = 64) String conclusionLessonPlanId,
 			String objective, String keyPoints, String difficultPoints, String discussion,
-			java.time.LocalDateTime scheduledAt, String agenda) {
+			java.time.LocalDateTime scheduledAt, String agenda, @Size(max = 200) String location) {
 		public PreparationCreateRequest(String offeringId, String scheduleEntryId, String title,
 				String preparationType, String conclusion, String conclusionLessonPlanId) {
 			this(offeringId, scheduleEntryId, title, preparationType, conclusion,
-					conclusionLessonPlanId, null, null, null, null, null, null);
+					conclusionLessonPlanId, null, null, null, null, null, null, null);
 		}
 	}
 
@@ -85,11 +85,11 @@ public final class TeachingPlanDtos {
 			@NotBlank @Size(max = 16) String preparationType,
 			String conclusion, @Size(max = 64) String conclusionLessonPlanId,
 			String objective, String keyPoints, String difficultPoints, String discussion,
-			java.time.LocalDateTime scheduledAt, String agenda) {
+			java.time.LocalDateTime scheduledAt, String agenda, @Size(max = 200) String location) {
 		public PreparationUpdateRequest(Long rowVersion, String scheduleEntryId, String title,
 				String preparationType, String conclusion, String conclusionLessonPlanId) {
 			this(rowVersion, scheduleEntryId, title, preparationType, conclusion,
-					conclusionLessonPlanId, null, null, null, null, null, null);
+					conclusionLessonPlanId, null, null, null, null, null, null, null);
 		}
 	}
 

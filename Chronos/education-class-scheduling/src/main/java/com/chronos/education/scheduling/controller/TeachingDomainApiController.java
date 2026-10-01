@@ -28,9 +28,15 @@ public class TeachingDomainApiController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:view','education:teaching:manage')")
 	public ResultData<PageView<?>> page(@PathVariable String domain,
 			@RequestParam(required = false) String offeringId,
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String status,
+			@RequestParam(required = false) String category,
+			@RequestParam(required = false) String materialType,
+			@RequestParam(required = false) String shareScope,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size, Authentication user) {
-		return ok(service.page(domain, offeringId, page, size, user));
+		return ok(service.page(domain, offeringId, keyword, status,
+				category != null ? category : materialType, shareScope, page, size, user));
 	}
 
 	@GetMapping("/{domain:plans|lesson-plans|preparations|coursewares|materials|question-banks|questions|knowledge-points|research}/{id}")
@@ -45,7 +51,7 @@ public class TeachingDomainApiController {
 			@RequestParam(required = false) String offeringId,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size, Authentication user) {
-		return ok(service.page("mistakes", offeringId, page, size, user));
+		return ok(service.page("mistakes", offeringId, null, null, null, null, page, size, user));
 	}
 
 	@GetMapping("/mistakes/{id}")

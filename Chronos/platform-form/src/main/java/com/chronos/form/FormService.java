@@ -15,13 +15,16 @@ public class FormService {
 	private final IFormDefinitionRepository definitions;
 	private final IFormFieldRepository fields;
 	private final IFormInstanceRepository instances;
+	private final IFormInstanceRevisionRepository revisions;
 	private final ObjectMapper json = new ObjectMapper();
 
 	public FormService(IFormDefinitionRepository definitions, IFormFieldRepository fields,
-			IFormInstanceRepository instances) {
+			IFormInstanceRepository instances,
+			IFormInstanceRevisionRepository revisions) {
 		this.definitions = definitions;
 		this.fields = fields;
 		this.instances = instances;
+		this.revisions = revisions;
 	}
 
 	@Transactional(readOnly = true)
@@ -136,8 +139,97 @@ public class FormService {
 		return require(id);
 	}
 
+	@Transactional(readOnly = true)
+	public List<FormDefinition> versions(String id) {
+		FormDefinition source = require(id);
+		return definitions.findByFormKeyOrderByCreateTimeDesc(source.getFormKey());
+	}
+
+	/**
+	 * Published form definitions are immutable. A comparison describes the changes
+	 * before a new workflow version is published; it never rewrites active or
+	 * historical form instances in place.
+	 */
+	@Transactional(readOnly = true)
+	public FormVersionComparison compareVersions(String sourceId, String targetId) {
+		FormDefinition source = require(sourceId);
+		FormDefinition target = require(targetId);
+		if (!source.getFormKey().equals(target.getFormKey())) {
+			throw new IllegalArgumentException("只能比较同一表单编码的版本");
+		}
+		Map<String, FormField> before = fieldMap(sourceId);
+		Map<String, FormField> after = fieldMap(targetId);
+		List<FormFieldChange> changes = new ArrayList<>();
+		for (String key : before.keySet()) {
+			FormField old = before.get(key);
+			FormField next = after.get(key);
+			if (next == null) {
+				changes.add(new FormFieldChange(key, "REMOVED", true));
+				continue;
+			}
+			if (!Objects.equals(old.getFieldType(), next.getFieldType())) {
+				changes.add(new FormFieldChange(key, "TYPE_CHANGED", true));
+			}
+			if (!Boolean.TRUE.equals(old.getRequired()) && Boolean.TRUE.equals(next.getRequired())) {
+				changes.add(new FormFieldChange(key, "REQUIRED_ADDED", true));
+			}
+			if (!Objects.equals(old.getOptionsJson(), next.getOptionsJson())) {
+				changes.add(new FormFieldChange(key, "OPTIONS_CHANGED", true));
+			}
+			if (!Objects.equals(old.getFieldLabel(), next.getFieldLabel())
+					|| !Objects.equals(old.getSortOrder(), next.getSortOrder())) {
+				changes.add(new FormFieldChange(key, "PRESENTATION_CHANGED", false));
+			}
+		}
+		for (String key : after.keySet()) {
+			if (!before.containsKey(key)) {
+				changes.add(new FormFieldChange(
+						key,
+						"ADDED",
+						Boolean.TRUE.equals(after.get(key).getRequired())));
+			}
+		}
+		boolean breaking = changes.stream().anyMatch(FormFieldChange::breaking);
+		return new FormVersionComparison(
+				sourceId,
+				targetId,
+				source.getVersion(),
+				target.getVersion(),
+				breaking,
+				changes);
+	}
+
+	private Map<String, FormField> fieldMap(String formId) {
+		Map<String, FormField> result = new LinkedHashMap<>();
+		fields(formId).forEach(field -> result.put(field.getFieldKey(), field));
+		return result;
+	}
+
+	public record FormFieldChange(String fieldKey, String change, boolean breaking) {
+	}
+
+	public record FormVersionComparison(
+			String sourceId,
+			String targetId,
+			String sourceVersion,
+			String targetVersion,
+			boolean requiresManualMigration,
+			List<FormFieldChange> changes) {
+	}
+
 	public Optional<FormInstance> instance(String workflowInstanceId, String formId, String nodeKey) {
 		return instances.findByWorkflowInstanceIdAndFormIdAndNodeKey(workflowInstanceId, formId, nodeKey);
+	}
+
+	/** History is administrative because it may contain fields hidden at later nodes. */
+	@Transactional(readOnly = true)
+	public List<FormInstanceRevision> revisions(
+			String workflowInstanceId,
+			String formId,
+			String nodeKey) {
+		FormInstance current = instance(workflowInstanceId, formId, nodeKey)
+				.orElseThrow(() -> new IllegalArgumentException("表单实例不存在"));
+		return revisions.findByFormInstanceIdOrderByRevisionNoAsc(current.getId());
 	}
 
 	/**
@@ -184,7 +276,11 @@ public class FormService {
 		List<FormField> schema = fields(formId);
 		Map<String, FormField> byKey = new LinkedHashMap<>();
 		schema.forEach(f -> byKey.put(f.getFieldKey(), f));
-		FormInstance value = instance(workflowInstanceId, formId, nodeKey).orElseGet(FormInstance::new);
+		FormInstance value = instances.findLockedForUpdate(workflowInstanceId, formId, nodeKey)
+				.orElseGet(FormInstance::new);
+		String previousData = value.getDataJson();
+		String previousStatus = value.getStatus();
+		String previousOwner = value.getOwner();
 		Map<String, Object> merged = readMap(value.getDataJson());
 		for (var entry : input.entrySet()) {
 			if (!byKey.containsKey(entry.getKey()))
@@ -214,7 +310,50 @@ public class FormService {
 		} catch (Exception e) {
 			throw new IllegalArgumentException("表单数据无法序列化");
 		}
-		return instances.save(value);
+		boolean changed = value.getId() == null
+				|| !Objects.equals(previousData, value.getDataJson())
+				|| !Objects.equals(previousStatus, value.getStatus())
+				|| !Objects.equals(previousOwner, value.getOwner());
+		if (!changed) {
+			return value;
+		}
+		boolean priorInstance = value.getId() != null;
+		FormInstance saved = instances.save(value);
+		long revisionCount = revisions.countByFormInstanceId(saved.getId());
+		if (priorInstance && revisionCount == 0) {
+			// Pre-upgrade rows have no history. Preserve their last known snapshot
+			// before the first post-upgrade edit; earlier edits cannot be reconstructed.
+			revisions.save(revision(saved, 1, previousOwner, previousStatus, previousData));
+			revisionCount = 1;
+		}
+		if (revisionCount >= Integer.MAX_VALUE) {
+			throw new IllegalStateException("表单历史版本数量超过上限");
+		}
+		revisions.save(revision(
+				saved,
+				(int) revisionCount + 1,
+				saved.getOwner(),
+				saved.getStatus(),
+				saved.getDataJson()));
+		return saved;
+	}
+
+	private FormInstanceRevision revision(
+			FormInstance form,
+			int revisionNo,
+			String owner,
+			String status,
+			String data) {
+		FormInstanceRevision revision = new FormInstanceRevision();
+		revision.setFormInstanceId(form.getId());
+		revision.setWorkflowInstanceId(form.getWorkflowInstanceId());
+		revision.setFormId(form.getFormId());
+		revision.setNodeKey(form.getNodeKey());
+		revision.setRevisionNo(revisionNo);
+		revision.setOwner(owner == null ? form.getOwner() : owner);
+		revision.setStatus(status == null ? "DRAFT" : status);
+		revision.setDataJson(data == null ? "{}" : data);
+		return revision;
 	}
 
 	private Map<String, Object> readMap(String value) {

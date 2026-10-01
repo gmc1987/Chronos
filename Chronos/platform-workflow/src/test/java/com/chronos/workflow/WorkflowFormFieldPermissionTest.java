@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.chronos.Idao.form.IFormDefinitionRepository;
 import com.chronos.Idao.form.IFormFieldRepository;
 import com.chronos.Idao.form.IFormInstanceRepository;
+import com.chronos.Idao.form.IFormInstanceRevisionRepository;
 import com.chronos.form.FormService;
 import com.chronos.model.form.FormDefinition;
 import com.chronos.model.form.FormField;
@@ -55,14 +56,18 @@ class WorkflowFormFieldPermissionTest {
 		when(definitions.findById("form-1")).thenReturn(Optional.of(definition));
 		when(fields.findByFormIdOrderBySortOrderAscCreateTimeAsc("form-1"))
 				.thenReturn(schema());
-		when(instances.findByWorkflowInstanceIdAndFormIdAndNodeKey(
+		when(instances.findLockedForUpdate(
 				"instance-1",
 				"form-1",
 				"approval"))
 				.thenReturn(Optional.of(stored));
 		when(instances.save(any(FormInstance.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
-		FormService service = new FormService(definitions, fields, instances);
+		FormService service = new FormService(
+				definitions,
+				fields,
+				instances,
+				mock(IFormInstanceRevisionRepository.class));
 		Map<String, String> permissions = Map.of(
 				"form-1.readField", "READ",
 				"form-1.editField", "EDIT",
@@ -172,7 +177,11 @@ class WorkflowFormFieldPermissionTest {
 				"form-1",
 				"approval"))
 				.thenReturn(Optional.empty());
-		FormService service = new FormService(definitions, fields, instances);
+		FormService service = new FormService(
+				definitions,
+				fields,
+				instances,
+				mock(IFormInstanceRevisionRepository.class));
 
 		assertThatThrownBy(() -> service.validateRuntimeRequiredFields(
 				"instance-1",
@@ -217,7 +226,11 @@ class WorkflowFormFieldPermissionTest {
 				"form-1",
 				"approval"))
 				.thenReturn(Optional.of(submitted));
-		FormService service = new FormService(definitions, fields, instances);
+		FormService service = new FormService(
+				definitions,
+				fields,
+				instances,
+				mock(IFormInstanceRevisionRepository.class));
 
 		service.validateRuntimeRequiredFields(
 				"instance-1",
@@ -236,6 +249,7 @@ class WorkflowFormFieldPermissionTest {
 
 	private FormInstance storedForm() {
 		FormInstance instance = new FormInstance();
+		instance.setId("saved-form-1");
 		instance.setDataJson(
 				"{\"readField\":\"original\",\"editField\":\"old\",\"hiddenField\":\"secret\"}");
 		return instance;

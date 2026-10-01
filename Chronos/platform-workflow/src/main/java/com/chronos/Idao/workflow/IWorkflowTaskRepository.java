@@ -12,4 +12,8 @@ public interface IWorkflowTaskRepository extends JpaRepository<WorkflowTask, Str
 	Optional<WorkflowTask> findByEngineTaskId(String engineTaskId);
 	List<WorkflowTask> findByStatusAndDueAtBefore(String status,java.time.LocalDateTime dueAt);
 	List<WorkflowTask> findByStatusInAndDueAtIsNotNull(Collection<String> statuses);
+
+	long countByStatusInAndCreateTimeBefore(Collection<String> statuses, java.time.LocalDateTime threshold);
+
+	long countByStatusInAndDueAtBefore(Collection<String> statuses, java.time.LocalDateTime threshold);
 }

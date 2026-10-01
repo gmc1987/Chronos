@@ -39,6 +39,30 @@ import java.util.HexFormat;
      if (opt.isEmpty()) opt = this.refreshTokenRepository.findByToken(token); // legacy raw-token rows
      return opt.orElse(null);
    }
+
+   @Transactional
+   public RefreshToken rotate(String presentedToken, String username, String replacementToken,
+       LocalDateTime replacementExpiry) {
+     if (presentedToken == null || presentedToken.isBlank() || username == null || username.isBlank()) {
+       throw new IllegalArgumentException("refresh token and username are required");
+     }
+     if (replacementToken == null || replacementToken.isBlank() || replacementExpiry == null) {
+       throw new IllegalArgumentException("replacement refresh token is required");
+     }
+     boolean revoked = refreshTokenRepository.revokeActiveDigest(digest(presentedToken), username) == 1;
+     if (!revoked) {
+       // Legacy rows may still contain the pre-hardening raw token. They are
+       // rotated once and then all newly issued tokens use the digest path.
+       var legacy = refreshTokenRepository.findByToken(presentedToken);
+       if (legacy.isEmpty() || !username.equals(legacy.get().getUsername())
+           || Boolean.TRUE.equals(legacy.get().getRevoked())) {
+         return null;
+       }
+       legacy.get().setRevoked(true);
+       refreshTokenRepository.save(legacy.get());
+     }
+     return create(replacementToken, username, replacementExpiry);
+   }
  
    
    @Transactional
