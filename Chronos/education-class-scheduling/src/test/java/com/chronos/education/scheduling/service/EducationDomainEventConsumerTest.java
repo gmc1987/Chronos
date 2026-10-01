@@ -11,8 +11,11 @@ import com.chronos.education.scheduling.dao.DataEventConsumptionRepository;
 import com.chronos.education.scheduling.model.DataEventConsumption;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageRequest;
 
 class EducationDomainEventConsumerTest {
 	@Test
@@ -20,12 +23,15 @@ class EducationDomainEventConsumerTest {
 		DomainEventOutboxRepository outbox = mock(DomainEventOutboxRepository.class);
 		DataEventConsumptionRepository consumptions = mock(DataEventConsumptionRepository.class);
 		DomainEventOutbox source = source(validPayload("event-1"));
-		when(consumptions.findByEventId("event-1")).thenReturn(Optional.empty());
+		DataEventConsumption existing = new DataEventConsumption();
+		existing.setEventId("event-1");
+		existing.setStatus("PENDING");
+		existing.setNextAttemptAt(java.time.LocalDateTime.now().minusSeconds(1));
+		when(consumptions.findByEventIdForUpdate("event-1")).thenReturn(Optional.of(existing));
 		when(consumptions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-		EducationDomainEventConsumer consumer = new EducationDomainEventConsumer(
-				outbox, consumptions, mapper(), 3);
+		EducationDomainEventConsumptionProcessor consumer = processor(consumptions, 3);
 
-		consumer.consumeOne(source);
+		consumer.process(source);
 		ArgumentCaptor<DataEventConsumption> captured = ArgumentCaptor.forClass(DataEventConsumption.class);
 		verify(consumptions).save(captured.capture());
 		DataEventConsumption saved = captured.getValue();
@@ -44,12 +50,11 @@ class EducationDomainEventConsumerTest {
 		existing.setStatus("PENDING");
 		existing.setAttempts(2);
 		existing.setNextAttemptAt(java.time.LocalDateTime.now().minusSeconds(1));
-		when(consumptions.findByEventId("event-1")).thenReturn(Optional.of(existing));
+		when(consumptions.findByEventIdForUpdate("event-1")).thenReturn(Optional.of(existing));
 		when(consumptions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-		EducationDomainEventConsumer consumer = new EducationDomainEventConsumer(
-				outbox, consumptions, mapper(), 3);
+		EducationDomainEventConsumptionProcessor consumer = processor(consumptions, 3);
 
-		consumer.consumeOne(source);
+		consumer.process(source);
 
 		assertThat(existing.getStatus()).isEqualTo("DEAD");
 		assertThat(existing.getAttempts()).isEqualTo(3);
@@ -64,13 +69,50 @@ class EducationDomainEventConsumerTest {
 		existing.setEventId("event-1");
 		existing.setStatus("PROCESSED");
 		existing.setNextAttemptAt(java.time.LocalDateTime.now());
-		when(consumptions.findByEventId("event-1")).thenReturn(Optional.of(existing));
-		EducationDomainEventConsumer consumer = new EducationDomainEventConsumer(
-				outbox, consumptions, mapper(), 3);
+		when(consumptions.findByEventIdForUpdate("event-1")).thenReturn(Optional.of(existing));
+		EducationDomainEventConsumptionProcessor consumer = processor(consumptions, 3);
 
-		consumer.consumeOne(source(validPayload("event-1")));
+		consumer.process(source(validPayload("event-1")));
 
 		verify(consumptions, never()).save(any());
+	}
+
+	@Test
+	void schedulerReadsOnlyDueCandidatesWithinConfiguredBatch() {
+		DomainEventOutboxRepository outbox = mock(DomainEventOutboxRepository.class);
+		EducationDomainEventConsumptionProcessor processor = mock(EducationDomainEventConsumptionProcessor.class);
+		when(outbox.findDataCenterCandidates(any(), any(LocalDateTime.class), eq(PageRequest.of(0, 2))))
+				.thenReturn(List.of(source(validPayload("event-1")), source(validPayload("event-2"))));
+		EducationDomainEventConsumer consumer = new EducationDomainEventConsumer(outbox, processor, 2);
+
+		consumer.consumePublishedEvents();
+
+		verify(outbox).findDataCenterCandidates(eq(List.of("HomeNoticePublishedV1")), any(LocalDateTime.class),
+				eq(PageRequest.of(0, 2)));
+		verify(processor, times(2)).process(any(DomainEventOutbox.class));
+	}
+
+	@Test
+	void concurrentClaimUsesAtomicInsertAndRowLock() {
+		DataEventConsumptionRepository consumptions = mock(DataEventConsumptionRepository.class);
+		DomainEventOutbox source = source(validPayload("event-1"));
+		DataEventConsumption existing = new DataEventConsumption();
+		existing.setEventId("event-1");
+		existing.setStatus("PENDING");
+		existing.setNextAttemptAt(java.time.LocalDateTime.now().minusSeconds(1));
+		when(consumptions.findByEventIdForUpdate("event-1")).thenReturn(Optional.of(existing));
+
+		processor(consumptions, 3).process(source);
+
+		verify(consumptions).claimIfAbsent(eq("event-1"), eq("HomeNoticePublishedV1"),
+				eq("notice-1"), any(String.class), any(LocalDateTime.class));
+		verify(consumptions).findByEventIdForUpdate("event-1");
+		verify(consumptions).save(any(DataEventConsumption.class));
+	}
+
+	private EducationDomainEventConsumptionProcessor processor(
+			DataEventConsumptionRepository consumptions, int maxAttempts) {
+		return new EducationDomainEventConsumptionProcessor(consumptions, mapper(), maxAttempts);
 	}
 
 	private DomainEventOutbox source(String payload) {

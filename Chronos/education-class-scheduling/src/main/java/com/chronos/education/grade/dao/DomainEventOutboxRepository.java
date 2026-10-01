@@ -16,6 +16,28 @@ public interface DomainEventOutboxRepository extends JpaRepository<DomainEventOu
 	boolean existsByDeduplicationKey(String deduplicationKey);
 
 	List<DomainEventOutbox> findByEventTypeInOrderByCreateTimeAsc(Collection<String> eventTypes);
+
+	@Query("""
+			select event from DomainEventOutbox event
+			where event.eventType in :eventTypes
+			  and (
+				not exists (
+					select consumption.id from DataEventConsumption consumption
+					where consumption.eventId = event.deduplicationKey
+				)
+				or exists (
+					select retry.id from DataEventConsumption retry
+					where retry.eventId = event.deduplicationKey
+					  and retry.status = 'PENDING'
+					  and retry.nextAttemptAt <= :now
+				)
+			  )
+			order by event.createTime
+			""")
+	List<DomainEventOutbox> findDataCenterCandidates(
+			@Param("eventTypes") Collection<String> eventTypes,
+			@Param("now") LocalDateTime now,
+			Pageable pageable);
 	Page<DomainEventOutbox> findByStatusOrderByCreateTimeDesc(String status, Pageable pageable);
 
 	@Query("""
