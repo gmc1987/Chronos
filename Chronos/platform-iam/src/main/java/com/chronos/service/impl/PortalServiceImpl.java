@@ -139,6 +139,9 @@ public class PortalServiceImpl implements IPortalService {
                 }
             }
         }
+        if (allowedCodes.contains("teacher-schedule") && !layout.contains("teacher-schedule")) {
+            layout.add(0, "teacher-schedule");
+        }
         if (preference == null) {
             for (String code : allowedCodes) {
                 if (!layout.contains(code)) {

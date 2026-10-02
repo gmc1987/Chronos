@@ -3,6 +3,8 @@ package com.chronos.education.scheduling.service;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
+import com.chronos.education.scheduling.dao.BellPeriodRepository;
+import com.chronos.education.scheduling.dao.BellScheduleRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
@@ -12,8 +14,10 @@ import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.Classroom;
+import com.chronos.education.scheduling.model.BellPeriod;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.ScheduleEntry;
+import com.chronos.education.scheduling.model.ScheduleEntryView;
 import com.chronos.education.scheduling.model.ScheduleOccurrenceView;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.scheduling.model.StudentProfile;
@@ -41,6 +45,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	private final CourseOfferingRepository offerings;
 	private final ClassroomRepository classrooms;
 	private final AcademicTermRepository terms;
+	private final BellScheduleRepository bellSchedules;
+	private final BellPeriodRepository bellPeriods;
 	private final SchedulePlanVersionService planVersions;
 	private final EducationUserBindingRepository bindings;
 	private final TeachingClassMemberRepository teachingClassMembers;
@@ -55,6 +61,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 			CourseOfferingRepository offerings,
 			ClassroomRepository classrooms,
 			AcademicTermRepository terms,
+			BellScheduleRepository bellSchedules,
+			BellPeriodRepository bellPeriods,
 			SchedulePlanVersionService planVersions,
 			EducationUserBindingRepository bindings,
 			TeachingClassMemberRepository teachingClassMembers,
@@ -67,6 +75,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 		this.offerings = offerings;
 		this.classrooms = classrooms;
 		this.terms = terms;
+		this.bellSchedules = bellSchedules;
+		this.bellPeriods = bellPeriods;
 		this.planVersions = planVersions;
 		this.bindings = bindings;
 		this.teachingClassMembers = teachingClassMembers;
@@ -285,6 +295,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 							? resolveTeacherProfileIds(username)
 							: Set.of();
 					Map<String, String> teacherNames = teacherNameById();
+					Map<String, Map<Integer, BellPeriod>> periodsByCampus =
+							periodsByCampus(term.getId());
 					List<ScheduleEntry> published = planVersions
 							.latestPublishedEntries(term.getTermCode());
 					List<Map<String, Object>> values = startDate.datesUntil(endDate.plusDays(1))
@@ -296,6 +308,7 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 									allowedOfferingIds,
 									teacherIds))
 							.map(item -> occurrenceItem(item, byId, teacherNames))
+							.map(item -> withLessonTimes(item, byId, periodsByCampus))
 							.toList();
 					result.put("termName", term.getTermName());
 					result.put("occurrences", values);
@@ -341,6 +354,40 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 		value.put("effectiveTeacherName", effectiveTeacherName);
 		value.put("substituteTeacherId", occurrence.substituteTeacherId());
 		return value;
+	}
+
+	private Map<String, Map<Integer, BellPeriod>> periodsByCampus(String termId) {
+		Map<String, Map<Integer, BellPeriod>> result = new LinkedHashMap<>();
+		bellSchedules.findByAcademicTermIdOrderByScheduleName(termId).stream()
+				.filter(item -> Boolean.TRUE.equals(item.getDefaultSchedule()))
+				.filter(item -> "ACTIVE".equals(item.getStatus()))
+				.forEach(schedule -> result.putIfAbsent(
+						schedule.getCampusId(),
+						bellPeriods.findByBellScheduleIdOrderByPeriodNo(schedule.getId()).stream()
+								.collect(Collectors.toMap(
+										BellPeriod::getPeriodNo,
+										value -> value,
+										(first, ignored) -> first,
+										LinkedHashMap::new))));
+		return result;
+	}
+
+	private Map<String, Object> withLessonTimes(
+			Map<String, Object> occurrence,
+			Map<String, CourseOffering> offeringById,
+			Map<String, Map<Integer, BellPeriod>> periodsByCampus) {
+		ScheduleEntryView entry = (ScheduleEntryView) occurrence.get("entry");
+		CourseOffering offering = offeringById.get(entry.offeringId());
+		Map<Integer, BellPeriod> periods = offering == null
+				? null
+				: periodsByCampus.get(offering.getCampusId());
+		Integer startPeriodNo = (Integer) occurrence.get("effectivePeriodNo");
+		int duration = entry.durationPeriods() == null ? 1 : Math.max(1, entry.durationPeriods());
+		BellPeriod start = periods == null ? null : periods.get(startPeriodNo);
+		BellPeriod end = periods == null ? null : periods.get(startPeriodNo + duration - 1);
+		occurrence.put("startTime", start == null ? "" : start.getStartTime().toString());
+		occurrence.put("endTime", end == null ? "" : end.getEndTime().toString());
+		return occurrence;
 	}
 
 	private Map<String, String> teacherNameById() {

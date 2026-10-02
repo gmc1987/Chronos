@@ -110,14 +110,7 @@
             </div>
           </template>
           <template v-else-if="widget.code === 'teacher-schedule' && contribution(widget).available">
-            <div v-if="contribution(widget).data.mySchedule?.length" class="education-schedule">
-              <button v-for="course in contribution(widget).data.mySchedule.slice(0, 5)" :key="course.id" @click="router.push('/portal/education/schedule')">
-                <span>{{ weekday(course.dayOfWeek) }} 第 {{ course.periodNo }} 节</span>
-                <strong>{{ course.courseName }}</strong>
-                <small>{{ course.classroomName || course.teachingClassName || '未安排地点' }}</small>
-              </button>
-            </div>
-            <div v-else class="workflow-empty">暂无已发布课表</div>
+            <PortalWeeklySchedule />
           </template>
           <template v-else-if="['teacher-workload', 'teacher-leave', 'teacher-notifications', 'teacher-ai-analysis'].includes(widget.code) && contribution(widget).available">
             <div v-if="contribution(widget).data.teacherSummary" class="teacher-summary">
@@ -162,6 +155,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { portalBootstrap, resetPortalPreference, savePortalPreference, visitApplication } from '../../../api/portal'
 import { remindWorkflowInstance } from '../../../api/admin'
+import PortalWeeklySchedule from '../components/PortalWeeklySchedule.vue'
 
 const emit = defineEmits(['context'])
 const router = useRouter()
