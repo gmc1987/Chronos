@@ -38,7 +38,12 @@ public class PortalSeedConfig {
                 ));
             }
 			// Education widgets are upserted so existing installations receive them too.
-			teacherWidget(widgets, "teacher-schedule", "我的课表", "TeacherScheduleWidget", "DATA", "LARGE", 15);
+			teacherWidget(widgets, "teacher-schedule", "本周课表", "TeacherScheduleWidget", "DATA", "LARGE", 15);
+			widgets.findByWidgetCode("teacher-schedule").ifPresent(widget -> {
+				// 教育角色以独立身份绑定表为准，由 DATA contribution 在前端收口展示。
+				widget.setAudienceRoleCodes(null);
+				widgets.save(widget);
+			});
 			teacherWidget(widgets, "teacher-workload", "我的工作量", "TeacherWorkloadWidget", "DATA", "MEDIUM", 25);
 			teacherWidget(widgets, "teacher-leave", "我的请假/流程", "TeacherLeaveWidget", "DATA", "MEDIUM", 35);
 			teacherWidget(widgets, "teacher-notifications", "通知摘要", "TeacherNotificationWidget", "DATA", "MEDIUM", 45);

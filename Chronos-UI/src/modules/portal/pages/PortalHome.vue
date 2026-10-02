@@ -110,14 +110,7 @@
             </div>
           </template>
           <template v-else-if="widget.code === 'teacher-schedule' && contribution(widget).available">
-            <div v-if="contribution(widget).data.mySchedule?.length" class="education-schedule">
-              <button v-for="course in contribution(widget).data.mySchedule.slice(0, 5)" :key="course.id" @click="router.push('/portal/education/schedule')">
-                <span>{{ weekday(course.dayOfWeek) }} 第 {{ course.periodNo }} 节</span>
-                <strong>{{ course.courseName }}</strong>
-                <small>{{ course.classroomName || course.teachingClassName || '未安排地点' }}</small>
-              </button>
-            </div>
-            <div v-else class="workflow-empty">暂无已发布课表</div>
+            <PortalWeeklySchedule />
           </template>
           <template v-else-if="['teacher-workload', 'teacher-leave', 'teacher-notifications', 'teacher-ai-analysis'].includes(widget.code) && contribution(widget).available">
             <div v-if="contribution(widget).data.teacherSummary" class="teacher-summary">
@@ -162,6 +155,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { portalBootstrap, resetPortalPreference, savePortalPreference, visitApplication } from '../../../api/portal'
 import { remindWorkflowInstance } from '../../../api/admin'
+import PortalWeeklySchedule from '../components/PortalWeeklySchedule.vue'
 
 const emit = defineEmits(['context'])
 const router = useRouter()
@@ -169,7 +163,12 @@ const bootstrap = ref({ widgets: [], applications: [], favorites: [], preference
 const loading = ref(true); const error = ref(''); const editing = ref(false); const draftLayout = ref([])
 const greeting = computed(() => new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好')
 const quickApps = computed(() => bootstrap.value.favorites?.length ? bootstrap.value.favorites : bootstrap.value.applications?.filter(a => a.recommended).slice(0, 6))
-const visibleWidgets = computed(() => draftLayout.value.map(code => bootstrap.value.widgets.find(w => w.code === code)).filter(Boolean))
+const educationProfileTypes = computed(() => bootstrap.value.contributions?.DATA?.data?.profileTypes || [])
+const visibleWidgets = computed(() => draftLayout.value
+  .map(code => bootstrap.value.widgets.find(w => w.code === code))
+  .filter(Boolean)
+  .filter(widget => widget.code !== 'teacher-schedule'
+    || educationProfileTypes.value.some(type => ['TEACHER', 'STUDENT'].includes(type))))
 const canRemind = computed(() => (bootstrap.value.user?.permissions || []).includes('workflow:task:remind'))
 const personaCards = computed(() => {
   const roles = (bootstrap.value.user?.roles || []).map(role => String(role).toUpperCase())
