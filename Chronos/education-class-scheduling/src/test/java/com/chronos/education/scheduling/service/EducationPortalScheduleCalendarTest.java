@@ -22,6 +22,7 @@ import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.BellPeriod;
 import com.chronos.education.scheduling.model.BellSchedule;
+import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.ScheduleEntry;
@@ -39,6 +40,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class EducationPortalScheduleCalendarTest {
 	private AcademicTermRepository terms;
 	private CourseOfferingRepository offerings;
+	private ClassroomRepository classrooms;
 	private TeacherAcademicProfileRepository teachers;
 	private EducationUserBindingRepository bindings;
 	private SchedulePlanVersionService planVersions;
@@ -51,6 +53,7 @@ class EducationPortalScheduleCalendarTest {
 	void setUp() {
 		terms = mock(AcademicTermRepository.class);
 		offerings = mock(CourseOfferingRepository.class);
+		classrooms = mock(ClassroomRepository.class);
 		teachers = mock(TeacherAcademicProfileRepository.class);
 		bindings = mock(EducationUserBindingRepository.class);
 		planVersions = mock(SchedulePlanVersionService.class);
@@ -63,7 +66,7 @@ class EducationPortalScheduleCalendarTest {
 				mock(StudentProfileRepository.class),
 				mock(AdministrativeClassRepository.class),
 				offerings,
-				mock(ClassroomRepository.class),
+				classrooms,
 				terms,
 				bellSchedules,
 				bellPeriods,
@@ -87,9 +90,12 @@ class EducationPortalScheduleCalendarTest {
 		CourseOffering offering = new CourseOffering();
 		ReflectionTestUtils.setField(offering, "id", "offering-1");
 		offering.setTeacherId("teacher-1");
-		offering.setCampusId("campus-1");
 		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-FALL"))
 				.thenReturn(List.of(offering));
+		Classroom classroom = new Classroom();
+		ReflectionTestUtils.setField(classroom, "id", "room-1");
+		classroom.setCampusId("campus-1");
+		when(classrooms.findAll()).thenReturn(List.of(classroom));
 
 		EducationUserBinding binding = new EducationUserBinding();
 		binding.setProfileType("TEACHER");

@@ -40,7 +40,8 @@ public class PortalSeedConfig {
 			// Education widgets are upserted so existing installations receive them too.
 			teacherWidget(widgets, "teacher-schedule", "本周课表", "TeacherScheduleWidget", "DATA", "LARGE", 15);
 			widgets.findByWidgetCode("teacher-schedule").ifPresent(widget -> {
-				widget.setAudienceRoleCodes("TEACHER,STUDENT");
+				// 教育角色以独立身份绑定表为准，由 DATA contribution 在前端收口展示。
+				widget.setAudienceRoleCodes(null);
 				widgets.save(widget);
 			});
 			teacherWidget(widgets, "teacher-workload", "我的工作量", "TeacherWorkloadWidget", "DATA", "MEDIUM", 25);

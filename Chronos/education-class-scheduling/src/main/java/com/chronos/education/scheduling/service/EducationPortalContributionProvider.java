@@ -93,6 +93,17 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	@Transactional(readOnly = true)
 	public PortalContribution load(String username) {
 		Map<String, Object> data = new LinkedHashMap<>();
+		Set<String> profileTypes = bindings
+				.findByUsernameAndStatusOrderByProfileType(username, "ACTIVE")
+				.stream()
+				.map(EducationUserBinding::getProfileType)
+				.collect(Collectors.toSet());
+		var account = users.findByUsername(username);
+		if (account != null && account.getEmployeeId() != null
+				&& teachers.findByEmployeeId(account.getEmployeeId()).isPresent()) {
+			profileTypes.add("TEACHER");
+		}
+		data.put("profileTypes", profileTypes.stream().sorted().toList());
 		data.put("metrics", List.of(
 				metric("教师", teachers.count()),
 				metric("学生", students.count()),
@@ -288,6 +299,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 							.findBySemesterCodeOrderByOfferingCode(term.getTermCode())
 							.stream()
 							.collect(Collectors.toMap(CourseOffering::getId, value -> value));
+					Map<String, Classroom> classroomById = classrooms.findAll().stream()
+							.collect(Collectors.toMap(Classroom::getId, value -> value));
 					Set<String> allowedOfferingIds = selectedStudentId == null
 							? resolvePersonalOfferingIds(username, byId)
 							: studentOfferingIds(selectedStudentId);
@@ -308,7 +321,11 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 									allowedOfferingIds,
 									teacherIds))
 							.map(item -> occurrenceItem(item, byId, teacherNames))
-							.map(item -> withLessonTimes(item, byId, periodsByCampus))
+							.map(item -> withLessonTimes(
+									item,
+									byId,
+									classroomById,
+									periodsByCampus))
 							.toList();
 					result.put("termName", term.getTermName());
 					result.put("occurrences", values);
@@ -375,12 +392,15 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	private Map<String, Object> withLessonTimes(
 			Map<String, Object> occurrence,
 			Map<String, CourseOffering> offeringById,
+			Map<String, Classroom> classroomById,
 			Map<String, Map<Integer, BellPeriod>> periodsByCampus) {
 		ScheduleEntryView entry = (ScheduleEntryView) occurrence.get("entry");
 		CourseOffering offering = offeringById.get(entry.offeringId());
-		Map<Integer, BellPeriod> periods = offering == null
-				? null
-				: periodsByCampus.get(offering.getCampusId());
+		Classroom classroom = classroomById.get((String) occurrence.get("effectiveClassroomId"));
+		String campusId = offering != null && offering.getCampusId() != null
+				? offering.getCampusId()
+				: classroom == null ? null : classroom.getCampusId();
+		Map<Integer, BellPeriod> periods = periodsByCampus.get(campusId);
 		Integer startPeriodNo = (Integer) occurrence.get("effectivePeriodNo");
 		int duration = entry.durationPeriods() == null ? 1 : Math.max(1, entry.durationPeriods());
 		BellPeriod start = periods == null ? null : periods.get(startPeriodNo);
@@ -499,14 +519,18 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 			ScheduleEntry entry,
 			CourseOffering offering,
 			Classroom classroom) {
-		return Map.of(
-				"id", entry.getId(),
-				"courseName", offering == null ? "未知课程" : offering.getCourseName(),
-				"teachingClassName", offering == null ? "" : offering.getTeachingClassName(),
-				"classroomName", classroom == null ? "" : classroom.getRoomName(),
-				"dayOfWeek", entry.getDayOfWeek(),
-				"periodNo", entry.getPeriodNo(),
-				"durationPeriods", entry.getDurationPeriods(),
-				"status", entry.getStatus());
+		Map<String, Object> value = new LinkedHashMap<>();
+		value.put("id", entry.getId());
+		value.put("courseName", offering == null ? "未知课程" : offering.getCourseName());
+		value.put("teachingClassName", offering == null ? "" : offering.getTeachingClassName());
+		value.put("classroomName", classroom == null ? "" : classroom.getRoomName());
+		value.put("dayOfWeek", entry.getDayOfWeek());
+		value.put("periodNo", entry.getPeriodNo());
+		value.put("durationPeriods", entry.getDurationPeriods());
+		value.put("weekPattern", entry.getWeekPattern());
+		value.put("startWeek", entry.getStartWeek());
+		value.put("endWeek", entry.getEndWeek());
+		value.put("status", entry.getStatus());
+		return value;
 	}
 }
