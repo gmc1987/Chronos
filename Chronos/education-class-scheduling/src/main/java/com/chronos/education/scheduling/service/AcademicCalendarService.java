@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.service;
 
 import java.util.List;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
 import org.springframework.stereotype.Service;
@@ -123,6 +124,21 @@ public class AcademicCalendarService {
 				currentId)) {
 			throw new IllegalArgumentException("该日期已经配置");
 		}
+		LocalDate scheduleDate = command.getScheduleDate();
+		if (scheduleDate != null) {
+			if (!Boolean.TRUE.equals(command.getTeachingDay())) {
+				throw new IllegalArgumentException("非教学日不能指定参照课表日期");
+			}
+			if (scheduleDate.isBefore(term.getStartDate())
+					|| scheduleDate.isAfter(term.getEndDate())) {
+				throw new IllegalArgumentException("参照课表日期必须位于学期范围内");
+			}
+		}
+		if (Boolean.TRUE.equals(command.getTeachingDay())
+				&& command.getCalendarDate().getDayOfWeek().getValue() > 5
+				&& scheduleDate == null) {
+			throw new IllegalArgumentException("周末补课日必须指定参照课表日期");
+		}
 		AcademicCalendarDay value = id == null
 				? new AcademicCalendarDay()
 				: calendarDays.findById(id)
@@ -132,8 +148,58 @@ public class AcademicCalendarService {
 		value.setDayType(required(command.getDayType(), "日期类型不能为空"));
 		value.setDayName(required(command.getDayName(), "日期名称不能为空"));
 		value.setTeachingDay(Boolean.TRUE.equals(command.getTeachingDay()));
+		value.setScheduleDate(scheduleDate);
 		value.setRemark(command.getRemark());
+		value.setSourceType("MANUAL");
 		return calendarDays.save(value);
+	}
+
+	/** 自动同步只维护 AUTO 记录，保护学校人工设置的教学状态和参照课表。 */
+	@Transactional
+	public java.util.Map<String, Integer> importHolidays(
+			String termId,
+			List<OfficialHolidayImportService.HolidayDate> holidays,
+			String sourceType,
+			String sourceUrl) {
+		AcademicTerm term = requireTerm(termId);
+		int year = holidays.getFirst().date().getYear();
+		if (term.getStartDate().getYear() > year || term.getEndDate().getYear() < year) {
+			throw new IllegalArgumentException("所选年份不在学期范围内");
+		}
+		terms.findForUpdateByTermCode(term.getTermCode()).orElseThrow();
+		int inserted = 0;
+		int updated = 0;
+		int skipped = 0;
+		for (OfficialHolidayImportService.HolidayDate holiday : holidays) {
+			if (holiday.date().isBefore(term.getStartDate())
+					|| holiday.date().isAfter(term.getEndDate())) {
+				continue;
+			}
+			AcademicCalendarDay day = calendarDays
+					.findByAcademicTermIdAndCalendarDate(termId, holiday.date())
+					.orElse(null);
+			if (day != null && !"AUTO".equals(day.getSourceType())) {
+				skipped++;
+				continue;
+			}
+			boolean isNew = day == null;
+			if (isNew) {
+				day = new AcademicCalendarDay();
+				day.setAcademicTermId(termId);
+				day.setCalendarDate(holiday.date());
+			}
+			day.setDayType(holiday.offDay() ? "HOLIDAY" : "MAKEUP_WORKDAY");
+			day.setDayName(holiday.name());
+			// 法定补班只是工作日，学校需另行确认是否上课及参照课表。
+			day.setTeachingDay(false);
+			day.setScheduleDate(null);
+			day.setSourceType(sourceType);
+			day.setSourceUrl(sourceUrl);
+			day.setImportedAt(LocalDateTime.now());
+			calendarDays.save(day);
+			if (isNew) inserted++; else updated++;
+		}
+		return java.util.Map.of("inserted", inserted, "updated", updated, "skipped", skipped);
 	}
 
 	@Transactional

@@ -6,6 +6,7 @@ const AdminExamInvigilation = () => import('../../modules/education/pages/AdminE
 const AdminExamRooms = () => import('../../modules/education/pages/AdminExamRooms.vue')
 const AdminExamPaperAnalysis = () => import('../../modules/education/pages/AdminExamPaperAnalysis.vue')
 const AdminAcademicTerms = () => import('../../modules/education/pages/AdminAcademicTerms.vue')
+const AdminHolidays = () => import('../../modules/education/pages/AdminHolidays.vue')
 const AdminCourses = () => import('../../modules/education/pages/AdminCourses.vue')
 const AdminMajors = () => import('../../modules/education/pages/AdminMajors.vue')
 const AdminAdministrativeClasses = () => import('../../modules/education/pages/AdminAdministrativeClasses.vue')
@@ -36,6 +37,7 @@ export const educationIndustry = {
   code: 'EDUCATION',
   routes: [
     { path: '/admin/education/terms', name: 'admin-education-terms', component: AdminAcademicTerms },
+    { path: '/admin/education/holidays', name: 'admin-education-holidays', component: AdminHolidays },
     { path: '/admin/education/courses', name: 'admin-education-courses', component: AdminCourses },
     { path: '/admin/education/majors', name: 'admin-education-majors', component: AdminMajors },
     { path: '/admin/education/classes', name: 'admin-education-classes', component: AdminAdministrativeClasses },

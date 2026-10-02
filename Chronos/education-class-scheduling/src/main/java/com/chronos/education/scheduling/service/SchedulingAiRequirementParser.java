@@ -8,6 +8,7 @@ import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulingAiConstraint;
+import com.chronos.education.scheduling.model.SchedulingAiDateRule;
 import com.chronos.education.scheduling.model.SchedulingAiLockedEntry;
 import com.chronos.education.scheduling.model.SchedulingAiOfferingConstraint;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
@@ -38,6 +39,12 @@ import org.springframework.stereotype.Service;
 public class SchedulingAiRequirementParser {
 	private static final Pattern PERIOD_PATTERN =
 			Pattern.compile("第?([一二三四五六七八九十\\d]+)节");
+	private static final Pattern CALENDAR_DATE_RULE = Pattern.compile(
+			"^(?:按|根据)(?:学校|现有|已维护)?校历处理(?:节假日|假期)(?:(?:和|及|与)(?:调休|补班|补课))?$" );
+	private static final Pattern EXAM_DATE_RULE = Pattern.compile(
+			"^(?:按|根据)(?:已发布|已确认|现有)?考试计划处理(?:考试)?(?:占课|冲突|停课)$");
+	private static final Pattern LEAVE_DATE_RULE = Pattern.compile(
+			"^(?:按|根据)(?:已批准|已审批)?教师请假处理代课$");
 	private static final Pattern OFFERING_BLOCK_PATTERN = Pattern.compile(
 			"(?:请|帮我)?\\s*(.+?)\\s*(?:尽量|优先|希望|最好)连堂(?:上课|排课|排)?");
 	private static final Pattern WEEK_RULE_PATTERN = Pattern.compile(
@@ -145,6 +152,7 @@ public class SchedulingAiRequirementParser {
 		List<SchedulingAiLockedEntry> lockedEntries = new java.util.ArrayList<>();
 		List<SchedulingAiSoftPriority> softPriorities = new java.util.ArrayList<>();
 		List<SchedulingAiSlotRule> slotRules = new java.util.ArrayList<>();
+		List<SchedulingAiDateRule> dateRules = new java.util.ArrayList<>();
 		List<String> unsupported = new java.util.ArrayList<>();
 		List<String> unresolvedClauses = new java.util.ArrayList<>();
 		String text = request.requestText();
@@ -158,6 +166,11 @@ public class SchedulingAiRequirementParser {
 				: modelClassifier.classify(text);
 		for (SchedulingAiModelClassifier.Clause clause : clauses) {
 			String rule = clause.text();
+			SchedulingAiDateRule dateRule = dateRule(rule);
+			if (dateRule != null) {
+				dateRules.add(dateRule);
+				continue;
+			}
 			if ("SLOT_RULE".equals(clause.classification())) {
 				parseSlotRule(request, scope, selected, clause, slotRules,
 						clarifications, unsupported, unresolvedClauses);
@@ -346,6 +359,17 @@ public class SchedulingAiRequirementParser {
 				unresolvedClauses.add(rule);
 			}
 		}
+		var dimensions = timetable == null ? null
+				: timetable.dimensions(request.semesterCode(), request.mode(), selected);
+		var generationOptions = dimensions == null ? null
+				: new com.chronos.education.scheduling.model.SchedulingAiGenerationOptions(
+					request.weekdays() == null ? dimensions.weekdays() : request.weekdays(),
+					request.periodsPerDay() == null ? dimensions.periodsPerDay() : request.periodsPerDay(),
+					request.startWeek() == null ? 1 : request.startWeek(),
+					request.endWeek() == null ? dimensions.endWeek() : request.endWeek());
+		if (generationOptions != null && generationOptions.endWeek() > dimensions.endWeek()) {
+			throw new IllegalArgumentException("结束周超出学期教学周数");
+		}
 		SchedulingAiPlan plan = new SchedulingAiPlan(
 				1,
 				"SCHEDULE_REQUIREMENTS_V1",
@@ -361,8 +385,23 @@ public class SchedulingAiRequirementParser {
 				weekRules,
 				lockedEntries,
 				softPriorities,
-				slotRules);
+				slotRules,
+				generationOptions,
+				dateRules);
 		return new ParsedRequirement(plan);
+	}
+
+	private SchedulingAiDateRule dateRule(String text) {
+		if (CALENDAR_DATE_RULE.matcher(text).matches()) {
+			return new SchedulingAiDateRule("CALENDAR", text);
+		}
+		if (EXAM_DATE_RULE.matcher(text).matches()) {
+			return new SchedulingAiDateRule("EXAM", text);
+		}
+		if (LEAVE_DATE_RULE.matcher(text).matches()) {
+			return new SchedulingAiDateRule("LEAVE", text);
+		}
+		return null;
 	}
 
 	private void parseSlotRule(SchedulingAiRunRequest request, EducationDataScope scope,
@@ -386,8 +425,11 @@ public class SchedulingAiRequirementParser {
 			throw new IllegalStateException("AI 作息映射服务不可用");
 		}
 		var dimensions = timetable.dimensions(request.semesterCode(), request.mode(), selected);
-		if (rule.days().stream().anyMatch(day -> day > dimensions.weekdays())
-				|| rule.periods().stream().anyMatch(period -> period > dimensions.periodsPerDay())) {
+		int weekdays = request.weekdays() == null ? dimensions.weekdays() : request.weekdays();
+		int periodsPerDay = request.periodsPerDay() == null
+				? dimensions.periodsPerDay() : request.periodsPerDay();
+		if (rule.days().stream().anyMatch(day -> day > weekdays)
+				|| rule.periods().stream().anyMatch(period -> period > periodsPerDay)) {
 			unsupported.add("组合时段规则超出当前排课范围：" + source);
 			unresolved.add(source);
 			return;
@@ -801,7 +843,11 @@ public class SchedulingAiRequirementParser {
 				request.mode(),
 				request.selectedOfferingIds().stream().sorted().toList().toString(),
 				Integer.toString(request.candidateCount()),
-				request.requestText());
+				request.requestText(),
+				String.valueOf(request.weekdays()),
+				String.valueOf(request.periodsPerDay()),
+				String.valueOf(request.startWeek()),
+				String.valueOf(request.endWeek()));
 		try {
 			return java.util.HexFormat.of().formatHex(
 					MessageDigest.getInstance("SHA-256")

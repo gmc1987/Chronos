@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.ClassroomRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.SchedulePlanVersionRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
@@ -14,7 +15,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -34,6 +37,7 @@ public class SchedulePlanVersionService {
 	private final ScheduleQualityAnalysisService qualityAnalysis;
 	private final ScheduleQualityRiskNotificationService qualityNotifications;
 	private final CourseOfferingRepository offerings;
+	private final ClassroomRepository classrooms;
 	private final TeachingClassMemberRepository members;
 	private final ExamResourceReservationService examReservations;
 	private final EducationResourceTransactionLock resourceLock;
@@ -49,6 +53,7 @@ public class SchedulePlanVersionService {
 			ScheduleQualityAnalysisService qualityAnalysis,
 			ScheduleQualityRiskNotificationService qualityNotifications,
 			CourseOfferingRepository offerings,
+			ClassroomRepository classrooms,
 			TeachingClassMemberRepository members,
 			ExamResourceReservationService examReservations,
 			EducationResourceTransactionLock resourceLock) {
@@ -61,6 +66,7 @@ public class SchedulePlanVersionService {
 		this.qualityAnalysis = qualityAnalysis;
 		this.qualityNotifications = qualityNotifications;
 		this.offerings = offerings;
+		this.classrooms = classrooms;
 		this.members = members;
 		this.examReservations = examReservations;
 		this.resourceLock = resourceLock;
@@ -107,20 +113,94 @@ public class SchedulePlanVersionService {
 		lockTerm(source.getSemesterCode());
 		List<ScheduleEntry> snapshot = read(source.getSnapshotJson());
 		assertExamAvailability(snapshot);
-		entries.deleteAllForRollback(source.getSemesterCode());
-		entityManager.clear();
-		for (ScheduleEntry entry : snapshot) {
-			insertSnapshotEntry(entry);
+		List<ScheduleEntry> current = entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(
+				source.getSemesterCode());
+		Map<String, ScheduleEntry> currentById = current.stream()
+				.collect(Collectors.toMap(ScheduleEntry::getId, entry -> entry));
+		Map<String, Integer> originalPeriods = current.stream()
+				.collect(Collectors.toMap(ScheduleEntry::getId, ScheduleEntry::getPeriodNo));
+		Set<String> snapshotIds = snapshot.stream().map(ScheduleEntry::getId)
+				.collect(Collectors.toSet());
+		List<ScheduleEntry> retainedHistory = new ArrayList<>();
+		Set<String> targetSlots = snapshot.stream()
+				.map(this::uniqueSlot).collect(Collectors.toSet());
+		for (ScheduleEntry entry : current) {
+			if (!snapshotIds.contains(entry.getId()) && referenceCount(entry.getId()) > 0) {
+				if (targetSlots.contains(uniqueSlot(entry))) {
+					throw new IllegalStateException("回滚目标与被引用的历史课表时段冲突：" + entry.getId());
+				}
+				retainedHistory.add(entry);
+			}
+		}
+		// 同一事务中先避开旧时段，保证相互交换的课表项也能通过唯一约束。
+		int temporaryPeriod = current.stream().mapToInt(ScheduleEntry::getPeriodNo)
+				.max().orElse(0) + 1;
+		for (ScheduleEntry entry : current) {
+			entry.setPeriodNo(temporaryPeriod++);
 		}
 		entityManager.flush();
+		for (ScheduleEntry entry : current) {
+			if (!snapshotIds.contains(entry.getId()) && !retainedHistory.contains(entry)) {
+				entries.delete(entry);
+			}
+		}
+		for (ScheduleEntry entry : snapshot) {
+			ScheduleEntry existing = currentById.get(entry.getId());
+			if (existing == null) {
+				insertSnapshotEntry(entry);
+			} else {
+				copySnapshotFields(entry, existing);
+			}
+		}
+		for (ScheduleEntry entry : retainedHistory) {
+			entry.setStatus("CANCELLED");
+			entry.setLastUpdateBy(actor);
+			entry.setLastUpdateTime(LocalDateTime.now());
+			// 被引用的条目必须保留原时段，才能解释考试停课和日期例外的来源。
+			entry.setPeriodNo(originalPeriods.get(entry.getId()));
+		}
+		entityManager.flush();
+		entityManager.clear();
+		List<ScheduleEntry> restored = entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(
+				source.getSemesterCode());
 		SchedulePlanVersion version = createVersion(
 				source.getSemesterCode(),
-				snapshot,
+				restored,
 				actor,
 				source.getVersionNo(),
 				"EDUCATION_SCHEDULE_ROLLBACK");
-		publicationNotifications.enqueue(version, snapshot, true);
+		publicationNotifications.enqueue(version, restored, true);
 		return version;
+	}
+
+	private long referenceCount(String entryId) {
+		Number count = (Number) entityManager.createNativeQuery("""
+				select (select count(*) from edu_exam_course_suspension_item where source_entry_id = :id)
+				     + (select count(*) from edu_schedule_date_exception where source_entry_id = :id)
+				""").setParameter("id", entryId).getSingleResult();
+		return count.longValue();
+	}
+
+	private String uniqueSlot(ScheduleEntry entry) {
+		return entry.getOfferingId() + "|" + entry.getDayOfWeek() + "|"
+				+ entry.getPeriodNo() + "|" + entry.getStartWeek() + "|" + entry.getEndWeek();
+	}
+
+	private void copySnapshotFields(ScheduleEntry source, ScheduleEntry target) {
+		target.setOfferingId(source.getOfferingId());
+		target.setClassroomId(source.getClassroomId());
+		target.setDayOfWeek(source.getDayOfWeek());
+		target.setPeriodNo(source.getPeriodNo());
+		target.setDurationPeriods(source.getDurationPeriods());
+		target.setWeekPattern(source.getWeekPattern());
+		target.setStartWeek(source.getStartWeek());
+		target.setEndWeek(source.getEndWeek());
+		target.setStatus(source.getStatus());
+		target.setSubstituteTeacherId(source.getSubstituteTeacherId());
+		target.setSourceAdjustmentInstanceId(source.getSourceAdjustmentInstanceId());
+		target.setLocked(source.getLocked());
+		target.setLastUpdateBy(source.getLastUpdateBy());
+		target.setLastUpdateTime(source.getLastUpdateTime());
 	}
 
 	@Transactional(readOnly = true)
@@ -150,6 +230,9 @@ public class SchedulePlanVersionService {
 			CourseOffering offering = offerings.findById(entry.getOfferingId())
 					.orElseThrow(() -> new IllegalStateException(
 							"课表版本引用的教学任务不存在"));
+			String campusId = classrooms.findById(entry.getClassroomId())
+					.orElseThrow(() -> new IllegalStateException("课表版本引用的教室不存在"))
+					.getCampusId();
 			Set<String> studentIds = members
 					.findByOfferingIdOrderByCreateTime(entry.getOfferingId())
 					.stream()
@@ -157,7 +240,7 @@ public class SchedulePlanVersionService {
 					.map(member -> member.getStudentId())
 					.collect(Collectors.toSet());
 			examReservations.assertWeeklyCourseAvailable(
-					entry.getSemesterCode(), offering.getCampusId(),
+					entry.getSemesterCode(), campusId,
 					entry.getDayOfWeek(), entry.getPeriodNo(),
 					entry.getDurationPeriods(), entry.getStartWeek(),
 					entry.getEndWeek(), entry.getWeekPattern(),

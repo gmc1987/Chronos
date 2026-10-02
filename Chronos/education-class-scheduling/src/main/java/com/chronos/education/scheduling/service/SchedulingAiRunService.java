@@ -177,7 +177,11 @@ public class SchedulingAiRunService {
 				previous.mode(),
 				previous.selectedOfferingIds(),
 				previous.candidateCount(),
-				String.join("；", replacements.values()));
+				String.join("；", replacements.values()),
+				previous.generationOptions() == null ? null : previous.generationOptions().weekdays(),
+				previous.generationOptions() == null ? null : previous.generationOptions().periodsPerDay(),
+				previous.generationOptions() == null ? null : previous.generationOptions().startWeek(),
+				previous.generationOptions() == null ? null : previous.generationOptions().endWeek());
 		SchedulingAiPlan updated = parser.parse(reparsed, actor).plan();
 		Set<String> parsedSources = updated.constraints().stream()
 				.map(com.chronos.education.scheduling.model.SchedulingAiConstraint::sourceText)
@@ -195,6 +199,9 @@ public class SchedulingAiRunService {
 				.forEach(parsedSources::add);
 		updated.slotRules().stream()
 				.map(com.chronos.education.scheduling.model.SchedulingAiSlotRule::sourceText)
+				.forEach(parsedSources::add);
+		updated.dateRules().stream()
+				.map(com.chronos.education.scheduling.model.SchedulingAiDateRule::sourceText)
 				.forEach(parsedSources::add);
 		if (!updated.readyForConfirmation()
 				|| parsedSources.size() != replacements.size()
@@ -293,7 +300,10 @@ public class SchedulingAiRunService {
 				updated.skillCode(), updated.semesterCode(), updated.mode(),
 				updated.selectedOfferingIds(), updated.candidateCount(), combined,
 				remainingClarifications, List.of(), remainingUnresolved, combinedOfferings,
-				combinedWeekRules, combinedLocks, combinedPriorities, combinedSlotRules);
+				combinedWeekRules, combinedLocks, combinedPriorities, combinedSlotRules,
+				previous.generationOptions(),
+				java.util.stream.Stream.concat(previous.dateRules().stream(), updated.dateRules().stream())
+						.distinct().toList());
 		return transactions.execute(status -> {
 			AgentRun locked = lockedOwner(id, actor);
 			requireVersion(locked, request.expectedPlanVersion());

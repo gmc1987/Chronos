@@ -62,6 +62,24 @@ public class ScheduleCalendarController {
 		return ok(service.exceptionHistory(semesterCode));
 	}
 
+	@GetMapping("/admin/education/schedule-pending-makeups")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
+	public ResultData<?> pendingMakeups(
+			@RequestParam String semesterCode,
+			Authentication authentication) {
+		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		return ok(service.pendingMakeups(semesterCode));
+	}
+
+	@GetMapping("/admin/education/schedule-pending-substitutions")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
+	public ResultData<?> pendingSubstitutions(
+			@RequestParam String semesterCode,
+			Authentication authentication) {
+		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		return ok(service.pendingTeacherLeaveCoverage(semesterCode));
+	}
+
 	@PostMapping("/admin/education/schedule-date-exceptions")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:update','education:scheduling:manage')")
 	public ResultData<?> create(

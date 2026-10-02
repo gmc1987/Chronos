@@ -23,6 +23,29 @@ import org.junit.jupiter.api.Test;
 
 class SchedulingAiRequirementParserTest {
 	@Test
+	void recognizesOnlyAuthoritativeDateRuleIntents() {
+		var terms = mock(AcademicTermRepository.class);
+		var scopes = mock(EducationDataScopeService.class);
+		when(terms.findByTermCode("2026-2027-1"))
+				.thenReturn(Optional.of(new AcademicTerm()));
+		var parser = new SchedulingAiRequirementParser(terms,
+				mock(CourseOfferingRepository.class),
+				mock(TeacherAcademicProfileRepository.class), scopes);
+		var request = new SchedulingAiRunRequest("date-rules", "2026-2027-1",
+				"GLOBAL", Set.of(), 1,
+				"按学校校历处理节假日与调休；按考试计划处理考试占课；按已批准教师请假处理代课");
+
+		var plan = parser.parse(request, "admin").plan();
+
+		assertThat(plan.readyForConfirmation()).isTrue();
+		assertThat(plan.dateRules()).extracting(item -> item.type())
+				.containsExactly("CALENDAR", "EXAM", "LEAVE");
+		var unverified = new SchedulingAiRunRequest("unverified-date", "2026-2027-1",
+				"GLOBAL", Set.of(), 1, "10月1日新增休假并自动补课");
+		assertThat(parser.parse(unverified, "admin").plan().readyForConfirmation()).isFalse();
+	}
+
+	@Test
 	void rangesCannotBeMistakenForJustTheirEndpoints() {
 		assertThat(SchedulingAiSlotEvidence.forbidden("张老师周一到周五第1节不能上课")).isFalse();
 		assertThat(SchedulingAiSlotEvidence.forbidden("张老师周三第1至3节不能上课")).isFalse();
@@ -63,11 +86,15 @@ class SchedulingAiRequirementParserTest {
 		var parser = new SchedulingAiRequirementParser(terms, offerings, teachers, scopes,
 				new SchedulingAiModelClassifier(model, new ObjectMapper()), timetable);
 		var request = new SchedulingAiRunRequest("multi-slot", "2026-2027-1", "GLOBAL",
-				Set.of(), 1, input);
+				Set.of(), 1, input, 6, 10, 2, 17);
 
 		var plan = parser.parse(request, "admin").plan();
 
 		assertThat(plan.readyForConfirmation()).isTrue();
+		assertThat(plan.generationOptions().weekdays()).isEqualTo(6);
+		assertThat(plan.generationOptions().periodsPerDay()).isEqualTo(10);
+		assertThat(plan.generationOptions().startWeek()).isEqualTo(2);
+		assertThat(plan.generationOptions().endWeek()).isEqualTo(17);
 		assertThat(plan.slotRules()).hasSize(4)
 				.extracting(com.chronos.education.scheduling.model.SchedulingAiSlotRule::targetId)
 				.containsOnly("teacher-1");

@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.model;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import com.chronos.model.pojo.BaseEntity;
 
@@ -38,6 +39,19 @@ public class AcademicCalendarDay extends BaseEntity {
 	@Column(name = "teaching_day", nullable = false)
 	private Boolean teachingDay = false;
 
+	/** 补课日按此日期对应的星期和教学周展开周期课表。 */
+	@Column(name = "schedule_date")
+	private LocalDate scheduleDate;
+
 	@Column(name = "remark", length = 500)
 	private String remark;
+
+	@Column(name = "source_type", length = 16, nullable = false)
+	private String sourceType = "MANUAL";
+
+	@Column(name = "source_url", length = 500)
+	private String sourceUrl;
+
+	@Column(name = "imported_at")
+	private LocalDateTime importedAt;
 }

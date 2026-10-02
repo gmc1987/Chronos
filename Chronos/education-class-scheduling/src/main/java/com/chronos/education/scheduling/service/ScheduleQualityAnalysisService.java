@@ -386,11 +386,16 @@ public class ScheduleQualityAnalysisService {
 			Map<LocalDate, AcademicCalendarDay> exceptions) {
 		int result = 0;
 		for (LocalDate date = term.getStartDate(); !date.isAfter(term.getEndDate()); date = date.plusDays(1)) {
-			if (date.getDayOfWeek().getValue() != entry.getDayOfWeek()
-					|| !isTeachingDate(date, exceptions)) {
+			if (!isTeachingDate(date, exceptions)) {
 				continue;
 			}
-			int week = (int) (ChronoUnit.DAYS.between(term.getStartDate(), date) / 7) + 1;
+			AcademicCalendarDay day = exceptions.get(date);
+			LocalDate scheduleDate = day == null || day.getScheduleDate() == null
+					? date : day.getScheduleDate();
+			if (scheduleDate.getDayOfWeek().getValue() != entry.getDayOfWeek()) {
+				continue;
+			}
+			int week = (int) (ChronoUnit.DAYS.between(term.getStartDate(), scheduleDate) / 7) + 1;
 			int startWeek = entry.getStartWeek() == null ? 1 : entry.getStartWeek();
 			int endWeek = entry.getEndWeek() == null ? term.getWeekCount() : entry.getEndWeek();
 			if (week >= startWeek && week <= endWeek && matchesPattern(entry.getWeekPattern(), week)) {

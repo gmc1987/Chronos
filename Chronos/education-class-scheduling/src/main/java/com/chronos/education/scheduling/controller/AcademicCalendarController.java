@@ -17,16 +17,22 @@ import com.chronos.education.scheduling.model.BellPeriod;
 import com.chronos.education.scheduling.model.BellSchedule;
 import com.chronos.education.scheduling.service.AcademicCalendarService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.education.scheduling.service.OfficialHolidayImportService;
 import org.springframework.security.core.Authentication;
 
 @RestController
 public class AcademicCalendarController {
 	private final AcademicCalendarService service;
 	private final EducationDataScopeService dataScopes;
+	private final OfficialHolidayImportService holidayImports;
 
-	public AcademicCalendarController(AcademicCalendarService service, EducationDataScopeService dataScopes) {
+	public AcademicCalendarController(
+			AcademicCalendarService service,
+			EducationDataScopeService dataScopes,
+			OfficialHolidayImportService holidayImports) {
 		this.service = service;
 		this.dataScopes = dataScopes;
+		this.holidayImports = holidayImports;
 	}
 
 	@GetMapping("/admin/education/term-progress")
@@ -65,6 +71,19 @@ public class AcademicCalendarController {
 		service.deleteCalendarDay(id);
 		return ok(null);
 	}
+
+	@PostMapping("/admin/education/holidays/import")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
+	public ResultData<?> importHolidays(
+			@RequestBody HolidayImportCommand command,
+			Authentication authentication) {
+		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		return ok("MANUAL".equals(command.mode())
+				? holidayImports.importManual(command.termId(), command.year(), command.content())
+				: holidayImports.importOfficial(command.termId(), command.year()));
+	}
+
+	public record HolidayImportCommand(String termId, int year, String mode, String content) { }
 
 	@GetMapping("/admin/education/bell-schedules")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")

@@ -18,7 +18,9 @@ public record SchedulingAiPlan(
 		List<SchedulingAiWeekRule> weekRules,
 		List<SchedulingAiLockedEntry> lockedEntries,
 		List<SchedulingAiSoftPriority> softPriorities,
-		List<SchedulingAiSlotRule> slotRules) {
+		List<SchedulingAiSlotRule> slotRules,
+		SchedulingAiGenerationOptions generationOptions,
+		List<SchedulingAiDateRule> dateRules) {
 	public SchedulingAiPlan {
 		selectedOfferingIds = selectedOfferingIds == null ? Set.of() : Set.copyOf(selectedOfferingIds);
 		constraints = constraints == null ? List.of() : List.copyOf(constraints);
@@ -30,6 +32,37 @@ public record SchedulingAiPlan(
 		lockedEntries = lockedEntries == null ? List.of() : List.copyOf(lockedEntries);
 		softPriorities = softPriorities == null ? List.of() : List.copyOf(softPriorities);
 		slotRules = slotRules == null ? List.of() : List.copyOf(slotRules);
+		dateRules = dateRules == null ? List.of() : List.copyOf(dateRules);
+	}
+
+	public SchedulingAiPlan(int schemaVersion, String skillCode, String semesterCode,
+			String mode, Set<String> selectedOfferingIds, int candidateCount,
+			List<SchedulingAiConstraint> constraints, List<String> clarifications,
+			List<String> unsupported, List<String> unresolvedClauses,
+			List<SchedulingAiOfferingConstraint> offeringConstraints,
+			List<SchedulingAiWeekRule> weekRules,
+			List<SchedulingAiLockedEntry> lockedEntries,
+			List<SchedulingAiSoftPriority> softPriorities,
+			List<SchedulingAiSlotRule> slotRules,
+			SchedulingAiGenerationOptions generationOptions) {
+		this(schemaVersion, skillCode, semesterCode, mode, selectedOfferingIds,
+				candidateCount, constraints, clarifications, unsupported, unresolvedClauses,
+				offeringConstraints, weekRules, lockedEntries, softPriorities, slotRules,
+				generationOptions, List.of());
+	}
+
+	public SchedulingAiPlan(int schemaVersion, String skillCode, String semesterCode,
+			String mode, Set<String> selectedOfferingIds, int candidateCount,
+			List<SchedulingAiConstraint> constraints, List<String> clarifications,
+			List<String> unsupported, List<String> unresolvedClauses,
+			List<SchedulingAiOfferingConstraint> offeringConstraints,
+			List<SchedulingAiWeekRule> weekRules,
+			List<SchedulingAiLockedEntry> lockedEntries,
+			List<SchedulingAiSoftPriority> softPriorities,
+			List<SchedulingAiSlotRule> slotRules) {
+		this(schemaVersion, skillCode, semesterCode, mode, selectedOfferingIds,
+				candidateCount, constraints, clarifications, unsupported, unresolvedClauses,
+				offeringConstraints, weekRules, lockedEntries, softPriorities, slotRules, null);
 	}
 
 	public SchedulingAiPlan(int schemaVersion, String skillCode, String semesterCode,

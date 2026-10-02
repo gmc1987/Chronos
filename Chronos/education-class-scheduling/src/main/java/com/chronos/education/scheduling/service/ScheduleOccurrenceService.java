@@ -22,13 +22,17 @@ import com.chronos.education.scheduling.dao.ScheduleDateExceptionRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
+import com.chronos.education.scheduling.dao.LeaveRequestRecordRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
+import com.chronos.education.scheduling.model.AcademicCalendarDay;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.ScheduleDateException;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.ScheduleEntryView;
 import com.chronos.education.scheduling.model.ScheduleOccurrenceView;
+import com.chronos.education.scheduling.model.PendingMakeupView;
+import com.chronos.education.scheduling.model.TeacherLeaveCoverageView;
 
 /** 将周期课表展开为具体日期课表，并在读取时叠加停课、调课、代课和补课例外。 */
 @Service
@@ -46,6 +50,7 @@ public class ScheduleOccurrenceService {
 	private final TeachingClassMemberRepository teachingClassMembers;
 	private final ExamResourceReservationService examReservations;
 	private final EducationResourceTransactionLock resourceLock;
+	private final LeaveRequestRecordRepository leaveRecords;
 
 	public ScheduleOccurrenceService(
 			AcademicTermRepository terms,
@@ -59,7 +64,8 @@ public class ScheduleOccurrenceService {
 			TeacherTimeConstraintRepository teacherConstraints,
 			TeachingClassMemberRepository teachingClassMembers,
 			ExamResourceReservationService examReservations,
-			EducationResourceTransactionLock resourceLock) {
+			EducationResourceTransactionLock resourceLock,
+			LeaveRequestRecordRepository leaveRecords) {
 		this.terms = terms;
 		this.calendarDays = calendarDays;
 		this.entries = entries;
@@ -72,6 +78,7 @@ public class ScheduleOccurrenceService {
 		this.teachingClassMembers = teachingClassMembers;
 		this.examReservations = examReservations;
 		this.resourceLock = resourceLock;
+		this.leaveRecords = leaveRecords;
 	}
 
 	@Transactional(readOnly = true)
@@ -113,15 +120,23 @@ public class ScheduleOccurrenceService {
 		if (date.isBefore(term.getStartDate()) || date.isAfter(term.getEndDate())) {
 			return List.of();
 		}
-		boolean teachingDate = calendarDays.findByAcademicTermIdAndCalendarDate(term.getId(), date)
-				.map(item -> Boolean.TRUE.equals(item.getTeachingDay()))
-				.orElse(true);
+		AcademicCalendarDay calendarDay = calendarDays
+				.findByAcademicTermIdAndCalendarDate(term.getId(), date).orElse(null);
+		boolean teachingDate = calendarDay == null
+				? date.getDayOfWeek().getValue() <= 5
+				: Boolean.TRUE.equals(calendarDay.getTeachingDay());
+		if (teachingDate && date.getDayOfWeek().getValue() > 5
+				&& (calendarDay == null || calendarDay.getScheduleDate() == null)) {
+			throw new IllegalStateException("周末教学日尚未指定参照课表日期：" + date);
+		}
+		LocalDate scheduleDate = calendarDay == null || calendarDay.getScheduleDate() == null
+				? date : calendarDay.getScheduleDate();
 		List<ScheduleDateException> active = exceptions
 				.findBySemesterCodeAndStatusOrderBySourceDateAsc(semesterCode, "ACTIVE");
 		List<ScheduleOccurrenceView> result = new ArrayList<>();
 		if (teachingDate) {
 			schedule.stream()
-					.filter(entry -> scheduledOn(entry, term, date))
+					.filter(entry -> scheduledOn(entry, term, scheduleDate))
 					.map(entry -> baseOccurrence(entry, date, active))
 					.forEach(result::add);
 		}
@@ -175,6 +190,76 @@ public class ScheduleOccurrenceService {
 		return exceptions.findBySemesterCodeOrderBySourceDateDesc(semesterCode);
 	}
 
+	/** 假期停课只影响具体发生日；未安置的课次在此列出，供教务提前或顺延补课。 */
+	@Transactional(readOnly = true)
+	public List<PendingMakeupView> pendingMakeups(String semesterCode) {
+		AcademicTerm term = term(semesterCode);
+		List<AcademicCalendarDay> days = calendarDays
+				.findByAcademicTermIdOrderByCalendarDate(term.getId());
+		Set<LocalDate> coveredDates = days.stream()
+				.filter(day -> Boolean.TRUE.equals(day.getTeachingDay()))
+				.map(AcademicCalendarDay::getScheduleDate)
+				.filter(date -> date != null)
+				.collect(Collectors.toSet());
+		Set<String> settledCourses = exceptions
+				.findBySemesterCodeAndStatusOrderBySourceDateAsc(semesterCode, "ACTIVE")
+				.stream()
+				.filter(item -> "MAKEUP".equals(item.getExceptionType())
+						|| "CANCEL".equals(item.getExceptionType()))
+				.map(item -> item.getSourceEntryId() + "@" + item.getSourceDate())
+				.collect(Collectors.toSet());
+		List<ScheduleEntryView> weekly = scheduling.schedule(semesterCode);
+		return days.stream()
+				.filter(day -> !Boolean.TRUE.equals(day.getTeachingDay()))
+				.filter(day -> !coveredDates.contains(day.getCalendarDate()))
+				.flatMap(day -> weekly.stream()
+						.filter(entry -> scheduledOn(entry, term, day.getCalendarDate()))
+						.filter(entry -> !settledCourses.contains(
+								entry.id() + "@" + day.getCalendarDate()))
+						.map(entry -> new PendingMakeupView(day.getCalendarDate(), entry)))
+				.toList();
+	}
+
+	/** 请假审批只生成待处理课次；教务指定代课教师时仍走日期例外和硬冲突校验。 */
+	@Transactional(readOnly = true)
+	public List<TeacherLeaveCoverageView> pendingTeacherLeaveCoverage(String semesterCode) {
+		AcademicTerm term = term(semesterCode);
+		Map<String, String> teacherByOffering = offerings
+				.findBySemesterCodeOrderByOfferingCode(semesterCode)
+				.stream()
+				.collect(Collectors.toMap(CourseOffering::getId, CourseOffering::getTeacherId));
+		return leaveRecords.findByStartDateLessThanEqualAndEndDateGreaterThanEqual(
+				term.getEndDate(), term.getStartDate()).stream()
+				.filter(leave -> "TEACHER".equals(leave.getApplicantType()))
+				.filter(leave -> "APPROVED".equals(leave.getStatus()))
+				.flatMap(leave -> {
+					LocalDate first = leave.getStartDate().isBefore(term.getStartDate())
+							? term.getStartDate() : leave.getStartDate();
+					LocalDate last = leave.getEndDate().isAfter(term.getEndDate())
+							? term.getEndDate() : leave.getEndDate();
+					return first.datesUntil(last.plusDays(1))
+							.flatMap(date -> leaveCoverageOn(
+									date, leave.getId(), leave.getApplicantId(),
+									semesterCode, teacherByOffering));
+				})
+				.sorted(Comparator.comparing(TeacherLeaveCoverageView::date)
+						.thenComparing(item -> item.occurrence().effectivePeriodNo()))
+				.toList();
+	}
+
+	private java.util.stream.Stream<TeacherLeaveCoverageView> leaveCoverageOn(
+			LocalDate date,
+			String leaveId,
+			String teacherId,
+			String semesterCode,
+			Map<String, String> teacherByOffering) {
+		return occurrences(semesterCode, date).stream()
+				.filter(item -> teacherId.equals(teacherByOffering.get(item.entry().offeringId())))
+				.filter(item -> !Set.of("CANCELLED", "MOVED_OUT", "SUBSTITUTED")
+						.contains(item.occurrenceStatus()))
+				.map(item -> new TeacherLeaveCoverageView(leaveId, teacherId, date, item));
+	}
+
 	@Transactional
 	public ScheduleDateException saveException(String id, ScheduleDateException command) {
 		AcademicTerm term = term(command.getSemesterCode());
@@ -196,7 +281,22 @@ public class ScheduleOccurrenceService {
 		if (duplicateActive) {
 			throw new IllegalStateException("该课程日期已有生效中的调整，请先撤销或编辑原记录");
 		}
-		if (!scheduledOn(source, term, command.getSourceDate())) {
+		AcademicCalendarDay sourceDay = calendarDays
+				.findByAcademicTermIdAndCalendarDate(term.getId(), command.getSourceDate())
+				.orElse(null);
+		if (sourceDay != null && !Boolean.TRUE.equals(sourceDay.getTeachingDay())
+				&& !Set.of("MAKEUP", "CANCEL").contains(command.getExceptionType())) {
+			throw new IllegalArgumentException("原上课日期不是教学日");
+		}
+		if ("MAKEUP".equals(command.getExceptionType())
+				&& calendarDays.findByAcademicTermIdOrderByCalendarDate(term.getId()).stream()
+						.anyMatch(day -> Boolean.TRUE.equals(day.getTeachingDay())
+								&& command.getSourceDate().equals(day.getScheduleDate()))) {
+			throw new IllegalStateException("原课次已由补班日承接，不能重复补课");
+		}
+		LocalDate sourceScheduleDate = sourceDay == null || sourceDay.getScheduleDate() == null
+				? command.getSourceDate() : sourceDay.getScheduleDate();
+		if (!scheduledOn(source, term, sourceScheduleDate)) {
 			throw new IllegalArgumentException("原上课日期与周期课表不匹配");
 		}
 		if ("MOVE".equals(command.getExceptionType()) || "MAKEUP".equals(command.getExceptionType())) {
@@ -341,10 +441,18 @@ public class ScheduleOccurrenceService {
 		String teacherId = "SUBSTITUTE".equals(command.getExceptionType())
 				? command.getSubstituteTeacherId()
 				: sourceOffering.getTeacherId();
+		if ("SUBSTITUTE".equals(command.getExceptionType())
+				&& teacherId.equals(sourceOffering.getTeacherId())) {
+			throw new IllegalArgumentException("代课教师不能是原任课教师");
+		}
+		if (leaveRecords.existsByApplicantTypeAndApplicantIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+				"TEACHER", teacherId, "APPROVED", date, date)) {
+			throw new IllegalStateException("目标教师在所选日期已批准请假");
+		}
 
 		boolean teachingDate = calendarDays.findByAcademicTermIdAndCalendarDate(term.getId(), date)
 				.map(day -> Boolean.TRUE.equals(day.getTeachingDay()))
-				.orElse(true);
+				.orElse(date.getDayOfWeek().getValue() <= 5);
 		if (!teachingDate) {
 			throw new IllegalStateException("目标日期不是教学日");
 		}

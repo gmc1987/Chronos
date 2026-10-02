@@ -87,6 +87,13 @@ public class SchedulingAgentPlanValidator {
 		scopes.assertFullAccess(scope);
 		var dimensions = timetable.dimensions(plan.semesterCode(), plan.mode(),
 				plan.selectedOfferingIds());
+		var options = plan.generationOptions() == null
+				? new com.chronos.education.scheduling.model.SchedulingAiGenerationOptions(
+					dimensions.weekdays(), dimensions.periodsPerDay(), 1, dimensions.endWeek())
+				: plan.generationOptions();
+		if (options.endWeek() > dimensions.endWeek()) {
+			throw new IllegalStateException("确认计划的结束周超出学期教学周数");
+		}
 		Set<String> targetIds = timetable.targetOfferingIds(plan.semesterCode(), plan.mode(),
 				plan.selectedOfferingIds());
 		Map<String, CourseOffering> sourceOfferings = sourceOfferings(plan, targetIds, scope);
@@ -122,8 +129,8 @@ public class SchedulingAgentPlanValidator {
 							|| item.sourceText() == null || item.sourceText().isBlank()
 							|| item.dayOfWeek() == null || item.periodNo() == null
 							|| item.dayOfWeek() < 1 || item.periodNo() < 1
-							|| item.dayOfWeek() > dimensions.weekdays()
-							|| item.periodNo() > dimensions.periodsPerDay()) {
+						|| item.dayOfWeek() > options.weekdays()
+						|| item.periodNo() > options.periodsPerDay()) {
 						throw new IllegalStateException("结构化规则未被求解器支持");
 					}
 					scopes.assertTeacherAccess(scope, item.teacherId());
@@ -149,7 +156,8 @@ public class SchedulingAgentPlanValidator {
 				.map(item -> {
 					CourseOffering offering = requireSourceOffering(
 							sourceOfferings, item.offeringId(), item.sourceText());
-					if (item.startWeek() < 1 || item.endWeek() > dimensions.endWeek()
+					if (item.startWeek() < options.startWeek()
+							|| item.endWeek() > options.endWeek()
 							|| item.endWeek() < item.startWeek()
 							|| item.weekPattern() == null
 							|| !Set.of("ALL", "ODD", "EVEN").contains(item.weekPattern())
@@ -177,7 +185,7 @@ public class SchedulingAgentPlanValidator {
 					if (entry == null || !plan.semesterCode().equals(entry.getSemesterCode())
 							|| !item.offeringId().equals(entry.getOfferingId())
 							|| item.dayOfWeek() < 1 || item.dayOfWeek() > 7
-							|| item.periodNo() < 1 || item.periodNo() > dimensions.periodsPerDay()
+							|| item.periodNo() < 1 || item.periodNo() > options.periodsPerDay()
 							|| entry.getDayOfWeek() == null
 							|| entry.getDayOfWeek() != item.dayOfWeek()
 							|| entry.getPeriodNo() == null
@@ -227,8 +235,8 @@ public class SchedulingAgentPlanValidator {
 		List<ScheduleRunConstraints.SlotExclusion> slotExclusions = plan.slotRules().stream()
 				.map(item -> {
 					if (item.sourceText() == null || item.sourceText().isBlank()
-							|| item.dayOfWeek() < 1 || item.dayOfWeek() > dimensions.weekdays()
-							|| item.periodNo() < 1 || item.periodNo() > dimensions.periodsPerDay()) {
+							|| item.dayOfWeek() < 1 || item.dayOfWeek() > options.weekdays()
+							|| item.periodNo() < 1 || item.periodNo() > options.periodsPerDay()) {
 						throw new IllegalStateException("组合时段规则超出排课范围");
 					}
 					if ("OFFERING".equals(item.targetType())) {
@@ -311,7 +319,7 @@ public class SchedulingAgentPlanValidator {
 				plan.semesterCode(), "AI-" + plan.semesterCode(),
 				"LOCAL".equals(plan.mode()) ? "LOCAL" : "FULL",
 				plan.selectedOfferingIds(), plan.candidateCount(),
-				dimensions.weekdays(), dimensions.periodsPerDay(), 1, dimensions.endWeek());
+				options.weekdays(), options.periodsPerDay(), options.startWeek(), options.endWeek());
 		return new Parameters(command, new ScheduleRunConstraints(
 				rules, durationRules, weekRules, lockedEntries, softPriorities, slotExclusions));
 	}

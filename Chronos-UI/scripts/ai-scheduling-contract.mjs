@@ -30,8 +30,12 @@ for (const status of ['DRAFT', 'NEEDS_CLARIFICATION', 'READY_FOR_CONFIRMATION', 
   if (!pageSource.includes(status)) throw new Error(`AI 排课页面缺少状态: ${status}`)
 }
 
-for (const forbiddenAction of [/\bapply\b/i, /\bpublish\b/i, /\brollback\b/i, /应用/, /发布/, /回滚/]) {
+// 只禁止 AI 页面执行这些写操作；前往普通排课审核页的说明和按钮属于只读导航。
+for (const forbiddenAction of [/\bapplyScheduleCandidate\b/i, /\bpublishSchedule\b/i, /\brollbackSchedule\b/i]) {
   if (forbiddenAction.test(pageSource)) throw new Error(`AI 排课页面包含禁止操作: ${forbiddenAction}`)
+}
+if (!pageSource.includes('前往审核与发布') || !pageSource.includes("path: '/admin/education/scheduling'")) {
+  throw new Error('AI 排课页面缺少前往普通排课审核的入口')
 }
 
 if (!industrySource.includes("path: '/admin/education/scheduling/ai'") || !industrySource.includes('component: AdminSchedulingAi')) {

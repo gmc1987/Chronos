@@ -86,6 +86,25 @@
       <el-tab-pane label="日期课表" name="date-schedule">
         <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button></div>
         <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
+        <h3>节假日待补课（{{ pendingMakeups.length }}）</h3>
+        <el-alert type="info" :closable="false" title="非教学日的原课次不会自动挤占后续课表；选择提前或顺延的目标日期、节次后按实际日期检查冲突。" />
+        <el-table :data="pendingMakeups" border empty-text="当前没有待补课次">
+          <el-table-column prop="sourceDate" label="原上课日期" width="130" />
+          <el-table-column label="课程" min-width="150"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column>
+          <el-table-column label="教学班" min-width="180"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column>
+          <el-table-column label="教师" width="120"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column>
+          <el-table-column label="原节次" width="90"><template #default="s">第 {{ s.row.entry.periodNo }} 节</template></el-table-column>
+          <AdaptiveActionColumn label="操作" width="170"><template #default="s"><el-button link type="primary" @click="openMakeup(s.row)">安排补课</el-button><el-button link @click="openWaiveMakeup(s.row)">确认不补</el-button></template></AdaptiveActionColumn>
+        </el-table>
+        <h3>教师请假待代课（{{ pendingSubstitutions.length }}）</h3>
+        <el-table :data="pendingSubstitutions" border empty-text="当前没有待安排代课的课次">
+          <el-table-column prop="date" label="上课日期" width="130" />
+          <el-table-column label="课程" min-width="150"><template #default="s">{{ s.row.occurrence.entry.courseName }}</template></el-table-column>
+          <el-table-column label="教学班" min-width="180"><template #default="s">{{ s.row.occurrence.entry.teachingClassName }}</template></el-table-column>
+          <el-table-column label="请假教师" width="120"><template #default="s">{{ s.row.occurrence.entry.teacherName }}</template></el-table-column>
+          <el-table-column label="节次" width="90"><template #default="s">第 {{ s.row.occurrence.effectivePeriodNo }} 节</template></el-table-column>
+          <AdaptiveActionColumn label="操作" width="150"><template #default="s"><el-button v-if="s.row.occurrence.occurrenceStatus === 'SCHEDULED'" link type="primary" @click="openSubstitution(s.row)">安排代课</el-button><span v-else>先处理原日期调整</span></template></AdaptiveActionColumn>
+        </el-table>
         <h3>日期调整历史</h3>
         <el-table :data="dateExceptionHistory" border>
           <el-table-column prop="sourceDate" label="原日期" width="120" />
@@ -585,6 +604,7 @@
     </el-dialog>
 
     <el-dialog v-model="dateExceptionDialog" title="课程日期调整" width="620px">
+      <el-alert v-if="dateExceptionError" :title="dateExceptionError" type="error" show-icon :closable="false" class="date-exception-error" />
       <el-form label-width="100px"><el-form-item label="调整类型"><el-radio-group v-model="dateExceptionForm.exceptionType"><el-radio value="MOVE">调课</el-radio><el-radio value="CANCEL">停课</el-radio><el-radio value="SUBSTITUTE">代课</el-radio><el-radio value="MAKEUP">补课</el-radio></el-radio-group></el-form-item><template v-if="['MOVE', 'MAKEUP'].includes(dateExceptionForm.exceptionType)"><el-form-item label="目标日期"><el-date-picker v-model="dateExceptionForm.targetDate" value-format="YYYY-MM-DD" /></el-form-item><el-form-item label="目标节次"><el-input-number v-model="dateExceptionForm.targetPeriodNo" :min="1" /></el-form-item><el-form-item label="目标教室"><el-select v-model="dateExceptionForm.targetClassroomId" clearable filterable><el-option v-for="item in classroomOptions" :key="item.id" :label="item.roomName" :value="item.id" /></el-select></el-form-item></template><el-form-item v-if="dateExceptionForm.exceptionType === 'SUBSTITUTE'" label="代课教师"><el-select v-model="dateExceptionForm.substituteTeacherId" filterable><el-option v-for="item in teachers" :key="item.id" :label="item.teacherName" :value="item.id" /></el-select></el-form-item><el-form-item label="变更原因"><el-input v-model="dateExceptionForm.reason" type="textarea" /></el-form-item></el-form>
       <template #footer><el-button @click="dateExceptionDialog = false">取消</el-button><el-button type="primary" @click="saveDateException">保存</el-button></template>
     </el-dialog>
@@ -686,6 +706,8 @@ import {
   listTeacherTimeConstraints,
   listClassroomUnavailableSlots,
   listScheduleOccurrences,
+  listSchedulePendingMakeups,
+  listSchedulePendingSubstitutions,
   listScheduleDimensionOptions,
   listScheduleDateExceptionHistory,
   cancelScheduleDateException,
@@ -699,7 +721,8 @@ const route = useRoute()
 const semesterCode = ref(typeof route.query.semesterCode === 'string' ? route.query.semesterCode : '')
 const scheduleFileInput = ref(null)
 const router = useRouter()
-const activeTab = ref('schedule')
+const activeTab = ref(['schedule', 'date-schedule', 'versions', 'quality', 'policy', 'candidates'].includes(route.query.schedulingTab)
+  ? route.query.schedulingTab : 'schedule')
 const scheduleView = ref('grid')
 const offerings = ref([])
 const classrooms = ref([])
@@ -760,6 +783,7 @@ const candidateGenerating = ref(false)
 const constraintDialog = ref(false)
 const roomConstraintDialog = ref(false)
 const dateExceptionDialog = ref(false)
+const dateExceptionError = ref('')
 const diffDialog = ref(false)
 const diffTitle = ref('方案差异')
 const currentDiff = ref(null)
@@ -770,6 +794,8 @@ const candidateForm = reactive({})
 const constraintForm = reactive({})
 const roomConstraintForm = reactive({})
 const dateExceptionForm = reactive({})
+const pendingMakeups = ref([])
+const pendingSubstitutions = ref([])
 let loadSequence = 0
 let dimensionOptionsSequence = 0
 let scheduleSequence = 0
@@ -849,6 +875,8 @@ const clearSemesterData = () => {
   teacherConstraints.value = []
   roomConstraints.value = []
   occurrences.value = []
+  pendingMakeups.value = []
+  pendingSubstitutions.value = []
   dateExceptionHistory.value = []
   quality.value = {}
   reset(policy, {})
@@ -1023,7 +1051,13 @@ const loadOccurrences = async () => {
 const loadDateExceptionHistory = async () => {
   dateExceptionHistory.value = (await listScheduleDateExceptionHistory(semesterCode.value)).data || []
 }
-const loadDateSchedule = async () => Promise.all([loadOccurrences(), loadDateExceptionHistory()])
+const loadPendingMakeups = async () => {
+  pendingMakeups.value = (await listSchedulePendingMakeups(semesterCode.value)).data || []
+}
+const loadPendingSubstitutions = async () => {
+  pendingSubstitutions.value = (await listSchedulePendingSubstitutions(semesterCode.value)).data || []
+}
+const loadDateSchedule = async () => Promise.all([loadOccurrences(), loadDateExceptionHistory(), loadPendingMakeups(), loadPendingSubstitutions()])
 const changeDimension = async () => {
   scheduleTargetId.value = ''
   schedule.value = []
@@ -1137,6 +1171,7 @@ const openRoomConstraint = row => { reset(roomConstraintForm, row ? { ...row } :
 const saveRoomConstraint = async () => { const payload = { ...roomConstraintForm, semesterCode: semesterCode.value }; await (roomConstraintForm.id ? updateClassroomUnavailableSlot(roomConstraintForm.id, payload) : createClassroomUnavailableSlot(payload)); roomConstraintDialog.value = false; ElMessage.success('教室不可用时段已保存'); await loadAll() }
 const removeRoomConstraint = async row => { await ElMessageBox.confirm('确认删除该教室不可用时段？', '删除'); await deleteClassroomUnavailableSlot(row.id); await loadAll() }
 const openDateException = occurrence => {
+  dateExceptionError.value = ''
   reset(dateExceptionForm, {
     semesterCode: semesterCode.value,
     sourceEntryId: occurrence.entry.id,
@@ -1149,11 +1184,59 @@ const openDateException = occurrence => {
   })
   dateExceptionDialog.value = true
 }
+const openMakeup = item => {
+  dateExceptionError.value = ''
+  reset(dateExceptionForm, {
+    semesterCode: semesterCode.value,
+    sourceEntryId: item.entry.id,
+    sourceDate: item.sourceDate,
+    exceptionType: 'MAKEUP',
+    targetDate: null,
+    targetPeriodNo: item.entry.periodNo,
+    targetClassroomId: item.entry.classroomId,
+    reason: '节假日停课补课',
+  })
+  dateExceptionDialog.value = true
+}
+const openWaiveMakeup = item => {
+  dateExceptionError.value = ''
+  reset(dateExceptionForm, {
+    semesterCode: semesterCode.value,
+    sourceEntryId: item.entry.id,
+    sourceDate: item.sourceDate,
+    exceptionType: 'CANCEL',
+    targetDate: null,
+    targetPeriodNo: null,
+    targetClassroomId: null,
+    reason: '节假日停课，学校确认不补课',
+  })
+  dateExceptionDialog.value = true
+}
+const openSubstitution = item => {
+  dateExceptionError.value = ''
+  reset(dateExceptionForm, {
+    semesterCode: semesterCode.value,
+    sourceEntryId: item.occurrence.entry.id,
+    sourceDate: item.date,
+    exceptionType: 'SUBSTITUTE',
+    targetDate: null,
+    targetPeriodNo: null,
+    targetClassroomId: null,
+    substituteTeacherId: null,
+    reason: `教师请假代课（请假记录：${item.leaveId}）`,
+  })
+  dateExceptionDialog.value = true
+}
 const saveDateException = async () => {
-  await createScheduleDateException(dateExceptionForm)
-  dateExceptionDialog.value = false
-  ElMessage.success('日期课表调整已保存')
-  await loadDateSchedule()
+  dateExceptionError.value = ''
+  try {
+    await createScheduleDateException(dateExceptionForm)
+    dateExceptionDialog.value = false
+    ElMessage.success('日期课表调整已保存')
+    await loadDateSchedule()
+  } catch (error) {
+    dateExceptionError.value = error.response?.data?.msg || error.message || '日期课表调整失败'
+  }
 }
 const cancelDateException = async row => {
   await ElMessageBox.confirm('撤销后将恢复原日期课表，是否继续？', '撤销日期调整')
@@ -1355,6 +1438,20 @@ const rollbackVersion = async row => {
 }
 onMounted(async () => {
   await Promise.all([loadAll(), loadIncidents()])
+  const { dateAction, sourceEntryId, sourceDate } = route.query
+  if (activeTab.value === 'date-schedule' && typeof sourceEntryId === 'string'
+    && typeof sourceDate === 'string') {
+    const item = dateAction === 'MAKEUP'
+      ? pendingMakeups.value.find(row => row.entry.id === sourceEntryId && row.sourceDate === sourceDate)
+      : dateAction === 'SUBSTITUTE'
+        ? pendingSubstitutions.value.find(row => row.occurrence.entry.id === sourceEntryId && row.date === sourceDate)
+        : null
+    if (item && dateAction === 'MAKEUP') openMakeup(item)
+    else if (item && item.occurrence.occurrenceStatus === 'SCHEDULED') openSubstitution(item)
+    else if (dateAction === 'MAKEUP' || dateAction === 'SUBSTITUTE') {
+      ElMessage.info('该日期课次已变化，请从最新待处理清单重新选择')
+    }
+  }
   generationJobTimer = window.setInterval(() => {
     if (activeTab.value === 'candidates'
       && generationJobs.value.some(job => ['QUEUED', 'RUNNING'].includes(job.status))) {
@@ -1366,6 +1463,7 @@ onUnmounted(() => window.clearInterval(generationJobTimer))
 </script>
 
 <style scoped>
+.date-exception-error { margin-bottom: 16px; }
 .page {
   padding: 24px;
 }

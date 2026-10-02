@@ -10,12 +10,14 @@ import {
   createAiSchedulingRun,
   generateAiSchedulingRun,
   getAiSchedulingRun,
+  getAiSchedulingDateImpact,
   listAiSchedulingCandidates,
   listAcademicTerms,
   listCourseOfferings,
   previewAiSchedulingCandidate,
   explainAiSchedulingCandidate,
   replyAiSchedulingRun,
+  submitScheduleCandidateReview,
 } from '../../../api/admin'
 
 const POLL_INTERVAL = 2500
@@ -54,11 +56,17 @@ const form = reactive({
   mode: 'GLOBAL',
   selectedOfferingIds: [],
   candidateCount: 3,
+  weekdays: 5,
+  periodsPerDay: 8,
+  startWeek: 1,
+  endWeek: 20,
 })
 const terms = ref([])
 const offerings = ref([])
 const run = ref(null)
 const candidates = ref([])
+const dateImpact = ref(null)
+let dateImpactKey = ''
 const candidateSelection = ref([])
 const previewCandidate = ref(null)
 const previewDiff = ref(null)
@@ -67,12 +75,14 @@ let explanationRequestSequence = 0
 const comparedCandidates = ref([])
 const clarificationReply = ref('')
 const creating = ref(false)
+const createError = ref('')
 const loadingOfferings = ref(false)
 const replying = ref(false)
 const confirming = ref(false)
 const generating = ref(false)
 const cancelling = ref(false)
 const loadingCandidates = ref(false)
+const submittingCandidateId = ref('')
 const runRequestSequence = ref(0)
 let pollTimer = null
 
@@ -182,6 +192,21 @@ const loadRun = async (runId, sequence = runRequestSequence.value) => {
     const nextRun = unwrapRun(response)
     if (!nextRun?.id) throw new Error('服务端未返回有效的排课 Run')
     run.value = nextRun
+    const nextDateKey = `${runId}:${nextRun.planVersion}`
+    if (nextRun.plan?.dateRules?.length && dateImpactKey !== nextDateKey) {
+      try {
+        const impact = unwrapData(await getAiSchedulingDateImpact(runId))
+        if (sequence === runRequestSequence.value && run.value?.id === runId) {
+          dateImpact.value = impact
+          dateImpactKey = nextDateKey
+        }
+      } catch (error) {
+        if (sequence === runRequestSequence.value) showError(error)
+      }
+    } else if (!nextRun.plan?.dateRules?.length) {
+      dateImpact.value = null
+      dateImpactKey = ''
+    }
     if (nextRun.status === 'CANDIDATES_READY') await loadCandidates(runId, sequence)
     if (sequence === runRequestSequence.value && POLLING_STATUSES.includes(nextRun.status)) {
       schedulePoll(runId, sequence)
@@ -217,11 +242,14 @@ const loadInitial = async () => {
   try {
     terms.value = unwrapList(await listAcademicTerms({ page: 0, size: 100 }))
     const requestedTerm = route.query.semesterCode
+    const today = new Date().toISOString().slice(0, 10)
     const current = terms.value.find(term => term.termCode === requestedTerm)
+      || terms.value.find(term => term.startDate <= today && term.endDate >= today)
       || terms.value.find(term => term.currentTerm)
       || terms.value[0]
     if (current) {
       form.semesterCode = current.termCode
+      form.endWeek = current.weekCount || 20
       await loadOfferings()
     }
   } catch (error) {
@@ -231,6 +259,7 @@ const loadInitial = async () => {
 
 const changeSemester = async () => {
   form.selectedOfferingIds = []
+  form.endWeek = terms.value.find(term => term.termCode === form.semesterCode)?.weekCount || 20
   await loadOfferings()
 }
 
@@ -239,11 +268,15 @@ const createRun = async () => {
   if (!form.semesterCode) return ElMessage.warning('请选择学期')
   if (!requestText) return ElMessage.warning('请输入自然语言排课需求')
   if (form.mode === 'LOCAL' && !form.selectedOfferingIds.length) return ElMessage.warning('LOCAL 模式至少选择一个教学任务')
+  if (form.endWeek < form.startWeek) return ElMessage.warning('结束周不能早于开始周')
 
   stopPolling()
   const sequence = runRequestSequence.value + 1
   runRequestSequence.value = sequence
+  createError.value = ''
   run.value = null
+  dateImpact.value = null
+  dateImpactKey = ''
   candidates.value = []
   candidateSelection.value = []
   previewCandidate.value = null
@@ -257,6 +290,10 @@ const createRun = async () => {
       requestText,
       mode: form.mode,
       candidateCount: form.candidateCount,
+      weekdays: form.weekdays,
+      periodsPerDay: form.periodsPerDay,
+      startWeek: form.startWeek,
+      endWeek: form.endWeek,
     }
     if (form.mode === 'LOCAL') payload.selectedOfferingIds = [...form.selectedOfferingIds]
     const response = await createAiSchedulingRun(payload)
@@ -270,7 +307,10 @@ const createRun = async () => {
     if (!await loadRun(runId, sequence)) return
     ElMessage.success('排课 Run 已创建')
   } catch (error) {
-    if (sequence === runRequestSequence.value) showError(error)
+    if (sequence === runRequestSequence.value) {
+      createError.value = errorText(error)
+      showError(error)
+    }
   } finally {
     if (sequence === runRequestSequence.value) creating.value = false
   }
@@ -379,6 +419,37 @@ const showCandidatePreview = async candidate => {
   }
 }
 
+const confirmCandidateForReview = async candidate => {
+  const runId = run.value?.id
+  if (!runId || !['DRAFT', 'REJECTED'].includes(candidate.reviewStatus)) return
+  try {
+    const response = await previewAiSchedulingCandidate(runId, candidate.id)
+    if (run.value?.id !== runId) return
+    const diff = unwrapData(response) || {}
+    let dateReminder = ''
+    if (parsedPlan.value?.dateRules?.length) {
+      const impact = unwrapData(await getAiSchedulingDateImpact(runId))
+      if (run.value?.id !== runId) return
+      dateImpact.value = impact
+      dateReminder = ` 当前工作课表另有待补课 ${impact?.pendingMakeups?.length || 0} 节、待代课 ${impact?.pendingSubstitutions?.length || 0} 节；考试占课请查看考试计划。这些日期事项不随周课表候选一并批准，应用候选后需重新核对。`
+    }
+    await ElMessageBox.confirm(
+      `“${candidate.planName}”相对当前课表新增 ${diff.added ?? 0}、移动 ${diff.moved ?? 0}、移除 ${diff.removed ?? 0} 条。确认提交后由另一名排课管理员审核。${dateReminder}`,
+      '确认候选课表并提交审核',
+      { type: 'warning' },
+    )
+    if (run.value?.id !== runId) return
+    submittingCandidateId.value = candidate.id
+    await submitScheduleCandidateReview(candidate.id)
+    await loadCandidates(runId)
+    ElMessage.success('候选课表已提交审核')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') showError(error)
+  } finally {
+    submittingCandidateId.value = ''
+  }
+}
+
 const showModelExplanation = async candidate => {
   const runId = run.value?.id
   if (!runId) return
@@ -410,6 +481,30 @@ const compareCandidates = async () => {
   }
 }
 
+const openCandidateGovernance = () => router.push({
+  path: '/admin/education/scheduling',
+  query: { semesterCode: run.value?.semesterCode || form.semesterCode, aiRunId: run.value?.id },
+})
+
+const openDateSchedule = (action, item) => router.push({
+  path: '/admin/education/scheduling',
+  query: {
+    semesterCode: form.semesterCode,
+    schedulingTab: 'date-schedule',
+    aiRunId: run.value?.id,
+    ...(item ? {
+      dateAction: action,
+      sourceEntryId: action === 'MAKEUP' ? item.entry.id : item.occurrence.entry.id,
+      sourceDate: action === 'MAKEUP' ? item.sourceDate : item.date,
+    } : {}),
+  },
+})
+
+const openExamPlans = plan => router.push({
+  path: '/admin/education/exam/plans',
+  query: { semesterCode: form.semesterCode, ...(plan ? { examPlanId: plan.planId } : {}) },
+})
+
 onMounted(async () => {
   await loadInitial()
   const runId = route.query.aiRunId
@@ -437,6 +532,7 @@ onBeforeUnmount(() => {
 
     <el-card shadow="never" class="request-card">
       <template #header><span class="card-title">创建排课 Run</span></template>
+      <el-alert v-if="createError" :title="createError" type="error" show-icon :closable="false" />
       <el-form :model="form" label-width="110px" @submit.prevent="createRun">
         <el-form-item label="学期" required>
           <el-select v-model="form.semesterCode" placeholder="选择学期" filterable @change="changeSemester">
@@ -463,6 +559,17 @@ onBeforeUnmount(() => {
         <el-form-item label="候选数量">
           <el-input-number v-model="form.candidateCount" :min="1" :max="5" />
         </el-form-item>
+        <el-form-item label="每周上课天数">
+          <el-input-number v-model="form.weekdays" :min="1" :max="7" />
+        </el-form-item>
+        <el-form-item label="每日节数">
+          <el-input-number v-model="form.periodsPerDay" :min="1" :max="20" />
+        </el-form-item>
+        <el-form-item label="排课周次">
+          <el-input-number v-model="form.startWeek" :min="1" :max="form.endWeek" />
+          <span class="week-separator">至</span>
+          <el-input-number v-model="form.endWeek" :min="form.startWeek" :max="terms.find(term => term.termCode === form.semesterCode)?.weekCount || 52" />
+        </el-form-item>
         <el-form-item label="自然语言需求" required>
           <el-input
             v-model="form.requestText"
@@ -470,7 +577,7 @@ onBeforeUnmount(() => {
             :rows="5"
             maxlength="2000"
             show-word-limit
-            placeholder="例如：张老师周三下午不能上课；PLC 实训尽量连堂；PLC 实训单周第1周到第17周。保留现有课表项可写“保留PLC 实训周三第3节”；有歧义的规则会要求澄清。"
+            placeholder="例如：张老师周三下午不能上课；PLC 实训尽量连堂；按学校校历处理节假日与调休；按考试计划处理考试占课；按已批准教师请假处理代课。"
           />
         </el-form-item>
         <el-form-item>
@@ -529,6 +636,50 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="confirming" @click="confirmRun">确认解析计划</el-button>
       </section>
 
+      <section v-if="parsedPlan?.dateRules?.length" class="workflow-section">
+        <div class="section-heading">
+          <div><h3>日期规则影响核对</h3><p>以下影响依据当前工作课表计算；应用候选周课表后需重新核对。Agent 从校历、考试计划和已批准请假读取真实日期事项。补课和代课由教务确定日期、资源并通过硬冲突校验后保存；考试占课走独立审批。周课表候选本身不会自动结清这些事项。</p></div>
+        </div>
+        <el-alert v-if="!dateImpact" title="正在读取日期规则对应的业务数据" type="info" :closable="false" />
+        <template v-else>
+          <div v-if="dateImpact.rules.some(item => item.type === 'CALENDAR')" class="date-impact-group">
+            <h4>节假日与调休</h4>
+            <p>特殊校历日期 {{ dateImpact.calendarDays?.length || 0 }} 天；待安排补课 {{ dateImpact.pendingMakeups?.length || 0 }} 节。</p>
+            <el-table v-if="dateImpact.pendingMakeups?.length" :data="dateImpact.pendingMakeups.slice(0, 20)" border size="small">
+              <el-table-column prop="sourceDate" label="原日期" width="130" />
+              <el-table-column prop="entry.courseName" label="课程" min-width="160" />
+              <el-table-column prop="entry.teachingClassName" label="教学班" min-width="180" />
+              <el-table-column label="操作" width="110"><template #default="scope"><el-button link type="primary" @click="openDateSchedule('MAKEUP', scope.row)">安排补课</el-button></template></el-table-column>
+            </el-table>
+            <p v-if="dateImpact.pendingMakeups?.length > 20">这里只显示前 20 节，完整清单见日期课表。</p>
+            <el-button @click="openDateSchedule()">查看完整待补课清单</el-button>
+          </div>
+          <div v-if="dateImpact.rules.some(item => item.type === 'LEAVE')" class="date-impact-group">
+            <h4>教师请假代课</h4>
+            <p>已批准请假产生待代课 {{ dateImpact.pendingSubstitutions?.length || 0 }} 节。</p>
+            <el-table v-if="dateImpact.pendingSubstitutions?.length" :data="dateImpact.pendingSubstitutions.slice(0, 20)" border size="small">
+              <el-table-column prop="date" label="上课日期" width="130" />
+              <el-table-column prop="occurrence.entry.courseName" label="课程" min-width="160" />
+              <el-table-column prop="occurrence.entry.teacherName" label="请假教师" min-width="130" />
+              <el-table-column label="操作" width="110"><template #default="scope"><el-button link type="primary" :disabled="scope.row.occurrence.occurrenceStatus !== 'SCHEDULED'" @click="openDateSchedule('SUBSTITUTE', scope.row)">安排代课</el-button></template></el-table-column>
+            </el-table>
+            <p v-if="dateImpact.pendingSubstitutions?.length > 20">这里只显示前 20 节，完整清单见日期课表。</p>
+            <el-button @click="openDateSchedule()">查看完整待代课清单</el-button>
+          </div>
+          <div v-if="dateImpact.rules.some(item => item.type === 'EXAM')" class="date-impact-group">
+            <h4>考试占课</h4>
+            <el-table :data="dateImpact.examPlans || []" border size="small" empty-text="当前学期没有考试计划">
+              <el-table-column prop="planName" label="考试计划" min-width="180" />
+              <el-table-column prop="status" label="状态" width="110" />
+              <el-table-column prop="affectedLessonCount" label="受影响课次" width="120" />
+              <el-table-column prop="issue" label="待处理问题" min-width="180" />
+              <el-table-column label="操作" width="120"><template #default="scope"><el-button link type="primary" @click="openExamPlans(scope.row)">查看与审批</el-button></template></el-table-column>
+            </el-table>
+            <el-button @click="openExamPlans()">查看全部考试计划</el-button>
+          </div>
+        </template>
+      </section>
+
       <section v-if="['CONFIRMED', 'QUEUED', 'RUNNING'].includes(currentStatus)" class="workflow-section">
         <h3>候选方案生成</h3>
         <p>本轮确认的动态规则仅作用于候选生成；临时锁课不会修改正式课表的锁定标志，软偏好不保证全部满足。组合禁排逐条核验违规数；若仍有未排课时，候选不代表完整满足需求。</p>
@@ -548,8 +699,11 @@ onBeforeUnmount(() => {
 
       <section v-if="currentStatus === 'CANDIDATES_READY'" class="workflow-section">
         <div class="section-heading">
-          <div><h3>候选方案</h3><p>候选仅供比较和预览，当前 Run 不会直接改变正式课表。</p></div>
-          <el-button :loading="loadingCandidates" @click="loadCandidates(run.id)">刷新候选</el-button>
+          <div><h3>候选方案</h3><p>候选审核、应用与版本发布使用普通排课的相同流程。</p></div>
+          <div class="candidate-actions">
+            <el-button :loading="loadingCandidates" @click="loadCandidates(run.id)">刷新候选</el-button>
+            <el-button type="primary" @click="openCandidateGovernance">前往审核与发布</el-button>
+          </div>
         </div>
         <el-empty v-if="!candidates.length" description="当前 Run 暂无候选方案" />
         <el-table v-else :data="candidates" border @selection-change="selectCandidates">
@@ -570,10 +724,14 @@ onBeforeUnmount(() => {
           <el-table-column label="方案依据" min-width="320">
             <template #default="scope">{{ candidateExplanation(scope.row) }}</template>
           </el-table-column>
-          <el-table-column label="只读操作" width="170" fixed="right">
+          <el-table-column label="审核状态" width="100">
+            <template #default="scope">{{ ({ DRAFT: '草稿', SUBMITTED: '待审核', APPROVED: '审核通过', REJECTED: '已驳回' })[scope.row.reviewStatus] || scope.row.reviewStatus }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="260" fixed="right">
             <template #default="scope">
               <el-button link type="primary" @click="showCandidatePreview(scope.row)">预览</el-button>
               <el-button link type="primary" @click="showModelExplanation(scope.row)">模型解读</el-button>
+              <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" link type="warning" :loading="submittingCandidateId === scope.row.id" @click="confirmCandidateForReview(scope.row)">确认并提交审核</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -615,6 +773,8 @@ p { margin: 0; color: #84909a; }
 .request-card, .run-card { margin-bottom: 18px; }
 .request-card :deep(.el-select), .offering-select { width: min(720px, 100%); }
 .workflow-section { margin-top: 22px; }
+.date-impact-group { display: grid; gap: 10px; margin-top: 16px; }
+.date-impact-group .el-button { justify-self: start; }
 .clarification-list { margin: 0 0 16px; padding: 12px 12px 12px 30px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: var(--el-fill-color-light); }
 .reply-box { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; max-width: 900px; }
 .reply-box .el-textarea { width: 100%; }

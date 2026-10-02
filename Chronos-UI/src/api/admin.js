@@ -414,6 +414,7 @@ export const previewScheduleCandidate = (id) => http.get(`/admin/education/sched
 export const applyScheduleCandidate = (id) => http.post(`/admin/education/schedule-candidates/${id}/apply`)
 export const discardScheduleCandidate = (id) => http.post(`/admin/education/schedule-candidates/${id}/discard`)
 export const listAcademicTerms = (params) => http.get(`/admin/education/terms?${qs(params)}`)
+export const importAcademicHolidays = (payload) => http.post('/admin/education/holidays/import', payload)
 export const createAcademicTerm = (payload) => http.post('/admin/education/terms', payload)
 export const updateAcademicTerm = (id, payload) => http.put(`/admin/education/terms/${id}`, payload)
 export const listAcademicCalendarDays = (termId) => http.get(`/admin/education/calendar-days?${qs({ termId })}`)
@@ -437,6 +438,8 @@ export const createClassroomUnavailableSlot = (payload) => http.post('/admin/edu
 export const updateClassroomUnavailableSlot = (id, payload) => http.put(`/admin/education/classroom-unavailable-slots/${id}`, payload)
 export const deleteClassroomUnavailableSlot = (id) => http.delete(`/admin/education/classroom-unavailable-slots/${id}`)
 export const listScheduleOccurrences = (semesterCode, date) => http.get(`/admin/education/schedule-occurrences?${qs({ semesterCode, date })}`)
+export const listSchedulePendingMakeups = (semesterCode) => http.get(`/admin/education/schedule-pending-makeups?${qs({ semesterCode })}`)
+export const listSchedulePendingSubstitutions = (semesterCode) => http.get(`/admin/education/schedule-pending-substitutions?${qs({ semesterCode })}`)
 export const listScheduleDateExceptions = (semesterCode, startDate, endDate) => http.get(`/admin/education/schedule-date-exceptions?${qs({ semesterCode, startDate, endDate })}`)
 export const createScheduleDateException = (payload) => http.post('/admin/education/schedule-date-exceptions', payload)
 export const updateScheduleDateException = (id, payload) => http.put(`/admin/education/schedule-date-exceptions/${id}`, payload)
@@ -620,6 +623,7 @@ export const createAiSchedulingRun = (payload) => http.post('/admin/education/sc
  * @param {string} id
  */
 export const getAiSchedulingRun = (id) => http.get(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}`)
+export const getAiSchedulingDateImpact = (id) => http.get(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/date-impact`)
 
 /**
  * @param {string} id

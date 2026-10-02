@@ -242,7 +242,7 @@ public class ClassSchedulingService {
 		int duration = command.durationPeriods() == null ? 1 : command.durationPeriods();
 		academicCalendar.validateSchedulingSlot(
 				command.semesterCode(),
-				offering.getCampusId(),
+				classroom.getCampusId(),
 				command.periodNo(),
 				duration);
 		boolean roomUnavailable = unavailableSlots
@@ -278,7 +278,7 @@ public class ClassSchedulingService {
 		// 已发布考试反向占用具体日期资源，不能再通过新增周课表绕过发布检查。
 		examReservations.assertWeeklyCourseAvailable(
 				command.semesterCode(),
-				offering.getCampusId(),
+				classroom.getCampusId(),
 				command.dayOfWeek(),
 				command.periodNo(),
 				duration,

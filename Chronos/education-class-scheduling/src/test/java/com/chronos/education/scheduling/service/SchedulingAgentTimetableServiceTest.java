@@ -101,6 +101,15 @@ class SchedulingAgentTimetableServiceTest {
 				"GLOBAL", Set.of(), "AFTERNOON").clarification()).contains("默认作息");
 	}
 
+	@Test
+	void allowsCampusNeutralOfferingsAlongsideConfiguredCampuses() {
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(offering("public-course", null, "teacher-2"),
+						offering("specialized-course", "campus-1", "teacher-1")));
+		assertThat(service.dimensions("2026-2027-1", "GLOBAL", Set.of()))
+				.isEqualTo(new SchedulingAgentTimetableService.Dimensions(5, 4, 16));
+	}
+
 	private CourseOffering offering(String id, String campus, String teacher) {
 		CourseOffering value = new CourseOffering();
 		value.setId(id);

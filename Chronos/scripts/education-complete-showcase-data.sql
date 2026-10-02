@@ -446,6 +446,19 @@ VALUES
         'showcase_seed',
         CURRENT_TIMESTAMP,
         'DISPLAY,VIDEO_CONFERENCE'
+    ),
+    (
+        '10000000-0000-4000-8000-000000000006',
+        'TRAIN-A201',
+        '实训校区教学楼 A201',
+        (SELECT id FROM t_organization WHERE org_code = 'EDU-NCVC-TRAIN'),
+        '教学楼 A',
+        40,
+        'STANDARD',
+        true,
+        'showcase_seed',
+        CURRENT_TIMESTAMP,
+        'PROJECTOR,AUDIO'
     )
 ON CONFLICT DO NOTHING;
 

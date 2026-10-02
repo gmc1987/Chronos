@@ -14,6 +14,7 @@ import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulingAiLockedEntry;
+import com.chronos.education.scheduling.model.SchedulingAiGenerationOptions;
 import com.chronos.education.scheduling.model.SchedulingAiPlan;
 import com.chronos.education.scheduling.model.SchedulingAiSoftPriority;
 import com.chronos.education.scheduling.model.SchedulingAiSlotRule;
@@ -26,6 +27,34 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class SchedulingAgentPlanValidatorTest {
+	@Test
+	void preservesConfirmedGenerationScopeInsteadOfForcingAgentDefaults() throws Exception {
+		var scopes = mock(EducationDataScopeService.class);
+		var timetable = mock(SchedulingAgentTimetableService.class);
+		when(scopes.resolve("admin")).thenReturn(new EducationDataScope(
+				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
+		when(timetable.dimensions("2026-2027-1", "GLOBAL", Set.of()))
+				.thenReturn(new SchedulingAgentTimetableService.Dimensions(5, 8, 20));
+		when(timetable.targetOfferingIds("2026-2027-1", "GLOBAL", Set.of()))
+				.thenReturn(Set.of("offering-1"));
+		var validator = new SchedulingAgentPlanValidator(scopes,
+				new ObjectMapper().findAndRegisterModules(), timetable);
+		var plan = new SchedulingAiPlan(1, "SCHEDULE_REQUIREMENTS_V1",
+				"2026-2027-1", "GLOBAL", Set.of(), 2, List.of(), List.of(),
+				List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+				List.of(), new SchedulingAiGenerationOptions(6, 10, 2, 18));
+		var run = new AgentRun();
+		run.setSemesterCode("2026-2027-1");
+		run.setConfirmedPlanJson(new ObjectMapper().findAndRegisterModules()
+				.writeValueAsString(plan));
+
+		var command = validator.fromConfirmedRun(run, "admin").command();
+		assertThat(command.weekdays()).isEqualTo(6);
+		assertThat(command.periodsPerDay()).isEqualTo(10);
+		assertThat(command.startWeek()).isEqualTo(2);
+		assertThat(command.endWeek()).isEqualTo(18);
+	}
+
 	@Test
 	void revalidatesRuleEvidenceAndTeacherAgainstCurrentScope() throws Exception {
 		var scopes = mock(EducationDataScopeService.class);

@@ -9,7 +9,11 @@ public record SchedulingAiRunRequest(
 		String mode,
 		Set<String> selectedOfferingIds,
 		Integer candidateCount,
-		String requestText) {
+		String requestText,
+		Integer weekdays,
+		Integer periodsPerDay,
+		Integer startWeek,
+		Integer endWeek) {
 	public SchedulingAiRunRequest {
 		clientRequestId = required(clientRequestId, "clientRequestId", 128);
 		semesterCode = required(semesterCode, "semesterCode", 32);
@@ -26,6 +30,19 @@ public record SchedulingAiRunRequest(
 		if (candidateCount < 1 || candidateCount > 5) {
 			throw new IllegalArgumentException("candidateCount 必须在 1 到 5 之间");
 		}
+		if (weekdays != null && (weekdays < 1 || weekdays > 7)
+				|| periodsPerDay != null && (periodsPerDay < 1 || periodsPerDay > 20)
+				|| startWeek != null && (startWeek < 1 || startWeek > 52)
+				|| endWeek != null && (endWeek < 1 || endWeek > 52)
+				|| startWeek != null && endWeek != null && endWeek < startWeek) {
+			throw new IllegalArgumentException("AI 排课时间范围无效");
+		}
+	}
+
+	public SchedulingAiRunRequest(String clientRequestId, String semesterCode, String mode,
+			Set<String> selectedOfferingIds, Integer candidateCount, String requestText) {
+		this(clientRequestId, semesterCode, mode, selectedOfferingIds, candidateCount,
+				requestText, null, null, null, null);
 	}
 
 	private static String required(String value, String label, int maxLength) {

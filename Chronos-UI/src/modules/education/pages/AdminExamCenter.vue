@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createExamPlan,
@@ -26,6 +27,7 @@ import {
   updateExamSession,
 } from '../../../api/admin'
 
+const route = useRoute()
 const semesterCode = ref('')
 const terms = ref([])
 const examTypes = ref([])
@@ -99,12 +101,19 @@ async function loadLookups() {
   subjects.value = unwrap(subjectResult)
   classrooms.value = unwrap(classroomResult)
   examTypes.value = unwrap(examTypeResult)
-  semesterCode.value ||= terms.value.find((item) => item.currentTerm)?.termCode || terms.value[0]?.termCode || ''
+  const requestedTerm = route.query.semesterCode
+  semesterCode.value ||= typeof requestedTerm === 'string'
+    && terms.value.some((item) => item.termCode === requestedTerm)
+    ? requestedTerm
+    : terms.value.find((item) => item.currentTerm)?.termCode || terms.value[0]?.termCode || ''
 }
 
 async function loadPlans() {
   plans.value = semesterCode.value ? unwrap(await listExamPlans(semesterCode.value)) : []
+  const requestedPlan = route.query.examPlanId
   const current = plans.value.find((item) => item.id === selectedPlan.value?.id)
+    || (typeof requestedPlan === 'string'
+      ? plans.value.find((item) => item.id === requestedPlan) : null)
   await selectPlan(current || null)
 }
 

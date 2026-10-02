@@ -76,7 +76,9 @@ public class SchedulingAgentTimetableService {
 		boolean configured = schedules.existsByAcademicTermIdAndStatus(term.getId(), "ACTIVE");
 		int lastPeriod = configured ? 0 : 8;
 		if (configured) {
+			// 未指定校区的公共课可由求解器选择任一合适校区的教室，不能当成缺少作息的校区。
 			Set<String> campuses = targets.stream().map(CourseOffering::getCampusId)
+					.filter(campus -> campus != null && !campus.isBlank())
 					.collect(java.util.stream.Collectors.toSet());
 			for (String campus : campuses) {
 				var schedule = schedules.findFirstByAcademicTermIdAndCampusIdAndDefaultScheduleTrueAndStatus(
@@ -94,6 +96,9 @@ public class SchedulingAgentTimetableService {
 				}
 				int maximum = allowed.stream().mapToInt(Integer::intValue).max().orElseThrow();
 				lastPeriod = Math.max(lastPeriod, maximum);
+			}
+			if (campuses.isEmpty()) {
+				lastPeriod = 8;
 			}
 		}
 		return new Dimensions(5, lastPeriod, term.getWeekCount());

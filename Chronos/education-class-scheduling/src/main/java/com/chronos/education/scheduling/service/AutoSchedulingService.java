@@ -324,12 +324,62 @@ public class AutoSchedulingService {
 			throw new IllegalStateException("当前课表在候选方案生成后已变化，请重新生成方案");
 		}
 		List<ScheduleEntry> snapshot = readEntries(candidate.getSnapshotJson());
-		entries.deleteAllForRollback(candidate.getSemesterCode());
-		entityManager.flush();
-		entityManager.clear();
-		for (ScheduleEntry entry : snapshot) {
-			insertEntry(entry, actor);
+		Map<String, ScheduleEntry> existingById = baseline.stream()
+				.collect(Collectors.toMap(ScheduleEntry::getId, entry -> entry));
+		Set<String> snapshotIds = snapshot.stream()
+				.map(ScheduleEntry::getId)
+				.filter(id -> id != null && !id.isBlank())
+				.collect(Collectors.toSet());
+		for (ScheduleEntry old : baseline) {
+			if (!snapshotIds.contains(old.getId())) {
+				Number references = (Number) entityManager.createNativeQuery("""
+						select (select count(*) from edu_exam_course_suspension_item
+						        where source_entry_id = :entryId)
+						     + (select count(*) from edu_schedule_date_exception
+						        where source_entry_id = :entryId)
+						""")
+						.setParameter("entryId", old.getId())
+						.getSingleResult();
+				if (references.longValue() > 0) {
+					throw new IllegalStateException("课表项已被考试停课或日期例外引用，不能删除：" + old.getId());
+				}
+			}
 		}
+		// 考试停课和日期例外会引用原课表主键；保留共存课表项的实体，只更新排课内容。
+		// 先在同一事务内移到互不冲突的临时节次，避免互换时段时触发唯一约束。
+		int temporaryPeriod = baseline.stream().mapToInt(ScheduleEntry::getPeriodNo)
+				.max().orElse(0) + 1;
+		for (ScheduleEntry old : baseline) {
+			old.setPeriodNo(temporaryPeriod++);
+		}
+		entityManager.flush();
+		for (ScheduleEntry old : baseline) {
+			if (!snapshotIds.contains(old.getId())) {
+				entries.delete(old);
+			}
+		}
+		for (ScheduleEntry entry : snapshot) {
+			ScheduleEntry existing = existingById.get(entry.getId());
+			if (existing == null) {
+				insertEntry(entry, actor);
+			} else {
+				existing.setOfferingId(entry.getOfferingId());
+				existing.setClassroomId(entry.getClassroomId());
+				existing.setDayOfWeek(entry.getDayOfWeek());
+				existing.setPeriodNo(entry.getPeriodNo());
+				existing.setDurationPeriods(entry.getDurationPeriods());
+				existing.setWeekPattern(entry.getWeekPattern());
+				existing.setStartWeek(entry.getStartWeek());
+				existing.setEndWeek(entry.getEndWeek());
+				existing.setStatus(entry.getStatus());
+				existing.setSubstituteTeacherId(entry.getSubstituteTeacherId());
+				existing.setSourceAdjustmentInstanceId(entry.getSourceAdjustmentInstanceId());
+				existing.setLocked(entry.getLocked());
+				existing.setLastUpdateBy(actor);
+				existing.setLastUpdateTime(LocalDateTime.now());
+			}
+		}
+		entityManager.flush();
 		candidate = candidates.findById(candidateId)
 				.orElseThrow(() -> new IllegalStateException("候选方案已被并发删除"));
 		candidate.setStatus("APPLIED");
@@ -502,6 +552,13 @@ public class AutoSchedulingService {
 		Map<String, TeacherAcademicProfile> teacherById = teacherProfiles.findAll().stream()
 				.collect(Collectors.toMap(TeacherAcademicProfile::getId, item -> item));
 		List<Classroom> availableRooms = classrooms.findByEnabledTrueOrderByRoomCode();
+		// 公共课可跨校区，但只能使用本学期实际开课的校区，避免选到其他演示学校的教室。
+		Set<String> termCampusIds = semesterOfferings.stream()
+				.map(CourseOffering::getCampusId)
+				.filter(id -> id != null && !id.isBlank())
+				.collect(Collectors.toSet());
+		Map<String, Classroom> roomById = classrooms.findAll().stream()
+				.collect(Collectors.toMap(Classroom::getId, room -> room));
 		List<ClassroomUnavailableSlot> roomUnavailableSlots = unavailableSlots
 				.findBySemesterCodeOrderByClassroomIdAscDayOfWeekAscStartPeriodAsc(request.semesterCode())
 				.stream()
@@ -519,8 +576,9 @@ public class AutoSchedulingService {
 		SchedulingIndex schedulingIndex = new SchedulingIndex(
 				result,
 				offeringById,
+				roomById,
 				studentIds,
-				!runConstraints.weekRules().isEmpty(),
+				true,
 				!runConstraints.softPriorities().isEmpty());
 		int scheduled = 0;
 		int unscheduled = 0;
@@ -565,12 +623,6 @@ public class AutoSchedulingService {
 			int preferredDuration = Math.max(1, localDurations.getOrDefault(offering.getId(),
 					offering.getPreferredDurationPeriods() == null ? 1
 							: offering.getPreferredDurationPeriods()));
-			Set<Integer> allowedPeriods = periodsByCampus.computeIfAbsent(
-					offering.getCampusId() == null ? "" : offering.getCampusId(),
-					campus -> academicCalendar.schedulablePeriodNumbers(
-							request.semesterCode(),
-							offering.getCampusId(),
-							request.periodsPerDay()));
 			for (int lesson = 0; lesson < requiredLessons;) {
 				checkCancelled(cancelled);
 				int duration = Math.min(preferredDuration, requiredLessons - lesson);
@@ -580,7 +632,7 @@ public class AutoSchedulingService {
 						availableRooms,
 						schedulingIndex,
 						teacherConstraints.getOrDefault(offering.getTeacherId(), List.of()),
-						allowedPeriods,
+						periodsByCampus, termCampusIds, request,
 						duration,
 						roomUnavailableSlots,
 						teacherById.get(offering.getTeacherId()),
@@ -591,7 +643,7 @@ public class AutoSchedulingService {
 					placement = bestPlacement(
 							offering, slots, availableRooms, schedulingIndex,
 							teacherConstraints.getOrDefault(offering.getTeacherId(), List.of()),
-							allowedPeriods, duration, roomUnavailableSlots,
+							periodsByCampus, termCampusIds, request, duration, roomUnavailableSlots,
 							teacherById.get(offering.getTeacherId()), policy,
 							activeWeeks, runConstraints.softPriorities(), slotExclusions);
 				}
@@ -699,7 +751,9 @@ public class AutoSchedulingService {
 			List<Classroom> availableRooms,
 			SchedulingIndex schedulingIndex,
 			List<TeacherTimeConstraint> teacherConstraints,
-			Set<Integer> allowedPeriods,
+			Map<String, Set<Integer>> periodsByCampus,
+			Set<String> termCampusIds,
+			GenerationRequest request,
 			int duration,
 			List<ClassroomUnavailableSlot> roomUnavailableSlots,
 			TeacherAcademicProfile teacher,
@@ -733,27 +787,28 @@ public class AutoSchedulingService {
 					|| schedulingIndex.consecutiveLoad(offering, slot, duration, weeks) > maxConsecutive) {
 				continue;
 			}
-			if (schedulingIndex.violatesCampusTravelGap(
-					offering,
-					slot,
-					duration,
-					policy.getMinimumCampusTravelPeriods(), weeks)) {
-				continue;
-			}
-			if (!consecutivePeriodsAllowed(allowedPeriods, slot.period(), duration)
-					|| forbidden(teacherConstraints, slot, duration)) {
+			if (forbidden(teacherConstraints, slot, duration)) {
 				continue;
 			}
 			for (Classroom room : availableRooms) {
 				if (!roomSuitable(offering, room)
+						|| !termCampusIds.contains(room.getCampusId())
 						|| roomUnavailable(roomUnavailableSlots, room, slot, duration)
 						|| schedulingIndex.conflicts(offering, room, slot, duration, weeks)) {
+					continue;
+				}
+				Set<Integer> allowedPeriods = periodsByCampus.computeIfAbsent(
+						room.getCampusId(), campus -> academicCalendar.schedulablePeriodNumbers(
+								request.semesterCode(), campus, request.periodsPerDay()));
+				if (!consecutivePeriodsAllowed(allowedPeriods, slot.period(), duration)
+						|| schedulingIndex.violatesCampusTravelGap(offering, room, slot, duration,
+								policy.getMinimumCampusTravelPeriods(), weeks)) {
 					continue;
 				}
 				int sameDay = schedulingIndex.sameCourseDayCount(offering, slot, weeks);
 				int teacherDayLoad = schedulingIndex.teacherDayLoad(offering, slot, weeks);
 				int consecutiveLoad = schedulingIndex.consecutiveLoad(offering, slot, duration, weeks);
-				int campusSwitches = schedulingIndex.campusSwitches(offering, slot, weeks);
+				int campusSwitches = schedulingIndex.campusSwitches(offering, room, slot, weeks);
 				int teacherGaps = schedulingIndex.teacherGapIncrease(offering, slot, duration, weeks);
 				boolean preferred = preferred(teacherConstraints, slot);
 				int preferenceAdjustment = -(priorities.contains("CAMPUS_SWITCH")
@@ -1219,6 +1274,7 @@ public class AutoSchedulingService {
 	/** 当前候选方案的冲突和评分索引；添加新课时后增量更新。 */
 	private static final class SchedulingIndex {
 		private final Map<String, CourseOffering> offeringById;
+		private final Map<String, Classroom> roomById;
 		private final Map<String, Set<String>> studentIds;
 		private final boolean weekAware;
 		private final boolean scopedPreferences;
@@ -1236,13 +1292,21 @@ public class AutoSchedulingService {
 		private SchedulingIndex(
 				List<ScheduleEntry> scheduled,
 				Map<String, CourseOffering> offeringById,
+				Map<String, Classroom> roomById,
 				Map<String, Set<String>> studentIds,
 				boolean weekAware,
 				boolean scopedPreferences) {
 			this.offeringById = offeringById;
+			this.roomById = roomById;
 			this.studentIds = studentIds;
 			this.weekAware = weekAware;
 			this.scopedPreferences = scopedPreferences;
+			// 已取消记录仍保留在表中，唯一约束也覆盖它们；新课不能复用其相同教学任务与时段。
+			scheduled.stream()
+					.filter(entry -> "CANCELLED".equals(entry.getStatus()))
+					.forEach(entry -> offeringSlots.put(
+							slot(entry.getDayOfWeek(), entry.getPeriodNo()) + "|" + entry.getOfferingId(),
+							-1L));
 			scheduled.stream()
 					.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
 					.forEach(this::add);
@@ -1252,6 +1316,11 @@ public class AutoSchedulingService {
 			CourseOffering offering = offeringById.get(entry.getOfferingId());
 			if (offering == null) {
 				return;
+			}
+			Classroom classroom = roomById.get(entry.getClassroomId());
+			String campusId = classroom == null ? offering.getCampusId() : classroom.getCampusId();
+			if (campusId == null) {
+				campusId = "";
 			}
 			long weeks = weekAware
 					? weekMask(entry.getWeekPattern() == null ? "ALL" : entry.getWeekPattern(),
@@ -1284,10 +1353,10 @@ public class AutoSchedulingService {
 					periods.add(entry.getPeriodNo() + offset);
 					teacherDayPeriodCampuses.computeIfAbsent(teacherDay, key -> new HashMap<>())
 							.put(entry.getPeriodNo() + offset,
-									offering.getCampusId() == null ? "" : offering.getCampusId());
+									campusId);
 				}
 				teacherDayCampuses.computeIfAbsent(teacherDay, key -> new HashSet<>())
-						.add(offering.getCampusId() == null ? "" : offering.getCampusId());
+						.add(campusId);
 			}
 		}
 
@@ -1352,8 +1421,8 @@ public class AutoSchedulingService {
 			return largest;
 		}
 
-		private int campusSwitches(CourseOffering offering, Slot slot, long weeks) {
-			String campus = offering.getCampusId() == null ? "" : offering.getCampusId();
+		private int campusSwitches(CourseOffering offering, Classroom room, Slot slot, long weeks) {
+			String campus = room.getCampusId();
 			for (long remaining = weeks; remaining != 0; remaining &= remaining - 1) {
 				Set<String> campuses = teacherDayCampuses.getOrDefault(
 						offering.getTeacherId() + "|" + slot.day() + "|"
@@ -1369,13 +1438,14 @@ public class AutoSchedulingService {
 
 		private boolean violatesCampusTravelGap(
 				CourseOffering offering,
+				Classroom room,
 				Slot slot,
 				int duration,
 				int minimumGap, long weeks) {
 			if (minimumGap <= 0) {
 				return false;
 			}
-			String targetCampus = offering.getCampusId() == null ? "" : offering.getCampusId();
+			String targetCampus = room.getCampusId();
 			int start = slot.period();
 			int end = slot.period() + duration - 1;
 			for (long remaining = weeks; remaining != 0; remaining &= remaining - 1) {

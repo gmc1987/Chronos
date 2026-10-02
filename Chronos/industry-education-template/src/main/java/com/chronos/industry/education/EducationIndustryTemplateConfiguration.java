@@ -57,6 +57,9 @@ public class EducationIndustryTemplateConfiguration {
                                 "education-terms", "学年学期", "/admin/education/terms",
                                 "education:scheduling:view", 20),
                         new IndustryNavigationDefinition(
+                                "education-holidays", "节假日维护", "/admin/education/holidays",
+                                "education:scheduling:view", 20),
+                        new IndustryNavigationDefinition(
                                 "education-courses", "课程管理", "/admin/education/courses",
                                 "education:scheduling:view", 21),
                         new IndustryNavigationDefinition(
