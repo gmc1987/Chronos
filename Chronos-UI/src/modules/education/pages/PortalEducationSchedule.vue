@@ -9,19 +9,21 @@
       </template>
     </el-page-header>
 
-    <el-button class="exam-duty-link" @click="$router.push('/portal/education/exam/invigilation')">
-      查看我的监考
-    </el-button>
-    <el-button @click="$router.push('/portal/education/exam/my-exams')">查看我的考试</el-button>
-    <el-button @click="$router.push('/portal/education/class-notices')">班级通知</el-button>
-    <el-button @click="$router.push('/portal/education/leaves')">我的请假</el-button>
-    <el-button @click="$router.push('/portal/education/classroom-reservations')">教室申请</el-button>
-    <el-button
-      v-if="scheduleData.headTeacherClassCount"
-      @click="$router.push('/portal/education/head-teacher')"
-    >
-      班主任工作台
-    </el-button>
+    <div class="schedule-actions">
+      <el-button class="exam-duty-link" @click="$router.push('/portal/education/exam/invigilation')">
+        查看我的监考
+      </el-button>
+      <el-button @click="$router.push('/portal/education/exam/my-exams')">查看我的考试</el-button>
+      <el-button @click="$router.push('/portal/education/class-notices')">班级通知</el-button>
+      <el-button @click="$router.push('/portal/education/leaves')">我的请假</el-button>
+      <el-button @click="$router.push('/portal/education/classroom-reservations')">教室申请</el-button>
+      <el-button
+        v-if="scheduleData.headTeacherClassCount"
+        @click="$router.push('/portal/education/head-teacher')"
+      >
+        班主任工作台
+      </el-button>
+    </div>
 
     <el-alert
       title="仅展示教务处最近发布的课表版本；未发布的调整草稿不会出现在这里。"
@@ -272,6 +274,8 @@ onMounted(async () => {
 .portal-schedule :deep(.el-page-header__content strong) { color: #263f49; font-size: 20px; }
 .portal-schedule :deep(.el-page-header__content small) { color: #819097; font-size: 12px; }
 .portal-schedule span { color: #829197; font-size: 12px; }
+.schedule-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.schedule-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .student-context :deep(.el-card__body) { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .student-context div { display: grid; gap: 4px; }
 .student-context small { color: #819097; }
@@ -281,6 +285,8 @@ onMounted(async () => {
 .week-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .week-toolbar > div { display: grid; gap: 3px; }
 .week-toolbar small { color: #819097; }
+.week-toolbar :deep(.el-button-group) { display: inline-flex; flex-direction: row; align-items: center; white-space: nowrap; }
+.week-toolbar :deep(.el-button-group > .el-button) { width: auto; margin: 0; }
 .week-grid { display: grid; grid-template-columns: repeat(7, minmax(150px, 1fr)); gap: 10px; overflow-x: auto; }
 .week-day { min-height: 180px; padding: 10px; border: 1px solid #e5ebee; border-radius: 8px; background: #fafcfc; }
 .week-day.today { border-color: #409eff; background: #f2f8ff; }
