@@ -70,7 +70,7 @@ const bankDialog = ref(false); const questionDialog = ref(false); const importDi
 const bankForm = reactive({}); const questionForm = reactive({ options: [], knowledgePointIds: [] }); const versions = ref([]); const importErrors = ref([]); const importBody = ref(''); const importSummary = ref('')
 const dict = async (code) => (await dictionaryOptions(code))?.data?.map(item => ({ label: item.dictName || item.itemName, value: item.dictValue || item.itemValue })) || []
 const dictLabel = (list, value) => list.find(x => x.value === value)?.label || value || '-'
-const isChoice = computed(() => typeOptions.value.find(o => o.value === questionForm.questionType)?.label?.match(/选择/))
+const isChoice = computed(() => ['SINGLE_CHOICE', 'MULTIPLE_CHOICE'].includes(questionForm.questionType))
 const offeringLabel = item => [item.semesterCode, item.courseName, item.teachingClassName].filter(Boolean).join(' · ')
 const reset = (target, data) => { Object.keys(target).forEach(k => delete target[k]); Object.assign(target, data) }
 const selectCourse = async () => { bankId.value = ''; rows.value = []; banks.value = []; if (!courseId.value) return; const res = await questionBanks({ courseId: courseId.value, page: 0, size: 200 }); banks.value = res.data?.content || res.data || []; const p = await knowledgePointTree(courseId.value); points.value = flatten(p.data || []) }

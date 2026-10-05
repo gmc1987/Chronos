@@ -4,6 +4,7 @@ import com.chronos.education.scheduling.dao.*;
 import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.model.dto.CollaborationDtos.*;
 import com.chronos.file.dao.ManagedFileRepository;
+import com.chronos.file.model.ManagedFile;
 import com.chronos.file.service.ManagedFileService;
 import com.chronos.commons.model.PageView;
 import java.time.*; import java.util.*;
@@ -48,25 +49,75 @@ public class TeachingCollaborationService {
    this.notifications=notifications;
  }
  private CourseOffering offering(String id,Authentication a){ var o=offerings.findById(id).orElseThrow(()->new NoSuchElementException("教学任务不存在")); scopes.assertOfferingAccess(scopes.resolve(a.getName()),o); return o; }
- private void file(String id,Authentication a){
+ private ManagedFile file(String id,Authentication a){
    if(id==null||id.isBlank()||id.contains("/")||id.contains("\\")) throw new IllegalArgumentException("fileId无效");
    var f=files.findById(id).orElseThrow(()->new IllegalArgumentException("文件不存在"));
    if(!a.getName().equals(f.getOwnerUsername())) throw new org.springframework.security.access.AccessDeniedException("只能绑定本人上传的文件");
    if(!"ACTIVE".equals(f.getStatus())||!"PENDING_BIND".equals(f.getBindState())) throw new IllegalArgumentException("文件不可绑定");
+   return f;
  }
  public Preparation createPreparation(PreparationCreateRequest r,Authentication a){ var o=offering(r.offeringId(),a); if(r.scheduleEntryId()!=null){var e=schedules.findById(r.scheduleEntryId()).orElseThrow(); if(!o.getId().equals(e.getOfferingId())||!"PUBLISHED".equals(e.getStatus())) throw new IllegalArgumentException("只能关联本教学任务的已发布课表项");}
    var p=new Preparation(); p.setOfferingId(o.getId());p.setCampusId(o.getCampusId());p.setOwnerTeacherId(o.getTeacherId());p.setScheduleEntryId(r.scheduleEntryId());p.setTitle(r.title());p.setPreparationType(r.preparationType());p.setLocation(r.location());p.setAgenda(r.agenda());p.setScheduledAt(r.scheduledAt());p.setCreateBy(a.getName());return preparations.save(p); }
- public Preparation getPreparation(String id,Authentication a){var p=preparations.findById(id).orElseThrow();var scope=scopes.resolve(a.getName());if(scope.fullAccess())return p;try{scopes.assertOfferingAccess(scope,p.getOfferingId());return p;}catch(org.springframework.security.access.AccessDeniedException denied){var teacherIds=currentTeacherIds(a);if(members.findByPreparationId(id).stream().noneMatch(m->teacherIds.contains(m.getTeacherId())&&Set.of("PENDING","ACCEPT").contains(m.getInvitationStatus())))throw denied;return p;}}
+ public Preparation getPreparation(String id, Authentication actor) {
+   Preparation preparation = preparations.findById(id).orElseThrow();
+   var scope = scopes.resolve(actor.getName());
+   if (scope.fullAccess()) return preparation;
+   Set<String> teacherIds = currentTeacherIds(actor);
+   boolean invited = members.findByPreparationId(id).stream().anyMatch(member ->
+     teacherIds.contains(member.getTeacherId())
+       && Set.of("PENDING", "ACCEPT").contains(member.getInvitationStatus()));
+   if (invited) return preparation;
+   scopes.assertOfferingAccess(scope, preparation.getOfferingId());
+   return preparation;
+ }
  public Preparation submitPreparation(String id,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);if(!"DRAFT".equals(p.getStatus()))throw new IllegalStateException("只有草稿备课可以提交审核");if("COLLECTIVE".equals(p.getPreparationType())){var accepted=members.findByPreparationId(id).stream().filter(x->"ACCEPT".equals(x.getInvitationStatus())).count();if(accepted<2)throw new IllegalStateException("集体备课至少需要两名已接受成员");if(p.getScheduledAt()==null||p.getAgenda()==null||p.getAgenda().isBlank())throw new IllegalStateException("集体备课必须填写时间和议程");}var review=reviews.submit("PREPARATION",id,p.getOfferingId(),Map.of("preparationType",p.getPreparationType()),a);p.setStatus("SUBMITTED");return preparations.save(p);}
- public PreparationMember invite(String id,MemberInviteRequest r,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);scopes.assertTeacherAccess(scopes.resolve(a.getName()),r.teacherId());var m=new PreparationMember();m.setId(UUID.randomUUID().toString());m.setPreparationId(id);m.setTeacherId(r.teacherId());m.setRole(r.role());m.setInvitedBy(a.getName());m.setInvitedAt(Instant.now());var saved=members.save(m);if(notifications!=null)notifications.preparationInvited(p,r.teacherId());return saved;}
- public PreparationMember respond(String memberId,MemberResponseRequest r,Authentication a){var m=members.findById(memberId).orElseThrow();if(!Set.of("ACCEPT","DECLINE").contains(r.response())) throw new IllegalArgumentException("响应必须为ACCEPT或DECLINE");if(!currentTeacherIds(a).contains(m.getTeacherId())&&!scopes.resolve(a.getName()).fullAccess())throw new org.springframework.security.access.AccessDeniedException("只能响应发给本人的邀请");getPreparation(m.getPreparationId(),a);m.setInvitationStatus(r.response());m.setResponseComment(r.comment());m.setRespondedAt(Instant.now());if("ACCEPT".equals(r.response()))m.setJoinedAt(Instant.now());return members.save(m);}
+ public PreparationMember invite(String id,MemberInviteRequest r,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);var teacher=canonicalTeacher(r.teacherId());scopes.assertTeacherAccess(scopes.resolve(a.getName()),teacher.getId());var m=new PreparationMember();m.setId(UUID.randomUUID().toString());m.setPreparationId(id);m.setTeacherId(teacher.getId());m.setRole(r.role());m.setInvitedBy(a.getName());m.setInvitedAt(Instant.now());var saved=members.save(m);if(notifications!=null)notifications.preparationInvited(p,teacher.getId());return saved;}
+ private TeacherAcademicProfile canonicalTeacher(String id) {
+   TeacherAcademicProfile profile = em.find(TeacherAcademicProfile.class, id);
+   if (profile != null) return profile;
+   return em.createQuery("select teacher from TeacherAcademicProfile teacher where teacher.employeeId = :employeeId", TeacherAcademicProfile.class)
+     .setParameter("employeeId", id)
+     .getResultStream().findFirst()
+     .orElseThrow(() -> new IllegalArgumentException("受邀教师档案不存在"));
+ }
+ public PreparationMember respond(String memberId, MemberResponseRequest request, Authentication actor) {
+   PreparationMember member = members.findById(memberId).orElseThrow();
+   if (!Set.of("ACCEPT", "DECLINE").contains(request.response())) {
+     throw new IllegalArgumentException("响应必须为ACCEPT或DECLINE");
+   }
+   if (!currentTeacherIds(actor).contains(member.getTeacherId())) {
+     throw new org.springframework.security.access.AccessDeniedException("只能响应发给本人的邀请");
+   }
+   member.setInvitationStatus(request.response());
+   member.setResponseComment(request.comment());
+   member.setRespondedAt(Instant.now());
+   if ("ACCEPT".equals(request.response())) member.setJoinedAt(Instant.now());
+   return members.save(member);
+ }
+ public List<PreparationInvitationView> myPreparationInvitations(Authentication actor) {
+   Set<String> teacherIds = currentTeacherIds(actor);
+   if (teacherIds.isEmpty()) return List.of();
+   return members.findByTeacherIdInOrderByInvitedAtDesc(teacherIds).stream()
+     .map(member -> preparations.findById(member.getPreparationId())
+       .map(preparation -> new PreparationInvitationView(
+         member.getId(), preparation.getId(), preparation.getTitle(),
+         preparation.getScheduledAt(), member.getInvitationStatus(),
+         member.getInvitedAt()))
+       .orElse(null))
+     .filter(java.util.Objects::nonNull)
+     .toList();
+ }
+
+ public record PreparationInvitationView(
+   String memberId, String preparationId, String title,
+   LocalDateTime scheduledAt, String status, Instant invitedAt) {}
  public PreparationMaterial addMaterial(String id,MaterialRequest r,Authentication a){getPreparation(id,a);file(r.fileId(),a);var m=new PreparationMaterial();m.setId(UUID.randomUUID().toString());m.setPreparationId(id);m.setTitle(r.title());m.setFileId(r.fileId());m.setMetadataJson(r.metadataJson());m.setCreateBy(a.getName());m.setCreateTime(Instant.now());m.setBindState("PENDING_BIND");var saved=prepMaterials.save(m);managedFiles.bind(List.of(r.fileId()),"EDUCATION_TEACHING",saved.getId(),a.getName());saved.setBindState("BOUND");saved.setBoundAt(Instant.now());return prepMaterials.save(saved);}
  public PreparationComment comment(String id,CommentRequest r,Authentication a){getPreparation(id,a);var c=new PreparationComment();c.setId(UUID.randomUUID().toString());c.setPreparationId(id);c.setAuthorId(a.getName());c.setContent(r.content());c.setCreateTime(Instant.now());c.setAuditAction("CREATE");return comments.save(c);}
  public Preparation conclude(String id,ConclusionRequest r,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);if(!"COLLECTIVE".equals(p.getPreparationType())) throw new IllegalArgumentException("只有集体备课可以形成结论");if(members.findByPreparationId(id).stream().filter(x->"ACCEPT".equals(x.getInvitationStatus())).count()<2) throw new IllegalStateException("集体备课至少需要两名已接受成员");if(r.lessonPlanId()!=null){var lesson=em.find(LessonPlan.class,r.lessonPlanId());if(lesson==null||!p.getOfferingId().equals(lesson.getOfferingId())) throw new IllegalArgumentException("结论只能关联同一教学班教案");}p.setConclusion(r.conclusion());p.setConclusionLessonPlanId(r.lessonPlanId());p.setStatus("CONCLUDED");return preparations.save(p);}
 
  private Set<String> currentTeacherIds(Authentication a){return identities==null?Set.of(a.getName()):identities.teacherIds(a.getName());}
  private void assertPreparationOwner(Preparation p,Authentication a){if(!a.getName().equals(p.getCreateBy())&&!scopes.resolve(a.getName()).fullAccess())throw new org.springframework.security.access.AccessDeniedException("只有备课主持人可以执行该操作");}
- public Object createResource(boolean courseware,ResourceCreateRequest r,Authentication a){var o=offering(r.offeringId(),a);if(courseware){var x=new Courseware();x.setOfferingId(o.getId());x.setCampusId(o.getCampusId());x.setOwnerTeacherId(o.getTeacherId());x.setTitle(r.title());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType(blank(r.sourceType()));x.setCreateBy(a.getName());return coursewares.save(x);}var x=new TeachingMaterial();x.setOfferingId(o.getId());x.setCampusId(o.getCampusId());x.setOwnerTeacherId(o.getTeacherId());x.setTitle(r.title());x.setMaterialType(r.materialType());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType(blank(r.sourceType()));x.setCreateBy(a.getName());return materials.save(x);}
+ public Object createResource(boolean courseware,ResourceCreateRequest r,Authentication a){var o=offering(r.offeringId(),a);if(courseware){var x=new Courseware();x.setOfferingId(o.getId());populateResourceScope(x,o,a);x.setTitle(r.title());x.setDescription(r.description());x.setResourceCategory(r.resourceCategory());x.setLicenseCode(r.licenseCode());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType(blank(r.sourceType()));x.setCreateBy(a.getName());return coursewares.save(x);}var x=new TeachingMaterial();x.setOfferingId(o.getId());populateResourceScope(x,o,a);x.setTitle(r.title());x.setDescription(r.description());x.setResourceCategory(r.resourceCategory());x.setLicenseCode(r.licenseCode());x.setMaterialType(r.materialType());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType(blank(r.sourceType()));x.setCreateBy(a.getName());return materials.save(x);}
  public Courseware createCoursewareFromPreparation(String preparationId,ResourceCopyRequest r,Authentication a){
    var preparation=preparations.findById(preparationId).orElseThrow(()->new NoSuchElementException("备课不存在"));
    scopes.assertOfferingAccess(scopes.resolve(a.getName()),preparation.getOfferingId());
@@ -75,16 +126,31 @@ public class TeachingCollaborationService {
    var o=offering(r.offeringId(),a);
    var x=new Courseware();
    x.setOfferingId(o.getId()); x.setCampusId(o.getCampusId()); x.setOwnerTeacherId(o.getTeacherId());
-   x.setTitle(r.title()); x.setShareScope(scope(r.shareScope())); x.setPreparationId(preparationId);
+   populateResourceScope(x,o,a);
+   x.setTitle(r.title()); x.setResourceCategory("COURSEWARE"); x.setShareScope(scope(r.shareScope())); x.setPreparationId(preparationId);
    x.setLessonPlanId(blank(r.lessonPlanId())); x.setPlanItemId(blank(r.planItemId())); x.setSourceType("GENERATED");
    x.setCreateBy(a.getName());
    return coursewares.save(x);
  }
- public Object copyResource(boolean courseware,String id,ResourceCopyRequest r,Authentication a){var target=offering(r.offeringId(),a);if(courseware){var source=coursewares.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),source.getOfferingId());var x=new Courseware();x.setOfferingId(target.getId());x.setCampusId(target.getCampusId());x.setOwnerTeacherId(target.getTeacherId());x.setTitle(r.title());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType("COPIED");x.setCreateBy(a.getName());return coursewares.save(x);}var source=materials.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),source.getOfferingId());var x=new TeachingMaterial();x.setOfferingId(target.getId());x.setCampusId(target.getCampusId());x.setOwnerTeacherId(target.getTeacherId());x.setTitle(r.title());x.setMaterialType(source.getMaterialType());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType("COPIED");x.setCreateBy(a.getName());return materials.save(x);}
- public Object updateResource(boolean courseware,String id,ResourceCreateRequest r,Authentication a){var o=offering(r.offeringId(),a);if(courseware){var x=coursewares.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());if(!x.getOfferingId().equals(o.getId()))throw new IllegalArgumentException("资源不能跨教学任务移动");x.setTitle(r.title());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));return coursewares.save(x);}var x=materials.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());if(!x.getOfferingId().equals(o.getId()))throw new IllegalArgumentException("资源不能跨教学任务移动");x.setTitle(r.title());x.setMaterialType(r.materialType());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));return materials.save(x);}
+ public Object copyResource(boolean courseware,String id,ResourceCopyRequest r,Authentication a){var target=offering(r.offeringId(),a);if(courseware){var source=coursewares.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),source.getOfferingId());var x=new Courseware();x.setOfferingId(target.getId());populateResourceScope(x,target,a);x.setTitle(r.title());x.setDescription(source.getDescription());x.setResourceCategory(source.getResourceCategory());x.setLicenseCode(source.getLicenseCode());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType("COPIED");x.setCreateBy(a.getName());return coursewares.save(x);}var source=materials.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),source.getOfferingId());var x=new TeachingMaterial();x.setOfferingId(target.getId());populateResourceScope(x,target,a);x.setTitle(r.title());x.setDescription(source.getDescription());x.setResourceCategory(source.getResourceCategory());x.setLicenseCode(source.getLicenseCode());x.setMaterialType(source.getMaterialType());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));x.setSourceType("COPIED");x.setCreateBy(a.getName());return materials.save(x);}
+ private void populateResourceScope(Courseware resource, CourseOffering offering, Authentication actor) {
+   resource.setCampusId(offering.getCampusId());
+   resource.setSchoolId(scopes.requireSchoolForCampus(scopes.resolve(actor.getName()), offering.getCampusId()));
+   resource.setSemesterId(offering.getSemesterCode());
+   resource.setCourseId(offering.getCourseCode());
+   resource.setOwnerTeacherId(offering.getTeacherId());
+ }
+ private void populateResourceScope(TeachingMaterial resource, CourseOffering offering, Authentication actor) {
+   resource.setCampusId(offering.getCampusId());
+   resource.setSchoolId(scopes.requireSchoolForCampus(scopes.resolve(actor.getName()), offering.getCampusId()));
+   resource.setSemesterId(offering.getSemesterCode());
+   resource.setCourseId(offering.getCourseCode());
+   resource.setOwnerTeacherId(offering.getTeacherId());
+ }
+ public Object updateResource(boolean courseware,String id,ResourceCreateRequest r,Authentication a){var o=offering(r.offeringId(),a);if(courseware){var x=coursewares.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());if(!x.getOfferingId().equals(o.getId()))throw new IllegalArgumentException("资源不能跨教学任务移动");x.setTitle(r.title());x.setDescription(r.description());x.setResourceCategory(r.resourceCategory());x.setLicenseCode(r.licenseCode());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));return coursewares.save(x);}var x=materials.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());if(!x.getOfferingId().equals(o.getId()))throw new IllegalArgumentException("资源不能跨教学任务移动");x.setTitle(r.title());x.setDescription(r.description());x.setResourceCategory(r.resourceCategory());x.setLicenseCode(r.licenseCode());x.setMaterialType(r.materialType());x.setShareScope(scope(r.shareScope()));x.setPreparationId(blank(r.preparationId()));x.setLessonPlanId(blank(r.lessonPlanId()));x.setPlanItemId(blank(r.planItemId()));return materials.save(x);}
  private String blank(String value){return value==null||value.isBlank()?null:value;}
- private String scope(String s){if(s==null||s.isBlank())return "PRIVATE";String v=s.trim().toUpperCase(Locale.ROOT);if("OFFERING".equals(v))v="TEACHING_GROUP";if("CAMPUS".equals(v)||"PUBLIC".equals(v))v="SCHOOL";if(!Set.of("PRIVATE","TEACHING_GROUP","SCHOOL","STUDENT_CLASS").contains(v))throw new IllegalArgumentException("共享范围无效");return v;}
- public Object addVersion(boolean cw,String id,VersionRequest r,Authentication a){file(r.fileId(),a); int n;if(cw){var x=coursewares.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());n=coursewareVersions.findByCoursewareIdOrderByVersionNoDesc(id).stream().findFirst().map(v->v.getVersionNo()+1).orElse(1);var v=new CoursewareVersion();v.setCoursewareId(id);v.setVersionNo(n);v.setFileId(r.fileId());v.setMetadataJson(r.metadataJson());v.setCreateBy(a.getName());v.setCreateTime(java.time.LocalDateTime.now());var saved=coursewareVersions.save(v);managedFiles.bind(List.of(r.fileId()),"EDUCATION_TEACHING",saved.getId(),a.getName());saved.setBindState("BOUND");saved.setBoundAt(Instant.now());return coursewareVersions.save(saved);}var x=materials.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());n=materialVersions.findByMaterialIdOrderByVersionNoDesc(id).stream().findFirst().map(v->v.getVersionNo()+1).orElse(1);var v=new TeachingMaterialVersion();v.setMaterialId(id);v.setVersionNo(n);v.setFileId(r.fileId());v.setMetadataJson(r.metadataJson());v.setCreateBy(a.getName());v.setCreateTime(java.time.LocalDateTime.now());var saved=materialVersions.save(v);managedFiles.bind(List.of(r.fileId()),"EDUCATION_TEACHING",saved.getId(),a.getName());saved.setBindState("BOUND");saved.setBoundAt(Instant.now());return materialVersions.save(saved);}
+ private String scope(String s){if(s==null||s.isBlank())return "PRIVATE";String v=s.trim().toUpperCase(Locale.ROOT);if("OFFERING".equals(v))v="TEACHING_GROUP";if("CLASS".equals(v))v="STUDENT_CLASS";if("CAMPUS".equals(v)||"PUBLIC".equals(v))v="SCHOOL";if(!Set.of("PRIVATE","TEACHING_GROUP","SCHOOL","STUDENT_CLASS").contains(v))throw new IllegalArgumentException("共享范围无效");return v;}
+ public Object addVersion(boolean cw,String id,VersionRequest r,Authentication a){ManagedFile managedFile=file(r.fileId(),a); int n;if(cw){var x=coursewares.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());n=coursewareVersions.findByCoursewareIdOrderByVersionNoDesc(id).stream().findFirst().map(v->v.getVersionNo()+1).orElse(1);var v=new CoursewareVersion();v.setCoursewareId(id);v.setVersionNo(n);v.setFileId(r.fileId());v.setMetadataJson(r.metadataJson());v.setFileName(managedFile.getOriginalName());v.setMimeType(managedFile.getContentType());v.setFileSize(managedFile.getFileSize());v.setChecksumSha256(managedFile.getSha256());v.setUploadedAt(Instant.now());v.setCreateBy(a.getName());v.setCreateTime(java.time.LocalDateTime.now());var saved=coursewareVersions.save(v);managedFiles.bind(List.of(r.fileId()),"EDUCATION_TEACHING",saved.getId(),a.getName());saved.setBindState("BOUND");saved.setBoundAt(Instant.now());return coursewareVersions.save(saved);}var x=materials.findById(id).orElseThrow();scopes.assertOfferingAccess(scopes.resolve(a.getName()),x.getOfferingId());n=materialVersions.findByMaterialIdOrderByVersionNoDesc(id).stream().findFirst().map(v->v.getVersionNo()+1).orElse(1);var v=new TeachingMaterialVersion();v.setMaterialId(id);v.setVersionNo(n);v.setFileId(r.fileId());v.setMetadataJson(r.metadataJson());v.setFileName(managedFile.getOriginalName());v.setMimeType(managedFile.getContentType());v.setFileSize(managedFile.getFileSize());v.setChecksumSha256(managedFile.getSha256());v.setUploadedAt(Instant.now());v.setCreateBy(a.getName());v.setCreateTime(java.time.LocalDateTime.now());var saved=materialVersions.save(v);managedFiles.bind(List.of(r.fileId()),"EDUCATION_TEACHING",saved.getId(),a.getName());saved.setBindState("BOUND");saved.setBoundAt(Instant.now());return materialVersions.save(saved);}
  public Object submitVersionReview(boolean cw,String versionId,Authentication a){
    if(cw){
      var v=coursewareVersions.findById(versionId).orElseThrow();var x=coursewares.findById(v.getCoursewareId()).orElseThrow();

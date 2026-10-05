@@ -9,10 +9,15 @@ public final class ResearchErrorDtos {
 			@NotBlank String leaderTeacherId, String courseScopeJson, String description) {}
 	public record MemberRequest(@NotBlank String teacherId, String role) {}
 	public record ActivityRequest(@NotBlank String title, LocalDateTime activityTime,
-			LocalDateTime endTime, String location, String agenda, String courseId, String topicId) {
+			LocalDateTime endTime, String location, String agenda, String courseId, String topicId,
+			String activityType) {
+		public ActivityRequest(String title, LocalDateTime activityTime, LocalDateTime endTime,
+				String location, String agenda, String courseId, String topicId) {
+			this(title, activityTime, endTime, location, agenda, courseId, topicId, null);
+		}
 		public ActivityRequest(String title, LocalDateTime activityTime, LocalDateTime endTime,
 				String location, String agenda) {
-			this(title, activityTime, endTime, location, agenda, null, null);
+			this(title, activityTime, endTime, location, agenda, null, null, null);
 		}
 	}
 	public record ActivityCancelRequest(@NotBlank String reason) {}

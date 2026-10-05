@@ -9,7 +9,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
 import com.chronos.education.meeting.model.MeetingCommands;
 import com.chronos.education.meeting.model.MeetingView;
 import com.chronos.education.meeting.service.MeetingCenterService;
@@ -18,11 +17,15 @@ import com.chronos.education.parentmeeting.model.ParentMeetingCommands;
 import com.chronos.education.parentmeeting.model.ParentMeetingScope;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.scheduling.model.StudentProfile;
+import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.model.pojo.AdminUser;
 
 @Service
 public class ParentMeetingService {
@@ -30,16 +33,18 @@ public class ParentMeetingService {
 	private final ParentMeetingScopeRepository scopes;
 	private final StudentProfileRepository students;
 	private final StudentGuardianRepository guardians;
-	private final ParentAccountBindingRepository bindings;
+	private final EducationUserBindingRepository bindings;
 	private final EducationDataScopeService dataScope;
 	private final IAuditLogService audit;
+	private final IAdminUserRepository accounts;
 
 	public ParentMeetingService(MeetingCenterService meetings, ParentMeetingScopeRepository scopes,
 			StudentProfileRepository students, StudentGuardianRepository guardians,
-			ParentAccountBindingRepository bindings, EducationDataScopeService dataScope,
-			IAuditLogService audit) {
+			EducationUserBindingRepository bindings, EducationDataScopeService dataScope,
+			IAuditLogService audit, IAdminUserRepository accounts) {
 		this.meetings = meetings; this.scopes = scopes; this.students = students;
 		this.guardians = guardians; this.bindings = bindings; this.dataScope = dataScope; this.audit = audit;
+		this.accounts = accounts;
 	}
 
 	@Transactional
@@ -50,9 +55,14 @@ public class ParentMeetingService {
 		Set<String> studentIds = targets.stream().map(StudentProfile::getId).collect(Collectors.toSet());
 		List<StudentGuardianRelation> relations = guardians.findByStudentIdIn(studentIds.stream().toList());
 		List<String> parentIds = relations.stream().map(StudentGuardianRelation::getParentId).distinct().toList();
-		List<String> usernames = bindings.findByParentIdInAndStatus(parentIds, "ACTIVE").stream()
-				.map(value -> value.getUsername()).distinct().toList();
-		if (usernames.isEmpty()) throw new IllegalStateException("范围内没有可邀请的有效家长账号");
+		List<String> boundUsernames = bindings.findByProfileTypeAndProfileIdInAndStatus("PARENT", parentIds, "ACTIVE").stream()
+				.map(EducationUserBinding::getUsername).distinct().toList();
+		List<String> usernames = boundUsernames.isEmpty() ? List.of() : accounts.findByUsernameIn(boundUsernames).stream()
+				.filter(account -> Integer.valueOf(1).equals(account.getStatus())
+						&& !Boolean.TRUE.equals(account.getAccountLocked()))
+				.map(AdminUser::getUsername).toList();
+		if (usernames.isEmpty()) throw new IllegalStateException(
+				"范围内没有可邀请的有效家长账号；请在家长管理核对监护关系、门户账号绑定及账号可用性");
 		MeetingCommands.Save save = new MeetingCommands.Save(command.title(), command.agenda(),
 				command.meetingType(), command.startTime(), command.endTime(), command.roomId(),
 				command.meetingProvider(), command.externalMeetingId(), command.joinUrl(),
@@ -66,6 +76,20 @@ public class ParentMeetingService {
 		audit.log(organizer, "EDU_PARENT_MEETING_CREATE",
 				"meetingId=" + view.meeting().getId() + ",scopeType=" + scopeType + ",scopeId=" + command.scopeId());
 		return view;
+	}
+
+	@Transactional(readOnly = true)
+	public List<MeetingView> all(String username, boolean manage) {
+		Set<String> ids = scopes.findAll().stream().map(ParentMeetingScope::getMeetingId).collect(Collectors.toSet());
+		return meetings.allMeetings().stream()
+				.filter(view -> ids.contains(view.meeting().getId()))
+				.filter(view -> manage || username.equals(view.meeting().getOrganizerUsername()))
+				.toList();
+	}
+
+	public MeetingView publish(String id, String username) {
+		assertParentMeeting(id);
+		return meetings.publish(id, username);
 	}
 
 	@Transactional(readOnly = true)

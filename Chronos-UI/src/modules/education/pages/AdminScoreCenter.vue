@@ -83,7 +83,8 @@ const selectedStatus = computed(() => statusLabel[selected.value?.status] || sel
 const components = computed(() => selected.value?.components || [])
 const students = computed(() => selected.value?.students || [])
 const readOnly = computed(() => selected.value?.status === 'PUBLISHED')
-const canEdit = computed(() => ['EDITING', 'REJECTED'].includes(selected.value?.status))
+const canEdit = computed(() => hasAdminPermission('education:score:gradebook:update')
+  && ['EDITING', 'REJECTED'].includes(selected.value?.status))
 const publishedSchemes = computed(() => schemes.value.filter((scheme) => scheme.status === 'PUBLISHED'))
 const weightTotal = computed(() => schemeForm.value.components.reduce(
   (total, item) => total + Number(item.weight || 0),
@@ -111,6 +112,10 @@ function offeringLabel(offeringId) {
   const offering = offerings.value.find((item) => item.id === offeringId)
   if (!offering) return offeringId || '—'
   return `${offering.semesterCode} · ${offering.courseName} · ${offering.teachingClassName}`
+}
+
+function gradebookName(book) {
+  return schemes.value.find(scheme => scheme.id === book.schemeId)?.name || '课程成绩册'
 }
 
 function normalizeGradebook(book) {
@@ -535,18 +540,24 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
           </el-button>
         </div>
         <el-table v-loading="loading" :data="gradebooks" stripe @row-click="selectGradebook">
-          <el-table-column prop="name" label="成绩册" min-width="180" />
-          <el-table-column prop="offeringName" label="课程开设" min-width="180" />
+          <el-table-column label="成绩册" min-width="180">
+            <template #default="{ row }">{{ gradebookName(row) }}</template>
+          </el-table-column>
+          <el-table-column label="课程开设" min-width="180">
+            <template #default="{ row }">{{ offeringLabel(row.offeringId) }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="120">
             <template #default="{ row }">{{ statusLabel[row.status] || row.status }}</template>
           </el-table-column>
-          <el-table-column prop="updatedAt" label="更新时间" width="180" />
+          <el-table-column label="更新时间" width="180">
+            <template #default="{ row }">{{ row.lastUpdateTime || row.createTime || '—' }}</template>
+          </el-table-column>
         </el-table>
 
         <el-card v-if="selected" v-loading="detailLoading" class="editor">
           <template #header>
             <div class="editor-header">
-              <span>{{ selected.name || '成绩录入' }} · {{ selectedStatus }}</span>
+              <span>{{ gradebookName(selected) }} · {{ selectedStatus }}</span>
               <span class="editor-actions">
                 <el-tag v-if="dirty" type="warning">有未保存修改</el-tag>
                 <input ref="importInput" class="hidden-file" type="file" accept=".xlsx" @change="uploadGradebook">

@@ -14,28 +14,31 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class FamilyEngagementController {
 	private final FamilyEngagementService service;
-	public FamilyEngagementController(FamilyEngagementService service) { this.service = service; }
+
+	public FamilyEngagementController(FamilyEngagementService service) {
+		this.service = service;
+	}
 
 	@PostMapping("/portal/education/family/feedback")
-	@PreAuthorize("hasAuthority('education:home-school:feedback:create')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<FeedbackResponse> submit(@RequestBody FeedbackCommand command, Authentication auth) {
 		return ok(service.submit(command, auth.getName()));
 	}
 
 	@GetMapping("/portal/education/family/feedback")
-	@PreAuthorize("hasAuthority('education:home-school:feedback:view')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<List<FeedbackResponse>> parentFeedbacks(Authentication auth) {
 		return ok(service.parentFeedbacks(auth.getName()));
 	}
 
 	@PostMapping("/portal/education/family/feedback/{id}/confirm")
-	@PreAuthorize("hasAuthority('education:home-school:feedback:confirm')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<FeedbackResponse> confirm(@PathVariable String id, Authentication auth) {
 		return ok(service.parentConfirm(id, false, auth.getName()));
 	}
 
 	@PostMapping("/portal/education/family/feedback/{id}/reopen")
-	@PreAuthorize("hasAuthority('education:home-school:feedback:confirm')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<FeedbackResponse> reopen(@PathVariable String id, Authentication auth) {
 		return ok(service.parentConfirm(id, true, auth.getName()));
 	}
@@ -48,8 +51,8 @@ public class FamilyEngagementController {
 
 	@PostMapping("/admin/education/home-school/feedback/{id}/transition")
 	@PreAuthorize("hasAuthority('education:home-school:feedback:update')")
-	public ResultData<FeedbackResponse> transition(@PathVariable String id,
-			@RequestBody FeedbackActionCommand command, Authentication auth) {
+	public ResultData<FeedbackResponse> transition(@PathVariable String id, @RequestBody FeedbackActionCommand command,
+			Authentication auth) {
 		return ok(service.transition(id, command, auth.getName()));
 	}
 
@@ -62,15 +65,19 @@ public class FamilyEngagementController {
 
 	@PostMapping("/admin/education/home-school/communications")
 	@PreAuthorize("hasAuthority('education:home-school:communication:create')")
-	public ResultData<CommunicationResponse> record(@RequestBody CommunicationCommand command,
-			Authentication auth) {
+	public ResultData<CommunicationResponse> record(@RequestBody CommunicationCommand command, Authentication auth) {
 		return ok(service.record(command, auth.getName()));
 	}
 
-	@GetMapping({"/admin/education/home-school/communications",
-			"/portal/education/family/communications"})
+	@GetMapping("/admin/education/home-school/communications")
 	@PreAuthorize("hasAuthority('education:home-school:communication:view')")
-	public ResultData<List<CommunicationResponse>> communications(Authentication auth) {
+	public ResultData<List<CommunicationResponse>> staffCommunications(Authentication auth) {
+		return ok(service.listCommunications(auth.getName()));
+	}
+
+	@GetMapping("/portal/education/family/communications")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<List<CommunicationResponse>> familyCommunications(Authentication auth) {
 		return ok(service.listCommunications(auth.getName()));
 	}
 

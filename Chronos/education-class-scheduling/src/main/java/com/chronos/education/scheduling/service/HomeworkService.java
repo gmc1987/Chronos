@@ -3,6 +3,9 @@ package com.chronos.education.scheduling.service;
 import java.time.LocalDateTime;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Set;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -24,6 +27,7 @@ import com.chronos.education.scheduling.dao.PreparationRepository;
 import com.chronos.education.scheduling.dao.LessonPlanRepository;
 import com.chronos.education.scheduling.dao.QuestionRepository;
 import com.chronos.education.scheduling.dao.QuestionVersionRepository;
+import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.HomeworkAssignment;
@@ -55,6 +59,8 @@ public class HomeworkService {
 	private final QuestionRepository questions;
 	private final QuestionVersionRepository questionVersions;
 	private final EducationDomainEventService domainEvents;
+	@org.springframework.beans.factory.annotation.Autowired
+	private StudentProfileRepository studentProfiles;
 
 	public HomeworkService(HomeworkAssignmentRepository assignments,
 			HomeworkSubmissionRepository submissions, TeachingClassMemberRepository members,
@@ -371,7 +377,57 @@ public class HomeworkService {
 			Authentication auth) {
 		HomeworkAssignment assignment = assignment(assignmentId);
 		teacherCan(scope(auth), assignment);
-		return PageView.from(submissions.findByAssignmentIdOrderByCreateTimeAsc(assignmentId), page, size);
+		PageView<HomeworkSubmission> result = PageView.from(
+				submissions.findByAssignmentIdOrderByCreateTimeAsc(assignmentId), page, size);
+		if (studentProfiles != null && !result.content().isEmpty()) {
+			Map<String, String> names = new HashMap<>();
+			studentProfiles.findAllById(result.content().stream()
+					.map(HomeworkSubmission::getStudentId).toList())
+				.forEach(student -> names.put(student.getId(), student.getStudentName()));
+			result.content().forEach(submission -> submission.setStudentName(
+					names.getOrDefault(submission.getStudentId(), submission.getStudentId())));
+		}
+		return result;
+	}
+	public record HomeworkStats(String assignmentId, String title, LocalDateTime dueAt,
+			String status, Integer audienceCount, int submittedCount, int gradedCount,
+			int publishedGradeCount, Double submissionRate, Double averageScore) {}
+	@Transactional(readOnly = true)
+	public PageView<HomeworkStats> statistics(String offeringId, int page, int size,
+			Authentication auth) {
+		if (offeringId == null || offeringId.isBlank())
+			throw new IllegalArgumentException("请选择教学班");
+		HomeworkAssignment scopeTarget = new HomeworkAssignment();
+		scopeTarget.setOfferingId(offeringId);
+		teacherCan(scope(auth), scopeTarget);
+		PageView<HomeworkAssignment> assignmentsPage = PageView.from(
+				assignments.findByOfferingIdOrderByDueAtDescCreateTimeDesc(offeringId), page, size);
+		List<String> ids = assignmentsPage.content().stream().map(HomeworkAssignment::getId).toList();
+		Map<String, List<HomeworkSubmission>> grouped = ids.isEmpty() ? Map.of()
+				: submissions.findByAssignmentIdIn(ids).stream()
+					.collect(java.util.stream.Collectors.groupingBy(HomeworkSubmission::getAssignmentId));
+		int audienceCount = (int) members.findByOfferingIdOrderByCreateTime(offeringId).stream()
+				.filter(member -> Set.of("ACTIVE", "ENROLLED").contains(member.getEnrollmentStatus()))
+				.map(TeachingClassMember::getStudentId).distinct().count();
+		List<HomeworkStats> values = assignmentsPage.content().stream().map(assignment -> {
+			List<HomeworkSubmission> work = grouped.getOrDefault(assignment.getId(), List.of());
+			int submitted = (int) work.stream().filter(row -> Set.of("SUBMITTED", "GRADED",
+					"RETURNED_FOR_REVISION").contains(row.getStatus())).count();
+			int graded = (int) work.stream().filter(row -> "GRADED".equals(row.getStatus())).count();
+			List<HomeworkSubmission> published = work.stream().filter(row -> row.isGradesPublished()
+					&& row.getScore() != null).toList();
+			Integer denominator = "ENROLLED_STUDENTS".equals(assignment.getPublishAudience())
+					? audienceCount : null;
+			Double rate = denominator == null || denominator == 0 ? null
+					: Math.round(submitted * 10000.0 / denominator) / 100.0;
+			Double average = published.isEmpty() ? null
+					: Math.round(published.stream().mapToInt(HomeworkSubmission::getScore).average()
+							.orElse(0) * 100.0) / 100.0;
+			return new HomeworkStats(assignment.getId(), assignment.getTitle(), assignment.getDueAt(),
+					assignment.getStatus(), denominator, submitted, graded, published.size(), rate, average);
+		}).toList();
+		return new PageView<>(values, assignmentsPage.totalElements(), assignmentsPage.totalPages(),
+				assignmentsPage.number(), assignmentsPage.size(), assignmentsPage.first(), assignmentsPage.last());
 	}
 
 	@Transactional(readOnly = true)

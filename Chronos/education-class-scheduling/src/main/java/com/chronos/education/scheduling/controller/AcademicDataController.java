@@ -253,6 +253,7 @@ public class AcademicDataController {
 	public ResultData<?> students(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String classId,
 			Authentication authentication) {
 		boolean privacyVisible = authorization.any(
 				authentication,
@@ -260,6 +261,12 @@ public class AcademicDataController {
 				"education:student:update",
 				"education:student:manage");
 		var scope = dataScopes.resolve(authentication.getName());
+		if (classId != null && !classId.isBlank()) {
+			dataScopes.assertClassAccess(scope, classId);
+			return ok(service.studentsByClass(classId).stream()
+					.map(student -> StudentProfileView.from(student, privacyVisible))
+					.toList());
+		}
 		if (page == null && size == null) {
 			return ok(service.students(scope).stream()
 					.map(student -> StudentProfileView.from(student, privacyVisible))

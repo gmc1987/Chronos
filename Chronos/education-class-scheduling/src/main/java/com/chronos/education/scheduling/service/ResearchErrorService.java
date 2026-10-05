@@ -5,6 +5,8 @@ import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.*;
 import com.chronos.file.dao.ManagedFileRepository;
 import com.chronos.file.service.ManagedFileService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.LocalDateTime;
 import java.util.*;
 import org.springframework.security.core.Authentication;
@@ -37,6 +39,7 @@ public class ResearchErrorService {
 	private ErrorReviewRepository errorReviews;
 	private EducationIdentityService identities;
 	private TeachingCollaborationNotificationService notifications;
+	@PersistenceContext private EntityManager em;
 
 	public ResearchErrorService(ResearchGroupRepository groups, ResearchGroupMemberRepository groupMembers,
 			ResearchActivityRepository activities, ResearchActivityMemberRepository activityMembers,
@@ -84,7 +87,27 @@ public class ResearchErrorService {
 	}
 
 	private EducationDataScope scope(Authentication a) { return scopes.resolve(a.getName()); }
-	private void teacher(Authentication a, String id) { scopes.assertTeacherAccess(scope(a), id); }
+	private void teacher(Authentication a, String id) {
+		if (id == null || em.find(TeacherAcademicProfile.class, id) == null)
+			throw new IllegalArgumentException("教师档案不存在");
+		scopes.assertTeacherAccess(scope(a), id);
+	}
+	private String researchSchool(Authentication actor, String campusId, String leaderTeacherId) {
+		EducationDataScope dataScope = scope(actor);
+		if (campusId != null && !campusId.isBlank())
+			return scopes.requireSchoolForCampus(dataScope, campusId);
+		List<String> campuses = em.createQuery(
+			"select distinct offering.campusId from CourseOffering offering "
+				+ "where offering.teacherId = :teacherId and offering.campusId is not null", String.class)
+			.setParameter("teacherId", leaderTeacherId)
+			.getResultList();
+		Set<String> schools = new HashSet<>();
+		for (String candidate : campuses)
+			schools.add(scopes.requireSchoolForCampus(dataScope, candidate));
+		if (schools.size() == 1) return schools.iterator().next();
+		if (schools.isEmpty() && !dataScope.fullAccess()) return scopes.requireSingleSchool(dataScope);
+		throw new IllegalArgumentException("无法确定教研组所属学校，请指定校区");
+	}
 	private ResearchGroup group(String id, Authentication a) {
 		ResearchGroup g=groups.findById(id).orElseThrow(()->new NoSuchElementException("教研组不存在"));
 		EducationDataScope s=scope(a);
@@ -100,6 +123,24 @@ public class ResearchErrorService {
 				|| s.teacherIds().contains(g.getLeaderTeacherId())
 				|| groupMembers.findByGroupId(g.getId()).stream()
 						.anyMatch(m -> s.teacherIds().contains(m.getTeacherId()))).toList();
+	}
+	public record ResearchTeacherOption(String id, String teacherName) {}
+	public record ResearchAccess(boolean fullAccess, Set<String> teacherIds) {}
+	@Transactional(readOnly = true)
+	public ResearchAccess researchAccess(Authentication a) {
+		return new ResearchAccess(scope(a).fullAccess(), currentTeacherIds(a));
+	}
+	@Transactional(readOnly = true)
+	public List<ResearchTeacherOption> teacherOptions(Authentication a) {
+		Set<String> teacherIds = new LinkedHashSet<>();
+		for (ResearchGroup group : groups(a)) {
+			teacherIds.add(group.getLeaderTeacherId());
+			groupMembers.findByGroupId(group.getId()).forEach(member -> teacherIds.add(member.getTeacherId()));
+		}
+		return teacherIds.stream().map(id -> em.find(TeacherAcademicProfile.class, id))
+				.filter(Objects::nonNull)
+				.map(profile -> new ResearchTeacherOption(profile.getId(), profile.getTeacherName()))
+				.toList();
 	}
 	@Transactional(readOnly = true)
 	public List<ResearchActivity> activities(String groupId, Authentication a) {
@@ -123,6 +164,19 @@ public class ResearchErrorService {
 		group(x.getGroupId(), a);
 		return activityMembers.findByActivityId(activityId);
 	}
+	public record ActivityInvitation(String activityId, String title, LocalDateTime activityTime,
+			String invitationStatus, String attendanceStatus) {}
+	@Transactional(readOnly = true)
+	public List<ActivityInvitation> myActivityInvitations(Authentication a) {
+		Set<String> teacherIds = currentTeacherIds(a);
+		if (teacherIds.isEmpty()) return List.of();
+		return activityMembers.findByTeacherIdIn(teacherIds).stream()
+				.map(member -> activities.findById(member.getActivityId())
+						.map(activity -> new ActivityInvitation(activity.getId(), activity.getTitle(),
+								activity.getActivityTime(), member.getInvitationStatus(),
+								member.getAttendanceStatus())).orElse(null))
+				.filter(Objects::nonNull).toList();
+	}
 	@Transactional(readOnly = true)
 	public List<ResearchMaterial> materials(String activityId, Authentication a) {
 		ResearchActivity x = activities.findById(activityId).orElseThrow(() -> new NoSuchElementException("活动不存在"));
@@ -135,6 +189,7 @@ public class ResearchErrorService {
 		teacher(a, r.leaderTeacherId());
 		g.setName(r.name()); g.setSubjectId(r.subjectId()); g.setCampusId(r.campusId());
 		g.setLeaderTeacherId(r.leaderTeacherId()); g.setCourseScopeJson(r.courseScopeJson());
+		g.setSchoolId(researchSchool(a, r.campusId(), r.leaderTeacherId()));
 		g.setDescription(r.description()); return groups.save(g);
 	}
 	public ResearchActivity updateActivity(String id, ActivityRequest r, Authentication a) {
@@ -144,6 +199,7 @@ public class ResearchErrorService {
 		if (r.endTime() != null && r.activityTime() != null && r.endTime().isBefore(r.activityTime()))
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime());
+		x.setActivityType(researchActivityType(r.activityType()));
 		x.setLocation(r.location()); x.setAgenda(r.agenda()); x.setCourseId(r.courseId()); x.setTopicId(r.topicId()); return activities.save(x);
 	}
 	public ResearchActivity cancelActivity(String id, ActivityCancelRequest request, Authentication a) {
@@ -194,7 +250,7 @@ public class ResearchErrorService {
 		teacher(a,r.leaderTeacherId()); ResearchGroup g=new ResearchGroup();
 		g.setName(r.name()); g.setSubjectId(r.subjectId()); g.setCampusId(r.campusId());
 		g.setLeaderTeacherId(r.leaderTeacherId()); g.setCourseScopeJson(r.courseScopeJson()); g.setDescription(r.description());
-		g.setSchoolId("CURRENT"); g.setCreateBy(a.getName()); return groups.save(g);
+		g.setSchoolId(researchSchool(a, r.campusId(), r.leaderTeacherId())); g.setCreateBy(a.getName()); return groups.save(g);
 	}
 	public ResearchGroupMember addMember(String id, MemberRequest r, Authentication a) {
 		ResearchGroup current = group(id,a);assertGroupLeader(current,a);teacher(a,r.teacherId());
@@ -213,8 +269,17 @@ public class ResearchErrorService {
 			throw new IllegalArgumentException("结束时间不能早于开始时间");
 		ResearchActivity x=new ResearchActivity(); x.setGroupId(groupId); x.setStatus("SCHEDULED");
 		x.setTitle(r.title()); x.setActivityTime(r.activityTime()); x.setEndTime(r.endTime()); x.setLocation(r.location());
+		x.setActivityType(researchActivityType(r.activityType()));
 		x.setAgenda(r.agenda()); x.setCourseId(r.courseId()); x.setTopicId(r.topicId());
-		x.setOrganizerId(currentTeacherId(a));x.setCreateBy(a.getName());return activities.save(x);
+		// Administrators may schedule on behalf of the group leader without a teacher profile.
+		x.setOrganizerId(scope(a).fullAccess() ? current.getLeaderTeacherId() : currentTeacherId(a));
+		x.setCreateBy(a.getName());return activities.save(x);
+	}
+	private String researchActivityType(String value) {
+		String type = value == null || value.isBlank() ? "TEACHING_RESEARCH" : value.trim().toUpperCase(Locale.ROOT);
+		if (!Set.of("TEACHING_RESEARCH", "COLLECTIVE_PREPARATION", "OPEN_CLASS", "PEER_REVIEW").contains(type))
+			throw new IllegalArgumentException("教研活动类型无效");
+		return type;
 	}
 	public ResearchActivityMember inviteActivityMember(String activityId, MemberRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));

@@ -207,6 +207,7 @@ export const createMeeting = (payload) => http.post('/admin/education/meetings',
 export const listHomeSchoolBindings = (params = {}) => http.get(`/admin/education/home-school/parent-bindings?${new URLSearchParams(
   Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
 )}`)
+export const pageHomeSchoolBindings = (params = {}) => http.get(`/admin/education/home-school/parent-bindings/page?${qs(params)}`)
 export const createHomeSchoolBinding = (payload) => http.post('/admin/education/home-school/parent-bindings', payload)
 export const invalidateHomeSchoolBinding = (id) => http.post(`/admin/education/home-school/parent-bindings/${id}/invalidate`)
 export const listHomeSchoolNotices = (params = {}) => http.get(`/admin/education/home-school/notices?${new URLSearchParams(
@@ -215,6 +216,8 @@ export const listHomeSchoolNotices = (params = {}) => http.get(`/admin/education
 export const createHomeSchoolNotice = (payload) => http.post('/admin/education/home-school/notices', payload)
 export const publishHomeSchoolNotice = (id) => http.post(`/admin/education/home-school/notices/${id}/publish`)
 export const createParentMeeting = (payload) => http.post('/admin/education/parent-meetings', payload)
+export const listAdminParentMeetings = () => http.get('/admin/education/parent-meetings')
+export const publishParentMeeting = (id) => http.post(`/admin/education/parent-meetings/${id}/publish`)
 export const listParentMeetings = () => http.get('/portal/education/parent-meetings')
 export const respondParentMeeting = (id, payload) => http.post(`/portal/education/parent-meetings/${id}/response`, payload)
 
@@ -232,10 +235,15 @@ export const createClassGroup = (payload, key) => http.post('/admin/education/ho
 export const changeClassGroupStatus = (id, payload) => http.post(`/admin/education/home-school/class-groups/${id}/status`, payload)
 export const syncClassGroup = (id, payload = {}) => http.post(`/admin/education/home-school/class-groups/${id}/sync`, payload)
 export const pageClassGroupMembers = (id, params = {}) => http.get(`/admin/education/home-school/class-groups/${id}/members?${qs(params)}`)
+export const addClassGroupMember = (id, payload) => http.post(`/admin/education/home-school/class-groups/${id}/members`, payload)
+export const removeClassGroupMember = (id, memberId) => http.delete(`/admin/education/home-school/class-groups/${id}/members/${memberId}`)
 export const pageClassGroupAudit = (id, params = {}) => http.get(`/admin/education/home-school/class-groups/${id}/audit?${qs(params)}`)
 export const listParentFeedback = (params = {}) => http.get(`/admin/education/home-school/feedback?${qs(params)}`)
 export const replyParentFeedback = (id, payload) => http.post(`/admin/education/home-school/feedback/${id}/reply`, payload)
+export const transitionParentFeedback = (id, payload) => http.post(`/admin/education/home-school/feedback/${id}/transition`, payload)
 export const listCommunicationRecords = (params = {}) => http.get(`/admin/education/home-school/communications?${qs(params)}`)
+export const createCommunicationRecord = (payload) => http.post('/admin/education/home-school/communications', payload)
+export const exportCommunicationRecords = () => http.download('/admin/education/home-school/communications/export')
 export const updateMeeting = (id, payload) => http.put(`/admin/education/meetings/${id}`, payload)
 export const deleteMeeting = (id) => http.delete(`/admin/education/meetings/${id}`)
 export const publishMeeting = (id) => http.post(`/admin/education/meetings/${id}/publish`)
@@ -268,6 +276,7 @@ export const getGradebook = (id) => http.get(`/admin/education/grades/gradebooks
 export const listGradebookSnapshots = (id) => http.get(`/admin/education/grades/gradebooks/${id}/snapshots`)
 export const updateGradebookItems = (id, payload) => http.put(`/admin/education/grades/gradebooks/${id}/items`, payload)
 export const submitGradebook = (id, payload = {}) => http.post(`/admin/education/grades/gradebooks/${id}/submit`, payload)
+export const reviewGradebook = (id, params) => http.post(`/admin/education/grades/gradebooks/${id}/review?${qs(params)}`)
 export const publishGradebook = (id, payload = {}) => http.post(`/admin/education/grades/gradebooks/${id}/publish`, payload)
 export const exportGradebook = (id) => http.download(`/admin/education/grades/gradebooks/${id}/export`)
 export const importGradebook = (id, file, dryRun = false) => {

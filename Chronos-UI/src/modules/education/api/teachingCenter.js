@@ -108,6 +108,10 @@ export const submitPreparation = (id) =>
   http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/submit`)
 export const invitePreparationMember = (id, body) =>
   http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/members`, body)
+export const myPreparationInvitations = () =>
+  http.get('/education/teaching-center/preparation-invitations/mine')
+export const respondPreparationInvitation = (memberId, response) =>
+  http.post(`/education/teaching-center/preparation-members/${encodeURIComponent(memberId)}/response`, { response })
 export const concludePreparation = (id, body) =>
   http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/conclusion`, body)
 
@@ -196,6 +200,10 @@ export const transitionResearchActivity = (id, action) =>
   http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/${encodeURIComponent(action)}`)
 export const researchResults = (id, params = {}) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/results?${queryString(params)}`)
 export const researchActivityMembers = (id) => http.get(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members`)
+export const myResearchActivityInvitations = () => http.get('/education/teaching-center/research-activity-invitations/mine')
+export const researchTeacherOptions = () => http.get('/education/teaching-center/research-teachers')
+export const researchAccess = () => http.get('/education/teaching-center/research-access')
+export const inviteResearchActivityMember = (id, body) => http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members`, body)
 export const removeResearchActivityMember = (id, teacherId) => http.delete(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/members/${encodeURIComponent(teacherId)}`)
 export const respondResearchInvite = (id, status) =>
   http.post(`/education/teaching-center/research-activities/${encodeURIComponent(id)}/invite-response`, { status })
@@ -230,6 +238,8 @@ export const reviewMistake = (id, body) =>
 // Homework is a teaching-domain workflow, not a generic platform Workflow instance.
 export const homeworkPage = (params = {}) =>
   http.get(`/education/teaching-center/api/homeworks?${queryString(params)}`)
+export const homeworkStatistics = (params = {}) =>
+  http.get(`/education/teaching-center/api/homeworks/statistics?${queryString(params)}`)
 export const createHomework = (body) =>
   http.post('/education/teaching-center/api/homeworks', body)
 export const updateHomework = (id, body) =>

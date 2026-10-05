@@ -21,7 +21,7 @@ public class FamilyEngagementService {
 	private static final String FEEDBACK_TYPE = "EDU_PARENT_FEEDBACK";
 	private final ParentFeedbackRepository feedbacks;
 	private final CommunicationRecordRepository communications;
-	private final ParentAccountBindingRepository bindings;
+	private final EducationUserBindingRepository bindings;
 	private final ParentProfileRepository parents;
 	private final StudentProfileRepository students;
 	private final StudentGuardianRepository guardians;
@@ -31,7 +31,7 @@ public class FamilyEngagementService {
 	private final IAuditLogService audit;
 
 	public FamilyEngagementService(ParentFeedbackRepository feedbacks,
-			CommunicationRecordRepository communications, ParentAccountBindingRepository bindings,
+			CommunicationRecordRepository communications, EducationUserBindingRepository bindings,
 			ParentProfileRepository parents, StudentProfileRepository students,
 			StudentGuardianRepository guardians, AdministrativeClassRepository classes,
 			EducationDataScopeService scopes, ManagedFileService files, IAuditLogService audit) {
@@ -49,12 +49,12 @@ public class FamilyEngagementService {
 
 	@Transactional
 	public FeedbackResponse submit(FeedbackCommand command, String username) {
-		ParentAccountBinding binding = activeParent(username);
+		EducationUserBinding binding = activeParent(username);
 		if (command == null || blank(command.studentId()) || blank(command.title()) || blank(command.content()))
 			throw new IllegalArgumentException("反馈学生、标题和内容不能为空");
-		StudentProfile student = studentForParent(binding.getParentId(), command.studentId());
+		StudentProfile student = studentForParent(binding.getProfileId(), command.studentId());
 		ParentFeedback value = new ParentFeedback();
-		value.setParentId(binding.getParentId());
+		value.setParentId(binding.getProfileId());
 		value.setStudentId(student.getId());
 		value.setClassId(student.getAdministrativeClassId());
 		value.setTitle(command.title().trim());
@@ -70,8 +70,8 @@ public class FamilyEngagementService {
 
 	@Transactional(readOnly = true)
 	public List<FeedbackResponse> parentFeedbacks(String username) {
-		ParentAccountBinding binding = activeParent(username);
-		return feedbacks.findByParentIdOrderByCreateTimeDesc(binding.getParentId()).stream()
+		EducationUserBinding binding = activeParent(username);
+		return feedbacks.findByParentIdOrderByCreateTimeDesc(binding.getProfileId()).stream()
 				.map(this::response).toList();
 	}
 
@@ -110,6 +110,7 @@ public class FamilyEngagementService {
 
 	@Transactional
 	public FeedbackResponse reply(String id, String reply, String username) {
+		if (blank(reply)) throw new IllegalArgumentException("回复内容不能为空");
 		ParentFeedback item = feedbacks.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("反馈不存在"));
 		String next = switch (item.getStatus()) {
@@ -118,15 +119,19 @@ public class FamilyEngagementService {
 			case "IN_PROGRESS" -> "RESOLVED";
 			default -> throw new IllegalStateException("当前状态不能回复");
 		};
-		return transition(id, new FeedbackActionCommand(next, null, reply), username);
+		transition(id, new FeedbackActionCommand(next, null, null), username);
+		item.setStaffReply(reply.trim());
+		item.setRepliedAt(LocalDateTime.now());
+		item = feedbacks.save(item);
+		return response(item);
 	}
 
 	@Transactional
 	public FeedbackResponse parentConfirm(String id, boolean reopen, String username) {
-		ParentAccountBinding binding = activeParent(username);
+		EducationUserBinding binding = activeParent(username);
 		ParentFeedback item = feedbacks.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("反馈不存在"));
-		if (!binding.getParentId().equals(item.getParentId()))
+		if (!binding.getProfileId().equals(item.getParentId()))
 			throw new AccessDeniedException("无权操作该反馈");
 		if (reopen) {
 			if (!Set.of("RESOLVED", "CLOSED").contains(item.getStatus()))
@@ -168,15 +173,15 @@ public class FamilyEngagementService {
 		value = communications.save(value);
 		audit.log(username, "EDU_HOME_COMMUNICATION_CREATE", "recordId=" + value.getId()
 				+ ",studentId=" + value.getStudentId());
-		return response(value, canReadSensitive(username));
+		return response(value, canReadSensitive(username), student.getStudentName());
 	}
 
 	@Transactional(readOnly = true)
 	public List<CommunicationResponse> listCommunications(String username) {
-		boolean parent = bindings.findByUsernameAndStatus(username, "ACTIVE").isPresent();
+		boolean parent = bindings.findByUsernameAndProfileTypeAndStatus(username, "PARENT", "ACTIVE").isPresent();
 		List<CommunicationRecord> values;
 		if (parent) {
-			String parentId = activeParent(username).getParentId();
+			String parentId = activeParent(username).getProfileId();
 			Set<String> studentIds = guardians.findByParentIdOrderByCreateTime(parentId).stream()
 					.map(StudentGuardianRelation::getStudentId).collect(Collectors.toSet());
 			values = communications.findByStudentIdInOrderByOccurredAtDesc(studentIds);
@@ -187,7 +192,11 @@ public class FamilyEngagementService {
 					.toList();
 		}
 		boolean sensitive = canReadSensitive(username);
-		return values.stream().map(value -> response(value, sensitive)).toList();
+		Map<String, String> studentNames = students.findAllById(values.stream()
+				.map(CommunicationRecord::getStudentId).collect(Collectors.toSet())).stream()
+				.collect(Collectors.toMap(StudentProfile::getId, StudentProfile::getStudentName));
+		return values.stream().map(value -> response(value, sensitive,
+				studentNames.get(value.getStudentId()))).toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -219,10 +228,10 @@ public class FamilyEngagementService {
 		};
 	}
 
-	private ParentAccountBinding activeParent(String username) {
-		ParentAccountBinding binding = bindings.findByUsernameAndStatus(username, "ACTIVE")
+	private EducationUserBinding activeParent(String username) {
+		EducationUserBinding binding = bindings.findByUsernameAndProfileTypeAndStatus(username, "PARENT", "ACTIVE")
 				.orElseThrow(() -> new AccessDeniedException("当前账号不是有效家长账号"));
-		parents.findById(binding.getParentId())
+		parents.findById(binding.getProfileId())
 				.filter(parent -> "ACTIVE".equals(parent.getStatus()))
 				.orElseThrow(() -> new AccessDeniedException("家长档案已失效"));
 		return binding;
@@ -236,7 +245,7 @@ public class FamilyEngagementService {
 	}
 
 	private void assertStaffStudentAccess(String username, String studentId) {
-		if (bindings.findByUsernameAndStatus(username, "ACTIVE").isPresent())
+		if (bindings.findByUsernameAndProfileTypeAndStatus(username, "PARENT", "ACTIVE").isPresent())
 			throw new AccessDeniedException("家长账号不能处理反馈");
 		EducationDataScope scope = scopes.resolve(username);
 		scopes.assertStudentAccess(scope, studentId);
@@ -260,11 +269,11 @@ public class FamilyEngagementService {
 				value.getDueAt() != null && value.getDueAt().isBefore(LocalDateTime.now())
 						&& !Set.of("RESOLVED", "CLOSED").contains(value.getStatus()),
 				value.getAcceptedAt(), value.getResolvedAt(), value.getClosedAt(),
-				value.getParentConfirmedAt(), value.getReopenedAt());
+				value.getParentConfirmedAt(), value.getReopenedAt(), value.getStaffReply(), value.getRepliedAt());
 	}
 
-	private CommunicationResponse response(CommunicationRecord value, boolean sensitive) {
-		return new CommunicationResponse(value.getId(), value.getTeacherUsername(), value.getStudentId(),
+	private CommunicationResponse response(CommunicationRecord value, boolean sensitive, String studentName) {
+		return new CommunicationResponse(value.getId(), value.getTeacherUsername(), value.getStudentId(), studentName,
 				value.getClassId(), value.getChannel(), value.getSubject(), value.getContent(),
 				sensitive ? value.getSensitiveContent() : null, value.getOccurredAt());
 	}

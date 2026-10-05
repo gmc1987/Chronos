@@ -8,8 +8,14 @@ import java.util.List;
 public final class TeachingPlanDtos {
 	private TeachingPlanDtos() {}
 
-	public enum PlanType { SEMESTER, UNIT, PRACTICAL }
-	public enum LessonType { REGULAR, PRACTICAL, REVIEW }
+	// 与教学计划类型字典保持一致；项目计划是已在界面提供的正式选项。
+	public enum PlanType {
+		SEMESTER,
+		UNIT,
+		PRACTICAL,
+		PROJECT
+	}
+	public enum LessonType { REGULAR, THEORY, EXPERIMENT, PRACTICAL, REVIEW }
 
 	public record PlanItemRequest(
 			@NotNull @Positive Integer chapterNo,

@@ -78,6 +78,15 @@ public class HomeworkController {
 			Authentication auth) {
 		return ok(service.submissions(id, page, size, auth));
 	}
+	@GetMapping("/homeworks/statistics")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:view','education:homework:manage')")
+	public ResultData<PageView<HomeworkService.HomeworkStats>> statistics(
+			@RequestParam String offeringId,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size,
+			Authentication auth) {
+		return ok(service.statistics(offeringId, page, size, auth));
+	}
 
 	@GetMapping("/homeworks/{id}/my-submission")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:submission:view','education:homework:view','education:homework:manage')")

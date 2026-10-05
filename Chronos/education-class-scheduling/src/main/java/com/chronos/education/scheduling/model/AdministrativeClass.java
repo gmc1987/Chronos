@@ -28,7 +28,7 @@ public class AdministrativeClass extends BaseEntity {
 	@Column(name = "grade_id", length = 64)
 	private String gradeId;
 
-	@Column(name = "major_id", length = 64, nullable = false)
+	@Column(name = "major_id", length = 64)
 	private String majorId;
 
 	@Column(name = "head_teacher_id", length = 64)

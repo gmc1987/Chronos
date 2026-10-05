@@ -55,6 +55,10 @@ class ResearchErrorServiceFlowTest {
 				mock(ErrorReviewRepository.class), mock(QuestionVersionRepository.class),
 				mock(com.chronos.file.service.ManagedFileService.class), identities,
 				mock(TeachingCollaborationNotificationService.class));
+		jakarta.persistence.EntityManager entityManager = mock(jakarta.persistence.EntityManager.class);
+		when(entityManager.find(TeacherAcademicProfile.class, "teacher-2"))
+				.thenReturn(new TeacherAcademicProfile());
+		ReflectionTestUtils.setField(service, "em", entityManager);
 	}
 
 	@Test
@@ -251,17 +255,17 @@ class ResearchErrorServiceFlowTest {
 	}
 
 	@Test
-	void failsClosedWhenTeacherIdentityBindingIsUnavailable() {
+	void administratorCreatesActivityForGroupLeaderWithoutTeacherBinding() {
 		ReflectionTestUtils.setField(service, "identities", null);
 		ResearchGroup group = new ResearchGroup();
 		group.setId("group-1");
 		when(groups.findById("group-1")).thenReturn(Optional.of(group));
 		when(activities.save(any(ResearchActivity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		assertThatThrownBy(() -> service.createActivity("group-1",
-				new ActivityRequest("活动", null, null, null, null), auth))
-				.isInstanceOf(IllegalStateException.class)
-				.hasMessage("教师身份绑定服务未配置");
+		group.setLeaderTeacherId("teacher-2");
+		ResearchActivity created = service.createActivity("group-1",
+				new ActivityRequest("活动", null, null, null, null), auth);
+		assertThat(created.getOrganizerId()).isEqualTo("teacher-2");
 	}
 
 	@Test

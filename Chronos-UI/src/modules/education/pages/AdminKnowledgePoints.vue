@@ -12,12 +12,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions, listCourseCatalog } from '../../../api/admin'
 import { knowledgePointTree, createKnowledgePoint, updateKnowledgePoint, moveKnowledgePoint, disableKnowledgePoint, enableKnowledgePoint } from '../api/teachingCenter'
 const courses=ref([]);const courseId=ref('');const tree=ref([]);const selected=ref(null);const dialog=ref(false);const form=reactive({})
-const reset=(v={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{courseId:courseId.value,name:'',code:'',description:'',learningObjective:'',parentId:'',...v})}
+const reset=(v={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{courseId:courseId.value,name:'',code:'',description:'',learningObjective:'',parentId:null,...v})}
 const loadTree=async()=>{selected.value=null;tree.value=[];if(!courseId.value)return;try{const r=await knowledgePointTree(courseId.value);tree.value=toTree(r.data?.content||r.data||[])}catch(e){ElMessage.error(e.message)}}
 const toTree=(rows)=>{const byId=new Map(rows.map(x=>[x.id,{...x,children:[]}])) ;const roots=[];byId.forEach(x=>{if(x.parentId&&byId.has(x.parentId))byId.get(x.parentId).children.push(x);else roots.push(x)});return roots}
 const selectPoint=(node)=>{selected.value=node}
 const openPoint=(point)=>{reset(point||{});dialog.value=true}
-const save=async()=>{if(!form.name)return ElMessage.warning('请输入知识点名称');try{form.id?await updateKnowledgePoint(form.id,{...form}):await createKnowledgePoint({...form});dialog.value=false;await loadTree();ElMessage.success('已保存')}catch(e){ElMessage.error(e.message)}}
+const save=async()=>{if(!form.name)return ElMessage.warning('请输入知识点名称');try{const payload={...form,parentId:form.parentId||null};form.id?await updateKnowledgePoint(form.id,payload):await createKnowledgePoint(payload);dialog.value=false;await loadTree();ElMessage.success('已保存')}catch(e){ElMessage.error(e.message)}}
 const dropPoint=async(node, _old, _parent)=>{try{await moveKnowledgePoint(node.data.id,{parentId:node.parent?.data?.id||null,sortOrder:node.data.sortOrder}) ;await loadTree()}catch(e){ElMessage.error(e.message);await loadTree()}}
 const disable=async(point)=>{try{await ElMessageBox.confirm(`停用后将影响 ${point.referenceCount||0} 个引用，是否继续？`,'确认停用');await disableKnowledgePoint(point.id);await loadTree();ElMessage.success('已停用')}catch(e){if(e!=='cancel')ElMessage.error(e.message)}}
 const enable=async(point)=>{try{await enableKnowledgePoint(point.id);await loadTree();ElMessage.success('已启用')}catch(e){ElMessage.error(e.message)}}

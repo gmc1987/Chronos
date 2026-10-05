@@ -373,6 +373,17 @@ public class EducationDataScopeService {
 	}
 
 	public String requireSchoolForCampus(EducationDataScope scope, String campusId) {
+		// 早期行政班数据把学校 ID 直接写入 campus_id；仅在该 ID 确实是学校且
+		// 当前账号有学校范围时兼容，避免家校通知创建被误判为越权。
+		if (organizations != null) {
+			Organization organization = organizations.findById(campusId).orElse(null);
+			if (organization != null && "SCHOOL".equals(organization.getOrganizationType())) {
+				if (scope.fullAccess() || scope.schoolIds().contains(organization.getId())) {
+					return organization.getId();
+				}
+				throw new AccessDeniedException("无权访问该学校");
+			}
+		}
 		if (!scope.fullAccess()) {
 			assertCampusAccess(scope, campusId);
 			return requireSingleSchool(scope);

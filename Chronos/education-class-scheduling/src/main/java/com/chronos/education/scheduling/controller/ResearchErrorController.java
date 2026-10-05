@@ -16,7 +16,7 @@ public class ResearchErrorController {
 	private final ResearchErrorService service;
 	public ResearchErrorController(ResearchErrorService service) { this.service=service; }
 	@GetMapping("/research-groups")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<PageView<ResearchGroup>> groups(
 			@RequestParam(required = false) String keyword,
 			@RequestParam(defaultValue = "0") int page,
@@ -27,8 +27,14 @@ public class ResearchErrorController {
 				.toList();
 		return ok(PageView.from(values, page, size));
 	}
+	@GetMapping("/research-teachers")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<?> teacherOptions(Authentication a) { return ok(service.teacherOptions(a)); }
+	@GetMapping("/research-access")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<?> researchAccess(Authentication a) { return ok(service.researchAccess(a)); }
 	@GetMapping("/research-groups/{id}/activities")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<PageView<ResearchActivity>> activities(@PathVariable String id,
 			@RequestParam(required = false) String keyword,
 			@RequestParam(defaultValue = "0") int page,
@@ -60,8 +66,11 @@ public class ResearchErrorController {
 		return ok(PageView.from(values, page, size));
 	}
 	@GetMapping("/research-activities/{id}/members")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:view','education:teaching:manage')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<?> activityMembers(@PathVariable String id, Authentication a) { return ok(service.activityMembers(id, a)); }
+	@GetMapping("/research-activity-invitations/mine")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<?> myActivityInvitations(Authentication a) { return ok(service.myActivityInvitations(a)); }
 	@DeleteMapping("/research-activities/{id}/members/{teacherId}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> removeActivityMember(@PathVariable String id, @PathVariable String teacherId, Authentication a) {
@@ -102,13 +111,13 @@ public class ResearchErrorController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
 	public ResultData<?> activityMember(@PathVariable String id,@Valid @RequestBody MemberRequest r,Authentication a) { return ok(service.inviteActivityMember(id,r,a)); }
 	@PostMapping("/research-activities/{id}/invite-response")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<?> inviteResponse(@PathVariable String id,
 			@Valid @RequestBody ActivityInviteResponse r, Authentication a) {
 		return ok(service.respondActivityInvite(id, r, a));
 	}
 	@PostMapping("/research-activities/{id}/attendance")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")
+	@PreAuthorize("isAuthenticated()")
 	public ResultData<?> attendance(@PathVariable String id,@Valid @RequestBody AttendanceRequest r,Authentication a) { return ok(service.attendance(id,r,a)); }
 	@PostMapping("/research-activities/{id}/minutes")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:research:update','education:teaching:manage')")

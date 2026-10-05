@@ -70,6 +70,11 @@ let dateImpactKey = ''
 const candidateSelection = ref([])
 const previewCandidate = ref(null)
 const previewDiff = ref(null)
+const previewPage = ref(1)
+const previewItems = computed(() => (previewDiff.value?.items || []).slice(
+  (previewPage.value - 1) * 20,
+  previewPage.value * 20,
+))
 const modelExplanation = ref(null)
 let explanationRequestSequence = 0
 const comparedCandidates = ref([])
@@ -409,6 +414,7 @@ const showCandidatePreview = async candidate => {
   if (!runId) return
   previewCandidate.value = null
   previewDiff.value = null
+  previewPage.value = 1
   try {
     const response = await previewAiSchedulingCandidate(runId, candidate.id)
     if (run.value?.id !== runId) return
@@ -748,9 +754,26 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <el-alert v-if="currentStatus === 'CANDIDATES_READY' && previewCandidate" class="preview-alert" title="候选预览（只读）" type="info" :closable="false">
-        <pre>{{ formatJson(previewDiff) }}</pre>
-      </el-alert>
+      <section v-if="currentStatus === 'CANDIDATES_READY' && previewCandidate && previewDiff" class="preview-panel">
+        <h3>{{ previewCandidate.planName || previewCandidate.name }}－候选预览（只读）</h3>
+        <p>新增 {{ previewDiff.added ?? 0 }} 条，移动 {{ previewDiff.moved ?? 0 }} 条，移除 {{ previewDiff.removed ?? 0 }} 条，未变化 {{ previewDiff.unchanged ?? 0 }} 条。</p>
+        <el-table :data="previewItems" border size="small" class="preview-table">
+          <el-table-column prop="changeType" label="变化" width="100" />
+          <el-table-column prop="courseName" label="课程" min-width="140" />
+          <el-table-column prop="teachingClassName" label="教学班" min-width="220" />
+          <el-table-column prop="teacherName" label="教师" min-width="140" />
+          <el-table-column prop="beforeSlot" label="变更前" min-width="170" />
+          <el-table-column prop="afterSlot" label="变更后" min-width="170" />
+        </el-table>
+        <el-pagination
+          v-if="(previewDiff.items?.length || 0) > 20"
+          v-model:current-page="previewPage"
+          :page-size="20"
+          :total="previewDiff.items.length"
+          layout="total, prev, pager, next"
+          class="preview-pagination"
+        />
+      </section>
       <el-alert v-if="currentStatus === 'CANDIDATES_READY' && modelExplanation" class="preview-alert" title="模型筛选的真实指标（仅供参考）" type="info" :closable="false">
         <p v-for="fact in modelExplanation.facts" :key="fact.code">{{ fact.text }}</p>
       </el-alert>
@@ -788,6 +811,10 @@ pre { margin: 0; max-height: 320px; overflow: auto; padding: 12px; white-space: 
 .compare-panel { margin-top: 22px; }
 .preview-alert { margin-top: 22px; }
 .preview-alert pre { margin-top: 8px; background: transparent; padding: 0; }
+.preview-panel { margin-top: 22px; }
+.preview-panel p { margin-bottom: 12px; }
+.preview-table { width: 100%; }
+.preview-pagination { justify-content: flex-end; margin-top: 10px; }
 @media (max-width: 800px) {
   .json-grid { grid-template-columns: 1fr; }
   .reply-box, .page-header, .card-header { align-items: stretch; flex-direction: column; }

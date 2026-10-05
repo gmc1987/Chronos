@@ -21,11 +21,13 @@ import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.grade.service.DomainEventOutboxService;
 import com.chronos.education.grade.service.GradeCenterService;
 import com.chronos.education.grade.model.CourseGrade;
+import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.model.pojo.AdminUser;
 import com.chronos.service.iService.IAuditLogService;
 
 @Service
 public class HomeSchoolService {
-	private final ParentAccountBindingRepository bindings;
+	private final EducationUserBindingRepository bindings;
 	private final HomeNoticeRepository notices;
 	private final HomeNoticeTargetRepository targets;
 	private final ParentProfileRepository parents;
@@ -36,26 +38,30 @@ public class HomeSchoolService {
 	private final IAuditLogService audit;
 	private final DomainEventOutboxService domainEvents;
 	private final GradeCenterService gradeCenter;
+	private final IAdminUserRepository accounts;
 
 	@Autowired
-	public HomeSchoolService(ParentAccountBindingRepository bindings, HomeNoticeRepository notices,
+	public HomeSchoolService(EducationUserBindingRepository bindings, HomeNoticeRepository notices,
 			HomeNoticeTargetRepository targets, ParentProfileRepository parents,
 			StudentProfileRepository students, StudentGuardianRepository guardians,
 			AdministrativeClassRepository classes, EducationDataScopeService scopeService,
-			IAuditLogService audit, DomainEventOutboxService domainEvents, GradeCenterService gradeCenter) {
+			IAuditLogService audit, DomainEventOutboxService domainEvents, GradeCenterService gradeCenter,
+			IAdminUserRepository accounts) {
 		this.bindings = bindings; this.notices = notices; this.targets = targets; this.parents = parents;
 		this.students = students; this.guardians = guardians; this.classes = classes;
 		this.scopeService = scopeService; this.audit = audit; this.domainEvents = domainEvents;
 		this.gradeCenter = gradeCenter;
+		this.accounts = accounts;
 	}
 
 	public List<ParentBindingResponse> listBindings() {
-		return bindings.findAllByOrderByCreateTimeDesc().stream().map(this::binding).toList();
+		return bindingResponses(bindings.findAllByProfileTypeOrderByCreateTimeDesc("PARENT"));
 	}
 
 	public Page<ParentBindingResponse> listBindings(int page, int size) {
 		PageRequest request = PageRequest.of(Math.max(0, page), boundedSize(size));
-		return bindings.findAll(request).map(this::binding);
+		Page<EducationUserBinding> result = bindings.findByProfileType("PARENT", request);
+		return new PageImpl<>(bindingResponses(result.getContent()), request, result.getTotalElements());
 	}
 
 	@Transactional
@@ -65,29 +71,47 @@ public class HomeSchoolService {
 		ParentProfile parent = parents.findById(command.parentId())
 				.orElseThrow(() -> new IllegalArgumentException("家长档案不存在"));
 		if (!"ACTIVE".equals(parent.getStatus())) throw new IllegalStateException("家长档案已失效");
-		ParentAccountBinding value = bindings.findByUsername(command.username())
-				.orElseGet(ParentAccountBinding::new);
+		AdminUser account = accounts.findByUsername(command.username().trim());
+		if (account == null || !Integer.valueOf(1).equals(account.getStatus())
+				|| Boolean.TRUE.equals(account.getAccountLocked())) {
+			throw new IllegalArgumentException("门户登录账号不存在或不可用");
+		}
+		EducationUserBinding accountBinding = bindings.findByUsername(account.getUsername()).orElse(null);
+		if (accountBinding != null && !"PARENT".equals(accountBinding.getProfileType()))
+			throw new IllegalStateException("登录账号已绑定其他教务档案");
+		EducationUserBinding existingParent = bindings.findByProfileTypeAndProfileId("PARENT", parent.getId())
+				.orElse(null);
+		EducationUserBinding value = accountBinding != null ? accountBinding
+				: existingParent != null && !"ACTIVE".equals(existingParent.getStatus())
+					? existingParent : new EducationUserBinding();
 		if (value.getId() != null && "ACTIVE".equals(value.getStatus())
-				&& !Objects.equals(value.getParentId(), parent.getId())) {
+				&& !Objects.equals(value.getProfileId(), parent.getId())) {
 			throw new IllegalStateException("登录账号已绑定其他家长");
 		}
-		value.setParentId(parent.getId()); value.setUsername(command.username());
+		if (existingParent != null && "ACTIVE".equals(existingParent.getStatus())
+				&& !existingParent.getUsername().equals(account.getUsername()))
+			throw new IllegalStateException("家长档案已绑定其他登录账号，请先解除原绑定");
+		if (accountBinding != null && existingParent != null && !accountBinding.getId().equals(existingParent.getId()))
+			throw new IllegalStateException("账号与家长档案存在不同的历史绑定，请先处理历史记录");
+		value.setProfileType("PARENT"); value.setProfileId(parent.getId());
+		value.setUsername(account.getUsername());
 		value.setVerifiedAt(LocalDateTime.now()); value.setInvalidatedAt(null); value.setStatus("ACTIVE");
 		value = bindings.save(value);
 		ParentBindingResponse response = binding(value);
 		if (audit != null) audit.log(command.username(), "EDU_HOME_PARENT_BINDING_CREATE",
-				"bindingId=" + value.getId() + ",parentId=" + value.getParentId());
+				"bindingId=" + value.getId() + ",parentId=" + value.getProfileId());
 		return response;
 	}
 
 	@Transactional
 	public ParentBindingResponse invalidate(String id) {
-		ParentAccountBinding value = bindings.findById(id)
+		EducationUserBinding value = bindings.findById(id)
+				.filter(binding -> "PARENT".equals(binding.getProfileType()))
 				.orElseThrow(() -> new IllegalArgumentException("家长账号绑定不存在"));
 		value.setStatus("INVALIDATED"); value.setInvalidatedAt(LocalDateTime.now());
 		ParentBindingResponse response = binding(bindings.save(value));
 		if (audit != null) audit.log(value.getUsername(), "EDU_HOME_PARENT_BINDING_INVALIDATE",
-				"bindingId=" + value.getId() + ",parentId=" + value.getParentId());
+				"bindingId=" + value.getId() + ",parentId=" + value.getProfileId());
 		return response;
 	}
 
@@ -146,8 +170,8 @@ public class HomeSchoolService {
 				.flatMap(studentId -> guardians.findByStudentIdOrderByCreateTime(studentId).stream())
 				.toList();
 		Set<String> parentIds = relations.stream().map(StudentGuardianRelation::getParentId).collect(Collectors.toSet());
-		Set<String> bound = bindings.findByParentIdInAndStatus(new ArrayList<>(parentIds), "ACTIVE").stream()
-				.map(ParentAccountBinding::getParentId).collect(Collectors.toSet());
+		Set<String> bound = bindings.findByProfileTypeAndProfileIdInAndStatus("PARENT", new ArrayList<>(parentIds), "ACTIVE").stream()
+				.map(EducationUserBinding::getProfileId).collect(Collectors.toSet());
 		int targetCount = 0;
 		for (StudentGuardianRelation relation : relations) {
 			if (bound.contains(relation.getParentId())) {
@@ -182,7 +206,7 @@ public class HomeSchoolService {
 	}
 
 	public List<ChildResponse> children(String username) {
-		String parentId = activeParent(username).getParentId();
+		String parentId = activeParent(username).getProfileId();
 		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
 				.map(r -> students.findById(r.getStudentId()).map(s ->
 						new ChildResponse(s.getId(), s.getStudentNo(), s.getStudentName(),
@@ -192,7 +216,7 @@ public class HomeSchoolService {
 
 	@Transactional(readOnly = true)
 	public List<CourseGrade> familyGrades(String username) {
-		String parentId = activeParent(username).getParentId();
+		String parentId = activeParent(username).getProfileId();
 		List<String> activeChildren = guardians.findByParentIdOrderByCreateTime(parentId).stream()
 				.map(StudentGuardianRelation::getStudentId)
 				.map(students::findById)
@@ -210,7 +234,7 @@ public class HomeSchoolService {
 
 	@Transactional
 	public List<FamilyNoticeResponse> familyNotices(String username) {
-		String parentId = activeParent(username).getParentId();
+		String parentId = activeParent(username).getProfileId();
 		Set<String> currentStudents = guardians.findByParentIdOrderByCreateTime(parentId).stream()
 				.map(StudentGuardianRelation::getStudentId).collect(Collectors.toSet());
 		List<FamilyNoticeResponse> result = new ArrayList<>();
@@ -229,7 +253,7 @@ public class HomeSchoolService {
 
 	@Transactional
 	public NoticeTargetResponse receipt(String id, ReceiptCommand command, String username) {
-		String parentId = activeParent(username).getParentId();
+		String parentId = activeParent(username).getProfileId();
 		HomeNotice notice = notices.findById(id).orElseThrow(() -> new IllegalArgumentException("通知不存在"));
 		Set<String> currentStudents = studentIdsFor(parentId);
 		List<HomeNoticeTarget> matchingTargets = targets.findByNoticeIdOrderByCreateTime(id).stream()
@@ -263,10 +287,10 @@ public class HomeSchoolService {
 		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
 				.map(StudentGuardianRelation::getStudentId).collect(Collectors.toSet());
 	}
-	private ParentAccountBinding activeParent(String username) {
-		ParentAccountBinding b = bindings.findByUsernameAndStatus(username, "ACTIVE")
+	private EducationUserBinding activeParent(String username) {
+		EducationUserBinding b = bindings.findByUsernameAndProfileTypeAndStatus(username, "PARENT", "ACTIVE")
 				.orElseThrow(() -> new AccessDeniedException("当前账号不是有效家长账号"));
-		ParentProfile p = parents.findById(b.getParentId()).orElseThrow(() -> new AccessDeniedException("家长档案不存在"));
+		ParentProfile p = parents.findById(b.getProfileId()).orElseThrow(() -> new AccessDeniedException("家长档案不存在"));
 		if (!"ACTIVE".equals(p.getStatus())) throw new AccessDeniedException("家长档案已失效");
 		return b;
 	}
@@ -276,9 +300,26 @@ public class HomeSchoolService {
 	private boolean canClass(EducationDataScope scope, String classId) {
 		try { scopeService.assertClassAccess(scope, classId); return true; } catch (AccessDeniedException ex) { return false; }
 	}
-	private ParentBindingResponse binding(ParentAccountBinding v) {
-		String parentName = parents.findById(v.getParentId()).map(ParentProfile::getParentName).orElse(null);
-		return new ParentBindingResponse(v.getId(), v.getParentId(), parentName, v.getUsername(), v.getStatus(), v.getVerifiedAt(), v.getInvalidatedAt());
+	private ParentBindingResponse binding(EducationUserBinding v) {
+		return bindingResponses(List.of(v)).get(0);
+	}
+	private List<ParentBindingResponse> bindingResponses(List<EducationUserBinding> values) {
+		if (values.isEmpty()) return List.of();
+		Map<String, ParentProfile> parentById = parents.findAllById(values.stream()
+				.map(EducationUserBinding::getProfileId).distinct().toList()).stream()
+				.collect(Collectors.toMap(ParentProfile::getId, Function.identity()));
+		Map<String, AdminUser> accountByUsername = accounts.findByUsernameIn(values.stream()
+				.map(EducationUserBinding::getUsername).distinct().toList()).stream()
+				.collect(Collectors.toMap(AdminUser::getUsername, Function.identity()));
+		return values.stream().map(value -> {
+			ParentProfile parent = parentById.get(value.getProfileId());
+			AdminUser account = accountByUsername.get(value.getUsername());
+			boolean accountAvailable = account != null && Integer.valueOf(1).equals(account.getStatus())
+					&& !Boolean.TRUE.equals(account.getAccountLocked());
+			return new ParentBindingResponse(value.getId(), value.getProfileId(),
+					parent == null ? null : parent.getParentName(), value.getUsername(), value.getStatus(),
+					value.getVerifiedAt(), value.getInvalidatedAt(), accountAvailable);
+		}).toList();
 	}
 	private NoticeResponse notice(HomeNotice v) {
 		String className = classes.findById(v.getClassId()).map(AdministrativeClass::getClassName).orElse(null);

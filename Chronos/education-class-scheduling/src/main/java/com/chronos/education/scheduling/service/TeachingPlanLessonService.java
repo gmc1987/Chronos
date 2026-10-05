@@ -373,7 +373,8 @@ public class TeachingPlanLessonService {
 	}
 	private void assertDraft(String status) { if (!"DRAFT".equals(status)) throw new IllegalStateException("仅草稿状态允许编辑或提交"); }
 	private void validateLesson(LessonType type, String safety, String equipment) {
-		if (type == LessonType.PRACTICAL && (safety == null || safety.isBlank() || equipment == null || equipment.isBlank()))
+		if ((type == LessonType.PRACTICAL || type == LessonType.EXPERIMENT)
+				&& (safety == null || safety.isBlank() || equipment == null || equipment.isBlank()))
 			throw new IllegalArgumentException("实训教案必须填写安全事项和设备要求");
 	}
 	private void validateFile(String fileId, Authentication auth) {

@@ -7,6 +7,7 @@ import com.chronos.model.pojo.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import lombok.Getter;
@@ -26,6 +27,8 @@ public class HomeworkSubmission extends BaseEntity {
 
 	@Column(name = "student_id", nullable = false, length = 64)
 	private String studentId;
+	@Transient
+	private String studentName;
 
 	@Column(name = "answer_snapshot_json", nullable = false, columnDefinition = "text")
 	private String answerSnapshotJson = "{}";

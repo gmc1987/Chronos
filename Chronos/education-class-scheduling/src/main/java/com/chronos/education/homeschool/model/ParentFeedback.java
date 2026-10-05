@@ -18,6 +18,8 @@ public class ParentFeedback extends BaseEntity {
 	@Column(name = "content", nullable = false, columnDefinition = "text") private String content;
 	@Column(name = "status", nullable = false, length = 32) private String status = "SUBMITTED";
 	@Column(name = "assigned_to", length = 100) private String assignedTo;
+	@Column(name = "staff_reply", columnDefinition = "text") private String staffReply;
+	@Column(name = "replied_at") private LocalDateTime repliedAt;
 	@Column(name = "due_at") private LocalDateTime dueAt;
 	@Column(name = "accepted_at") private LocalDateTime acceptedAt;
 	@Column(name = "resolved_at") private LocalDateTime resolvedAt;

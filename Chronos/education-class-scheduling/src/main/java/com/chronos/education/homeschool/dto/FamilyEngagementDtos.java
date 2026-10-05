@@ -12,10 +12,11 @@ public final class FamilyEngagementDtos {
 	public record FeedbackResponse(String id, String parentId, String studentId, String classId,
 			String title, String content, String status, String assignedTo, LocalDateTime dueAt,
 			boolean overdue, LocalDateTime acceptedAt, LocalDateTime resolvedAt,
-			LocalDateTime closedAt, LocalDateTime parentConfirmedAt, LocalDateTime reopenedAt) {}
+			LocalDateTime closedAt, LocalDateTime parentConfirmedAt, LocalDateTime reopenedAt,
+			String staffReply, LocalDateTime repliedAt) {}
 	public record CommunicationCommand(String studentId, String channel, String subject,
 			String content, String sensitiveContent, LocalDateTime occurredAt) {}
-	public record CommunicationResponse(String id, String teacherUsername, String studentId,
+	public record CommunicationResponse(String id, String teacherUsername, String studentId, String studentName,
 			String classId, String channel, String subject, String content, String sensitiveContent,
 			LocalDateTime occurredAt) {}
 }

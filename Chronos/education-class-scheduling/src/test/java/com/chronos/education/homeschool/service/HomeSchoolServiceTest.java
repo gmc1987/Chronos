@@ -8,8 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 
 import com.chronos.education.homeschool.dao.HomeNoticeRepository;
 import com.chronos.education.homeschool.dao.HomeNoticeTargetRepository;
-import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
-import com.chronos.education.homeschool.model.ParentAccountBinding;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.homeschool.dto.HomeSchoolDtos.ParentBindingCommand;
 import com.chronos.education.grade.service.DomainEventOutboxService;
 import com.chronos.education.grade.service.GradeCenterService;
@@ -20,7 +19,7 @@ import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.homeschool.model.HomeNotice;
 import com.chronos.education.homeschool.model.HomeNoticeTarget;
-import com.chronos.education.homeschool.model.ParentAccountBinding;
+import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.ParentProfileRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
@@ -33,10 +32,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.model.pojo.AdminUser;
 
 @ExtendWith(MockitoExtension.class)
 class HomeSchoolServiceTest {
-	@Mock ParentAccountBindingRepository bindings;
+	@Mock EducationUserBindingRepository bindings;
 	@Mock HomeNoticeRepository notices;
 	@Mock HomeNoticeTargetRepository targets;
 	@Mock ParentProfileRepository parents;
@@ -47,11 +48,12 @@ class HomeSchoolServiceTest {
 	@Mock IAuditLogService audit;
 	@Mock DomainEventOutboxService domainEvents;
 	@Mock GradeCenterService gradeCenter;
+	@Mock IAdminUserRepository accounts;
 	@InjectMocks HomeSchoolService service;
 
 	@Test
 	void invalidatedBindingImmediatelyLosesPortalAccess() {
-		when(bindings.findByUsernameAndStatus("parent@example.test", "ACTIVE"))
+		when(bindings.findByUsernameAndProfileTypeAndStatus("parent@example.test", "PARENT", "ACTIVE"))
 				.thenReturn(java.util.Optional.empty());
 
 		assertThrows(AccessDeniedException.class,
@@ -63,12 +65,16 @@ class HomeSchoolServiceTest {
 		ParentProfile parent = new ParentProfile();
 		parent.setId("parent-1");
 		parent.setStatus("ACTIVE");
-		ParentAccountBinding saved = new ParentAccountBinding();
+		EducationUserBinding saved = new EducationUserBinding();
 		saved.setId("binding-1");
-		saved.setParentId("parent-1");
+		saved.setProfileId("parent-1");
 		saved.setUsername("parent@example.test");
 		saved.setStatus("ACTIVE");
 		when(parents.findById("parent-1")).thenReturn(java.util.Optional.of(parent));
+		AdminUser account = new AdminUser();
+		account.setUsername("parent@example.test");
+		account.setStatus(1);
+		when(accounts.findByUsername("parent@example.test")).thenReturn(account);
 		when(bindings.findByUsername("parent@example.test")).thenReturn(java.util.Optional.empty());
 		when(bindings.save(org.mockito.ArgumentMatchers.any())).thenReturn(saved);
 
@@ -96,9 +102,9 @@ class HomeSchoolServiceTest {
 				java.util.Set.of(), java.util.Set.of(), java.util.Set.of(), java.util.Set.of()));
 		when(students.findByAdministrativeClassId("class-1")).thenReturn(java.util.List.of(student));
 		when(guardians.findByStudentIdOrderByCreateTime("student-1")).thenReturn(java.util.List.of(relation));
-		ParentAccountBinding binding = new ParentAccountBinding();
-		binding.setParentId("parent-1");
-		when(bindings.findByParentIdInAndStatus(any(), eq("ACTIVE"))).thenReturn(java.util.List.of(binding));
+		EducationUserBinding binding = new EducationUserBinding();
+		binding.setProfileId("parent-1");
+		when(bindings.findByProfileTypeAndProfileIdInAndStatus(eq("PARENT"), any(), eq("ACTIVE"))).thenReturn(java.util.List.of(binding));
 		when(targets.save(any(HomeNoticeTarget.class))).thenAnswer(invocation -> invocation.getArgument(0));
 		when(notices.save(any(HomeNotice.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -111,8 +117,8 @@ class HomeSchoolServiceTest {
 
 	@Test
 	void familyGradesOnlyReadsPublishedGradesForActiveChildren() {
-		ParentAccountBinding binding = new ParentAccountBinding();
-		binding.setParentId("parent-1");
+		EducationUserBinding binding = new EducationUserBinding();
+		binding.setProfileId("parent-1");
 		ParentProfile parent = new ParentProfile();
 		parent.setId("parent-1");
 		parent.setStatus("ACTIVE");
@@ -124,7 +130,7 @@ class HomeSchoolServiceTest {
 		student.setEnrollmentStatus("ACTIVE");
 		CourseGrade grade = new CourseGrade();
 		grade.setStudentId("student-1");
-		when(bindings.findByUsernameAndStatus("parent@example.test", "ACTIVE")).thenReturn(java.util.Optional.of(binding));
+		when(bindings.findByUsernameAndProfileTypeAndStatus("parent@example.test", "PARENT", "ACTIVE")).thenReturn(java.util.Optional.of(binding));
 		when(parents.findById("parent-1")).thenReturn(java.util.Optional.of(parent));
 		when(guardians.findByParentIdOrderByCreateTime("parent-1")).thenReturn(java.util.List.of(relation));
 		when(students.findById("student-1")).thenReturn(java.util.Optional.of(student));
@@ -139,8 +145,8 @@ class HomeSchoolServiceTest {
 
 	@Test
 	void familyGradesExcludesInactiveChildren() {
-		ParentAccountBinding binding = new ParentAccountBinding();
-		binding.setParentId("parent-1");
+		EducationUserBinding binding = new EducationUserBinding();
+		binding.setProfileId("parent-1");
 		ParentProfile parent = new ParentProfile();
 		parent.setId("parent-1");
 		parent.setStatus("ACTIVE");
@@ -150,7 +156,7 @@ class HomeSchoolServiceTest {
 		StudentProfile student = new StudentProfile();
 		student.setId("student-1");
 		student.setEnrollmentStatus("WITHDRAWN");
-		when(bindings.findByUsernameAndStatus("parent@example.test", "ACTIVE")).thenReturn(java.util.Optional.of(binding));
+		when(bindings.findByUsernameAndProfileTypeAndStatus("parent@example.test", "PARENT", "ACTIVE")).thenReturn(java.util.Optional.of(binding));
 		when(parents.findById("parent-1")).thenReturn(java.util.Optional.of(parent));
 		when(guardians.findByParentIdOrderByCreateTime("parent-1")).thenReturn(java.util.List.of(relation));
 		when(students.findById("student-1")).thenReturn(java.util.Optional.of(student));

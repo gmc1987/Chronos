@@ -455,17 +455,30 @@ public class QuestionKnowledgeService {
 		else scopes.assertCourseAccess(scopes.resolve(u.getName()), b.getCourseId());
 	}
 	private void validateOffering(String offeringId, String courseId, EducationDataScope scope) {
-		if (offeringId != null) { scopes.assertOfferingAccess(scope, offeringId); var o = offerings.findById(offeringId).orElseThrow(); if (courseId != null && !courseId.equals(o.getCourseCode())) throw new IllegalArgumentException("课程与教学班不一致"); }
-		else if (courseId != null && !courseId.isBlank()) scopes.assertCourseAccess(scope, courseId);
-		else scopes.assertFullAccess(scope);
+		// 前端的“课程公共题库”会提交空字符串；按未指定教学班处理。
+		String normalizedOfferingId = text(offeringId);
+		String normalizedCourseId = text(courseId);
+		if (normalizedOfferingId != null) {
+			scopes.assertOfferingAccess(scope, normalizedOfferingId);
+			var offering = offerings.findById(normalizedOfferingId)
+					.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+			if (normalizedCourseId != null && !normalizedCourseId.equals(offering.getCourseCode())) {
+				throw new IllegalArgumentException("课程与教学班不一致");
+			}
+		} else if (normalizedCourseId != null) {
+			scopes.assertCourseAccess(scope, normalizedCourseId);
+		} else {
+			scopes.assertFullAccess(scope);
+		}
 	}
 	private void validateParent(String parent, String course, String self) {
-		Set<String> seen = new HashSet<>(); String current = parent;
+		// Root knowledge points may arrive from a cleared tree selector as an empty string.
+		Set<String> seen = new HashSet<>(); String current = text(parent);
 		while (current != null) {
 			if (!seen.add(current) || current.equals(self)) throw new IllegalArgumentException("知识点父级关系形成循环");
 			KnowledgePoint p = points.findById(current).orElseThrow(() -> new IllegalArgumentException("父知识点不存在"));
 			if (course != null && p.getCourseId() != null && !course.equals(p.getCourseId())) throw new IllegalArgumentException("父知识点课程不一致");
-			current = p.getParentId();
+			current = text(p.getParentId());
 		}
 	}
 	private List<String> parseCsv(String line) {

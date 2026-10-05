@@ -23,6 +23,20 @@ public class ParentMeetingController {
 		return ok(service.create(command, authentication.getName()));
 	}
 
+	@GetMapping("/admin/education/parent-meetings")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:parent-meeting:create','education:parent-meeting:manage')")
+	public ResultData<List<MeetingView>> all(Authentication authentication) {
+		boolean manage = authentication.getAuthorities().stream()
+				.anyMatch(authority -> "education:parent-meeting:manage".equals(authority.getAuthority()));
+		return ok(service.all(authentication.getName(), manage));
+	}
+
+	@PostMapping("/admin/education/parent-meetings/{id}/publish")
+	@PreAuthorize("hasAuthority('education:parent-meeting:manage')")
+	public ResultData<MeetingView> publish(@PathVariable String id, Authentication authentication) {
+		return ok(service.publish(id, authentication.getName()));
+	}
+
 	@GetMapping("/portal/education/parent-meetings")
 	@PreAuthorize("isAuthenticated()")
 	public ResultData<List<MeetingView>> mine(Authentication authentication) {

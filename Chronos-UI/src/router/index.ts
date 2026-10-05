@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../app/layout/AdminLayout.vue'
-import { isAdminAuthed, mustChangeAdminPassword } from '../store/auth'
+import { hasAdminPermission, isAdminAuthed, mustChangeAdminPassword } from '../store/auth'
 import PortalLayout from '../app/layout/PortalLayout.vue'
 import { packagedIndustryRoutes } from '../industries/core'
 
@@ -52,7 +52,9 @@ const PortalGrades = () => import('../modules/education/pages/PortalGrades.vue')
 const PortalFamily = () => import('../modules/education/pages/PortalFamily.vue')
 const PortalParentFeedback = () => import('../modules/education/pages/PortalParentFeedback.vue')
 const PortalCommunicationRecords = () => import('../modules/education/pages/PortalCommunicationRecords.vue')
+const PortalParentMeetings = () => import('../modules/education/pages/PortalParentMeetings.vue')
 const AdminHomeSchool = () => import('../modules/education/pages/AdminHomeSchool.vue')
+const AdminParents = () => import('../modules/education/pages/AdminParents.vue')
 const AdminParentMeetings = () => import('../modules/education/pages/AdminParentMeetings.vue')
 const AdminClassGroups = () => import('../modules/education/pages/AdminClassGroups.vue')
 const AdminParentFeedback = () => import('../modules/education/pages/AdminParentFeedback.vue')
@@ -63,6 +65,7 @@ const PortalSupervision = () => import('../modules/education/pages/PortalSupervi
 const AdminTeachingPlan = () => import('../modules/education/pages/AdminTeachingPlan.vue')
 const AdminLessonPlans = () => import('../modules/education/pages/AdminLessonPlans.vue')
 const AdminPreparation = () => import('../modules/education/pages/AdminPreparation.vue')
+const PortalTeachingCenter = () => import('../modules/education/pages/PortalTeachingCenter.vue')
 const AdminCourseware = () => import('../modules/education/pages/AdminCourseware.vue')
 const AdminMaterials = () => import('../modules/education/pages/AdminMaterials.vue')
 const AdminScoreCenter = () => import('../modules/education/pages/AdminScoreCenter.vue')
@@ -73,6 +76,7 @@ const AdminScoreTrendAnalysis = () => import('../modules/education/pages/AdminSc
 const AdminScoreKnowledgeAnalysis = () => import('../modules/education/pages/AdminScoreKnowledgeAnalysis.vue')
 const TeachingResourceWorkbench = () => import('../modules/education/pages/TeachingResourceWorkbench.vue')
 const AdminHomework = () => import('../modules/education/pages/AdminHomework.vue')
+const AdminHomeworkAnalysis = () => import('../modules/education/pages/AdminHomeworkAnalysis.vue')
 const PortalHomework = () => import('../modules/education/pages/PortalHomework.vue')
 const AdminQuestionBank = () => import('../modules/education/pages/AdminQuestionBank.vue')
 const AdminKnowledgePoints = () => import('../modules/education/pages/AdminKnowledgePoints.vue')
@@ -111,8 +115,19 @@ const router = createRouter({
         { path: 'education/family', name: 'portal-education-family', component: PortalFamily },
         { path: 'education/family/feedback', name: 'portal-education-family-feedback', component: PortalParentFeedback },
         { path: 'education/family/communications', name: 'portal-education-family-communications', component: PortalCommunicationRecords },
+        { path: 'education/family/meetings', name: 'portal-education-family-meetings', component: PortalParentMeetings },
         { path: 'education/supervision', name: 'portal-education-supervision', component: PortalSupervision },
         { path: 'education/homework', name: 'portal-education-homework', component: PortalHomework },
+        { path: 'education/teaching-center', name: 'portal-education-teaching-center', component: PortalTeachingCenter },
+        { path: 'education/teaching/plans', name: 'portal-education-teaching-plans', component: AdminTeachingPlan },
+        { path: 'education/teaching/lessons', name: 'portal-education-teaching-lessons', component: AdminLessonPlans },
+        { path: 'education/teaching/preparations', name: 'portal-education-teaching-preparations', component: AdminPreparation },
+        { path: 'education/teaching/courseware', name: 'portal-education-teaching-courseware', component: AdminCourseware },
+        { path: 'education/teaching/materials', name: 'portal-education-teaching-materials', component: AdminMaterials },
+        { path: 'education/teaching/questions', name: 'portal-education-teaching-questions', component: AdminQuestionBank },
+        { path: 'education/teaching/knowledge-points', name: 'portal-education-teaching-knowledge-points', component: AdminKnowledgePoints },
+        { path: 'education/teaching/research', name: 'portal-education-teaching-research', component: AdminResearch },
+        { path: 'education/teaching/mistakes', name: 'portal-education-teaching-mistakes', component: AdminMistakes },
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
         { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
         { path: 'workflow-notifications', name: 'portal-workflow-notifications', component: PortalWorkflowNotifications },
@@ -176,7 +191,9 @@ const router = createRouter({
         { path: 'education/score-center/trend-analysis', name: 'admin-education-score-trend-analysis', component: AdminScoreTrendAnalysis },
         { path: 'education/score-center/knowledge-analysis', name: 'admin-education-score-knowledge-analysis', component: AdminScoreKnowledgeAnalysis },
         { path: 'education/leaves', name: 'admin-education-leaves', component: AdminLeaveManagement },
-        { path: 'education/home-school', name: 'admin-education-home-school', component: AdminHomeSchool },
+        { path: 'education/home-school', redirect: { name: 'admin-education-home-school-notices' } },
+        { path: 'education/parents', name: 'admin-education-parents', component: AdminParents },
+        { path: 'education/home-school/notices', name: 'admin-education-home-school-notices', component: AdminHomeSchool },
         { path: 'education/parent-meetings', name: 'admin-education-parent-meetings', component: AdminParentMeetings },
         { path: 'education/home-school/class-groups', name: 'admin-education-class-groups', component: AdminClassGroups },
         { path: 'education/home-school/feedback', name: 'admin-education-home-school-feedback', component: AdminParentFeedback },
@@ -186,6 +203,7 @@ const router = createRouter({
         { path: 'education/materials', redirect: { name: 'admin-education-material' } },
         { path: 'teaching/resources', name: 'teaching-resources', component: TeachingResourceWorkbench },
         { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminHomework },
+        { path: 'education/teaching-center/homework-analysis', name: 'admin-education-homework-analysis', component: AdminHomeworkAnalysis },
         { path: 'education/teaching-center/question-bank', name: 'admin-education-question-bank', component: AdminQuestionBank },
         { path: 'education/question-bank', redirect: { name: 'admin-education-question-bank' } },
         { path: 'teaching/question-banks', name: 'teaching-question-banks', component: AdminQuestionBank },
@@ -212,6 +230,9 @@ router.beforeEach((to) => {
   if (to.path === '/login' && isAdminAuthed()) return '/portal'
   if (to.path.startsWith('/admin') && to.path !== '/admin/login') {
     if (!isAdminAuthed()) return '/admin/login'
+    const requiredPermissions = to.meta?.requiredPermissions
+    if (Array.isArray(requiredPermissions) && requiredPermissions.length
+        && !hasAdminPermission(...requiredPermissions)) return '/portal'
   }
   if (to.path === '/admin/login' && isAdminAuthed()) return '/admin/overview'
   return true

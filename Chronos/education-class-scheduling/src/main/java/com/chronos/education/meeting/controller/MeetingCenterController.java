@@ -34,7 +34,7 @@ public class MeetingCenterController {
 	private final IamAuthorization iamAuthorization;
 
 	@GetMapping("/admin/education/meeting/rooms")
-	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:room:view','education:meeting:room:manage','education:meeting:view','education:meeting:manage')")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:room:view','education:meeting:room:manage','education:meeting:view','education:meeting:manage','education:parent-meeting:create','education:parent-meeting:manage')")
 	public ResultData<List<MeetingRoom>> rooms() {
 		return ok(service.rooms());
 	}

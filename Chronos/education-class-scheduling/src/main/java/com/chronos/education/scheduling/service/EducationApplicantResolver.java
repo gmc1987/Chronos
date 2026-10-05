@@ -3,7 +3,6 @@ package com.chronos.education.scheduling.service;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
-import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +15,6 @@ public class EducationApplicantResolver {
 	private final EducationUserBindingRepository bindings;
 	private final IAdminUserRepository users;
 	private final TeacherAcademicProfileRepository teachers;
-	private final ParentAccountBindingRepository parentBindings;
 	private final StudentGuardianRepository guardians;
 
 	@Autowired
@@ -24,12 +22,10 @@ public class EducationApplicantResolver {
 			EducationUserBindingRepository bindings,
 			IAdminUserRepository users,
 			TeacherAcademicProfileRepository teachers,
-			ParentAccountBindingRepository parentBindings,
 			StudentGuardianRepository guardians) {
 		this.bindings = bindings;
 		this.users = users;
 		this.teachers = teachers;
-		this.parentBindings = parentBindings;
 		this.guardians = guardians;
 	}
 
@@ -37,7 +33,7 @@ public class EducationApplicantResolver {
 			EducationUserBindingRepository bindings,
 			IAdminUserRepository users,
 			TeacherAcademicProfileRepository teachers) {
-		this(bindings, users, teachers, null, null);
+		this(bindings, users, teachers, null);
 	}
 
 	public String resolve(String username, String applicantType) {
@@ -56,10 +52,10 @@ public class EducationApplicantResolver {
 		if (boundProfileId != null && !boundProfileId.isBlank()) {
 			return boundProfileId;
 		}
-		if ("STUDENT".equals(normalizedType) && parentBindings != null && guardians != null
+		if ("STUDENT".equals(normalizedType) && guardians != null
 				&& requestedStudentId != null && !requestedStudentId.isBlank()) {
-			String parentId = parentBindings.findByUsernameAndStatus(username, "ACTIVE")
-					.map(value -> value.getParentId()).orElse(null);
+			String parentId = bindings.findByUsernameAndProfileTypeAndStatus(username, "PARENT", "ACTIVE")
+					.map(EducationUserBinding::getProfileId).orElse(null);
 			if (parentId != null && guardians.findByStudentIdAndParentId(requestedStudentId, parentId).isPresent()) {
 				return requestedStudentId;
 			}

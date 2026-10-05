@@ -46,6 +46,52 @@ import jakarta.persistence.EntityManager;
 
 class AutoSchedulingServiceTest {
 	@Test
+	void offeringWithoutCampusUsesOnlyRoomWithoutCampus() throws Exception {
+		var candidates = mock(ScheduleCandidatePlanRepository.class);
+		var entries = mock(ScheduleEntryRepository.class);
+		var offerings = mock(CourseOfferingRepository.class);
+		var classrooms = mock(ClassroomRepository.class);
+		var members = mock(TeachingClassMemberRepository.class);
+		var terms = mock(AcademicTermRepository.class);
+		var calendar = mock(AcademicCalendarService.class);
+		CourseOffering course = offerings(1).getFirst();
+		course.setCampusId(null);
+		List<Classroom> rooms = classrooms(2);
+		rooms.get(0).setCampusId("another-school-campus");
+		rooms.get(1).setCampusId(null);
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(new AcademicTerm()));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(List.of(course));
+		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(rooms);
+		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
+				.thenReturn(List.of());
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"),
+				org.mockito.ArgumentMatchers.isNull(), eq(1))).thenReturn(Set.of(1));
+		AtomicReference<ScheduleCandidatePlan> saved = new AtomicReference<>();
+		when(candidates.save(any())).thenAnswer(invocation -> {
+			ScheduleCandidatePlan plan = invocation.getArgument(0);
+			plan.setId("candidate-null-campus");
+			saved.set(plan);
+			return plan;
+		});
+		var solver = new AutoSchedulingService(candidates, entries, offerings, classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
+				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
+				members, terms, calendar, policyService(),
+				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
+				mock(EntityManager.class));
+
+		solver.generate(new AutoScheduleCommand("2026-2027-1", "校区隔离", "FULL",
+				Set.of(), 1, 1, 1, 1, 20), "admin");
+
+		assertThat(saved.get().getUnscheduledLessons()).isZero();
+		assertThat(readEntries(saved.get().getSnapshotJson()))
+				.extracting(ScheduleEntry::getClassroomId).containsExactly("room-1");
+	}
+
+	@Test
 	void teacherDayConcentrationPriorityChangesOnlyAiCandidate() throws Exception {
 		var candidates = mock(ScheduleCandidatePlanRepository.class);
 		var entries = mock(ScheduleEntryRepository.class);

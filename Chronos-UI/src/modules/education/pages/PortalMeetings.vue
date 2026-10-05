@@ -12,6 +12,12 @@ const statusLabels = {
   PUBLISHED: '已发布', CANCELLED: '已取消', COMPLETED: '已完成',
 }
 const responseLabels = { INVITED: '待确认', ACCEPTED: '已接受', DECLINED: '已谢绝', LEAVE: '已请假' }
+const typeLabels = { ONSITE: '线下会议', ONLINE: '线上会议', HYBRID: '混合会议' }
+function canCheckIn(meeting) {
+  const now = Date.now()
+  return now >= new Date(meeting.startTime).getTime() - 30 * 60_000
+    && now <= new Date(meeting.endTime).getTime() + 2 * 60 * 60_000
+}
 const filtered = computed(() => {
   if (filter.value === 'ALL') return meetings.value
   const now = Date.now()
@@ -120,7 +126,7 @@ onMounted(load)
       </template>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="组织者">{{ view.meeting.organizerUsername }}</el-descriptions-item>
-        <el-descriptions-item label="会议形式">{{ view.meeting.meetingType }}</el-descriptions-item>
+        <el-descriptions-item label="会议形式">{{ typeLabels[view.meeting.meetingType] || view.meeting.meetingType }}</el-descriptions-item>
         <el-descriptions-item label="地点">{{ view.room ? `${view.room.roomName} ${view.room.location || ''}` : '—' }}</el-descriptions-item>
         <el-descriptions-item label="我的反馈">{{ responseLabels[myParticipant(view)?.responseStatus] || '组织者' }}</el-descriptions-item>
         <el-descriptions-item label="议程" :span="2">{{ view.meeting.agenda || '—' }}</el-descriptions-item>
@@ -133,7 +139,7 @@ onMounted(load)
           <el-button type="success" @click="respond(view, 'ACCEPTED')">接受</el-button>
           <el-button @click="respond(view, 'DECLINED')">谢绝</el-button>
           <el-button type="warning" @click="respond(view, 'LEAVE')">请假</el-button>
-          <el-button :disabled="!!myParticipant(view)?.checkedInAt" @click="checkIn(view)">{{ myParticipant(view)?.checkedInAt ? '已签到' : '签到' }}</el-button>
+          <el-button :disabled="!!myParticipant(view)?.checkedInAt || !canCheckIn(view.meeting)" @click="checkIn(view)">{{ myParticipant(view)?.checkedInAt ? '已签到' : '签到' }}</el-button>
         </template>
       </div>
       <el-collapse v-if="view.materials?.length || view.minutes || view.actionItems?.length" class="archive">

@@ -23,7 +23,7 @@
       <el-table-column prop="instructionsJson" label="说明" min-width="240" show-overflow-tooltip />
       <el-table-column prop="dueAt" label="截止时间" width="180" />
       <el-table-column prop="maxScore" label="总分" width="80" />
-      <el-table-column prop="status" label="状态" width="120" />
+      <el-table-column label="状态" width="120"><template #default="{row}">{{ assignmentStatusLabel(row.status) }}</template></el-table-column>
       <AdaptiveActionColumn label="操作" width="410" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="edit(row)">编辑</el-button>
@@ -61,8 +61,8 @@
 
     <el-dialog v-model="submissionDialog" title="学生提交与批改" width="980px">
       <el-table v-loading="submissionLoading" :data="submissions" stripe border>
-        <el-table-column prop="studentId" label="学生" width="220" />
-        <el-table-column prop="status" label="提交状态" width="150" />
+        <el-table-column label="学生" width="180"><template #default="{row}">{{ row.studentName || row.studentId }}</template></el-table-column>
+        <el-table-column label="提交状态" width="150"><template #default="{row}">{{ submissionStatusLabel(row.status) }}</template></el-table-column>
         <el-table-column prop="submittedAt" label="提交时间" width="180" />
         <el-table-column prop="score" label="得分" width="90" />
         <el-table-column prop="teacherFeedback" label="评语" min-width="220" show-overflow-tooltip />
@@ -73,7 +73,7 @@
 
     <el-dialog v-model="gradeDialog" title="批改作业" width="620px">
       <el-form :model="gradeForm" label-width="90px">
-        <el-form-item label="学生"><el-input :model-value="grading?.studentId || '-'" disabled /></el-form-item>
+        <el-form-item label="学生"><el-input :model-value="grading?.studentName || grading?.studentId || '-'" disabled /></el-form-item>
         <el-form-item label="答案"><el-input :model-value="grading?.answerSnapshotJson || '-'" type="textarea" :rows="6" disabled /></el-form-item>
         <el-form-item label="得分"><el-input-number v-model="gradeForm.score" :min="0" :max="selectedHomework?.maxScore || 100" :precision="2" /></el-form-item>
         <el-form-item label="逐题得分"><el-input v-model="gradeForm.questionScoresJson" type="textarea" :rows="3" placeholder='按题目 ID 填写，例如 {"question-id":8}' /></el-form-item>
@@ -111,6 +111,8 @@ const form = reactive({ type: 'HOMEWORK', title: '', instructionsJson: '', dueAt
 const gradeForm = reactive({ score: 0, feedback: '', questionScoresJson: '{}', result: 'GRADED' })
 const rules = { title: [{ required: true, message: '请输入作业名称' }], dueAt: [{ required: true, message: '请选择截止时间' }] }
 const unwrap = response => response?.data?.content || response?.data || []
+const assignmentStatusLabel = value => ({DRAFT:'草稿',PUBLISHED:'已发布',CLOSED:'已关闭',ARCHIVED:'已归档'})[value] || value
+const submissionStatusLabel = value => ({NOT_STARTED:'未开始',DRAFT:'草稿',SUBMITTED:'待批改',GRADED:'已评分',RETURNED_FOR_REVISION:'退回重做'})[value] || value
 const offeringLabel = item => item ? [item.semesterCode, item.courseName, item.teachingClassName].filter(Boolean).join(' · ') : '-'
 const selectedOffering = computed(() => offerings.value.find(item => item.id === filters.offeringId))
 

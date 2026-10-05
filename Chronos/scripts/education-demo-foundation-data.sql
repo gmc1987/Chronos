@@ -739,6 +739,13 @@ WHERE parent.parent_no LIKE 'DEMO-PARENT-%'
         AND existing.profile_id = parent.id
   );
 
+-- 教务身份绑定也是家校中心唯一的账号绑定来源。
+UPDATE edu_user_profile_binding
+SET verified_at = COALESCE(verified_at, CURRENT_TIMESTAMP)
+WHERE profile_type = 'PARENT'
+  AND status = 'ACTIVE'
+  AND username LIKE 'demo.parent.%';
+
 -- ---------------------------------------------------------------------------
 -- 8. 数量与关键关系断言
 -- ---------------------------------------------------------------------------

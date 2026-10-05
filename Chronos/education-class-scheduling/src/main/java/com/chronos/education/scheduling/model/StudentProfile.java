@@ -30,7 +30,7 @@ public class StudentProfile extends BaseEntity {
 	@Column(name = "grade_id", length = 64)
 	private String gradeId;
 
-	@Column(name = "major_id", length = 64, nullable = false)
+	@Column(name = "major_id", length = 64)
 	private String majorId;
 
 	@Column(name = "administrative_class_id", length = 64, nullable = false)

@@ -14,7 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
-import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.meeting.service.MeetingCenterService;
 import com.chronos.education.parentmeeting.dao.ParentMeetingScopeRepository;
 import com.chronos.education.parentmeeting.model.ParentMeetingCommands;
@@ -24,6 +24,7 @@ import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.Idao.IAdminUserRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ParentMeetingServiceTest {
@@ -31,14 +32,15 @@ class ParentMeetingServiceTest {
 	@Mock ParentMeetingScopeRepository scopes;
 	@Mock StudentProfileRepository students;
 	@Mock StudentGuardianRepository guardians;
-	@Mock ParentAccountBindingRepository bindings;
+	@Mock EducationUserBindingRepository bindings;
 	@Mock EducationDataScopeService dataScope;
 	@Mock IAuditLogService audit;
+	@Mock IAdminUserRepository accounts;
 
 	@Test
 	void cannotCreateForStudentOutsideDataScope() {
 		ParentMeetingService service = new ParentMeetingService(
-				meetings, scopes, students, guardians, bindings, dataScope, audit);
+				meetings, scopes, students, guardians, bindings, dataScope, audit, accounts);
 		StudentProfile student = new StudentProfile();
 		student.setId("student-1");
 		student.setEnrollmentStatus("ACTIVE");
@@ -58,7 +60,7 @@ class ParentMeetingServiceTest {
 	@Test
 	void rejectsScopeTypeOutsideHomeSchoolDesign() {
 		ParentMeetingService service = new ParentMeetingService(
-				meetings, scopes, students, guardians, bindings, dataScope, audit);
+				meetings, scopes, students, guardians, bindings, dataScope, audit, accounts);
 		when(dataScope.resolve("teacher-1")).thenReturn(new EducationDataScope(
 				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
 		assertThatThrownBy(() -> service.create(new ParentMeetingCommands.Create(

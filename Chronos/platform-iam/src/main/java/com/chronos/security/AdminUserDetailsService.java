@@ -39,7 +39,9 @@ public class AdminUserDetailsService implements UserDetailsService {
 	 * 因此认证所需的角色和权限必须在这里的事务内完成加载，不能依赖请求级 Session。
 	 */
 	@Override
-	@Transactional
+	// 用户名不存在是预期的认证失败。登录接口会捕获该异常并记录失败审计，
+	// 因此不能将它参与的登录事务标记为 rollback-only。
+	@Transactional(noRollbackFor = UsernameNotFoundException.class)
 	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
 		AdminUser u = this.adminUserRepository.findByUsername(username);
 		if (u == null)

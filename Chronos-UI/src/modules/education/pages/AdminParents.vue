@@ -2,8 +2,8 @@
   <div class="page">
     <header>
       <div>
-        <h2>家长与监护关系</h2>
-        <p>维护家长档案，并将家长关联到对应学生</p>
+        <h2>家长管理</h2>
+        <p>维护家长档案、学生监护关系和门户账号绑定。</p>
       </div>
       <el-button type="primary" @click="editParent()">新增家长</el-button>
     </header>
@@ -34,6 +34,28 @@
       @current-change="loadParents"
     />
 
+    <el-card class="binding-card">
+      <template #header><div class="binding-header"><strong>门户账号绑定</strong><el-button type="primary" @click="openBinding">新增绑定</el-button></div></template>
+      <el-table :data="bindings" border>
+        <el-table-column prop="parentName" label="家长" />
+        <el-table-column prop="username" label="登录账号" />
+        <el-table-column prop="status" label="状态" />
+        <el-table-column label="账号可用性" width="120"><template #default="{ row }"><el-tag :type="row.accountAvailable ? 'success' : 'danger'">{{ row.accountAvailable ? '可邀请' : '不可用' }}</el-tag></template></el-table-column>
+        <el-table-column prop="verifiedAt" label="核验时间" />
+        <AdaptiveActionColumn label="操作" width="100"><template #default="{ row }"><el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="invalidateBinding(row)">解绑</el-button></template></AdaptiveActionColumn>
+      </el-table>
+      <el-pagination v-model:current-page="bindingPage" v-model:page-size="bindingPageSize"
+        :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next"
+        :total="bindingTotal" @size-change="changeBindingPageSize" @current-change="loadBindings" />
+    </el-card>
+    <el-dialog v-model="bindingDialog" title="绑定家长门户账号" width="520px">
+      <el-form label-width="100px">
+        <el-form-item label="家长"><el-select v-model="bindingForm.parentId" filterable placeholder="选择家长" style="width: 100%"><el-option v-for="item in allParents" :key="item.id" :label="`${item.parentName}（${item.parentNo || item.phone || '-'}）`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="登录账号"><el-input v-model="bindingForm.username" placeholder="输入已创建的门户登录账号" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="bindingDialog = false">取消</el-button><el-button type="primary" @click="saveBinding">保存</el-button></template>
+    </el-dialog>
+
     <el-dialog v-model="parentDialog" :title="parentForm.id ? '编辑家长' : '新增家长'" width="600px">
       <el-form label-width="120px">
         <el-form-item label="家长编号"><el-input v-model="parentForm.parentNo" /></el-form-item>
@@ -54,9 +76,7 @@
 
     <el-dialog v-model="relationDialog" :title="`${activeParent.parentName || ''} · 学生关系`" width="760px">
       <div class="relation-form">
-        <el-select v-model="relationForm.studentId" filterable placeholder="选择学生">
-          <el-option v-for="student in students" :key="student.id" :label="`${student.studentName}（${student.studentNo}）`" :value="student.id" />
-        </el-select>
+        <el-select-v2 v-model="relationForm.studentId" :options="studentOptions" filterable placeholder="选择学生" />
         <el-select v-model="relationForm.relationship" placeholder="关系">
           <el-option v-for="item in relationships" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
@@ -86,22 +106,29 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  createHomeSchoolBinding,
   createEducationParent,
   createStudentGuardian,
   deleteEducationParent,
   deleteStudentGuardian,
   dictionaryOptions,
   listEducationParents,
+  pageHomeSchoolBindings,
   listEducationStudents,
   listStudentGuardians,
   updateEducationParent,
+  invalidateHomeSchoolBinding,
 } from '../../../api/admin'
 
 const parents = ref([])
 const students = ref([])
+const studentOptions = computed(() => students.value.map(student => ({
+  label: `${student.studentName}（${student.studentNo}）`,
+  value: student.id,
+})))
 const genders = ref([])
 const relationships = ref([])
 const parentDialog = ref(false)
@@ -113,6 +140,13 @@ const relations = ref([])
 const page = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+const bindings = ref([])
+const bindingPage = ref(1)
+const bindingPageSize = ref(20)
+const bindingTotal = ref(0)
+const allParents = ref([])
+const bindingDialog = ref(false)
+const bindingForm = ref({ parentId: '', username: '' })
 
 const options = response => (response?.data || []).map(item => ({
   label: item.dictName,
@@ -138,7 +172,31 @@ const load = async () => {
   students.value = studentResponse?.data || []
   genders.value = options(genderResponse)
   relationships.value = options(relationshipResponse)
-  await loadParents()
+  await Promise.all([loadParents(), loadBindings()])
+}
+const loadBindings = async () => {
+  const response = await pageHomeSchoolBindings({ page: bindingPage.value - 1, size: bindingPageSize.value })
+  bindings.value = response?.data?.content || response?.data || []
+  bindingTotal.value = response?.data?.totalElements ?? bindings.value.length
+}
+const changeBindingPageSize = () => { bindingPage.value = 1; loadBindings() }
+const openBinding = async () => {
+  const response = await listEducationParents()
+  allParents.value = response?.data?.content || response?.data || []
+  bindingForm.value = { parentId: '', username: '' }
+  bindingDialog.value = true
+}
+const saveBinding = async () => {
+  if (!bindingForm.value.parentId || !bindingForm.value.username.trim()) return ElMessage.warning('请选择家长并填写登录账号')
+  await createHomeSchoolBinding(bindingForm.value)
+  bindingDialog.value = false
+  ElMessage.success('门户账号绑定已保存')
+  await load()
+}
+const invalidateBinding = async row => {
+  await ElMessageBox.confirm(`确认解除“${row.parentName}”的账号绑定？`, '解绑确认', { type: 'warning' })
+  await invalidateHomeSchoolBinding(row.id)
+  await load()
 }
 const changePageSize = () => { page.value = 1; loadParents() }
 const editParent = (row = {}) => {
@@ -190,4 +248,7 @@ h2 { margin: 0 0 6px; }
 p { margin: 0; color: #84909a; }
 .relation-form { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
 .relation-form .el-select { min-width: 150px; }
+.binding-card { margin-top: 20px; }
+.binding-header { display: flex; align-items: center; justify-content: space-between; }
+.binding-card :deep(.el-pagination) { justify-content: flex-end; margin-top: 10px; }
 </style>

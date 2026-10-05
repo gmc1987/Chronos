@@ -24,7 +24,7 @@ import org.springframework.security.access.AccessDeniedException;
 class FamilyEngagementServiceTest {
 	@Mock ParentFeedbackRepository feedbacks;
 	@Mock CommunicationRecordRepository communications;
-	@Mock ParentAccountBindingRepository bindings;
+	@Mock EducationUserBindingRepository bindings;
 	@Mock ParentProfileRepository parents;
 	@Mock StudentProfileRepository students;
 	@Mock StudentGuardianRepository guardians;
@@ -36,9 +36,9 @@ class FamilyEngagementServiceTest {
 
 	@Test
 	void parentCannotSubmitForUnrelatedStudent() {
-		ParentAccountBinding binding = new ParentAccountBinding();
-		binding.setParentId("parent-1");
-		when(bindings.findByUsernameAndStatus("parent", "ACTIVE")).thenReturn(Optional.of(binding));
+		EducationUserBinding binding = new EducationUserBinding();
+		binding.setProfileId("parent-1");
+		when(bindings.findByUsernameAndProfileTypeAndStatus("parent", "PARENT", "ACTIVE")).thenReturn(Optional.of(binding));
 		ParentProfile parent = new ParentProfile();
 		parent.setStatus("ACTIVE");
 		when(parents.findById("parent-1")).thenReturn(Optional.of(parent));
@@ -55,7 +55,7 @@ class FamilyEngagementServiceTest {
 		value.setStudentId("student-1");
 		value.setStatus("SUBMITTED");
 		when(feedbacks.findById("feedback-1")).thenReturn(Optional.of(value));
-		when(bindings.findByUsernameAndStatus("teacher", "ACTIVE")).thenReturn(Optional.empty());
+		when(bindings.findByUsernameAndProfileTypeAndStatus("teacher", "PARENT", "ACTIVE")).thenReturn(Optional.empty());
 		when(scopes.resolve("teacher")).thenReturn(new EducationDataScope(true, java.util.Set.of(),
 				java.util.Set.of(), java.util.Set.of(), java.util.Set.of(), java.util.Set.of()));
 
@@ -65,9 +65,9 @@ class FamilyEngagementServiceTest {
 
 	@Test
 	void parentCanConfirmResolvedFeedback() {
-		ParentAccountBinding binding = new ParentAccountBinding();
-		binding.setParentId("parent-1");
-		when(bindings.findByUsernameAndStatus("parent", "ACTIVE")).thenReturn(Optional.of(binding));
+		EducationUserBinding binding = new EducationUserBinding();
+		binding.setProfileId("parent-1");
+		when(bindings.findByUsernameAndProfileTypeAndStatus("parent", "PARENT", "ACTIVE")).thenReturn(Optional.of(binding));
 		ParentProfile parent = new ParentProfile();
 		parent.setStatus("ACTIVE");
 		when(parents.findById("parent-1")).thenReturn(Optional.of(parent));

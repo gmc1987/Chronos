@@ -486,9 +486,7 @@ public class ClassSchedulingService {
 	}
 
 	private boolean campusMismatch(CourseOffering offering, Classroom classroom) {
-		return offering.getCampusId() != null
-				&& classroom.getCampusId() != null
-				&& !offering.getCampusId().equals(classroom.getCampusId());
+		return !java.util.Objects.equals(offering.getCampusId(), classroom.getCampusId());
 	}
 
 	private Set<String> enrolledStudentIds(String offeringId) {

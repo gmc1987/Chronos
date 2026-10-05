@@ -9,5 +9,6 @@ import com.chronos.education.scheduling.model.HomeworkSubmission;
 
 public interface HomeworkSubmissionRepository extends JpaRepository<HomeworkSubmission, String> {
 	List<HomeworkSubmission> findByAssignmentIdOrderByCreateTimeAsc(String assignmentId);
+	List<HomeworkSubmission> findByAssignmentIdIn(List<String> assignmentIds);
 	Optional<HomeworkSubmission> findByAssignmentIdAndStudentId(String assignmentId, String studentId);
 }

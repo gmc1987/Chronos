@@ -256,7 +256,10 @@ public class AcademicDataService {
 
 	@Transactional
 	public AdministrativeClass saveAdministrativeClass(String id, AdministrativeClass command) {
-		majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
+		// 普通高中和小学没有专业；只有填写了专业时才校验中职专业目录。
+		if (command.getMajorId() != null && !command.getMajorId().isBlank()) {
+			majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
+		}
 		if (command.getGradeId() != null && !command.getGradeId().isBlank()) {
 			grades.findById(command.getGradeId())
 					.orElseThrow(() -> new IllegalArgumentException("年级不存在"));
@@ -274,6 +277,10 @@ public class AcademicDataService {
 
 	public List<StudentProfile> students() {
 		return students.findAllByOrderByStudentNo();
+	}
+
+	public List<StudentProfile> studentsByClass(String classId) {
+		return students.findByAdministrativeClassId(classId);
 	}
 
 	public Page<StudentProfile> students(int page, int size) {
@@ -319,7 +326,10 @@ public class AcademicDataService {
 			existing.setPhone(command.getPhone());
 			return students.save(existing);
 		}
-		majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
+		// 普通教育学生不需要虚构一个专业来完成建档。
+		if (command.getMajorId() != null && !command.getMajorId().isBlank()) {
+			majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
+		}
 		if (command.getGradeId() != null && !command.getGradeId().isBlank()) {
 			grades.findById(command.getGradeId())
 					.orElseThrow(() -> new IllegalArgumentException("年级不存在"));

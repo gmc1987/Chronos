@@ -1,11 +1,13 @@
 package com.chronos.education.scheduling.model;
 
+import java.time.LocalDateTime;
 import com.chronos.model.pojo.BaseEntity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -18,6 +20,7 @@ import lombok.Setter;
 @Table(
 		name = "edu_user_profile_binding",
 		uniqueConstraints = {
+				@UniqueConstraint(name = "uk_edu_user_profile_binding_username", columnNames = "username"),
 				@UniqueConstraint(
 						name = "uk_edu_user_profile_binding",
 						columnNames = { "username", "profile_type" }),
@@ -37,4 +40,15 @@ public class EducationUserBinding extends BaseEntity {
 
 	@Column(name = "status", length = 24, nullable = false)
 	private String status = "ACTIVE";
+
+	/** 家长身份核验时间；教师与学生档案绑定可为空。 */
+	@Column(name = "verified_at")
+	private LocalDateTime verifiedAt;
+
+	@Column(name = "invalidated_at")
+	private LocalDateTime invalidatedAt;
+
+	@Version
+	@Column(name = "row_version", nullable = false)
+	private Long rowVersion = 0L;
 }

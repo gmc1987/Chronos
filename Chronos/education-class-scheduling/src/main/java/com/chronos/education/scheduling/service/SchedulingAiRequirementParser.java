@@ -171,6 +171,10 @@ public class SchedulingAiRequirementParser {
 				dateRules.add(dateRule);
 				continue;
 			}
+			if (isBuiltInSchedulingInstruction(rule)) {
+				// These are enforced by the shared solver or review workflow, not new ad-hoc rules.
+				continue;
+			}
 			if ("SLOT_RULE".equals(clause.classification())) {
 				parseSlotRule(request, scope, selected, clause, slotRules,
 						clarifications, unsupported, unresolvedClauses);
@@ -304,6 +308,7 @@ public class SchedulingAiRequirementParser {
 			if (teacher.unique() != null && day != null
 					&& (segment != null || period != null && period >= 1 && period <= 20)) {
 				String normalized = rule.replace(teacher.unique().getTeacherName(), "TEACHER");
+				normalized = normalized.replace("TEACHER老师", "TEACHER");
 				if (teacher.unique().getTeacherNo() != null
 						&& !teacher.unique().getTeacherNo().isBlank()) {
 					normalized = normalized.replace(teacher.unique().getTeacherNo(), "TEACHER");
@@ -395,13 +400,30 @@ public class SchedulingAiRequirementParser {
 		if (CALENDAR_DATE_RULE.matcher(text).matches()) {
 			return new SchedulingAiDateRule("CALENDAR", text);
 		}
+		if (text.equals("中国节假日休课与补课按已维护的学校日历执行")) {
+			return new SchedulingAiDateRule("CALENDAR", text);
+		}
 		if (EXAM_DATE_RULE.matcher(text).matches()) {
+			return new SchedulingAiDateRule("EXAM", text);
+		}
+		if (text.equals("考试占用时段不可安排常规课")) {
 			return new SchedulingAiDateRule("EXAM", text);
 		}
 		if (LEAVE_DATE_RULE.matcher(text).matches()) {
 			return new SchedulingAiDateRule("LEAVE", text);
 		}
+		if (text.equals("教师请假不可排课")) {
+			return new SchedulingAiDateRule("LEAVE", text);
+		}
 		return null;
+	}
+
+	private boolean isBuiltInSchedulingInstruction(String rule) {
+		return rule.matches("为.+学期全部教学任务排课")
+				|| rule.equals("遵守教师、教室、学生不可冲突")
+				|| rule.equals("教室容量与校区匹配")
+				|| rule.equals("生成候选后先交用户确认和审核")
+				|| rule.equals("不直接发布");
 	}
 
 	private void parseSlotRule(SchedulingAiRunRequest request, EducationDataScope scope,
@@ -435,7 +457,9 @@ public class SchedulingAiRequirementParser {
 			return;
 		}
 		List<SchedulingAiSlotRule> resolved = new java.util.ArrayList<>();
-		String reference = rule.reference().strip();
+		String reference = "TEACHER".equals(rule.subject())
+				? normalizedTeacherReference(rule.reference(), scope)
+				: rule.reference().strip();
 		if ("ALL_TEACHERS".equals(rule.subject())) {
 			if (!reference.isEmpty() || !containsAny(source, "所有老师", "所有教师", "全体老师", "全体教师")) {
 				unsupported.add("全体教师规则未在原文中明确指定：" + source);
@@ -883,6 +907,14 @@ public class SchedulingAiRequirementParser {
 				.sorted(Comparator.comparing(TeacherAcademicProfile::getTeacherNo))
 				.toList();
 		return new TeacherResolution(candidates);
+	}
+
+	private String normalizedTeacherReference(String source, EducationDataScope scope) {
+		String reference = source.strip();
+		boolean exact = resolveTeacher(reference, scope).candidates().stream()
+				.anyMatch(teacher -> reference.equals(teacher.getTeacherName())
+						|| reference.equals(teacher.getTeacherNo()));
+		return exact ? reference : reference.replaceFirst("老师$", "");
 	}
 
 	private Integer resolveDay(String text) {

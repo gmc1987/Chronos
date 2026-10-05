@@ -324,6 +324,18 @@ public class AutoSchedulingService {
 			throw new IllegalStateException("当前课表在候选方案生成后已变化，请重新生成方案");
 		}
 		List<ScheduleEntry> snapshot = readEntries(candidate.getSnapshotJson());
+		Map<String, CourseOffering> currentOfferings = offerings
+				.findBySemesterCodeOrderByOfferingCode(candidate.getSemesterCode()).stream()
+				.collect(Collectors.toMap(CourseOffering::getId, value -> value));
+		Map<String, Classroom> currentRooms = classrooms.findAll().stream()
+				.collect(Collectors.toMap(Classroom::getId, value -> value));
+		for (ScheduleEntry entry : snapshot) {
+			CourseOffering offering = currentOfferings.get(entry.getOfferingId());
+			Classroom room = currentRooms.get(entry.getClassroomId());
+			if (offering == null || room == null || !roomSuitable(offering, room)) {
+				throw new IllegalStateException("候选方案包含失效或不匹配的教室，请重新生成方案");
+			}
+		}
 		Map<String, ScheduleEntry> existingById = baseline.stream()
 				.collect(Collectors.toMap(ScheduleEntry::getId, entry -> entry));
 		Set<String> snapshotIds = snapshot.stream()
@@ -792,7 +804,8 @@ public class AutoSchedulingService {
 			}
 			for (Classroom room : availableRooms) {
 				if (!roomSuitable(offering, room)
-						|| !termCampusIds.contains(room.getCampusId())
+						|| (room.getCampusId() != null
+								&& !termCampusIds.contains(room.getCampusId()))
 						|| roomUnavailable(roomUnavailableSlots, room, slot, duration)
 						|| schedulingIndex.conflicts(offering, room, slot, duration, weeks)) {
 					continue;
@@ -842,9 +855,7 @@ public class AutoSchedulingService {
 				&& (offering.getRequiredRoomType() == null
 						|| offering.getRequiredRoomType().isBlank()
 						|| offering.getRequiredRoomType().equals(room.getRoomType()))
-				&& (offering.getCampusId() == null
-						|| offering.getCampusId().isBlank()
-						|| offering.getCampusId().equals(room.getCampusId()));
+				&& java.util.Objects.equals(offering.getCampusId(), room.getCampusId());
 	}
 
 	private boolean roomUnavailable(

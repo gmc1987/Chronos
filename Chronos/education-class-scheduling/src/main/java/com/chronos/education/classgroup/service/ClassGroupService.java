@@ -4,8 +4,6 @@ import com.chronos.commons.model.PageView;
 import com.chronos.education.classgroup.dao.*;
 import com.chronos.education.classgroup.dto.ClassGroupDtos.*;
 import com.chronos.education.classgroup.model.*;
-import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
-import com.chronos.education.homeschool.model.ParentAccountBinding;
 import com.chronos.education.scheduling.dao.*;
 import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
@@ -27,14 +25,14 @@ public class ClassGroupService {
 	private final AdministrativeClassRepository classes;
 	private final StudentProfileRepository students;
 	private final StudentGuardianRepository guardians;
-	private final ParentAccountBindingRepository bindings;
+	private final EducationUserBindingRepository bindings;
 	private final EducationDataScopeService scopes;
 	private final IAuditLogService audit;
 
 	public ClassGroupService(ClassGroupRepository groups, ClassGroupMemberRepository members,
 			ClassGroupAuditRepository audits, AdministrativeClassRepository classes,
 			StudentProfileRepository students, StudentGuardianRepository guardians,
-			ParentAccountBindingRepository bindings, EducationDataScopeService scopes,
+			EducationUserBindingRepository bindings, EducationDataScopeService scopes,
 			IAuditLogService audit) {
 		this.groups = groups;
 		this.members = members;
@@ -122,6 +120,11 @@ public class ClassGroupService {
 				restored.setUsername(candidate.getUsername());
 				members.save(restored);
 				writeAudit(group, actor, "MEMBER_ADD", restored.getMemberType(), restored.getMemberId(), "source=DERIVED,reason=SYNC");
+			} else if (!java.util.Objects.equals(existing.get().getUsername(), candidate.getUsername())) {
+				// Keep active member account mappings in sync when an account is bound later.
+				ClassGroupMember updated = existing.get();
+				updated.setUsername(candidate.getUsername());
+				members.save(updated);
 			}
 		}
 		group.setLastSyncKey(command == null ? null : command.idempotencyKey());
@@ -192,6 +195,8 @@ public class ClassGroupService {
 			if (teacherId != null) {
 				ClassGroupMember teacher = new ClassGroupMember();
 				teacher.setMemberType("TEACHER"); teacher.setMemberId(teacherId);
+				bindings.findByProfileTypeAndProfileIdAndStatus("TEACHER", teacherId, "ACTIVE")
+						.ifPresent(binding -> teacher.setUsername(binding.getUsername()));
 				teacher.setRole("OWNER"); teacher.setSource("DERIVED");
 				result.add(teacher);
 			}
@@ -199,11 +204,13 @@ public class ClassGroupService {
 		for (StudentProfile student : activeStudents) {
 			ClassGroupMember studentMember = new ClassGroupMember();
 			studentMember.setMemberType("STUDENT"); studentMember.setMemberId(student.getId());
+			bindings.findByProfileTypeAndProfileIdAndStatus("STUDENT", student.getId(), "ACTIVE")
+					.ifPresent(binding -> studentMember.setUsername(binding.getUsername()));
 			studentMember.setRole("MEMBER"); studentMember.setSource("DERIVED");
 			result.add(studentMember);
 			for (StudentGuardianRelation relation : guardians.findByStudentIdOrderByCreateTime(student.getId())) {
-				ParentAccountBinding binding = bindings.findByParentIdAndStatus(relation.getParentId(), "ACTIVE")
-						.stream().findFirst().orElse(null);
+				EducationUserBinding binding = bindings.findByProfileTypeAndProfileIdAndStatus(
+						"PARENT", relation.getParentId(), "ACTIVE").orElse(null);
 				if (binding == null) continue;
 				ClassGroupMember parent = new ClassGroupMember();
 				parent.setMemberType("PARENT"); parent.setMemberId(relation.getParentId());
@@ -222,7 +229,8 @@ public class ClassGroupService {
 		} else if ("PARENT".equals(command.memberType())) {
 			boolean related = students.findByAdministrativeClassId(group.getClassId()).stream()
 					.anyMatch(s -> guardians.findByStudentIdAndParentId(s.getId(), command.memberId()).isPresent());
-			if (!related || bindings.findByParentIdAndStatus(command.memberId(), "ACTIVE").isEmpty())
+			if (!related || bindings.findByProfileTypeAndProfileIdAndStatus(
+					"PARENT", command.memberId(), "ACTIVE").isEmpty())
 				throw new AccessDeniedException("家长没有该班级的有效监护关系");
 		}
 	}

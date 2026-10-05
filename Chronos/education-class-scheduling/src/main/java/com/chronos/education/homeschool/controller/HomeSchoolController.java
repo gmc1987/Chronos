@@ -12,58 +12,93 @@ import com.chronos.education.homeschool.service.HomeSchoolService;
 @RestController
 public class HomeSchoolController {
 	private final HomeSchoolService service;
-	public HomeSchoolController(HomeSchoolService service) { this.service = service; }
+
+	public HomeSchoolController(HomeSchoolService service) {
+		this.service = service;
+	}
 
 	@GetMapping("/admin/education/home-school/parent-bindings")
 	@PreAuthorize("hasAuthority('education:home-school:parent:view')")
-	public ResultData<List<ParentBindingResponse>> bindings() { return ok(service.listBindings()); }
+	public ResultData<List<ParentBindingResponse>> bindings() {
+		return ok(service.listBindings());
+	}
+
 	@GetMapping("/admin/education/home-school/parent-bindings/page")
 	@PreAuthorize("hasAuthority('education:home-school:parent:view')")
-	public ResultData<Page<ParentBindingResponse>> bindingPage(
-			@RequestParam(defaultValue = "0") int page,
+	public ResultData<Page<ParentBindingResponse>> bindingPage(@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
 		return ok(service.listBindings(page, size));
 	}
+
 	@PostMapping("/admin/education/home-school/parent-bindings")
 	@PreAuthorize("hasAuthority('education:home-school:parent:create')")
-	public ResultData<ParentBindingResponse> bind(@RequestBody ParentBindingCommand command) { return ok(service.bind(command)); }
+	public ResultData<ParentBindingResponse> bind(@RequestBody ParentBindingCommand command) {
+		return ok(service.bind(command));
+	}
+
 	@PostMapping("/admin/education/home-school/parent-bindings/{id}/invalidate")
 	@PreAuthorize("hasAuthority('education:home-school:parent:update')")
-	public ResultData<ParentBindingResponse> invalidate(@PathVariable String id) { return ok(service.invalidate(id)); }
+	public ResultData<ParentBindingResponse> invalidate(@PathVariable String id) {
+		return ok(service.invalidate(id));
+	}
 
 	@GetMapping("/admin/education/home-school/notices")
 	@PreAuthorize("hasAuthority('education:home-school:notice:view')")
-	public ResultData<List<NoticeResponse>> notices(Authentication authentication) { return ok(service.listNotices(authentication.getName())); }
+	public ResultData<List<NoticeResponse>> notices(Authentication authentication) {
+		return ok(service.listNotices(authentication.getName()));
+	}
+
 	@GetMapping("/admin/education/home-school/notices/page")
 	@PreAuthorize("hasAuthority('education:home-school:notice:view')")
-	public ResultData<Page<NoticeResponse>> noticePage(
-			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size,
-			Authentication authentication) {
+	public ResultData<Page<NoticeResponse>> noticePage(@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
 		return ok(service.listNotices(authentication.getName(), page, size));
 	}
+
 	@PostMapping("/admin/education/home-school/notices")
 	@PreAuthorize("hasAuthority('education:home-school:notice:create')")
-	public ResultData<NoticeResponse> createNotice(@RequestBody NoticeCommand command, Authentication authentication) { return ok(service.createNotice(command, authentication.getName())); }
+	public ResultData<NoticeResponse> createNotice(@RequestBody NoticeCommand command, Authentication authentication) {
+		return ok(service.createNotice(command, authentication.getName()));
+	}
+
 	@PostMapping("/admin/education/home-school/notices/{id}/publish")
 	@PreAuthorize("hasAuthority('education:home-school:notice:update')")
-	public ResultData<NoticeResponse> publish(@PathVariable String id, Authentication authentication) { return ok(service.publish(id, authentication.getName())); }
+	public ResultData<NoticeResponse> publish(@PathVariable String id, Authentication authentication) {
+		return ok(service.publish(id, authentication.getName()));
+	}
+
 	@GetMapping("/admin/education/home-school/notices/{id}/receipts")
 	@PreAuthorize("hasAuthority('education:home-school:notice:view')")
-	public ResultData<List<NoticeTargetResponse>> receipts(@PathVariable String id, Authentication authentication) { return ok(service.receipts(id, authentication.getName())); }
+	public ResultData<List<NoticeTargetResponse>> receipts(@PathVariable String id, Authentication authentication) {
+		return ok(service.receipts(id, authentication.getName()));
+	}
 
 	@GetMapping("/portal/education/family/children")
-	@PreAuthorize("hasAuthority('education:home-school:parent:view')")
-	public ResultData<List<ChildResponse>> children(Authentication authentication) { return ok(service.children(authentication.getName())); }
-	@GetMapping("/portal/education/family/notices")
-	@PreAuthorize("hasAuthority('education:home-school:notice:view')")
-	public ResultData<List<FamilyNoticeResponse>> familyNotices(Authentication authentication) { return ok(service.familyNotices(authentication.getName())); }
-	@GetMapping("/portal/education/family/grades")
-	@PreAuthorize("hasAuthority('education:home-school:grade:view')")
-	public ResultData<?> grades(Authentication authentication) { return ok(service.familyGrades(authentication.getName())); }
-	@PostMapping("/portal/education/family/notices/{id}/receipt")
-	@PreAuthorize("hasAuthority('education:home-school:notice:update')")
-	public ResultData<NoticeTargetResponse> receipt(@PathVariable String id, @RequestBody(required = false) ReceiptCommand command, Authentication authentication) { return ok(service.receipt(id, command, authentication.getName())); }
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<List<ChildResponse>> children(Authentication authentication) {
+		return ok(service.children(authentication.getName()));
+	}
 
-	private <T> ResultData<T> ok(T value) { return ResultData.<T>builder().code("200").msg("ok").data(value).build(); }
+	@GetMapping("/portal/education/family/notices")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<List<FamilyNoticeResponse>> familyNotices(Authentication authentication) {
+		return ok(service.familyNotices(authentication.getName()));
+	}
+
+	@GetMapping("/portal/education/family/grades")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<?> grades(Authentication authentication) {
+		return ok(service.familyGrades(authentication.getName()));
+	}
+
+	@PostMapping("/portal/education/family/notices/{id}/receipt")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<NoticeTargetResponse> receipt(@PathVariable String id,
+			@RequestBody(required = false) ReceiptCommand command, Authentication authentication) {
+		return ok(service.receipt(id, command, authentication.getName()));
+	}
+
+	private <T> ResultData<T> ok(T value) {
+		return ResultData.<T>builder().code("200").msg("ok").data(value).build();
+	}
 }

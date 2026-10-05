@@ -2,7 +2,6 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.LeaveRequestRecordRepository;
-import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.LeaveRequestRecord;
 import com.chronos.service.iService.IAuditLogService;
@@ -24,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class LeaveRecordService {
 	private final LeaveRequestRecordRepository records;
 	private final EducationUserBindingRepository bindings;
-	private final ParentAccountBindingRepository parentBindings;
 	private final EducationApplicantResolver applicants;
 	private final WorkflowService workflows;
 	private final IAuditLogService audit;
@@ -32,13 +30,11 @@ public class LeaveRecordService {
 	public LeaveRecordService(
 			LeaveRequestRecordRepository records,
 			EducationUserBindingRepository bindings,
-			ParentAccountBindingRepository parentBindings,
 			EducationApplicantResolver applicants,
 			WorkflowService workflows,
 			IAuditLogService audit) {
 		this.records = records;
 		this.bindings = bindings;
-		this.parentBindings = parentBindings;
 		this.applicants = applicants;
 		this.workflows = workflows;
 		this.audit = audit;
@@ -61,7 +57,7 @@ public class LeaveRecordService {
 			studentId = "STUDENT".equals(applicantType) ? identity.getProfileId() : null;
 			applicants.resolve(username, applicantType, studentId);
 		} else {
-			parentBindings.findByUsernameAndStatus(username, "ACTIVE")
+			bindings.findByUsernameAndProfileTypeAndStatus(username, "PARENT", "ACTIVE")
 					.orElseThrow(() -> new AccessDeniedException("当前账号未绑定教师、学生或家长档案"));
 			applicantType = "STUDENT";
 			studentId = applicants.resolve(username, applicantType, studentId);

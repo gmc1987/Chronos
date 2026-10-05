@@ -1644,10 +1644,45 @@ ON CONFLICT DO NOTHING;
 -- 6. 家校协同、班级通知、学籍和教师异动
 -- ---------------------------------------------------------------------------
 
-INSERT INTO edu_parent_account_binding (
+-- 展示家长绑定必须指向可登录账号，不能只在绑定表里写入用户名。
+-- 以下账号和统一密码仅用于本地展示数据，脚本不得在生产环境执行。
+INSERT INTO t_admin_user (
+    id, create_by, create_time, account_locked, account_type,
+    display_name, failed_login_attempts, must_change_password,
+    password, status, token_version, username
+)
+SELECT
+    md5('showcase-parent-account-' || parent.parent_no)::uuid::text,
+    'showcase_seed', CURRENT_TIMESTAMP, false, 'PARENT',
+    parent.parent_name, 0, false,
+    '$2y$10$x/5YKiXBT12xr7Hn7qwwkevrIegDAQzqA7wHfHwajyhD3yhmiHw1.',
+    1, 0, 'parent.' || lower(parent.parent_no)
+FROM edu_parent_profile parent
+WHERE parent.parent_no LIKE 'P-2026%'
+  AND NOT EXISTS (
+      SELECT 1 FROM edu_user_profile_binding existing
+      WHERE existing.profile_type = 'PARENT' AND existing.profile_id = parent.id
+  )
+ON CONFLICT (username) DO NOTHING;
+
+INSERT INTO t_user_role (user_id, role_id)
+SELECT account.id, role.id
+FROM t_admin_user account
+JOIN edu_parent_profile parent
+  ON account.username = 'parent.' || lower(parent.parent_no)
+JOIN t_role role ON role.role_code = 'ROLE_PLATFORM_USER'
+WHERE parent.parent_no LIKE 'P-2026%'
+  AND NOT EXISTS (
+      SELECT 1 FROM edu_user_profile_binding existing
+      WHERE existing.profile_type = 'PARENT' AND existing.profile_id = parent.id
+  )
+ON CONFLICT DO NOTHING;
+
+INSERT INTO edu_user_profile_binding (
     id,
-    parent_id,
     username,
+    profile_type,
+    profile_id,
     status,
     verified_at,
     create_by,
@@ -1655,39 +1690,20 @@ INSERT INTO edu_parent_account_binding (
 )
 SELECT
     md5('showcase-parent-binding-' || parent.id)::uuid::text,
-    parent.id,
     'parent.' || lower(parent.parent_no),
+    'PARENT',
+    parent.id,
     'ACTIVE',
     CURRENT_TIMESTAMP - INTERVAL '20 day',
     'showcase_seed',
     CURRENT_TIMESTAMP - INTERVAL '20 day'
 FROM edu_parent_profile parent
+WHERE parent.parent_no LIKE 'P-2026%'
+  AND NOT EXISTS (
+      SELECT 1 FROM edu_user_profile_binding existing
+      WHERE existing.profile_type = 'PARENT' AND existing.profile_id = parent.id
+  )
 ORDER BY parent.parent_no
-ON CONFLICT DO NOTHING;
-
-INSERT INTO edu_parent_account_binding (
-    id,
-    parent_id,
-    username,
-    status,
-    verified_at,
-    create_by,
-    create_time
-)
-VALUES (
-    '24100000-0000-4000-8000-000000000005',
-    (
-        SELECT profile_id
-        FROM edu_user_profile_binding
-        WHERE username = 'showcase.parent'
-          AND profile_type = 'PARENT'
-    ),
-    'showcase.parent',
-    'ACTIVE',
-    CURRENT_TIMESTAMP,
-    'showcase_seed',
-    CURRENT_TIMESTAMP
-)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO edu_class_notice (
@@ -1773,8 +1789,10 @@ JOIN edu_student_guardian guardian
         FROM edu_student_profile
         WHERE administrative_class_id = notice.class_id
     )
-JOIN edu_parent_account_binding binding
-    ON binding.parent_id = guardian.parent_id
+JOIN edu_user_profile_binding binding
+    ON binding.profile_type = 'PARENT'
+   AND binding.profile_id = guardian.parent_id
+   AND binding.status = 'ACTIVE'
 WHERE notice.id LIKE '17000000-%'
 ON CONFLICT DO NOTHING;
 

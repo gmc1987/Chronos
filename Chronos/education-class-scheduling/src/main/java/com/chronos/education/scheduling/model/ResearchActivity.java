@@ -10,6 +10,7 @@ public class ResearchActivity extends BaseEntity {
  @Column(name="course_id", length=64) private String courseId;
  @Column(name="topic_id", length=64) private String topicId;
  @Column(nullable=false, length=200) private String title;
+ @Column(name="activity_type",nullable=false,length=32) private String activityType="TEACHING_RESEARCH";
  @Column(nullable=false, length=24) private String status="DRAFT";
  @Column(name="activity_time") private LocalDateTime activityTime;
  @Column(columnDefinition="text") private String content;

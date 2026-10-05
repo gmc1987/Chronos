@@ -6,7 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.chronos.education.classgroup.dao.*;
 import com.chronos.education.classgroup.model.ClassGroup;
-import com.chronos.education.homeschool.dao.ParentAccountBindingRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.*;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.EducationDataScope;
@@ -29,7 +29,7 @@ class ClassGroupServiceTest {
 	@Mock AdministrativeClassRepository classes;
 	@Mock StudentProfileRepository students;
 	@Mock StudentGuardianRepository guardians;
-	@Mock ParentAccountBindingRepository bindings;
+	@Mock EducationUserBindingRepository bindings;
 	@Mock EducationDataScopeService scopes;
 	@Mock IAuditLogService audit;
 	@InjectMocks ClassGroupService service;

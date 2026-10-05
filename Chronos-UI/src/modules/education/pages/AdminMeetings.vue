@@ -23,6 +23,7 @@ import {
 const meetings = ref([])
 const rooms = ref([])
 const users = ref([])
+let participantSearchVersion = 0
 const dialogVisible = ref(false)
 const busy = ref(false)
 const page = ref(1)
@@ -64,6 +65,18 @@ function resetForm(view) {
 function openDialog(view) {
   resetForm(view)
   dialogVisible.value = true
+}
+
+async function searchParticipants(keyword) {
+  const version = ++participantSearchVersion
+  try {
+    const result = unwrap(await listMeetingParticipantOptions(keyword))
+    if (version !== participantSearchVersion) return
+    const selected = users.value.filter(user => form.participantUsernames?.includes(user.username))
+    users.value = [...new Map([...selected, ...result].map(user => [user.username, user])).values()]
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '参会人搜索失败')
+  }
 }
 
 function openExecution(view) {
@@ -337,7 +350,7 @@ onMounted(load)
           />
         </template>
         <el-form-item label="参会人">
-          <el-select v-model="form.participantUsernames" multiple filterable collapse-tags :max-collapse-tags="4">
+          <el-select v-model="form.participantUsernames" multiple filterable remote :remote-method="searchParticipants" collapse-tags :max-collapse-tags="4">
             <el-option v-for="item in users" :key="item.username" :label="`${item.displayName}（${item.username}）`" :value="item.username" />
           </el-select>
         </el-form-item>

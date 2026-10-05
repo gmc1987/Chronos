@@ -134,7 +134,7 @@ import {
   addSignWorkflowTask, batchApproveWorkflowTasks, ccWorkflowTask, claimWorkflowTask, completeWorkflowTask,
   handledWorkflowTasks, initiatedWorkflowInstances, pendingWorkflowTasks,
   rejectWorkflowTask, remindWorkflowInstance, returnWorkflowTask,
-  transferWorkflowTask, unclaimWorkflowTask, withdrawWorkflowInstance,
+  transferWorkflowTask, unclaimWorkflowTask, withdrawWorkflowInstance, reviewGradebook,
   workflowDirectoryUsers, workflowNotificationUnreadCount
 } from '../../../api/admin'
 import { hasAdminPermission } from '../../../store/auth'
@@ -203,7 +203,9 @@ const changePageSize = () => {
 }
 
 const comment = async title => (await ElMessageBox.prompt('请输入处理意见', title, { inputPlaceholder: '意见（可选）' })).value || ''
-const openForm = row => router.push(`/portal/workflow-instances/${row.instanceId}/forms`)
+const openForm = row => row.flowCode === 'EDU_GRADEBOOK_REVIEW'
+  ? router.push('/admin/education/score-center')
+  : router.push(`/portal/workflow-instances/${row.instanceId}/forms`)
 const openInstance = row => router.push(`/portal/workflow-instances/${row.id}/forms`)
 const slaText = status => ({ NORMAL: '正常', DUE_SOON: '即将到期', OVERDUE: '已逾期', ESCALATED: '已升级' }[status] || '正常')
 const slaType = status => ({ DUE_SOON: 'warning', OVERDUE: 'danger', ESCALATED: 'danger' }[status] || 'success')
@@ -214,14 +216,17 @@ const approve = async row => {
     ElMessage.info('当前节点需要填写表单，请进入办理页面完成审批')
     return openForm(row)
   }
-  await completeWorkflowTask(row.id, {
-    approved: true,
-    comment: await comment('审批通过')
-  })
+  const opinion = await comment('审批通过')
+  if (row.flowCode === 'EDU_GRADEBOOK_REVIEW') {
+    await reviewGradebook(row.businessKey, { taskId: row.id, approved: true, comment: opinion })
+  } else {
+    await completeWorkflowTask(row.id, { approved: true, comment: opinion })
+  }
   ElMessage.success('审批已通过')
   await load()
 }
 const batchSelectable = row => canApprove
+  && row.flowCode !== 'EDU_GRADEBOOK_REVIEW'
   && !row.claimable
   && row.taskKind !== 'STARTER_REWORK'
   && row.operations?.approve !== false
@@ -257,7 +262,12 @@ const reject = async row => {
     operationDialog.value = true
     return
   }
-  await rejectWorkflowTask(row.id, { comment: await comment('审批拒绝') })
+  const opinion = await comment('审批拒绝')
+  if (row.flowCode === 'EDU_GRADEBOOK_REVIEW') {
+    await reviewGradebook(row.businessKey, { taskId: row.id, approved: false, comment: opinion })
+  } else {
+    await rejectWorkflowTask(row.id, { comment: opinion })
+  }
   ElMessage.success('拒绝处理完成')
   await load()
 }
@@ -305,11 +315,11 @@ const withdraw = async row => {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    load(),
-    workflowDirectoryUsers().then(response => { users.value = response?.data || [] }),
-    workflowNotificationUnreadCount().then(response => { unreadCount.value = response?.data || 0 })
-  ])
+  await load()
+  if (canTransfer || canAddSign || canCc) {
+    workflowDirectoryUsers().then(response => { users.value = response?.data || [] })
+  }
+  workflowNotificationUnreadCount().then(response => { unreadCount.value = response?.data || 0 })
 })
 </script>
 
