@@ -31,6 +31,11 @@ export const portalLeaveBalances = (year) => http.get(
 )
 export const withdrawPortalLeave = (id, reason) => http.post(`/portal/education/leaves/${id}/withdraw`, { reason })
 export const requestLeaveCancellation = (id, payload) => http.post(`/portal/education/leaves/${id}/cancellation`, payload)
+export const portalBusinessTrips = () => http.get('/portal/collaboration/business-trips')
+export const businessTripIntegrationStatus = () => http.get('/portal/collaboration/business-trips/integration-status')
+export const startBusinessTrip = payload => http.post('/portal/collaboration/business-trips', payload)
+export const withdrawBusinessTrip = (id, reason) => http.post(`/portal/collaboration/business-trips/${id}/withdraw`, { reason })
+export const cancelBusinessTrip = (id, reason) => http.post(`/portal/collaboration/business-trips/${id}/cancel`, { reason })
 export const portalClassroomReservations = () => http.get('/portal/education/classroom-reservations')
 export const cancelPortalClassroomReservation = (id, reason) => http.post(
   `/portal/education/classroom-reservations/${id}/cancel`,

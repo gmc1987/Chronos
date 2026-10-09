@@ -43,6 +43,7 @@ const PortalEducationSchedule = () => import('../modules/education/pages/PortalE
 const PortalHeadTeacherWorkbench = () => import('../modules/education/pages/PortalHeadTeacherWorkbench.vue')
 const PortalClassNotices = () => import('../modules/education/pages/PortalClassNotices.vue')
 const PortalLeaves = () => import('../modules/education/pages/PortalLeaves.vue')
+const PortalBusinessTrips = () => import('../modules/collaboration/pages/PortalBusinessTrips.vue')
 const PortalClassroomReservations = () => import('../modules/education/pages/PortalClassroomReservations.vue')
 const AdminLeaveManagement = () => import('../modules/education/pages/AdminLeaveManagement.vue')
 const PortalExamInvigilation = () => import('../modules/education/pages/PortalExamInvigilation.vue')
@@ -107,6 +108,7 @@ const router = createRouter({
         { path: 'education/head-teacher', name: 'portal-education-head-teacher', component: PortalHeadTeacherWorkbench },
         { path: 'education/class-notices', name: 'portal-education-class-notices', component: PortalClassNotices },
         { path: 'education/leaves', name: 'portal-education-leaves', component: PortalLeaves },
+        { path: 'collaboration/business-trips', name: 'portal-business-trips', component: PortalBusinessTrips },
         { path: 'education/classroom-reservations', name: 'portal-education-classroom-reservations', component: PortalClassroomReservations },
         { path: 'education/exam/invigilation', name: 'portal-education-exam-invigilation', component: PortalExamInvigilation },
         { path: 'education/exam/my-exams', name: 'portal-education-my-exams', component: PortalMyExams },
