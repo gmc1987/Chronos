@@ -26,7 +26,11 @@ export const portalParentClassNotices = () => http.get('/portal/education/class-
 export const acknowledgePortalClassNotice = (id, comment) => http.post(`/portal/education/class-notices/${id}/acknowledge`, { comment })
 export const portalLeaveRecords = () => http.get('/portal/education/leaves')
 export const startPortalLeave = payload => http.post('/portal/education/leaves', payload)
-export const requestLeaveCancellation = (id, reason) => http.post(`/portal/education/leaves/${id}/cancellation`, { reason })
+export const portalLeaveBalances = (year) => http.get(
+  `/portal/education/leave-balances?${new URLSearchParams({ year })}`,
+)
+export const withdrawPortalLeave = (id, reason) => http.post(`/portal/education/leaves/${id}/withdraw`, { reason })
+export const requestLeaveCancellation = (id, payload) => http.post(`/portal/education/leaves/${id}/cancellation`, payload)
 export const portalClassroomReservations = () => http.get('/portal/education/classroom-reservations')
 export const cancelPortalClassroomReservation = (id, reason) => http.post(
   `/portal/education/classroom-reservations/${id}/cancel`,
