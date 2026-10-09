@@ -2,9 +2,13 @@ package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.LeaveRequestRecordRepository;
 import com.chronos.education.scheduling.model.LeaveRequestRecord;
+import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.Idao.IEmployeeRepository;
+import com.chronos.model.pojo.AdminUser;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.workflow.WorkflowNotificationService;
 import com.chronos.workflow.event.WorkflowCompletedEvent;
+import com.chronos.workflow.event.WorkflowRejectedEvent;
 import java.time.LocalDate;
 import java.util.Map;
 import org.springframework.stereotype.Component;
@@ -20,41 +24,43 @@ public class LeaveWorkflowListener {
 	private final WorkflowNotificationService notifications;
 	private final IAuditLogService audit;
 	private final EducationApplicantResolver applicants;
+	private final StaffLeaveBalanceService leaveBalances;
+	private final IAdminUserRepository users;
+	private final IEmployeeRepository employees;
 
 	public LeaveWorkflowListener(
 			LeaveRequestRecordRepository records,
 			WorkflowNotificationService notifications,
 			IAuditLogService audit,
-			EducationApplicantResolver applicants) {
+			EducationApplicantResolver applicants,
+			StaffLeaveBalanceService leaveBalances,
+			IAdminUserRepository users,
+			IEmployeeRepository employees) {
 		this.records = records;
 		this.notifications = notifications;
 		this.audit = audit;
 		this.applicants = applicants;
+		this.leaveBalances = leaveBalances;
+		this.users = users;
+		this.employees = employees;
 	}
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void onWorkflowCompleted(WorkflowCompletedEvent event) {
 		String applicantType = applicantType(event.flowCode());
-		if (applicantType == null || records.existsByWorkflowInstanceId(event.instanceId())) {
-			return;
-		}
+		if (applicantType == null) return;
 		Map<String, Object> form = event.mainFormData();
-		LeaveRequestRecord record = new LeaveRequestRecord();
-		record.setWorkflowInstanceId(event.instanceId());
-		record.setBusinessKey(event.businessKey());
-		record.setApplicantType(applicantType);
-		// 申请人必须由认证账号映射，不能依赖可被客户端篡改、也可能未配置的隐藏表单字段。
-		record.setApplicantId(applicants.resolve(
-				event.initiatedBy(),
-				applicantType,
-				form.get("studentId") == null ? null : String.valueOf(form.get("studentId"))));
+		LeaveRequestRecord record = records.findByWorkflowInstanceId(event.instanceId())
+				.orElseGet(() -> legacyRecord(event, applicantType, form));
 		record.setLeaveType(required(form, "leaveType"));
 		record.setStartDate(LocalDate.parse(required(form, "startDate")));
 		record.setEndDate(LocalDate.parse(required(form, "endDate")));
+		record.setRequestedDays(leaveBalances.requestedDays(record.getStartDate(), record.getEndDate()));
 		record.setReason(required(form, "reason"));
 		record.setStatus("APPROVED");
 		record.setApprovedBy(event.completedBy());
+		leaveBalances.deduct(record, event.completedBy());
 		records.save(record);
 
 		notifications.enqueueWorkflowMessage(
@@ -66,6 +72,45 @@ public class LeaveWorkflowListener {
 				"LEAVE_APPROVED");
 		audit.log(event.completedBy(), "EDUCATION_LEAVE_APPROVED",
 				"workflowInstanceId=" + event.instanceId() + ", applicantType=" + applicantType);
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void onWorkflowRejected(WorkflowRejectedEvent event) {
+		if (applicantType(event.flowCode()) == null) return;
+		records.findByWorkflowInstanceId(event.instanceId()).ifPresent(record -> {
+			if ("PENDING".equals(record.getStatus())) {
+				record.setStatus("REJECTED");
+				records.save(record);
+				audit.log(event.rejectedBy(), "EDUCATION_LEAVE_REJECTED",
+						"workflowInstanceId=" + event.instanceId());
+			}
+		});
+	}
+
+	private LeaveRequestRecord legacyRecord(
+			WorkflowCompletedEvent event, String applicantType, Map<String, Object> form) {
+		LeaveRequestRecord record = new LeaveRequestRecord();
+		record.setWorkflowInstanceId(event.instanceId());
+		record.setBusinessKey(event.businessKey());
+		AdminUser account = users.findByUsername(event.initiatedBy());
+		boolean staff = account != null
+				&& account.getEmployeeId() != null
+				&& employees.findById(account.getEmployeeId())
+						.filter(employee -> "ACTIVE".equals(employee.getEmploymentStatus()))
+						.isPresent();
+		record.setApplicantType(staff ? "STAFF" : applicantType);
+		record.setApplicantId(staff
+				? account.getEmployeeId()
+				: applicants.resolve(
+						event.initiatedBy(),
+						applicantType,
+						form.get("studentId") == null ? null : String.valueOf(form.get("studentId"))));
+		record.setLeaveType(required(form, "leaveType"));
+		record.setStartDate(LocalDate.parse(required(form, "startDate")));
+		record.setEndDate(LocalDate.parse(required(form, "endDate")));
+		record.setRequestedDays(leaveBalances.requestedDays(record.getStartDate(), record.getEndDate()));
+		return record;
 	}
 
 	private String applicantType(String flowCode) {

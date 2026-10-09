@@ -26,7 +26,16 @@ export const portalParentClassNotices = () => http.get('/portal/education/class-
 export const acknowledgePortalClassNotice = (id, comment) => http.post(`/portal/education/class-notices/${id}/acknowledge`, { comment })
 export const portalLeaveRecords = () => http.get('/portal/education/leaves')
 export const startPortalLeave = payload => http.post('/portal/education/leaves', payload)
-export const requestLeaveCancellation = (id, reason) => http.post(`/portal/education/leaves/${id}/cancellation`, { reason })
+export const portalLeaveBalances = (year) => http.get(
+  `/portal/education/leave-balances?${new URLSearchParams({ year })}`,
+)
+export const withdrawPortalLeave = (id, reason) => http.post(`/portal/education/leaves/${id}/withdraw`, { reason })
+export const requestLeaveCancellation = (id, payload) => http.post(`/portal/education/leaves/${id}/cancellation`, payload)
+export const portalBusinessTrips = () => http.get('/portal/collaboration/business-trips')
+export const businessTripIntegrationStatus = () => http.get('/portal/collaboration/business-trips/integration-status')
+export const startBusinessTrip = payload => http.post('/portal/collaboration/business-trips', payload)
+export const withdrawBusinessTrip = (id, reason) => http.post(`/portal/collaboration/business-trips/${id}/withdraw`, { reason })
+export const cancelBusinessTrip = (id, reason) => http.post(`/portal/collaboration/business-trips/${id}/cancel`, { reason })
 export const portalClassroomReservations = () => http.get('/portal/education/classroom-reservations')
 export const cancelPortalClassroomReservation = (id, reason) => http.post(
   `/portal/education/classroom-reservations/${id}/cancel`,
@@ -81,3 +90,53 @@ export const portalSupervisionTasks = () => http.get('/portal/education/supervis
 export const acceptSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/accept`)
 export const checkInSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/check-in`)
 export const submitSupervisionEvaluation = (id, payload) => http.post(`/portal/education/supervision/tasks/${id}/submit`, payload)
+
+// 协同办公
+export const fetchCollaborationResources = type => http.get(
+  `/portal/collaboration/resources?${new URLSearchParams({ type })}`,
+)
+export const fetchMyOfficeRequests = () => http.get('/portal/collaboration/requests/my')
+export const createOfficeRequest = payload => http.post('/portal/collaboration/requests', payload)
+export const withdrawOfficeRequest = id => http.post(`/portal/collaboration/requests/${id}/withdraw`)
+export const fetchMyOfficialDocuments = () => http.get('/portal/collaboration/documents/my')
+export const fetchIssuedOfficialDocuments = () => http.get('/portal/collaboration/documents/issued')
+export const createOfficialDocument = payload => http.post('/portal/collaboration/documents', payload)
+export const attachOfficialDocumentFile = (id, fileId) => http.post(
+  `/portal/collaboration/documents/${id}/file`, { fileId },
+)
+export const submitOfficialDocument = id => http.post(`/portal/collaboration/documents/${id}/submit`)
+export const archiveOfficialDocument = id => http.post(`/portal/collaboration/documents/${id}/archive`)
+export const fetchSharedFiles = () => http.get('/portal/collaboration/files/shares')
+export const createFileShare = payload => http.post('/portal/collaboration/files/shares', payload)
+export const attachSharedFile = (id, fileId) => http.post(
+  `/portal/collaboration/files/shares/${id}/file`, { fileId },
+)
+export const fetchCollaborationContacts = (keyword = '') => http.get(
+  `/portal/collaboration/contacts?${new URLSearchParams({ keyword })}`,
+)
+export const fetchCollaborationDepartments = () => http.get('/portal/collaboration/departments')
+export const uploadCollaborationFile = (businessType, businessId, file) => {
+  const data = new FormData()
+  data.append('file', file)
+  const params = new URLSearchParams({ businessType })
+  if (businessId) params.set('businessId', businessId)
+  return http.upload(
+    `/files?${params}`,
+    data,
+  )
+}
+export const downloadCollaborationFile = id => http.download(`/files/${id}/content`)
+export const fetchManagedCollaborationResources = type => http.get(
+  `/portal/collaboration/admin/resources?${new URLSearchParams({ type })}`,
+)
+export const createCollaborationResource = payload => http.post(
+  '/portal/collaboration/admin/resources', payload,
+)
+export const updateCollaborationResource = (id, payload) => http.put(
+  `/portal/collaboration/admin/resources/${id}`, payload,
+)
+export const disableCollaborationResource = id => http.delete(
+  `/portal/collaboration/admin/resources/${id}`,
+)
+export const fetchManagedOfficeRequests = () => http.get('/portal/collaboration/admin/requests')
+export const completeOfficeRequest = id => http.post(`/portal/collaboration/requests/${id}/complete`)

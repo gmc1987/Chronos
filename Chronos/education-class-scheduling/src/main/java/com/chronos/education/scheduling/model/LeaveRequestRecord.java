@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
@@ -35,6 +36,8 @@ public class LeaveRequestRecord extends BaseEntity {
 	private LocalDate startDate;
 	@Column(name = "end_date", nullable = false)
 	private LocalDate endDate;
+	@Column(name = "requested_days", precision = 8, scale = 2, nullable = false)
+	private BigDecimal requestedDays = BigDecimal.ZERO;
 	@Column(name = "reason", length = 1000, nullable = false)
 	private String reason;
 	@Column(name = "status", length = 24, nullable = false)
@@ -55,6 +58,14 @@ public class LeaveRequestRecord extends BaseEntity {
 	private LocalDateTime cancellationDecidedAt;
 	@Column(name = "cancellation_comment", length = 1000)
 	private String cancellationComment;
+	@Column(name = "actual_end_date")
+	private LocalDate actualEndDate;
+	@Column(name = "balance_deducted", nullable = false)
+	private Boolean balanceDeducted = false;
+	@Column(name = "withdrawn_at")
+	private LocalDateTime withdrawnAt;
+	@Column(name = "withdrawn_by", length = 128)
+	private String withdrawnBy;
 	@Version
 	@Column(name = "row_version", nullable = false)
 	private Long rowVersion = 0L;

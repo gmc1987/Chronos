@@ -18,9 +18,9 @@ public class PortalSeedConfig {
             if (applications.count() == 0) {
                 applications.saveAll(List.of(
                     app("workflow", "流程中心", "待办、申请与流程追踪", "List", "/portal/tasks", 10),
-                    app("oa", "协同办公", "请假、出差、用车与用印", "OfficeBuilding", "/portal/apps", 20),
-                    app("document", "公文中心", "收文、发文与公文查询", "Document", "/portal/apps", 30),
-                    app("file", "文件中心", "文件上传、预览和权限管理", "Folder", "/portal/apps", 40),
+                    app("oa", "协同办公", "请假、出差、用车、用印、会议与个人办公", "OfficeBuilding", "/portal/collaboration", 20),
+                    app("document", "公文中心", "收文、发文与公文查询", "Document", "/portal/collaboration/documents", 30),
+                    app("file", "文件中心", "文件上传、共享和权限管理", "Folder", "/portal/collaboration/files", 40),
                     app("knowledge", "知识中心", "制度、规范与知识检索", "Collection", "/portal/apps", 50),
                     app("ai", "AI 智能中心", "AI 助手与智能业务能力", "MagicStick", "/portal/apps", 60)
                 ));

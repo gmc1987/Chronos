@@ -10,11 +10,18 @@ import org.springframework.data.jpa.repository.Lock;
 
 public interface LeaveRequestRecordRepository extends JpaRepository<LeaveRequestRecord, String> {
 	boolean existsByWorkflowInstanceId(String workflowInstanceId);
+	Optional<LeaveRequestRecord> findByWorkflowInstanceId(String workflowInstanceId);
 	List<LeaveRequestRecord> findByApplicantTypeAndApplicantIdOrderByStartDateDesc(
 			String applicantType,
 			String applicantId);
 	List<LeaveRequestRecord> findByCancellationStatusOrderByCancellationRequestedAtAsc(String status);
 	List<LeaveRequestRecord> findByStartDateLessThanEqualAndEndDateGreaterThanEqual(
+			LocalDate endDate,
+			LocalDate startDate);
+	List<LeaveRequestRecord> findByApplicantTypeAndApplicantIdAndStatusInAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+			String applicantType,
+			String applicantId,
+			List<String> statuses,
 			LocalDate endDate,
 			LocalDate startDate);
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
