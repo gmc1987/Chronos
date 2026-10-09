@@ -275,6 +275,24 @@ JOIN t_organization o ON o.org_code = 'SCALE-' ||
     upper(split_part(c.username, '-', 2)) || '-2026'
 ON CONFLICT (username) DO NOTHING;
 
+-- 独立审核账号只持有排课审核角色；与教师身份隔离，避免 ALL 范围扩大教师其他权限。
+INSERT INTO scale_demo_credentials (username, password)
+SELECT 'demo-scheduling-reviewer', encode(gen_random_bytes(12), 'hex')
+WHERE NOT EXISTS (
+    SELECT 1 FROM t_admin_user WHERE username = 'demo-scheduling-reviewer'
+);
+
+INSERT INTO t_admin_user (id, create_by, create_time, account_locked,
+    account_type, display_name, failed_login_attempts, must_change_password,
+    organization_id, password, status, token_version, username)
+SELECT md5('scale-account-' || c.username)::uuid::text, 'scale_seed', now(),
+       false, 'STAFF', '走班排课方案审核员', 0, false,
+       o.id, crypt(c.password, gen_salt('bf', 4)), 1, 0, c.username
+FROM scale_demo_credentials c
+JOIN t_organization o ON o.org_code = 'SCALE-HV-2026'
+WHERE c.username = 'demo-scheduling-reviewer'
+ON CONFLICT (username) DO NOTHING;
+
 INSERT INTO edu_user_profile_binding (id, username, profile_type, profile_id,
     status, create_by, create_time)
 SELECT md5('scale-binding-teacher-' || t.teacher_no)::uuid::text,
@@ -305,6 +323,14 @@ JOIN t_role r ON r.role_code = CASE u.username
   WHEN 'scale-hv-t006' THEN 'EDU_ACADEMIC_APPROVER'
 END
 WHERE u.username IN ('scale-hv-t005', 'scale-hv-t006')
+ON CONFLICT DO NOTHING;
+
+-- 排课候选方案由独立账号审核，避免 admin 负责人自审。
+INSERT INTO t_user_role (user_id, role_id)
+SELECT u.id, r.id
+FROM t_admin_user u
+JOIN t_role r ON r.role_code = 'EDU_SCHEDULING_REVIEWER'
+WHERE u.username = 'demo-scheduling-reviewer'
 ON CONFLICT DO NOTHING;
 
 -- 审核只能读取演示学校的成绩册；角色本身不授予全平台数据范围。

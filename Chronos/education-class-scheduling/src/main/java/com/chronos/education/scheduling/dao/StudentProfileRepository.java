@@ -19,6 +19,29 @@ public interface StudentProfileRepository extends JpaRepository<StudentProfile, 
 	Page<StudentProfile> findAllByOrderByStudentNo(Pageable pageable);
 
 	@Query("""
+			select student from StudentProfile student
+			where lower(student.studentNo) like concat('%', :keyword, '%')
+			   or lower(student.studentName) like concat('%', :keyword, '%')
+			order by student.studentNo
+			""")
+	Page<StudentProfile> searchScheduleOptions(
+			@Param("keyword") String keyword,
+			Pageable pageable);
+
+	@Query("""
+			select student from StudentProfile student
+			where (student.administrativeClassId in :classIds or student.gradeId in :gradeIds)
+			  and (lower(student.studentNo) like concat('%', :keyword, '%')
+			       or lower(student.studentName) like concat('%', :keyword, '%'))
+			order by student.studentNo
+			""")
+	Page<StudentProfile> searchVisibleScheduleOptions(
+			@Param("classIds") List<String> classIds,
+			@Param("gradeIds") List<String> gradeIds,
+			@Param("keyword") String keyword,
+			Pageable pageable);
+
+	@Query("""
 			select value from StudentProfile value
 			where value.administrativeClassId in :classIds or value.gradeId in :gradeIds
 			order by value.studentNo

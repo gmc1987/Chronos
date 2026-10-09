@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,6 +46,58 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 
 class AutoSchedulingServiceTest {
+	@Test
+	void fullModeUsesSemesterPolicyAndTermWeeksWithoutSelectingOfferings() throws Exception {
+		var candidates = mock(ScheduleCandidatePlanRepository.class);
+		var entries = mock(ScheduleEntryRepository.class);
+		var offerings = mock(CourseOfferingRepository.class);
+		var classrooms = mock(ClassroomRepository.class);
+		var members = mock(TeachingClassMemberRepository.class);
+		var terms = mock(AcademicTermRepository.class);
+		var calendar = mock(AcademicCalendarService.class);
+		var policyService = mock(SchedulePolicyService.class);
+		var term = new AcademicTerm();
+		term.setWeekCount(18);
+		var policy = new SchedulePolicy();
+		policy.setTeachingDaysPerWeek(6);
+		policy.setPeriodsPerDay(9);
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(term));
+		when(policyService.resolve("2026-2027-1")).thenReturn(policy);
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
+				.thenReturn(List.of());
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
+				.thenReturn(offerings(1));
+		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(classrooms(1));
+		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
+				.thenReturn(List.of());
+		when(calendar.schedulablePeriodNumbers(eq("2026-2027-1"), any(), eq(1)))
+				.thenReturn(Set.of(1));
+		AtomicReference<ScheduleCandidatePlan> saved = new AtomicReference<>();
+		when(candidates.save(any())).thenAnswer(invocation -> {
+			ScheduleCandidatePlan candidate = invocation.getArgument(0);
+			candidate.setId("candidate-full");
+			saved.set(candidate);
+			return candidate;
+		});
+		var solver = new AutoSchedulingService(candidates, entries, offerings, classrooms,
+				mock(ClassroomUnavailableSlotRepository.class),
+				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
+				members, terms, calendar, policyService,
+				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
+				mock(EntityManager.class));
+
+		solver.generate(new AutoScheduleCommand("2026-2027-1", "全量", "FULL",
+				Set.of(), 1, null, null, null, null), "admin");
+
+		Map<String, Object> scope = new ObjectMapper().readValue(saved.get().getScopeJson(),
+				new TypeReference<>() { });
+		assertThat(scope).containsEntry("weekdays", 6)
+				.containsEntry("periodsPerDay", 9)
+				.containsEntry("endWeek", 18);
+		assertThat(((List<?>) scope.get("offeringIds")).stream().map(String::valueOf).toList())
+				.containsExactly("offering-0");
+	}
+
 	@Test
 	void offeringWithoutCampusUsesOnlyRoomWithoutCampus() throws Exception {
 		var candidates = mock(ScheduleCandidatePlanRepository.class);

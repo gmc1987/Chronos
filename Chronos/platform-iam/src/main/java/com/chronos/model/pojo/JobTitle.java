@@ -7,13 +7,22 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Entity @Getter @Setter @NoArgsConstructor
+@Entity
+@Getter
+@Setter
+@NoArgsConstructor
 @Table(name = "t_job_title", comment = "职务职称")
 public class JobTitle extends BaseEntity {
-    @Column(name = "title_code", length = 100, nullable = false, unique = true) private String titleCode;
-    @Column(name = "title_name", length = 100, nullable = false) private String titleName;
-    @Column(name = "title_type", length = 32, nullable = false) private String titleType = "DUTY";
-    @Column(name = "title_level", length = 50) private String titleLevel;
-    @Column(name = "status", nullable = false) private Integer status = 1;
-    @Column(name = "sort_order", nullable = false) private Integer sortOrder = 0;
+	@Column(name = "title_code", length = 100, nullable = false, unique = true)
+	private String titleCode;
+	@Column(name = "title_name", length = 100, nullable = false)
+	private String titleName;
+	@Column(name = "title_type", length = 32, nullable = false)
+	private String titleType = "DUTY";
+	@Column(name = "title_level", length = 50)
+	private String titleLevel;
+	@Column(name = "status", nullable = false)
+	private Integer status = 1;
+	@Column(name = "sort_order", nullable = false)
+	private Integer sortOrder = 0;
 }

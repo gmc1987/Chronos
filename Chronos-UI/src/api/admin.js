@@ -391,6 +391,8 @@ export const deleteCombinedOffering = (id) => http.delete(`/admin/education/cour
 export const listClassrooms = (params) => http.get(`/admin/education/classrooms?${qs(params)}`)
 export const listScheduleDimensionOptions = (semesterCode) =>
   http.get(`/admin/education/schedule-dimension-options?${qs({ semesterCode })}`)
+export const listScheduleStudentOptions = (params) =>
+  http.get(`/admin/education/schedule-student-options?${qs(params)}`)
 export const createClassroom = (payload) => http.post('/admin/education/classrooms', payload)
 export const updateClassroom = (id, payload) => http.put(`/admin/education/classrooms/${id}`, payload)
 export const deleteClassroom = (id) => http.delete(`/admin/education/classrooms/${id}`)

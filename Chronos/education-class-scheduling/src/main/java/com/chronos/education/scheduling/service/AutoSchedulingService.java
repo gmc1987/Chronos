@@ -60,8 +60,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AutoSchedulingService {
-	private static final int DEFAULT_WEEKDAYS = 5;
-	private static final int DEFAULT_PERIODS = 8;
 	private static final int MAX_CANDIDATES = 5;
 	private final ScheduleCandidatePlanRepository candidates;
 	private final ScheduleEntryRepository entries;
@@ -144,10 +142,12 @@ public class AutoSchedulingService {
 		if (runConstraints == null) {
 			throw new IllegalArgumentException("动态排课规则不能为空");
 		}
-		GenerationRequest request = validate(command);
-		SchedulePolicy policy = policyService.resolve(request.semesterCode());
-		terms.findByTermCode(request.semesterCode())
-				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		String semesterCode = required(command == null ? null : command.semesterCode(), "学期编码");
+		SchedulePolicy policy = policyService.resolve(semesterCode);
+		int termWeeks = terms.findByTermCode(semesterCode)
+				.orElseThrow(() -> new IllegalArgumentException("学期不存在"))
+				.getWeekCount();
+		GenerationRequest request = validate(command, policy, termWeeks);
 		List<ScheduleEntry> baseline = current(request.semesterCode());
 		String baselineHash = hash(baseline);
 		List<CourseOffering> semesterOfferings = offerings
@@ -155,6 +155,9 @@ public class AutoSchedulingService {
 				.filter(offering -> "ACTIVE".equals(offering.getStatus()))
 				.toList();
 		Set<String> targetIds = targetOfferingIds(request, semesterOfferings);
+		if (targetIds.isEmpty()) {
+			throw new IllegalStateException("当前学期没有可用教学任务，请先创建并启用教学任务");
+		}
 		Set<String> teacherIds = semesterOfferings.stream()
 				.filter(offering -> targetIds.contains(offering.getId()))
 				.map(CourseOffering::getTeacherId)
@@ -1074,7 +1077,10 @@ public class AutoSchedulingService {
 				.executeUpdate();
 	}
 
-	private GenerationRequest validate(AutoScheduleCommand command) {
+	private GenerationRequest validate(
+			AutoScheduleCommand command,
+			SchedulePolicy policy,
+			int termWeeks) {
 		if (command == null) {
 			throw new IllegalArgumentException("自动排课参数不能为空");
 		}
@@ -1091,7 +1097,7 @@ public class AutoSchedulingService {
 			throw new IllegalArgumentException("局部重排至少选择一个教学任务");
 		}
 		int startWeek = range(command.startWeek(), 1, 52, 1, "开始周");
-		int endWeek = range(command.endWeek(), 1, 52, 20, "结束周");
+		int endWeek = range(command.endWeek(), 1, 52, termWeeks, "结束周");
 		if (endWeek < startWeek) {
 			throw new IllegalArgumentException("结束周不能早于开始周");
 		}
@@ -1101,8 +1107,8 @@ public class AutoSchedulingService {
 				mode,
 				selected,
 				range(command.candidateCount(), 1, MAX_CANDIDATES, 3, "候选方案数"),
-				range(command.weekdays(), 1, 7, DEFAULT_WEEKDAYS, "上课天数"),
-				range(command.periodsPerDay(), 1, 20, DEFAULT_PERIODS, "每日节数"),
+				range(command.weekdays(), 1, 7, policy.getTeachingDaysPerWeek(), "上课天数"),
+				range(command.periodsPerDay(), 1, 20, policy.getPeriodsPerDay(), "每日节数"),
 				startWeek,
 				endWeek);
 	}

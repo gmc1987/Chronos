@@ -1,4 +1,5 @@
 import { getAdminRefresh, getAdminToken, getConsumerToken, saveAdminTokens, clearAdminTokens } from '../store/auth'
+import { ElMessage } from 'element-plus'
 
 const defaultConfig = {
   baseURL: import.meta.env.VITE_API_BASE || '/api',
@@ -56,6 +57,15 @@ const pickTokenByPath = (url, adminToken, consumerToken) => {
 export const createHttp = (config = {}) => {
   const cfg = { ...defaultConfig, ...config }
 
+  const rejectRequest = (message, status) => {
+    const description = typeof message === 'string' && message.trim() ? message : `请求失败（HTTP ${status || '网络错误'}）`
+    // 所有使用公共 HTTP 客户端的页面都能看到服务端业务错误，包括未捕获异常的事件处理器。
+    ElMessage.error({ message: description, grouping: true })
+    const error = new Error(description)
+    error.status = status
+    throw error
+  }
+
   const refreshToken = async () => {
     const refresh = getAdminRefresh()
     if (!refresh) return null
@@ -97,7 +107,12 @@ export const createHttp = (config = {}) => {
       if (token) headers.set('Authorization', `Bearer ${token}`)
     }
 
-    const res = await fetch(`${cfg.baseURL}${url}`, { ...options, headers })
+    let res
+    try {
+      res = await fetch(`${cfg.baseURL}${url}`, { ...options, headers })
+    } catch (error) {
+      rejectRequest(error?.message === 'Failed to fetch' ? '网络连接失败，请检查服务是否可用' : error?.message, 0)
+    }
     const publicRequest = publicPathPrefixes.some((prefix) => url.startsWith(prefix))
     if (res.status === 401 && !publicRequest && !options?._retry && !url.startsWith('/auth/login') && !url.startsWith('/auth/refresh')) {
       const next = await refreshToken()
@@ -110,16 +125,18 @@ export const createHttp = (config = {}) => {
       if (typeof window !== 'undefined') {
         window.location.href = window.location.pathname.startsWith('/admin') ? '/admin/login' : '/login'
       }
-      throw new Error('HTTP 401')
+      rejectRequest('登录状态已失效，请重新登录', 401)
     }
 
     if (!res.ok) {
-      let message = `HTTP ${res.status}`
-      try { const errorBody = await res.json(); message = errorBody?.msg || errorBody?.data || message } catch { /* 非JSON错误 */ }
-      throw new Error(message)
+      let message = `请求失败（HTTP ${res.status}）`
+      try { const errorBody = await res.json(); message = errorBody?.msg || (typeof errorBody?.data === 'string' ? errorBody.data : null) || message } catch { /* 非JSON错误 */ }
+      rejectRequest(message, res.status)
     }
     if (options?._responseType === 'blob') return res.blob()
-    return res.json()
+    const data = await res.json()
+    if (data?.code && !/^2\d\d$/.test(String(data.code))) rejectRequest(data.msg, Number(data.code))
+    return data
   }
 
   return {

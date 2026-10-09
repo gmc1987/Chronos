@@ -24,6 +24,12 @@ public class SchedulePolicy extends BaseEntity {
 	@Column(name = "semester_code", length = 64, nullable = false)
 	private String semesterCode;
 
+	@Column(name = "teaching_days_per_week", nullable = false)
+	private Integer teachingDaysPerWeek = 5;
+
+	@Column(name = "periods_per_day", nullable = false)
+	private Integer periodsPerDay = 8;
+
 	@Column(name = "default_max_weekly_lessons", nullable = false)
 	private Integer defaultMaxWeeklyLessons = 20;
 

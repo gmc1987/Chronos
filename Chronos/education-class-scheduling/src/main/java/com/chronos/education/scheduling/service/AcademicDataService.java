@@ -307,6 +307,26 @@ public class AcademicDataService {
 						pageable(page, size));
 	}
 
+	/** 课表学生选择器按数据范围和关键词在数据库分页，不加载完整学生档案列表。 */
+	public Page<StudentProfile> scheduleStudentOptions(
+			EducationDataScope scope,
+			String keyword,
+			int page,
+			int size) {
+		String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT);
+		if (normalizedKeyword.length() > 100) {
+			throw new IllegalArgumentException("学生查询关键词不能超过100个字符");
+		}
+		Pageable requestedPage = pageable(page, Math.min(size, 50));
+		return scope.fullAccess()
+				? students.searchScheduleOptions(normalizedKeyword, requestedPage)
+				: students.searchVisibleScheduleOptions(
+						nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()),
+						normalizedKeyword,
+						requestedPage);
+	}
+
 	@Transactional
 	public StudentProfile saveStudent(String id, StudentProfile command) {
 		if (id != null) {

@@ -88,8 +88,8 @@ public class ClassSchedulingController {
 
 		/*
 		 * 周课表的查询对象属于排课上下文，不能依赖教师、学生等基础数据菜单权限。
-		 * 在一个接口内按当前用户的数据范围返回五类选项，既避免前端部分失败，
-		 * 也防止通过下拉列表越权看到不在管理范围内的师生和教学资源。
+		 * 轻量查询对象仍按当前用户数据范围返回；学生数量较大，改走独立分页接口，
+		 * 避免加载课表时一次查询和序列化全部学生档案。
 		 */
 		return ok(Map.of(
 				"teachers", academicData.teachers(scope),
@@ -97,10 +97,25 @@ public class ClassSchedulingController {
 						scope,
 						service.offerings(semesterCode)),
 				"administrativeClasses", academicData.administrativeClasses(scope),
-				"students", academicData.students(scope),
 				"classrooms", dataScopes.visibleClassrooms(
 						scope,
 						service.classrooms())));
+	}
+
+	@GetMapping("/admin/education/schedule-student-options")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
+	public ResultData<PageView<StudentScheduleOption>> scheduleStudentOptions(
+			@RequestParam(required = false, defaultValue = "") String keyword,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "10") int size,
+			Authentication authentication) {
+		var scope = dataScopes.resolve(authentication.getName());
+		return ok(PageView.from(academicData.scheduleStudentOptions(scope, keyword, page, size)
+				.map(student -> new StudentScheduleOption(
+						student.getId(), student.getStudentNo(), student.getStudentName()))));
+	}
+
+	public record StudentScheduleOption(String id, String studentNo, String studentName) {
 	}
 
 	@PostMapping("/admin/education/schedule-generation-jobs")
@@ -314,7 +329,7 @@ public class ClassSchedulingController {
 	}
 
 	@PostMapping("/admin/education/schedule-candidates/{id}/review")
-	@PreAuthorize("@iamAuthorization.has(authentication,'education:scheduling:manage')")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:review','education:scheduling:manage')")
 	public ResultData<ScheduleCandidateView> reviewCandidate(
 			@PathVariable String id,
 			@RequestParam boolean approved,

@@ -14,7 +14,7 @@
     </header>
 
     <el-tabs v-model="activeTab">
-      <el-tab-pane label="周课表" name="schedule">
+      <el-tab-pane v-if="!reviewOnly" label="周课表" name="schedule">
         <div class="schedule-toolbar">
           <div class="dimension-filter">
             <el-select v-model="scheduleDimension" class="dimension-select" @change="changeDimension">
@@ -26,7 +26,38 @@
               <el-option label="教室课表" value="CLASSROOM" />
             </el-select>
             <el-select
-              v-if="scheduleDimension !== 'ALL'"
+              v-if="scheduleDimension === 'STUDENT'"
+              v-model="scheduleTargetId"
+              class="target-select"
+              filterable
+              remote
+              clearable
+              :remote-method="searchStudentOptions"
+              :loading="studentOptionsLoading"
+              :placeholder="studentOptionsError ? '学生加载失败，请重试' : '搜索姓名或学号选择学生'"
+              @visible-change="onStudentSelectVisible"
+              @change="changeScheduleTarget">
+              <el-option
+                v-for="item in studentOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value" />
+              <template #footer>
+                <div class="student-option-footer">
+                  <span>共 {{ studentTotal }} 人</span>
+                  <el-pagination
+                    v-model:current-page="studentPage"
+                    :page-size="10"
+                    :total="studentTotal"
+                    :pager-count="5"
+                    size="small"
+                    layout="prev, pager, next"
+                    @current-change="loadStudentOptions" />
+                </div>
+              </template>
+            </el-select>
+            <el-select
+              v-else-if="scheduleDimension !== 'ALL'"
               v-model="scheduleTargetId"
               class="target-select"
               filterable
@@ -41,7 +72,8 @@
                 :label="item.label"
                 :value="item.value" />
             </el-select>
-            <el-button v-if="dimensionOptionsError && scheduleDimension !== 'ALL'" link type="danger" @click="loadDimensionOptions">选项加载失败，重试</el-button>
+            <el-button v-if="studentOptionsError && scheduleDimension === 'STUDENT'" link type="danger" @click="loadStudentOptions">学生加载失败，重试</el-button>
+            <el-button v-if="dimensionOptionsError && scheduleDimension !== 'ALL' && scheduleDimension !== 'STUDENT'" link type="danger" @click="loadDimensionOptions">选项加载失败，重试</el-button>
           </div>
           <div class="schedule-actions">
             <el-radio-group v-model="scheduleView" class="view-switch">
@@ -51,6 +83,7 @@
             <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" @click="downloadImportTemplate">下载导入模板</el-button>
             <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" type="warning" @click="chooseImportFile">导入课表</el-button>
             <el-button v-permission="['education:scheduling:view', 'education:scheduling:manage']" @click="exportSchedule">导出当前课表</el-button>
+            <el-button v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
             <el-button type="success" @click="publishVersion">发布当前课表</el-button>
             <el-button type="primary" @click="openEntry()">新增排课</el-button>
             <input ref="scheduleFileInput" type="file" accept=".xlsx" hidden @change="importSchedule" />
@@ -83,7 +116,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="日期课表" name="date-schedule">
+      <el-tab-pane v-if="!reviewOnly" label="日期课表" name="date-schedule">
         <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button></div>
         <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
         <h3>节假日待补课（{{ pendingMakeups.length }}）</h3>
@@ -122,7 +155,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="发布版本" name="versions">
+      <el-tab-pane v-if="!reviewOnly" label="发布版本" name="versions">
         <div class="toolbar"><el-button @click="loadVersions">刷新</el-button></div>
         <el-table :data="versions">
           <el-table-column prop="versionNo" label="版本" width="90">
@@ -142,7 +175,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="质量分析" name="quality">
+      <el-tab-pane v-if="!reviewOnly" label="质量分析" name="quality">
         <div class="toolbar"><el-button @click="loadQualityAnalysis">重新分析</el-button></div>
         <div class="quality-summary">
           <el-statistic title="排课项" :value="quality.summary?.entryCount || 0" />
@@ -177,13 +210,17 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="规则配置" name="policy">
+      <el-tab-pane v-if="!reviewOnly" label="规则配置" name="policy">
         <el-alert
           title="规则按学期生效。教师档案设置了个人上限时优先使用个人值，未设置时使用本页默认值。"
           type="info"
           :closable="false"
           show-icon />
         <el-form class="policy-form" label-width="180px">
+          <h3>全量自动排课范围</h3>
+          <el-form-item label="每周上课天数"><el-input-number v-model="policy.teachingDaysPerWeek" :min="1" :max="7" /></el-form-item>
+          <el-form-item label="每日排课节数"><el-input-number v-model="policy.periodsPerDay" :min="1" :max="20" /></el-form-item>
+          <el-alert title="一键全量排课使用本页规则和学期周数，自动覆盖本学期全部启用的教学任务。" type="info" :closable="false" show-icon />
           <h3>教师默认硬约束</h3>
           <el-form-item label="每周课时上限"><el-input-number v-model="policy.defaultMaxWeeklyLessons" :min="1" :max="100" /></el-form-item>
           <el-form-item label="每日课时上限"><el-input-number v-model="policy.defaultMaxDailyLessons" :min="1" :max="20" /></el-form-item>
@@ -210,11 +247,11 @@
       <el-tab-pane label="自动排课候选" name="candidates">
         <div class="toolbar">
           <el-button @click="loadCandidates">刷新</el-button>
+          <el-button v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
           <el-button
             v-permission="['education:scheduling:manage']"
-            type="primary"
             @click="openCandidateDialog">
-            生成候选方案
+            自定义生成 / 局部重排
           </el-button>
           <el-button :disabled="candidateSelection.length < 2" @click="compareCandidates">
             对比方案（{{ candidateSelection.length }}）
@@ -232,7 +269,7 @@
           <el-table-column label="状态" width="110"><template #default="s"><el-tag :type="jobStatusType(s.row.status)">{{ jobStatusName(s.row.status) }}</el-tag></template></el-table-column>
           <el-table-column label="进度" min-width="180"><template #default="s"><el-progress :percentage="s.row.progress || 0" /></template></el-table-column>
           <el-table-column prop="errorMessage" label="失败/取消原因" min-width="220" show-overflow-tooltip />
-          <AdaptiveActionColumn label="操作" width="90"><template #default="s"><el-button v-if="['QUEUED', 'RUNNING'].includes(s.row.status)" link type="danger" @click="cancelGenerationJob(s.row)">取消</el-button></template></AdaptiveActionColumn>
+          <AdaptiveActionColumn label="操作" width="90"><template #default="s"><el-button v-if="['QUEUED', 'RUNNING'].includes(s.row.status)" v-permission="['education:scheduling:manage']" link type="danger" @click="cancelGenerationJob(s.row)">取消</el-button></template></AdaptiveActionColumn>
         </el-table>
         <h3>候选方案</h3>
         <el-empty v-if="!candidates.length" description="暂无自动排课候选方案" />
@@ -283,10 +320,11 @@
             <template #default="scope">
               <el-button link @click="showCandidateDiff(scope.row)">预览差异</el-button>
               <template v-if="scope.row.status === 'CANDIDATE'">
-                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" link @click="editCandidateGovernance(scope.row)">协作信息</el-button>
-                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" link type="warning" @click="submitCandidateReview(scope.row)">提交审核</el-button>
-                <el-button v-if="scope.row.reviewStatus === 'SUBMITTED'" link type="success" @click="reviewCandidate(scope.row, true)">通过</el-button>
-                <el-button v-if="scope.row.reviewStatus === 'SUBMITTED'" link type="danger" @click="reviewCandidate(scope.row, false)">驳回</el-button>
+                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link @click="editCandidateGovernance(scope.row)">协作信息</el-button>
+                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link type="warning" @click="submitCandidateReview(scope.row)">提交审核</el-button>
+                <el-button v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername !== getAdminUsername()" v-permission="['education:scheduling:review', 'education:scheduling:manage']" link type="success" @click="reviewCandidate(scope.row, true)">通过</el-button>
+                <el-button v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername !== getAdminUsername()" v-permission="['education:scheduling:review', 'education:scheduling:manage']" link type="danger" @click="reviewCandidate(scope.row, false)">驳回</el-button>
+                <span v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername === getAdminUsername()">请其他审核员处理</span>
                 <el-button
                   v-permission="['education:scheduling:manage']"
                   link
@@ -308,7 +346,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="教学任务" name="offerings">
+      <el-tab-pane v-if="!reviewOnly" label="教学任务" name="offerings">
         <div class="toolbar"><el-button type="primary" @click="openOffering()">新增教学任务</el-button><el-button @click="router.push('/admin/education/teaching-class-members')">教学班成员</el-button></div>
         <el-table :data="offerings">
           <el-table-column prop="offeringCode" label="教学班编码" />
@@ -336,7 +374,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="教室" name="classrooms">
+      <el-tab-pane v-if="!reviewOnly" label="教室" name="classrooms">
         <div class="toolbar"><el-button type="primary" @click="openClassroom()">新增教室</el-button></div>
         <el-table :data="classrooms">
           <el-table-column prop="roomCode" label="编码" />
@@ -362,7 +400,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="教师时间约束" name="constraints">
+      <el-tab-pane v-if="!reviewOnly" label="教师时间约束" name="constraints">
         <div class="toolbar"><el-button type="primary" @click="openConstraint()">新增时间约束</el-button></div>
         <el-table :data="teacherConstraints" border>
           <el-table-column label="教师" min-width="150"><template #default="s">{{ teacherName(s.row.teacherId) }}</template></el-table-column>
@@ -373,12 +411,12 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="教室不可用时段" name="room-constraints">
+      <el-tab-pane v-if="!reviewOnly" label="教室不可用时段" name="room-constraints">
         <div class="toolbar"><el-button type="primary" @click="openRoomConstraint()">新增不可用时段</el-button></div>
         <el-table :data="roomConstraints" border><el-table-column label="教室"><template #default="s">{{ classroomName(s.row.classroomId) }}</template></el-table-column><el-table-column label="星期" width="90"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }}</template></el-table-column><el-table-column label="节次" width="120"><template #default="s">第 {{ s.row.startPeriod }}–{{ s.row.endPeriod }} 节</template></el-table-column><el-table-column prop="reason" label="原因" /><AdaptiveActionColumn label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openRoomConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeRoomConstraint(s.row)">删除</el-button></template></AdaptiveActionColumn></el-table>
       </el-tab-pane>
 
-	  <el-tab-pane label="调课回写异常" name="incidents">
+	  <el-tab-pane v-if="!reviewOnly" label="调课回写异常" name="incidents">
 		<div class="incident-toolbar">
 		  <div class="incident-filters">
 			<el-select v-model="incidentStatus" class="incident-status" @change="searchIncidents">
@@ -653,6 +691,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ScheduleGrid from '../components/ScheduleGrid.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
 import {
   applyScheduleCandidate,
   batchRetryCourseAdjustmentIncidents,
@@ -709,6 +748,7 @@ import {
   listSchedulePendingMakeups,
   listSchedulePendingSubstitutions,
   listScheduleDimensionOptions,
+  listScheduleStudentOptions,
   listScheduleDateExceptionHistory,
   cancelScheduleDateException,
   restoreScheduleDateException,
@@ -718,10 +758,11 @@ import {
 } from '../../../api/admin'
 
 const route = useRoute()
+const reviewOnly = hasAdminPermission('education:scheduling:review') && !hasAdminPermission('education:scheduling:manage')
 const semesterCode = ref(typeof route.query.semesterCode === 'string' ? route.query.semesterCode : '')
 const scheduleFileInput = ref(null)
 const router = useRouter()
-const activeTab = ref(['schedule', 'date-schedule', 'versions', 'quality', 'policy', 'candidates'].includes(route.query.schedulingTab)
+const activeTab = ref(reviewOnly ? 'candidates' : ['schedule', 'date-schedule', 'versions', 'quality', 'policy', 'candidates'].includes(route.query.schedulingTab)
   ? route.query.schedulingTab : 'schedule')
 const scheduleView = ref('grid')
 const offerings = ref([])
@@ -732,6 +773,14 @@ const terms = ref([])
 const courses = ref([])
 const teachers = ref([])
 const students = ref([])
+const studentPage = ref(1)
+const studentTotal = ref(0)
+const studentKeyword = ref('')
+const studentOptionsLoading = ref(false)
+const studentOptionsError = ref(false)
+const selectedStudent = ref(null)
+let studentSearchTimer
+let studentOptionsSequence = 0
 const administrativeClasses = ref([])
 const roomTypes = ref([])
 const campuses = ref([])
@@ -835,13 +884,20 @@ const dimensionOptions = computed(() => {
   if (scheduleDimension.value === 'ADMIN_CLASS') {
     return administrativeClasses.value.map(item => ({ label: item.className, value: item.id }))
   }
-  if (scheduleDimension.value === 'STUDENT') {
-    return students.value.map(item => ({ label: `${item.studentName}（${item.studentNo}）`, value: item.id }))
-  }
   if (scheduleDimension.value === 'CLASSROOM') {
     return classroomOptions.value.map(item => ({ label: item.roomName, value: item.id }))
   }
   return []
+})
+const studentOptions = computed(() => {
+  const options = students.value.map(item => ({ label: `${item.studentName}（${item.studentNo}）`, value: item.id }))
+  if (selectedStudent.value && !options.some(item => item.value === selectedStudent.value.id)) {
+    options.unshift({
+      label: `${selectedStudent.value.studentName}（${selectedStudent.value.studentNo}）`,
+      value: selectedStudent.value.id,
+    })
+  }
+  return options
 })
 const scheduleTargetPlaceholder = computed(() => ({
   TEACHER: '请选择教师',
@@ -859,6 +915,55 @@ const responseList = response => {
 const loadResult = (results, index, fallback) => {
   const result = results[index]
   return result?.status === 'fulfilled' ? result.value : fallback
+}
+const resetStudentOptions = () => {
+  ++studentOptionsSequence
+  window.clearTimeout(studentSearchTimer)
+  students.value = []
+  studentPage.value = 1
+  studentTotal.value = 0
+  studentKeyword.value = ''
+  studentOptionsLoading.value = false
+  studentOptionsError.value = false
+  selectedStudent.value = null
+}
+const loadStudentOptions = async () => {
+  if (scheduleDimension.value !== 'STUDENT' || !semesterCode.value) return
+  const sequence = ++studentOptionsSequence
+  const semester = semesterCode.value
+  studentOptionsLoading.value = true
+  studentOptionsError.value = false
+  try {
+    const response = await listScheduleStudentOptions({
+      keyword: studentKeyword.value,
+      page: studentPage.value - 1,
+      size: 10,
+    })
+    if (sequence !== studentOptionsSequence || semester !== semesterCode.value) return
+    students.value = response.data?.content || []
+    studentTotal.value = response.data?.totalElements || 0
+  } catch (error) {
+    if (sequence !== studentOptionsSequence || semester !== semesterCode.value) return
+    studentOptionsError.value = true
+    ElMessage.error(`学生选项加载失败：${error.message}`)
+  } finally {
+    if (sequence === studentOptionsSequence) studentOptionsLoading.value = false
+  }
+}
+const searchStudentOptions = query => {
+  ++studentOptionsSequence
+  window.clearTimeout(studentSearchTimer)
+  studentKeyword.value = query.trim()
+  studentPage.value = 1
+  studentOptionsLoading.value = true
+  studentSearchTimer = window.setTimeout(loadStudentOptions, 250)
+}
+const onStudentSelectVisible = visible => {
+  if (visible && !students.value.length && !studentOptionsLoading.value) loadStudentOptions()
+}
+const changeScheduleTarget = () => {
+  selectedStudent.value = students.value.find(item => item.id === scheduleTargetId.value) || null
+  loadSchedule()
 }
 const clearSemesterData = () => {
   ++dimensionOptionsSequence
@@ -883,7 +988,7 @@ const clearSemesterData = () => {
   campuses.value = []
   roomTypes.value = []
   teachers.value = []
-  students.value = []
+  resetStudentOptions()
   administrativeClasses.value = []
   offeringOptions.value = []
   classroomOptions.value = []
@@ -901,12 +1006,11 @@ const loadDimensionOptions = async () => {
     const response = await listScheduleDimensionOptions(semester)
     if (sequence !== dimensionOptionsSequence || semester !== semesterCode.value) return
     const dimensions = responseData(response) || {}
-    if (!['teachers', 'students', 'administrativeClasses', 'teachingClasses', 'classrooms']
+    if (!['teachers', 'administrativeClasses', 'teachingClasses', 'classrooms']
       .every(key => Array.isArray(dimensions[key]))) {
       throw new Error('接口返回的查询对象格式不正确')
     }
     teachers.value = dimensions.teachers || []
-    students.value = dimensions.students || []
     administrativeClasses.value = dimensions.administrativeClasses || []
     offeringOptions.value = dimensions.teachingClasses || []
     classroomOptions.value = dimensions.classrooms || []
@@ -925,7 +1029,7 @@ const loadAll = async () => {
   scheduleTargetId.value = ''
   schedule.value = []
   teachers.value = []
-  students.value = []
+  resetStudentOptions()
   administrativeClasses.value = []
   offeringOptions.value = []
   classroomOptions.value = []
@@ -952,8 +1056,15 @@ const loadAll = async () => {
     clearSemesterData()
     return
   }
+  if (reviewOnly) {
+    // 审核员只需候选方案及任务，不加载无权访问的管理配置。
+    await loadCandidates()
+    return
+  }
   const currentTerm = terms.value.find(item => item.termCode === semesterCode.value)
   const dimensionOptionsRequest = loadDimensionOptions()
+  const studentOptionsRequest = scheduleDimension.value === 'STUDENT'
+    ? loadStudentOptions() : Promise.resolve()
   const results = await Promise.allSettled([
     listCourseCatalog(),
     dictionaryOptions('EDU_ROOM_TYPE'),
@@ -986,6 +1097,7 @@ const loadAll = async () => {
   classroomPage.value = 1
   await Promise.allSettled([
     dimensionOptionsRequest,
+    studentOptionsRequest,
     loadOfferingsPage(),
     loadClassroomsPage(),
     loadSchedule(),
@@ -1061,7 +1173,11 @@ const loadDateSchedule = async () => Promise.all([loadOccurrences(), loadDateExc
 const changeDimension = async () => {
   scheduleTargetId.value = ''
   schedule.value = []
-  await Promise.allSettled([loadDimensionOptions(), loadSchedule()])
+  resetStudentOptions()
+  await Promise.allSettled([
+    scheduleDimension.value === 'STUDENT' ? loadStudentOptions() : loadDimensionOptions(),
+    loadSchedule(),
+  ])
 }
 const openEntry = (row) => { reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, durationPeriods: 1, weekPattern: 'ALL', startWeek: 1, endWeek: selectedTerm.value?.weekCount || 20, locked: false }); entryDialog.value = true }
 const saveEntry = async () => { const payload = { ...entryForm, semesterCode: semesterCode.value }; await (entryForm.id ? updateScheduleEntry(entryForm.id, payload) : createScheduleEntry(payload)); entryDialog.value = false; ElMessage.success('课表已保存'); await loadAll() }
@@ -1313,17 +1429,56 @@ const compareCandidates = async () => {
   candidateCompareDialog.value = true
 }
 const openCandidateDialog = () => {
+  const currentTerm = terms.value.find(item => item.termCode === semesterCode.value)
   reset(candidateForm, {
     planName: `${semesterCode.value}-自动排课`,
     mode: 'FULL',
     selectedOfferingIds: [],
     candidateCount: 3,
-    weekdays: 5,
-    periodsPerDay: 8,
+    weekdays: policy.teachingDaysPerWeek || 5,
+    periodsPerDay: policy.periodsPerDay || 8,
     startWeek: 1,
-    endWeek: 20,
+    endWeek: currentTerm?.weekCount || 20,
   })
   candidateDialog.value = true
+}
+const generateFullSchedule = async () => {
+  if (!semesterCode.value) return ElMessage.warning('请先选择学期')
+  if (!offeringTotal.value) {
+    activeTab.value = 'offerings'
+    return ElMessage.warning('本学期尚无教学任务，请先配置教学任务')
+  }
+  candidateGenerating.value = true
+  try {
+    const jobs = (await listScheduleGenerationJobs(semesterCode.value)).data || []
+    if (jobs.some(job => ['QUEUED', 'RUNNING'].includes(job.status))) {
+      generationJobs.value = jobs
+      activeTab.value = 'candidates'
+      return ElMessage.warning('本学期已有自动排课任务正在运行，请查看任务进度')
+    }
+    try {
+      await ElMessageBox.confirm(
+        '将按本学期规则、教师及教室约束，对全部启用的教学任务生成 3 个候选方案。生成过程不会修改当前课表；审核通过后还需确认应用。',
+        '按规则全量自动排课',
+        { confirmButtonText: '开始排课', type: 'warning' },
+      )
+    } catch {
+      return
+    }
+    await submitScheduleGenerationJob({
+      semesterCode: semesterCode.value,
+      planName: `${semesterCode.value}-全量自动排课-${Date.now()}`,
+      mode: 'FULL',
+      selectedOfferingIds: [],
+      candidateCount: 3,
+      startWeek: 1,
+    })
+    activeTab.value = 'candidates'
+    ElMessage.success('全量排课任务已提交，候选方案生成后可预览、审核并应用')
+    await loadCandidates()
+  } finally {
+    candidateGenerating.value = false
+  }
 }
 const generateCandidates = async () => {
   if (candidateForm.mode === 'LOCAL' && !candidateForm.selectedOfferingIds.length) {
@@ -1437,7 +1592,7 @@ const rollbackVersion = async row => {
   await Promise.all([loadAll(), loadVersions()])
 }
 onMounted(async () => {
-  await Promise.all([loadAll(), loadIncidents()])
+  await (reviewOnly ? loadAll() : Promise.all([loadAll(), loadIncidents()]))
   const { dateAction, sourceEntryId, sourceDate } = route.query
   if (activeTab.value === 'date-schedule' && typeof sourceEntryId === 'string'
     && typeof sourceDate === 'string') {
@@ -1459,7 +1614,10 @@ onMounted(async () => {
     }
   }, 3000)
 })
-onUnmounted(() => window.clearInterval(generationJobTimer))
+onUnmounted(() => {
+  window.clearInterval(generationJobTimer)
+  window.clearTimeout(studentSearchTimer)
+})
 </script>
 
 <style scoped>
@@ -1524,6 +1682,7 @@ header .el-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 12px;
 }
@@ -1536,6 +1695,7 @@ header .el-input {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .schedule-actions :deep(.el-button + .el-button) {
@@ -1550,6 +1710,14 @@ header .el-input {
 }
 .target-select {
   width: 280px;
+}
+.student-option-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 280px;
+  white-space: nowrap;
 }
 .separator {
   margin: 0 12px;

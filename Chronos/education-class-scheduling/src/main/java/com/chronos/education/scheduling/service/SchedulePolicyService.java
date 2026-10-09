@@ -51,6 +51,8 @@ public class SchedulePolicyService {
 	}
 
 	private void copy(SchedulePolicy source, SchedulePolicy target) {
+		target.setTeachingDaysPerWeek(source.getTeachingDaysPerWeek());
+		target.setPeriodsPerDay(source.getPeriodsPerDay());
 		target.setDefaultMaxWeeklyLessons(source.getDefaultMaxWeeklyLessons());
 		target.setDefaultMaxDailyLessons(source.getDefaultMaxDailyLessons());
 		target.setDefaultMaxConsecutiveLessons(source.getDefaultMaxConsecutiveLessons());
@@ -70,6 +72,8 @@ public class SchedulePolicyService {
 	}
 
 	private void validate(SchedulePolicy policy) {
+		requireRange(policy.getTeachingDaysPerWeek(), 1, 7, "每周上课天数");
+		requireRange(policy.getPeriodsPerDay(), 1, 20, "每日排课节数");
 		requireRange(policy.getDefaultMaxWeeklyLessons(), 1, 100, "默认教师周课时上限");
 		requireRange(policy.getDefaultMaxDailyLessons(), 1, 20, "默认教师日课时上限");
 		requireRange(policy.getDefaultMaxConsecutiveLessons(), 1, 10, "默认教师连续授课上限");
