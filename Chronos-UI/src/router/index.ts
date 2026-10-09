@@ -44,6 +44,9 @@ const PortalHeadTeacherWorkbench = () => import('../modules/education/pages/Port
 const PortalClassNotices = () => import('../modules/education/pages/PortalClassNotices.vue')
 const PortalLeaves = () => import('../modules/education/pages/PortalLeaves.vue')
 const PortalBusinessTrips = () => import('../modules/collaboration/pages/PortalBusinessTrips.vue')
+const CollaborationOffice = () => import('../modules/collaboration/pages/CollaborationOffice.vue')
+const OfficialDocuments = () => import('../modules/collaboration/pages/OfficialDocuments.vue')
+const SharedFiles = () => import('../modules/collaboration/pages/SharedFiles.vue')
 const PortalClassroomReservations = () => import('../modules/education/pages/PortalClassroomReservations.vue')
 const AdminLeaveManagement = () => import('../modules/education/pages/AdminLeaveManagement.vue')
 const PortalExamInvigilation = () => import('../modules/education/pages/PortalExamInvigilation.vue')
@@ -109,6 +112,9 @@ const router = createRouter({
         { path: 'education/class-notices', name: 'portal-education-class-notices', component: PortalClassNotices },
         { path: 'education/leaves', name: 'portal-education-leaves', component: PortalLeaves },
         { path: 'collaboration/business-trips', name: 'portal-business-trips', component: PortalBusinessTrips },
+        { path: 'collaboration', name: 'portal-collaboration', component: CollaborationOffice },
+        { path: 'collaboration/documents', name: 'portal-official-documents', component: OfficialDocuments },
+        { path: 'collaboration/files', name: 'portal-shared-files', component: SharedFiles },
         { path: 'education/classroom-reservations', name: 'portal-education-classroom-reservations', component: PortalClassroomReservations },
         { path: 'education/exam/invigilation', name: 'portal-education-exam-invigilation', component: PortalExamInvigilation },
         { path: 'education/exam/my-exams', name: 'portal-education-my-exams', component: PortalMyExams },
