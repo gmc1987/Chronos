@@ -173,10 +173,11 @@ const canRemind = computed(() => (bootstrap.value.user?.permissions || []).inclu
 const personaCards = computed(() => {
   const roles = (bootstrap.value.user?.roles || []).map(role => String(role).toUpperCase())
   const hasRole = (...names) => names.some(name => roles.some(role => role.includes(name)))
+  const hasProfile = type => educationProfileTypes.value.includes(type)
   return [
-    hasRole('TEACHER', '教师') && { code: 'teacher', title: '教师工作台', description: '查看课表与教学安排', route: '/portal/education/schedule', icon: '师', tone: 'teal' },
-    hasRole('STUDENT', '学生') && { code: 'student', title: '学生学习台', description: '查看成绩与学习安排', route: '/portal/education/grades', icon: '学', tone: 'blue' },
-    hasRole('PARENT', '家长', 'GUARDIAN', '监护') && { code: 'parent', title: '家校沟通', description: '查看孩子通知与回执', route: '/portal/education/family', icon: '家', tone: 'orange' },
+    (hasProfile('TEACHER') || hasRole('TEACHER', '教师')) && { code: 'teacher', title: '教师工作台', description: '查看课表与教学安排', route: '/portal/education/schedule', icon: '师', tone: 'teal' },
+    (hasProfile('STUDENT') || hasRole('STUDENT', '学生')) && { code: 'student', title: '学生学习台', description: '查看成绩与学习安排', route: '/portal/education/grades', icon: '学', tone: 'blue' },
+    (hasProfile('PARENT') || hasRole('PARENT', '家长', 'GUARDIAN', '监护')) && { code: 'parent', title: '家校沟通', description: '查看孩子通知与回执', route: '/portal/education/family', icon: '家', tone: 'orange' },
     hasRole('SUPERVISOR', '督导', 'SUPERVISION') && { code: 'supervisor', title: '督导工作台', description: '处理已分配的督导任务', route: '/portal/education/supervision', icon: '督', tone: 'purple' },
   ].filter(Boolean)
 })
@@ -184,7 +185,15 @@ const contribution = (widget) => bootstrap.value.contributions?.[widget.provider
 const weekday = value => ['一', '二', '三', '四', '五', '六', '日'][Number(value) - 1] ? `星期${['一', '二', '三', '四', '五', '六', '日'][Number(value) - 1]}` : '未排时间'
 const load = async () => {
   loading.value = true; error.value = ''
-  try { const res = await portalBootstrap(); bootstrap.value = res.data; draftLayout.value = [...(res.data.preference?.layout || [])]; emit('context', res.data.user) }
+  try {
+    const res = await portalBootstrap()
+    bootstrap.value = res.data
+    draftLayout.value = [...(res.data.preference?.layout || [])]
+    emit('context', {
+      ...res.data.user,
+      profileTypes: res.data.contributions?.DATA?.data?.profileTypes || [],
+    })
+  }
   catch (e) { error.value = e instanceof Error ? e.message : '门户加载失败' }
   finally { loading.value = false }
 }

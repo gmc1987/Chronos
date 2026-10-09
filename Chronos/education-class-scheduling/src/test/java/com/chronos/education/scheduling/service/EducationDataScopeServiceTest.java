@@ -99,6 +99,32 @@ class EducationDataScopeServiceTest {
 	}
 
 	@Test
+	void schoolScopeIncludesOfferingsUsingSchoolIdAsCampusWithoutLeakingOtherSchools() {
+		when(platformScopes.resolve("school.manager")).thenReturn(new DataScopeContext(
+				false,
+				null,
+				Set.of("school-1"),
+				Set.of(),
+				Set.of(),
+				Set.of("CUSTOM_ORGANIZATION"),
+				Map.of()));
+		Organization school = new Organization();
+		school.setId("school-1");
+		school.setOrganizationType("SCHOOL");
+		when(organizations.findById("school-1")).thenReturn(Optional.of(school));
+		when(organizations.findByParentOrgId_Id("school-1")).thenReturn(List.of());
+
+		EducationDataScope scope = service.resolve("school.manager");
+		CourseOffering ownOffering = offering("own", "school-1");
+		CourseOffering anotherSchool = offering("other", "school-2");
+
+		assertThat(scope.schoolIds()).containsExactly("school-1");
+		assertThat(scope.campusIds()).containsExactly("school-1");
+		assertThat(service.visibleOfferings(scope, List.of(ownOffering, anotherSchool)))
+				.containsExactly(ownOffering);
+	}
+
+	@Test
 	void rejectsAllScheduleDimensionForRestrictedScope() {
 		EducationDataScope scope = scope(Set.of("grade-1"), Set.of("class-1"));
 

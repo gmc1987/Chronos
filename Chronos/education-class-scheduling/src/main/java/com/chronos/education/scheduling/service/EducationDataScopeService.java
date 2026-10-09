@@ -147,6 +147,10 @@ public class EducationDataScopeService {
 				}
 			} else {
 				schoolIds.add(organizationId);
+				// Some schools use their own organization ID as the campus ID in
+				// teaching records. Keep that school visible while still excluding
+				// records belonging to every other school.
+				campusIds.add(organizationId);
 				campusIds.addAll(organizations.findByParentOrgId_Id(organizationId).stream()
 						.filter(child -> "CAMPUS".equals(child.getOrganizationType()))
 						.map(Organization::getId)

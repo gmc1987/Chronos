@@ -26,6 +26,12 @@ Chronos/scripts/education-role-acceptance.sh http
 
 ## HTTP 测试矩阵
 
+排课管理角色还依赖 `education:term:view`、`education:course:view`、
+`education:resource:venue:view` 和 `iam:organization:view` 才能完整加载维护页面。
+仅授权某学校的角色可查看与编辑该学校的课表、教学任务和教室；候选生成、
+全量发布、版本回滚及规则配置跨学校生效，现阶段必须配 `ALL` 数据范围。
+验收撤权时需同时检查角色直接授权与菜单授权；只删除其中一条不等于撤权。
+
 | 角色/场景 | 入口 | 通过条件 |
 | --- | --- | --- |
 | 普通教师 | 教学中心计划分页 | 200，仅能访问本校区 fixture |

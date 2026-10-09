@@ -31,7 +31,7 @@ public actor ChronosSession {
         return saved
     }
     public func clear() { tokens = nil; UserDefaults.standard.removeObject(forKey: tokenStoreKey) }
-    public func login(username: String, password: String, consumer: Bool = true) async throws -> LoginPayload {
+    public func login(username: String, password: String, consumer: Bool = false) async throws -> LoginPayload {
         let path = consumer ? "/consumer/users/login" : "/auth/login"
         let data = try await request(path: path, method: "POST", body: ["username": username, "password": password], authenticated: false)
         guard let result = try decode(LoginPayload.self, from: data) else { throw ChronosAPIError.server("登录响应缺少令牌") }
@@ -43,12 +43,12 @@ public actor ChronosSession {
         guard let refresh = tokens?.refreshToken else { throw ChronosAPIError.server("会话已过期，请重新登录") }
         let data = try await request(path: "/auth/refresh", method: "POST", body: ["refreshToken": refresh], authenticated: false)
         guard let result = try decode(SessionTokens.self, from: data) else { throw ChronosAPIError.server("刷新响应无效") }
-        tokens = SessionTokens(accessToken: result.accessToken, refreshToken: refresh)
+        tokens = SessionTokens(accessToken: result.accessToken, refreshToken: result.refreshToken ?? refresh)
         persist(tokens!)
     }
     public func revoke() async {
-        guard tokens != nil else { return }
-        _ = try? await request(path: "/auth/revoke", method: "POST", body: nil, authenticated: true, retry: false)
+        guard let refresh = tokens?.refreshToken else { clear(); return }
+        _ = try? await request(path: "/auth/revoke", method: "POST", body: ["refreshToken": refresh], authenticated: true, retry: false)
         clear()
     }
     public func get<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {

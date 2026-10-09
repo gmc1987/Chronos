@@ -11,6 +11,8 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /** Small native shell around the existing portal APIs. The server remains the source of truth for roles. */
 public final class MainActivity extends Activity {
@@ -63,10 +65,7 @@ public final class MainActivity extends Activity {
                 } catch (Exception e) {
                     runOnUiThread(() -> {
                         showError(status, e);
-                        Button retry = new Button(this);
-                        retry.setText("重试");
-                        retry.setOnClickListener(v -> loadPage(title, path));
-                        root.addView(retry);
+                        // 登录按钮在 finally 中恢复，可保留账号重新提交。
                     });
                 }
                 finally { runOnUiThread(() -> setBusy(login, "登录")); }
@@ -106,7 +105,13 @@ public final class MainActivity extends Activity {
         }
         Space gap = new Space(this); root.addView(gap, new LinearLayout.LayoutParams(1, 24));
         Button logout = new Button(this); logout.setText("退出登录");
-        logout.setOnClickListener(v -> { api.clear(); role = "student"; showLogin(); });
+        logout.setOnClickListener(v -> {
+            setBusy(logout, "正在退出…");
+            new Thread(() -> {
+                api.revoke();
+                runOnUiThread(() -> { role = "unknown"; showLogin(); });
+            }).start();
+        });
         root.addView(logout);
     }
 
@@ -150,29 +155,54 @@ public final class MainActivity extends Activity {
     }
 
     private static String detectRole(String json) {
-        String value = json == null ? "" : json.toLowerCase(Locale.ROOT);
-        if (value.contains("parent") || value.contains("guardian") || value.contains("家长")) return "parent";
-        if (value.contains("teacher") || value.contains("head_teacher") || value.contains("教师")) return "teacher";
-        if (value.contains("student") || value.contains("学生")) return "student";
+        try {
+            JSONObject data = new JSONObject(json).optJSONObject("data");
+            if (data == null) return "unknown";
+            // 教育身份来自服务端绑定，不能从课表正文或权限名称猜测身份。
+            JSONObject contributions = data.optJSONObject("contributions");
+            JSONObject education = contributions == null ? null : contributions.optJSONObject("DATA");
+            JSONObject profiles = education == null ? null : education.optJSONObject("data");
+            JSONArray types = profiles == null ? null : profiles.optJSONArray("profileTypes");
+            if (types != null) {
+                for (int i = 0; i < types.length(); i++) {
+                    String type = types.optString(i).toLowerCase(Locale.ROOT);
+                    if (type.equals("teacher") || type.equals("student") || type.equals("parent")) return type;
+                }
+            }
+            JSONArray roles = data.optJSONArray("roles");
+            if (roles != null) {
+                for (int i = 0; i < roles.length(); i++) {
+                    JSONObject item = roles.optJSONObject(i);
+                    String code = item == null ? "" : item.optString("roleCode");
+                    if (code.equals("EDU_TEACHER")) return "teacher";
+                    if (code.equals("EDU_STUDENT")) return "student";
+                    if (code.equals("EDU_PARENT")) return "parent";
+                }
+            }
+        } catch (Exception ignored) { }
         return "unknown";
     }
 
     private static String unwrap(String json) {
-        String data = jsonString(json, "data");
-        return data == null ? json : data;
+        try { return String.valueOf(new JSONObject(json).opt("data")); }
+        catch (Exception ignored) { return json; }
     }
 
     private static String formatJson(String json) {
-        return json.replace("{", "{\n").replace("}", "\n}").replace(",", ",\n");
+        try {
+            if (json.startsWith("{")) return new JSONObject(json).toString(2);
+            if (json.startsWith("[")) return new JSONArray(json).toString(2);
+        } catch (Exception ignored) { }
+        return json;
     }
 
     private static String jsonString(String json, String key) {
-        String marker = "\"" + key + "\""; int start = json.indexOf(marker);
-        if (start < 0) return null; int colon = json.indexOf(':', start);
-        int quote = json.indexOf('"', colon + 1);
-        if (colon < 0 || quote < 0) return null;
-        int end = json.indexOf('"', quote + 1);
-        return end < 0 ? null : json.substring(quote + 1, end);
+        try {
+            JSONObject result = new JSONObject(json);
+            JSONObject data = result.optJSONObject("data");
+            String value = data == null ? result.optString(key, "") : data.optString(key, "");
+            return value.isEmpty() ? null : value;
+        } catch (Exception ignored) { return null; }
     }
 
     static final class ApiClient {
@@ -188,8 +218,8 @@ public final class MainActivity extends Activity {
         void saveRole(String value) { prefs.edit().putString("role", value).apply(); }
         void clear() { access = null; refresh = null; prefs.edit().clear().apply(); }
         String login(String user, String pass, boolean remember) throws Exception {
-            String body = "{\"username\":\"" + escape(user) + "\",\"password\":\"" + escape(pass) + "\"}";
-            String response = request("/consumer/users/login", "POST", body, false);
+            String body = new JSONObject().put("username", user).put("password", pass).toString();
+            String response = request("/auth/login", "POST", body, false);
             access = jsonString(response, "accessToken"); refresh = jsonString(response, "refreshToken");
             if (!hasAccess()) throw new IOException("登录失败");
             SharedPreferences.Editor edit = prefs.edit().putBoolean("remember", remember);
@@ -203,25 +233,52 @@ public final class MainActivity extends Activity {
             return response;
         }
         String get(String path) throws Exception { return request(path, "GET", null, true); }
+        void revoke() {
+            try {
+                if (refresh != null) request("/auth/revoke", "POST",
+                        new JSONObject().put("refreshToken", refresh).toString(), true, false);
+            } catch (Exception ignored) { }
+            finally { clear(); }
+        }
         private String request(String path, String method, String body, boolean auth) throws Exception {
+            return request(path, method, body, auth, true);
+        }
+        private String request(String path, String method, String body, boolean auth, boolean retry) throws Exception {
             HttpURLConnection connection = (HttpURLConnection) new URL(base + path).openConnection();
+            try {
             connection.setRequestMethod(method); connection.setConnectTimeout(12000); connection.setReadTimeout(20000);
             connection.setRequestProperty("Content-Type", "application/json");
             if (auth && hasAccess()) connection.setRequestProperty("Authorization", "Bearer " + access);
             if (body != null) { connection.setDoOutput(true); try (OutputStream out = connection.getOutputStream()) { out.write(body.getBytes(StandardCharsets.UTF_8)); } }
             int code = connection.getResponseCode(); InputStream stream = code < 400 ? connection.getInputStream() : connection.getErrorStream();
-            String response = stream == null ? "" : new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            if (code == 401 && auth && refresh != null) {
-                String refreshed = request("/auth/refresh", "POST", "{\"refreshToken\":\"" + escape(refresh) + "\"}", false);
-                access = jsonString(refreshed, "accessToken");
-                if (hasAccess()) {
-                    if (prefs.getBoolean("remember", false)) prefs.edit().putString("access_token", access).apply();
-                    return request(path, method, body, true);
+            // minSdk=26 不能调用后续 Android 才提供的 InputStream.readAllBytes。
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            if (stream != null) {
+                try (InputStream input = stream) {
+                    byte[] buffer = new byte[4096];
+                    int length;
+                    while ((length = input.read(buffer)) != -1) bytes.write(buffer, 0, length);
                 }
             }
-            if (code < 200 || code >= 300) throw new IOException("请求失败（" + code + "）");
+            String response = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+            if (code == 401 && auth && retry && refresh != null) {
+                String refreshed = request("/auth/refresh", "POST",
+                        new JSONObject().put("refreshToken", refresh).toString(), false, false);
+                access = jsonString(refreshed, "accessToken");
+                refresh = jsonString(refreshed, "refreshToken");
+                if (hasAccess()) {
+                    if (prefs.getBoolean("remember", false)) prefs.edit()
+                            .putString("access_token", access).putString("refresh_token", refresh).apply();
+                    return request(path, method, body, true, false);
+                }
+            }
+            JSONObject envelope = new JSONObject(response);
+            String businessCode = envelope.optString("code");
+            if (code < 200 || code >= 300 || (!businessCode.equals("200") && !businessCode.equals("201"))) {
+                throw new IOException(envelope.optString("msg", "请求失败（" + code + "）"));
+            }
             return response;
+            } finally { connection.disconnect(); }
         }
-        private static String escape(String value) { return value.replace("\\", "\\\\").replace("\"", "\\\""); }
     }
 }

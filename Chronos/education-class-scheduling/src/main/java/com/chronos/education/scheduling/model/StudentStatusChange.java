@@ -75,6 +75,10 @@ public class StudentStatusChange extends BaseEntity {
 	@Column(name = "applied_at")
 	private LocalDateTime appliedAt;
 
+	/** 休学实际退出的成员关系，用于复学时精确恢复，避免恢复历史上主动退掉的课程。 */
+	@Column(name = "withdrawn_membership_ids", columnDefinition = "text")
+	private String withdrawnMembershipIds;
+
 	@Version
 	@Column(name = "row_version", nullable = false)
 	private Long rowVersion = 0L;

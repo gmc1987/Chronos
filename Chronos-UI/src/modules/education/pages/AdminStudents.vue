@@ -1,5 +1,6 @@
 <template>
   <AcademicCrudPage
+    :key="crudRevision"
     title="学生档案"
     description="维护学生学籍、年级、专业和行政班"
     entity-label="学生"
@@ -43,7 +44,7 @@
       <el-form-item v-if="requiresTargetClass" label="目标行政班">
         <el-select v-model="changeForm.targetClassId" filterable>
           <el-option
-            v-for="item in classOptions"
+            v-for="item in eligibleTargetClasses"
             :key="item.id"
             :label="item.className"
             :value="item.id"
@@ -117,6 +118,7 @@ import {
 } from '../../../api/admin'
 
 const changeDialog = ref(false)
+const crudRevision = ref(0)
 const historyDrawer = ref(false)
 const selectedStudent = ref(null)
 const classOptions = ref([])
@@ -124,11 +126,23 @@ const changeTypeOptions = ref([])
 const changeHistory = ref([])
 const changeForm = reactive({ changeType: '', targetClassId: '', effectiveDate: '', reason: '' })
 const requiresTargetClass = computed(() => ['TRANSFER_CLASS', 'RETAIN_GRADE'].includes(changeForm.changeType))
+const eligibleTargetClasses = computed(() => {
+  const student = selectedStudent.value
+  const source = classOptions.value.find(item => item.id === student?.administrativeClassId)
+  if (!student || !source) return []
+  return classOptions.value.filter(item => {
+    if (item.id === source.id || item.status !== 'ACTIVE') return false
+    if (item.campusId !== source.campusId || item.majorId !== student.majorId) return false
+    if (changeForm.changeType === 'TRANSFER_CLASS') return item.gradeId === student.gradeId
+    if (changeForm.changeType === 'RETAIN_GRADE') return item.gradeYear === student.gradeYear + 1
+    return false
+  })
+})
 
 const resetChangeForm = () => Object.assign(changeForm, {
   changeType: '', targetClassId: '', effectiveDate: new Date().toISOString().slice(0, 10), reason: '',
 })
-const handleChangeType = () => { if (!requiresTargetClass.value) changeForm.targetClassId = '' }
+const handleChangeType = () => { changeForm.targetClassId = '' }
 const openChange = row => { selectedStudent.value = row; resetChangeForm(); changeDialog.value = true }
 const openHistory = async row => {
   selectedStudent.value = row
@@ -157,6 +171,7 @@ const approveChange = async row => {
     : '学籍异动已批准并生效'
   ElMessage.success(message)
   await openHistory(selectedStudent.value)
+  crudRevision.value += 1
 }
 const rejectChange = async row => {
   const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回学籍异动', { inputType: 'textarea', inputValidator: text => !!text?.trim() || '驳回原因不能为空' })

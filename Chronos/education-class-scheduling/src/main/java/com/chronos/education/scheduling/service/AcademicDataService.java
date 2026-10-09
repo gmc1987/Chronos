@@ -371,9 +371,18 @@ public class AcademicDataService {
 	}
 
 	public List<TeacherAcademicProfile> teachers(EducationDataScope scope) {
-		return scope.fullAccess()
-				? teachers()
-				: withAccountStatus(teachers.findByIdInOrderByTeacherNo(nonEmpty(scope.teacherIds())));
+		if (scope.fullAccess()) {
+			return teachers();
+		}
+		var visibleTeacherIds = new java.util.HashSet<>(scope.teacherIds());
+		if (!scope.campusIds().isEmpty()) {
+			// School-scoped schedulers need teachers with offerings in their school,
+			// even when they do not hold a personal teacher assignment.
+			visibleTeacherIds.addAll(offerings.findDistinctTeacherIdsByCampusIdIn(
+					scope.campusIds().stream().toList()));
+		}
+		return withAccountStatus(teachers.findByIdInOrderByTeacherNo(
+				nonEmpty(visibleTeacherIds)));
 	}
 
 	private List<TeacherAcademicProfile> withAccountStatus(List<TeacherAcademicProfile> values) {
@@ -630,6 +639,20 @@ public class AcademicDataService {
 	@Transactional
 	public TeachingClassMember enrollFromCombined(String offeringId, String studentId) {
 		return enrollInternal(offeringId, studentId, true);
+	}
+
+	/** 复学只恢复原有成员关系，并沿用原来源标记和正常选课冲突检查。 */
+	@Transactional
+	public TeachingClassMember restoreAfterStatusChange(String offeringId, String studentId) {
+		TeachingClassMember previous = members.findByOfferingIdAndStudentId(offeringId, studentId)
+				.orElseThrow(() -> new IllegalStateException("原教学班成员关系已不存在"));
+		String enrollmentSource = previous.getEnrollmentSource();
+		boolean combined = "COMBINED".equals(offerings.findById(offeringId)
+				.orElseThrow(() -> new IllegalStateException("原教学任务已不存在"))
+				.getOfferingMode());
+		TeachingClassMember restored = enrollInternal(offeringId, studentId, combined);
+		restored.setEnrollmentSource(enrollmentSource);
+		return members.save(restored);
 	}
 
 	private TeachingClassMember enrollInternal(

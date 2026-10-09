@@ -16,6 +16,7 @@ import com.chronos.education.scheduling.model.SchedulePlanVersion;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.workflow.WorkflowNotificationService;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class SchedulePublicationNotificationServiceTest {
@@ -61,17 +62,10 @@ class SchedulePublicationNotificationServiceTest {
 
 		service.enqueue(version, List.of(entry, entry), false);
 
-		verify(notifications, times(1)).enqueueUserEvent(
+		verify(notifications, times(1)).enqueueUserEvents(
 				"EDUCATION_SCHEDULE_PUBLISHED",
 				"version-3",
-				"shared.user",
-				"课表已发布",
-				"2026-2027-1 学期课表已发布，当前版本 V3，请及时查看个人课表。",
-				"V3");
-		verify(notifications, times(1)).enqueueUserEvent(
-				"EDUCATION_SCHEDULE_PUBLISHED",
-				"version-3",
-				"student.user",
+				Set.of("shared.user", "student.user"),
 				"课表已发布",
 				"2026-2027-1 学期课表已发布，当前版本 V3，请及时查看个人课表。",
 				"V3");

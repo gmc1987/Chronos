@@ -18,7 +18,7 @@
         <div class="schedule-toolbar">
           <div class="dimension-filter">
             <el-select v-model="scheduleDimension" class="dimension-select" @change="changeDimension">
-              <el-option label="全校课表" value="ALL" />
+              <el-option v-if="scheduleScopeFullAccess" label="全校课表" value="ALL" />
               <el-option label="教师课表" value="TEACHER" />
               <el-option label="教学班课表" value="TEACHING_CLASS" />
               <el-option label="行政班课表" value="ADMIN_CLASS" />
@@ -80,11 +80,11 @@
               <el-radio-button value="grid">网格</el-radio-button>
               <el-radio-button value="list">列表</el-radio-button>
             </el-radio-group>
-            <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" @click="downloadImportTemplate">下载导入模板</el-button>
-            <el-button v-permission="['education:scheduling:create', 'education:scheduling:manage']" type="warning" @click="chooseImportFile">导入课表</el-button>
+            <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:create', 'education:scheduling:manage']" @click="downloadImportTemplate">下载导入模板</el-button>
+            <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:create', 'education:scheduling:manage']" type="warning" @click="chooseImportFile">导入课表</el-button>
             <el-button v-permission="['education:scheduling:view', 'education:scheduling:manage']" @click="exportSchedule">导出当前课表</el-button>
-            <el-button v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
-            <el-button type="success" @click="publishVersion">发布当前课表</el-button>
+            <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
+            <el-button v-if="scheduleScopeFullAccess" type="success" @click="publishVersion">发布当前课表</el-button>
             <el-button type="primary" @click="openEntry()">新增排课</el-button>
             <input ref="scheduleFileInput" type="file" accept=".xlsx" hidden @change="importSchedule" />
           </div>
@@ -116,7 +116,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly" label="日期课表" name="date-schedule">
+      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="日期课表" name="date-schedule">
         <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button></div>
         <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
         <h3>节假日待补课（{{ pendingMakeups.length }}）</h3>
@@ -155,7 +155,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly" label="发布版本" name="versions">
+      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="发布版本" name="versions">
         <div class="toolbar"><el-button @click="loadVersions">刷新</el-button></div>
         <el-table :data="versions">
           <el-table-column prop="versionNo" label="版本" width="90">
@@ -175,7 +175,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly" label="质量分析" name="quality">
+      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="质量分析" name="quality">
         <div class="toolbar"><el-button @click="loadQualityAnalysis">重新分析</el-button></div>
         <div class="quality-summary">
           <el-statistic title="排课项" :value="quality.summary?.entryCount || 0" />
@@ -210,7 +210,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly" label="规则配置" name="policy">
+      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="规则配置" name="policy">
         <el-alert
           title="规则按学期生效。教师档案设置了个人上限时优先使用个人值，未设置时使用本页默认值。"
           type="info"
@@ -244,7 +244,7 @@
         </el-form>
       </el-tab-pane>
 
-      <el-tab-pane label="自动排课候选" name="candidates">
+      <el-tab-pane v-if="reviewOnly || scheduleScopeFullAccess" label="自动排课候选" name="candidates">
         <div class="toolbar">
           <el-button @click="loadCandidates">刷新</el-button>
           <el-button v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
@@ -416,7 +416,7 @@
         <el-table :data="roomConstraints" border><el-table-column label="教室"><template #default="s">{{ classroomName(s.row.classroomId) }}</template></el-table-column><el-table-column label="星期" width="90"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }}</template></el-table-column><el-table-column label="节次" width="120"><template #default="s">第 {{ s.row.startPeriod }}–{{ s.row.endPeriod }} 节</template></el-table-column><el-table-column prop="reason" label="原因" /><AdaptiveActionColumn label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openRoomConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeRoomConstraint(s.row)">删除</el-button></template></AdaptiveActionColumn></el-table>
       </el-tab-pane>
 
-	  <el-tab-pane v-if="!reviewOnly" label="调课回写异常" name="incidents">
+	  <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="调课回写异常" name="incidents">
 		<div class="incident-toolbar">
 		  <div class="incident-filters">
 			<el-select v-model="incidentStatus" class="incident-status" @change="searchIncidents">
@@ -797,6 +797,7 @@ const scheduleDimension = ref('ALL')
 const scheduleTargetId = ref('')
 const dimensionOptionsLoading = ref(false)
 const dimensionOptionsError = ref(false)
+const scheduleScopeFullAccess = ref(false)
 const incidents = ref([])
 const incidentSelection = ref([])
 const incidentStatus = ref('FAILED')
@@ -1014,6 +1015,12 @@ const loadDimensionOptions = async () => {
     administrativeClasses.value = dimensions.administrativeClasses || []
     offeringOptions.value = dimensions.teachingClasses || []
     classroomOptions.value = dimensions.classrooms || []
+    scheduleScopeFullAccess.value = dimensions.fullAccess !== false
+    if (!scheduleScopeFullAccess.value && scheduleDimension.value === 'ALL') {
+      scheduleDimension.value = 'TEACHER'
+      scheduleTargetId.value = ''
+      schedule.value = []
+    }
   } catch (error) {
     if (sequence !== dimensionOptionsSequence || semester !== semesterCode.value) return
     dimensionOptionsError.value = true
@@ -1035,6 +1042,7 @@ const loadAll = async () => {
   classroomOptions.value = []
   dimensionOptionsLoading.value = false
   dimensionOptionsError.value = false
+  scheduleScopeFullAccess.value = false
   let termResponse
   try {
     termResponse = await listAcademicTerms()
@@ -1062,14 +1070,15 @@ const loadAll = async () => {
     return
   }
   const currentTerm = terms.value.find(item => item.termCode === semesterCode.value)
-  const dimensionOptionsRequest = loadDimensionOptions()
+  await loadDimensionOptions()
+  if (sequence !== loadSequence) return
   const studentOptionsRequest = scheduleDimension.value === 'STUDENT'
     ? loadStudentOptions() : Promise.resolve()
   const results = await Promise.allSettled([
     listCourseCatalog(),
     dictionaryOptions('EDU_ROOM_TYPE'),
-    listScheduleVersions(semesterCode.value),
-    listScheduleCandidates(semesterCode.value),
+    scheduleScopeFullAccess.value ? listScheduleVersions(semesterCode.value) : Promise.resolve({ data: [] }),
+    scheduleScopeFullAccess.value ? listScheduleCandidates(semesterCode.value) : Promise.resolve({ data: [] }),
     orgList({ page: 0, size: 200 }),
     currentTerm ? listBellSchedules(currentTerm.id) : Promise.resolve({ data: [] }),
     listTeacherTimeConstraints(semesterCode.value),
@@ -1096,14 +1105,13 @@ const loadAll = async () => {
   offeringPage.value = 1
   classroomPage.value = 1
   await Promise.allSettled([
-    dimensionOptionsRequest,
     studentOptionsRequest,
     loadOfferingsPage(),
     loadClassroomsPage(),
     loadSchedule(),
-    loadDateSchedule(),
-    loadQualityAnalysis(),
-    loadPolicy(),
+    scheduleScopeFullAccess.value ? loadDateSchedule() : Promise.resolve(),
+    scheduleScopeFullAccess.value ? loadQualityAnalysis() : Promise.resolve(),
+    scheduleScopeFullAccess.value ? loadPolicy() : Promise.resolve(),
   ])
 }
 const loadOfferingsPage = async () => {
@@ -1592,7 +1600,8 @@ const rollbackVersion = async row => {
   await Promise.all([loadAll(), loadVersions()])
 }
 onMounted(async () => {
-  await (reviewOnly ? loadAll() : Promise.all([loadAll(), loadIncidents()]))
+  await loadAll()
+  if (!reviewOnly && scheduleScopeFullAccess.value) await loadIncidents()
   const { dateAction, sourceEntryId, sourceDate } = route.query
   if (activeTab.value === 'date-schedule' && typeof sourceEntryId === 'string'
     && typeof sourceDate === 'string') {

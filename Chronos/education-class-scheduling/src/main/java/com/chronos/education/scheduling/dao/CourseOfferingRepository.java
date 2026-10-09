@@ -23,6 +23,8 @@ public interface CourseOfferingRepository extends JpaRepository<CourseOffering, 
 	List<CourseOffering> findByTeacherIdOrderByOfferingCode(String teacherId);
 	Page<CourseOffering> findBySemesterCodeOrderByOfferingCode(String semesterCode, Pageable pageable);
 	boolean existsByTeacherIdAndCampusIdIn(String teacherId, List<String> campusIds);
+	@Query("select distinct offering.teacherId from CourseOffering offering where offering.campusId in :campusIds and offering.teacherId is not null")
+	List<String> findDistinctTeacherIdsByCampusIdIn(@Param("campusIds") List<String> campusIds);
 	boolean existsByTeacherId(String teacherId);
 	List<CourseOffering> findByCourseCode(String courseCode);
 }

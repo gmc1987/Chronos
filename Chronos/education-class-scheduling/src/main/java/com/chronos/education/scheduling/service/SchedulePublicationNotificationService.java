@@ -69,15 +69,13 @@ public class SchedulePublicationNotificationService {
 				+ "，当前版本 V"
 				+ version.getVersionNo()
 				+ "，请及时查看个人课表。";
-		for (String recipient : recipients) {
-			notifications.enqueueUserEvent(
-					eventType,
-					version.getId(),
-					recipient,
-					title,
-					content,
-					"V" + version.getVersionNo());
-		}
+		notifications.enqueueUserEvents(
+				eventType,
+				version.getId(),
+				recipients,
+				title,
+				content,
+				"V" + version.getVersionNo());
 	}
 
 	private Set<String> usernames(String profileType, Set<String> profileIds) {

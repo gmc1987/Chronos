@@ -92,6 +92,7 @@ public class ClassSchedulingController {
 		 * 避免加载课表时一次查询和序列化全部学生档案。
 		 */
 		return ok(Map.of(
+				"fullAccess", scope.fullAccess(),
 				"teachers", academicData.teachers(scope),
 				"teachingClasses", dataScopes.visibleOfferings(
 						scope,

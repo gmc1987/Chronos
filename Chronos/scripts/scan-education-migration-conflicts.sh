@@ -10,37 +10,34 @@ test -d "$MIGRATIONS" || {
   exit 1
 }
 
-count=0
-previous_version=""
-previous_file=""
-latest=""
-while IFS= read -r migration; do
-  file="$(basename "$migration")"
-  if [[ ! "$file" =~ ^V[0-9]+__[a-z0-9][a-z0-9_-]*\.sql$ ]]; then
-    echo "FAIL: invalid education migration filename: $file" >&2
-    exit 1
-  fi
-  version="${file%%__*}"
-  if [[ "$version" == "$previous_version" ]]; then
-    echo "FAIL: duplicate education migration version $version:" >&2
-    printf '  %s\n  %s\n' "$previous_file" "$file" >&2
-    exit 1
-  fi
-  previous_version="$version"
-  previous_file="$file"
-  latest="$version"
-  count=$((count + 1))
-done < <(find "$MIGRATIONS" -maxdepth 1 -type f -name 'V*.sql' -print | sort -V)
+# Flyway accepts numeric version components separated by dots or underscores.
+# Compare their normalized values: V1, V01 and V1_0 describe the same version.
+python3 - "$MIGRATIONS" <<'PY'
+import pathlib
+import re
+import sys
 
-(( count > 0 )) || {
-  echo "FAIL: no education migrations found" >&2
-  exit 1
-}
-
-test -f "$MIGRATIONS/V0__chronos_education_baseline.sql" || {
-  echo "FAIL: V0 education baseline is missing" >&2
-  exit 1
-}
-
-printf 'PASS: %d education migration versions; latest=%s; duplicates=0; filenames=valid\n' \
-  "$count" "$latest"
+root = pathlib.Path(sys.argv[1])
+versions = {}
+latest = None
+files = sorted(root.glob("V*.sql"))
+for path in files:
+    match = re.fullmatch(r"V([0-9]+(?:[._][0-9]+)*)__[a-z0-9][a-z0-9_-]*\.sql", path.name)
+    if not match:
+        sys.exit(f"FAIL: invalid education migration filename: {path.name}")
+    parts = [int(part) for part in re.split(r"[._]", match.group(1))]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    version = tuple(parts)
+    if version in versions:
+        sys.exit(f"FAIL: duplicate education migration version:\n  {versions[version]}\n  {path.name}")
+    versions[version] = path.name
+    if latest is None or version > latest:
+        latest = version
+if not files:
+    sys.exit("FAIL: no education migrations found")
+if not (root / "V0__chronos_education_baseline.sql").is_file():
+    sys.exit("FAIL: V0 education baseline is missing")
+latest_name = versions[latest].split("__", 1)[0]
+print(f"PASS: {len(files)} education migration versions; latest={latest_name}; duplicates=0; filenames=valid")
+PY

@@ -14,6 +14,8 @@ import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -170,6 +172,45 @@ public class WorkflowNotificationService {
 		outbox.save(event);
 	}
 
+	/**
+	 * 大规模课表发布按批入箱，避免逐人 exists 查询触发 JPA 自动 flush，
+	 * 使发布耗时随收件人数近似线性增长；通知仍与发布版本原子提交。
+	 */
+	@Transactional
+	public void enqueueUserEvents(
+			String eventType,
+			String aggregateId,
+			Collection<String> recipients,
+			String title,
+			String content,
+			String occurrenceKey) {
+		if (recipients == null || recipients.isEmpty()) {
+			return;
+		}
+		List<Map<String, String>> batch = new ArrayList<>(200);
+		for (String recipient : new LinkedHashSet<>(recipients)) {
+			if (recipient == null || recipient.isBlank()) {
+				continue;
+			}
+			String key = eventType + ":" + aggregateId + ":" + occurrenceKey + ":" + recipient;
+			batch.add(Map.of(
+					"deduplication_key", key,
+					"payload_json", write(Map.of(
+							"recipient", recipient,
+							"title", title,
+							"content", content,
+							"instanceId", "",
+							"taskId", ""))));
+			if (batch.size() == 200) {
+				outbox.insertUserEventBatch(eventType, aggregateId, write(batch));
+				batch.clear();
+			}
+		}
+		if (!batch.isEmpty()) {
+			outbox.insertUserEventBatch(eventType, aggregateId, write(batch));
+		}
+	}
+
 	@Transactional
 	public void dispatchPending() {
 		List<WorkflowOutbox> events = outbox.lockDispatchBatch(LocalDateTime.now());
@@ -286,7 +327,7 @@ public class WorkflowNotificationService {
 		return event;
 	}
 
-	private String write(Map<String, String> value) {
+	private String write(Object value) {
 		try {
 			return json.writeValueAsString(value);
 		} catch (Exception exception) {

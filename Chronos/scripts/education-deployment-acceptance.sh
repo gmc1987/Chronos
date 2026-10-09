@@ -75,15 +75,29 @@ printf 'target database=%s schema=%s mode=%s read_only=true\n' "$actual_db" "$ac
 
 versions="$(
   find "$MIGRATIONS" -maxdepth 1 -type f -name 'V*.sql' -print |
-    sed 's#^.*/##; s/__.*//' | sort -V
+    sed 's#^.*/V##; s/__.*//' | sort -V
 )"
 expected_latest="$(printf '%s\n' "$versions" | tail -1)"
 expected_count="$(printf '%s\n' "$versions" | sed '/^$/d' | wc -l | tr -d ' ')"
-key_versions="$(printf '%s\n' "$versions" | { head -2; tail -3; } | sort -Vu)"
+key_versions="$(printf '%s\n' "$versions" | awk '
+  { versions[NR] = $0 }
+  END { for (i = 1; i <= NR; i++) if (i <= 2 || i > NR - 3) print versions[i] }
+' | sort -Vu)"
+# 老库采用 Flyway 默认 BASELINE=1，V0 结构已由原有数据库提供；
+# 新库必须存在 V0 SQL。只允许明确的 0/1 基线，不能跳过任意迁移。
+if [[ "$mode" == existing ]]; then
+  key_versions="$(printf '%s\n' "$key_versions" | awk '$0 != "0"')"
+fi
 
 history_table="${schema}.flyway_schema_history"
 if [[ "$(readonly_sql "SELECT to_regclass('$schema.flyway_schema_history') IS NOT NULL")" != "t" ]]; then
   echo "FAIL: $history_table is missing; target is not accepted" >&2
+  exit 1
+fi
+if [[ "$mode" == existing && "$(readonly_sql "SELECT count(*) FROM \"$schema\".flyway_schema_history
+  WHERE success = true AND ((version = '0' AND type = 'SQL')
+    OR (version IN ('0','1') AND type = 'BASELINE'))")" == "0" ]]; then
+  echo "FAIL: existing schema has neither V0 SQL nor a supported 0/1 Flyway baseline" >&2
   exit 1
 fi
 history_rows="$(
@@ -97,20 +111,27 @@ if [[ -z "$history_rows" ]]; then
   exit 1
 fi
 printf 'key flyway history (version|checksum|success):\n%s\n' "$history_rows"
-if printf '%s\n' "$history_rows" | awk -F'|' '$2 == "" || $3 != "t" { bad = 1 } END { exit bad }'; then
+if [[ "$(printf '%s\n' "$history_rows" | wc -l | tr -d ' ')" != \
+      "$(printf '%s\n' "$key_versions" | wc -l | tr -d ' ')" ]]; then
+  echo "FAIL: one or more key Flyway migrations are missing" >&2
+  exit 1
+fi
+if printf '%s\n' "$history_rows" | awk -F'|' '$2 == "" || $3 != "true" { bad = 1 } END { exit bad }'; then
   :
 else
   echo "FAIL: key Flyway history contains a missing checksum or unsuccessful migration" >&2
   exit 1
 fi
 failed_count="$(readonly_sql "SELECT count(*) FROM \"$schema\".flyway_schema_history WHERE success = false")"
-actual_latest="$(readonly_sql "SELECT COALESCE(max(version), '') FROM \"$schema\".flyway_schema_history WHERE success = true")"
+actual_latest="$(readonly_sql "SELECT version FROM \"$schema\".flyway_schema_history
+  WHERE success = true AND version IS NOT NULL
+  ORDER BY string_to_array(replace(version, '_', '.'), '.')::bigint[] DESC LIMIT 1")"
 if [[ "$failed_count" != "0" || "$actual_latest" != "$expected_latest" ]]; then
   echo "FAIL: Flyway history failed_rows=$failed_count latest=$actual_latest expected_latest=$expected_latest" >&2
   exit 1
 fi
 if [[ "$mode" == existing ]]; then
-  baseline_count="$(readonly_sql "SELECT count(*) FROM \"$schema\".flyway_schema_history WHERE version = '0' AND type = 'BASELINE'")"
+  baseline_count="$(readonly_sql "SELECT count(*) FROM \"$schema\".flyway_schema_history WHERE version IN ('0','1') AND type = 'BASELINE' AND success = true")"
   echo "existing-db: baseline_rows=$baseline_count (baseline is valid only for a complete pre-existing schema)"
 else
   echo "empty-db: expected V0 plus $((expected_count - 1)) ordered SQL migrations"

@@ -26,7 +26,7 @@ command -v psql >/dev/null || {
 
 versions="$(
   find "$MIGRATIONS" -maxdepth 1 -type f -name 'V*.sql' -print |
-    sed 's#^.*/##; s/__.*//' |
+    sed 's#^.*/V##; s/__.*//' |
     sort -V
 )"
 expected_latest="$(printf '%s\n' "$versions" | tail -1)"
@@ -82,7 +82,7 @@ fi
 
 actual_latest="$(
   psql "${psql_args[@]}" -Atqc \
-    "SELECT COALESCE(max(version), '') FROM flyway_schema_history WHERE success = true"
+    "SELECT version FROM flyway_schema_history WHERE success = true AND version IS NOT NULL ORDER BY string_to_array(replace(version, '_', '.'), '.')::bigint[] DESC LIMIT 1"
 )"
 if [[ "$actual_latest" != "$expected_latest" ]]; then
   echo "FAIL: isolated database latest successful version '$actual_latest' != repository '$expected_latest'" >&2

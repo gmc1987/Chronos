@@ -17,6 +17,9 @@ public interface StudentStatusChangeRepository extends JpaRepository<StudentStat
 
 	boolean existsByStudentIdAndStatus(String studentId, String status);
 
+	Optional<StudentStatusChange> findFirstByStudentIdAndChangeTypeAndStatusOrderByAppliedAtDesc(
+			String studentId, String changeType, String status);
+
 	long countByStudentIdInAndStatus(List<String> studentIds, String status);
 
 	List<StudentStatusChange> findTop20ByStudentIdInAndStatusOrderByRequestedAtDesc(

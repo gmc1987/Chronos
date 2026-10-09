@@ -9,6 +9,7 @@ import com.chronos.education.scheduling.model.CombinedOfferingSourceClass;
 public interface CombinedOfferingSourceClassRepository
 		extends JpaRepository<CombinedOfferingSourceClass, String> {
 	List<CombinedOfferingSourceClass> findByOfferingIdOrderByAdministrativeClassId(String offeringId);
+	List<CombinedOfferingSourceClass> findByAdministrativeClassId(String administrativeClassId);
 
 	void deleteByOfferingId(String offeringId);
 }

@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.service;
 
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
+import com.chronos.education.scheduling.dao.CombinedOfferingSourceClassRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.StudentStatusChangeRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
@@ -35,6 +36,9 @@ public class StudentStatusChangeService {
 	private final StudentProfileRepository students;
 	private final AdministrativeClassRepository classes;
 	private final TeachingClassMemberRepository members;
+	private final CombinedOfferingSourceClassRepository combinedSources;
+	private final CombinedOfferingService combinedOfferings;
+	private final AcademicDataService academicData;
 	private final IAuditLogService audit;
 
 	public StudentStatusChangeService(
@@ -42,11 +46,17 @@ public class StudentStatusChangeService {
 			StudentProfileRepository students,
 			AdministrativeClassRepository classes,
 			TeachingClassMemberRepository members,
+			CombinedOfferingSourceClassRepository combinedSources,
+			CombinedOfferingService combinedOfferings,
+			AcademicDataService academicData,
 			IAuditLogService audit) {
 		this.changes = changes;
 		this.students = students;
 		this.classes = classes;
 		this.members = members;
+		this.combinedSources = combinedSources;
+		this.combinedOfferings = combinedOfferings;
+		this.academicData = academicData;
 		this.audit = audit;
 	}
 
@@ -69,7 +79,7 @@ public class StudentStatusChangeService {
 			throw new IllegalStateException("学生已有待审批的学籍异动");
 		}
 
-		AdministrativeClass targetClass = targetClass(type, command.targetClassId());
+		AdministrativeClass targetClass = targetClass(student, type, command.targetClassId());
 		StudentStatusChange change = new StudentStatusChange();
 		change.setStudentId(studentId);
 		change.setChangeType(type);
@@ -141,8 +151,18 @@ public class StudentStatusChangeService {
 		student.setGradeId(change.getToGradeId());
 		student.setMajorId(change.getToMajorId());
 		student.setAdministrativeClassId(change.getToClassId());
+		if ("RETAIN_GRADE".equals(change.getChangeType())) {
+			AdministrativeClass target = classes.findById(change.getToClassId())
+					.orElseThrow(() -> new IllegalStateException("目标行政班已不存在"));
+			if (!target.getGradeId().equals(change.getToGradeId())) {
+				throw new IllegalStateException("目标行政班年级已变化，请重新申请");
+			}
+			student.setGradeYear(target.getGradeYear());
+		}
 		students.save(student);
 		synchronizeTeachingClassMembers(change);
+		synchronizeAffectedCombinedOfferings(change);
+		restoreSuspendedMemberships(change);
 
 		change.setStatus("APPROVED");
 		change.setAppliedAt(LocalDateTime.now());
@@ -163,13 +183,43 @@ public class StudentStatusChangeService {
 
 	private void synchronizeTeachingClassMembers(StudentStatusChange change) {
 		LocalDateTime now = LocalDateTime.now();
-		members.findByStudentIdAndEnrollmentStatus(change.getStudentId(), "ENROLLED").stream()
+		java.util.List<TeachingClassMember> withdrawn = members
+				.findByStudentIdAndEnrollmentStatus(change.getStudentId(), "ENROLLED").stream()
 				.filter(member -> shouldWithdraw(change, member))
-				.forEach(member -> {
+				.toList();
+		if ("SUSPEND".equals(change.getChangeType())) {
+			change.setWithdrawnMembershipIds(withdrawn.stream()
+					.map(TeachingClassMember::getId)
+					.collect(java.util.stream.Collectors.joining(",")));
+		}
+		withdrawn.forEach(member -> {
 					member.setEnrollmentStatus("WITHDRAWN");
 					member.setWithdrawnAt(now);
 					members.save(member);
 				});
+	}
+
+	private void restoreSuspendedMemberships(StudentStatusChange change) {
+		if (!"RESUME".equals(change.getChangeType())) {
+			return;
+		}
+		String ids = changes.findFirstByStudentIdAndChangeTypeAndStatusOrderByAppliedAtDesc(
+				change.getStudentId(), "SUSPEND", "APPROVED")
+				.map(StudentStatusChange::getWithdrawnMembershipIds)
+				.orElse(null);
+		if (!StringUtils.hasText(ids)) {
+			return;
+		}
+		for (String id : ids.split(",")) {
+			TeachingClassMember member = members.findById(id)
+					.orElseThrow(() -> new IllegalStateException("休学前教学班成员关系已不存在"));
+			if (!change.getStudentId().equals(member.getStudentId())) {
+				throw new IllegalStateException("休学成员快照与学生不匹配");
+			}
+			if ("WITHDRAWN".equals(member.getEnrollmentStatus())) {
+				academicData.restoreAfterStatusChange(member.getOfferingId(), change.getStudentId());
+			}
+		}
 	}
 
 	private boolean shouldWithdraw(StudentStatusChange change, TeachingClassMember member) {
@@ -179,6 +229,22 @@ public class StudentStatusChangeService {
 		return ("TRANSFER_CLASS".equals(change.getChangeType())
 				|| "RETAIN_GRADE".equals(change.getChangeType()))
 				&& "SOURCE_CLASS".equals(member.getEnrollmentSource());
+	}
+
+	private void synchronizeAffectedCombinedOfferings(StudentStatusChange change) {
+		if (!java.util.Set.of("RESUME", "TRANSFER_CLASS", "RETAIN_GRADE")
+				.contains(change.getChangeType())) {
+			return;
+		}
+		// 重新计算来源班级的实际在籍成员；容量或课表冲突会使整笔学籍审批回滚。
+		java.util.stream.Stream.of(change.getFromClassId(), change.getToClassId())
+				.filter(java.util.Objects::nonNull)
+				.distinct()
+				.flatMap(classId -> combinedSources.findByAdministrativeClassId(classId).stream())
+				.map(source -> source.getOfferingId())
+				.distinct()
+				.sorted()
+				.forEach(combinedOfferings::sync);
 	}
 
 	private StudentStatusChange requirePending(String id) {
@@ -200,7 +266,7 @@ public class StudentStatusChangeService {
 				.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
 	}
 
-	private AdministrativeClass targetClass(String type, String id) {
+	private AdministrativeClass targetClass(StudentProfile student, String type, String id) {
 		boolean required = "TRANSFER_CLASS".equals(type) || "RETAIN_GRADE".equals(type);
 		if (!required) {
 			return null;
@@ -212,6 +278,25 @@ public class StudentStatusChangeService {
 				.orElseThrow(() -> new IllegalArgumentException("目标行政班不存在"));
 		if (!"ACTIVE".equals(target.getStatus())) {
 			throw new IllegalStateException("目标行政班不可用");
+		}
+		AdministrativeClass source = classes.findById(student.getAdministrativeClassId())
+				.orElseThrow(() -> new IllegalStateException("当前行政班不存在"));
+		if (source.getId().equals(target.getId())) {
+			throw new IllegalArgumentException("目标行政班不能与当前行政班相同");
+		}
+		// 转班和留级均属于校内学籍异动；跨校需要走转出及重新入学流程。
+		if (!java.util.Objects.equals(source.getCampusId(), target.getCampusId())
+				|| !java.util.Objects.equals(student.getMajorId(), target.getMajorId())) {
+			throw new IllegalArgumentException("目标行政班必须属于同一校区和专业");
+		}
+		if ("TRANSFER_CLASS".equals(type)
+				&& !java.util.Objects.equals(student.getGradeId(), target.getGradeId())) {
+			throw new IllegalArgumentException("转班必须在同一年级内办理");
+		}
+		if ("RETAIN_GRADE".equals(type)
+				&& (student.getGradeYear() == null || target.getGradeYear() == null
+						|| target.getGradeYear() != student.getGradeYear() + 1)) {
+			throw new IllegalArgumentException("留级目标班须为下一届同专业班级");
 		}
 		return target;
 	}

@@ -8,7 +8,7 @@
         <RouterLink to="/portal/tasks">流程任务</RouterLink>
       </nav>
       <div class="portal-user">
-        <div class="portal-user-copy"><strong>{{ user.displayName || username }}</strong><span>{{ user.organizationName || `未设置${branding.departmentLabel}` }} · {{ user.positionName || branding.employeeLabel }}</span></div>
+        <div class="portal-user-copy"><strong>{{ user.displayName || username }}</strong><span>{{ user.organizationName || `未设置${branding.departmentLabel}` }} · {{ positionLabel }}</span></div>
         <button class="portal-avatar" @click="logout">{{ avatarText }}</button>
       </div>
     </header>
@@ -23,16 +23,38 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { clearAdminTokens, getAdminUsername } from '../../store/auth'
 import { industryBranding } from '../../industries/core'
+import { portalBootstrap } from '../../api/portal'
 
 const router = useRouter()
+const route = useRoute()
 const branding = industryBranding
 const username = getAdminUsername()
 const user = reactive({})
 const avatarText = computed(() => String(user.displayName || username || 'U').slice(0, 1).toUpperCase())
+const positionLabel = computed(() => {
+  if (user.positionName) return user.positionName
+  if (user.profileTypes?.includes('STUDENT')) return '学生'
+  if (user.profileTypes?.includes('PARENT')) return '家长'
+  if (user.profileTypes?.includes('TEACHER')) return '教师'
+  return branding.employeeLabel
+})
 const setContext = (value) => Object.assign(user, value || {})
+onMounted(async () => {
+  // The home page supplies this context itself. A direct link to a portal feature does not.
+  if (route.path === '/portal') return
+  try {
+    const { data } = await portalBootstrap()
+    setContext({
+      ...data.user,
+      profileTypes: data.contributions?.DATA?.data?.profileTypes || [],
+    })
+  } catch {
+    // Feature pages handle their own load errors; keep the portal shell available.
+  }
+})
 const logout = () => { clearAdminTokens(); router.replace('/login') }
 </script>
