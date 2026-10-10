@@ -142,7 +142,15 @@ public class FlowableRuntimeCoordinator {
 			if (projection.getEngineTaskId() != null
 					&& Set.of("PENDING", "CLAIMABLE").contains(projection.getStatus())
 					&& !activeTaskIds.contains(projection.getEngineTaskId())) {
-				projection.setStatus("COMPLETED");
+				// In an ANY multi-instance approval, Flowable ends the losing sibling
+				// with MI_END. It must be shown as cancelled, never as if that user approved.
+				var historicTask = historyService.createHistoricTaskInstanceQuery()
+						.taskId(projection.getEngineTaskId())
+						.singleResult();
+				String deleteReason = historicTask == null ? null : historicTask.getDeleteReason();
+				projection.setStatus(deleteReason == null || deleteReason.isBlank()
+						? "COMPLETED"
+						: "CANCELLED");
 				projection.setCompletedAt(LocalDateTime.now());
 				tasks.save(projection);
 			}

@@ -74,11 +74,11 @@
         <el-form-item v-for="field in fields" :key="field.prop" :label="field.label">
           <el-select v-if="field.dictCode" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in dictionaryData[field.dictCode] || []" :key="option.value" :label="option.label" :value="option.value" /></el-select>
           <el-select v-else-if="field.options" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-          <el-date-picker v-else-if="field.type === 'date'" v-model="form[field.prop]" value-format="YYYY-MM-DD" />
-          <el-input-number v-else-if="field.type === 'number'" v-model="form[field.prop]" :min="field.min ?? 0" />
-          <el-switch v-else-if="field.type === 'boolean'" v-model="form[field.prop]" />
+          <el-date-picker v-else-if="field.type === 'date'" v-model="form[field.prop]" value-format="YYYY-MM-DD" :disabled="field.immutableOnEdit && !!form.id" />
+          <el-input-number v-else-if="field.type === 'number'" v-model="form[field.prop]" :min="field.min ?? 0" :disabled="field.immutableOnEdit && !!form.id" />
+          <el-switch v-else-if="field.type === 'boolean'" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id" />
           <el-select v-else-if="field.lookup" v-model="form[field.prop]" filterable :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in lookupData[field.lookup] || []" :key="option.id" :label="option[field.labelProp]" :value="option.id" /></el-select>
-          <el-input v-else v-model="form[field.prop]" />
+          <el-input v-else v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id" />
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
@@ -87,7 +87,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
 
@@ -104,7 +104,19 @@ const load = async () => {
   total.value = response.data?.totalElements ?? rows.value.length
 }
 const changePageSize = () => { page.value = 1; load() }
-const loadLookups = async () => { for (const item of props.lookups) { const response = await item.loader(); lookupData[item.key] = response.data || [] } }
+const lookupVersions = {}
+const loadLookup = async item => {
+  const version = (lookupVersions[item.key] || 0) + 1
+  lookupVersions[item.key] = version
+  const response = await item.loader(item.dependentOn ? form[item.dependentOn] : undefined)
+  if (lookupVersions[item.key] === version) lookupData[item.key] = response.data || []
+}
+const loadLookups = async () => { for (const item of props.lookups) await loadLookup(item) }
+for (const dependency of new Set(props.lookups.map(item => item.dependentOn).filter(Boolean))) {
+  watch(() => form[dependency], () => {
+    for (const item of props.lookups.filter(lookup => lookup.dependentOn === dependency)) loadLookup(item)
+  })
+}
 const loadDictionaries = async () => {
   const codes = [...new Set((props.fields || []).map(field => field.dictCode).filter(Boolean))]
   await Promise.all(codes.map(async code => {

@@ -834,10 +834,20 @@ public class WorkflowService {
 		}
 		security.requireInstanceView(actor, instanceId);
 		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
-		WorkflowNode node = nodes.findByFlowIdAndNodeKey(definition.getId(), instance.getCurrentNodeKey())
-				.orElseThrow(() -> new IllegalArgumentException("当前节点不存在"));
 		List<WorkflowTask> history = tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId);
-		WorkflowTask currentTask = history.stream()
+		boolean finished = Set.of("COMPLETED", "REJECTED", "WITHDRAWN", "CANCELLED")
+				.contains(instance.getStatus());
+		String displayNodeKey = instance.getCurrentNodeKey();
+		if ((displayNodeKey == null || displayNodeKey.isBlank()) && finished) {
+			// Flowable clears the active node after completion. Use the last task only to
+			// render the archived form and audit trail; a finished instance is never editable.
+			displayNodeKey = history.isEmpty()
+					? definition.getEntryNodeKey()
+					: history.get(history.size() - 1).getNodeKey();
+		}
+		WorkflowNode node = nodes.findByFlowIdAndNodeKey(definition.getId(), displayNodeKey)
+				.orElseThrow(() -> new IllegalArgumentException("当前节点不存在"));
+		WorkflowTask currentTask = finished ? null : history.stream()
 				.filter(t -> "PENDING".equals(t.getStatus()) && actor.equals(t.getAssignee()))
 				.findFirst()
 				.orElse(null);
@@ -845,7 +855,11 @@ public class WorkflowService {
 		Map<String, String> permissions = starterRework
 				? starterReworkPermissions(definition, node)
 				: permissionMap(node, "permissions");
-		Set<String> required = permissionSet(node, "required");
+		if (finished) {
+			permissions = new HashMap<>(permissions);
+			permissions.replaceAll((key, permission) -> "EDIT".equals(permission) ? "READ" : permission);
+		}
+		Set<String> required = finished ? Set.of() : permissionSet(node, "required");
 		List<Map<String, Object>> forms = new ArrayList<>();
 		if (definition.getMainFormId() != null && !definition.getMainFormId().isBlank())
 			forms.add(runtimeForm(instance, definition.getMainFormId(), "_MAIN", "MAIN", permissions, required));

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
+import { todayLocalDate } from '../../../utils/localDate'
 import {
   cancelAiSchedulingRun,
   compareAiSchedulingCandidates,
@@ -247,7 +248,7 @@ const loadInitial = async () => {
   try {
     terms.value = unwrapList(await listAcademicTerms({ page: 0, size: 100 }))
     const requestedTerm = route.query.semesterCode
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayLocalDate()
     const current = terms.value.find(term => term.termCode === requestedTerm)
       || terms.value.find(term => term.startDate <= today && term.endDate >= today)
       || terms.value.find(term => term.currentTerm)

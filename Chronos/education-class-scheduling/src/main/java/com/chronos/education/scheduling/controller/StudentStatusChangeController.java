@@ -80,6 +80,15 @@ public class StudentStatusChangeController {
 		return ok(changes.reject(id, command.comment(), authentication.getName()));
 	}
 
+	@PostMapping("/{id}/cancel")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:student:manage')")
+	public ResultData<StudentStatusChange> cancel(
+			@PathVariable String id,
+			Authentication authentication) {
+		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		return ok(changes.cancel(id, authentication.getName()));
+	}
+
 	private <T> ResultData<T> ok(T data) {
 		return ResultData.<T>builder()
 				.code("200")

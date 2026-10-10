@@ -138,6 +138,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { portalEducationSchedule, portalEducationScheduleCalendar } from '../../../api/portal'
 import ScheduleGrid from '../components/ScheduleGrid.vue'
+import { todayLocalDate } from '../../../utils/localDate'
 
 const loading = ref(true)
 const calendarLoading = ref(true)
@@ -146,8 +147,8 @@ const calendarData = ref({})
 const selectedStudentId = ref('')
 const schedule = computed(() => scheduleData.value?.schedule || [])
 const occurrences = computed(() => scheduleData.value?.occurrences || [])
-const selectedDate = ref(new Date().toISOString().slice(0, 10))
-const today = new Date().toISOString().slice(0, 10)
+const selectedDate = ref(todayLocalDate())
+const today = todayLocalDate()
 const formatDate = value => {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')

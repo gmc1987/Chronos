@@ -93,17 +93,26 @@
               驳回
             </el-button>
           </template>
+          <el-button
+            v-if="['PENDING', 'APPROVED_PENDING'].includes(scope.row.status)"
+            v-permission="['education:student:manage']"
+            link
+            type="warning"
+            @click="cancelChange(scope.row)"
+          >取消</el-button>
         </template>
       </AdaptiveActionColumn>
     </el-table>
   </el-drawer>
 </template>
 <script setup>
+import { todayLocalDate } from '../../../utils/localDate'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AcademicCrudPage from '../components/AcademicCrudPage.vue'
 import {
   approveStudentStatusChange,
+  cancelStudentStatusChange,
   createEducationStudent,
   dictionaryOptions,
   exportEducationStudents,
@@ -140,7 +149,7 @@ const eligibleTargetClasses = computed(() => {
 })
 
 const resetChangeForm = () => Object.assign(changeForm, {
-  changeType: '', targetClassId: '', effectiveDate: new Date().toISOString().slice(0, 10), reason: '',
+  changeType: '', targetClassId: '', effectiveDate: todayLocalDate(), reason: '',
 })
 const handleChangeType = () => { changeForm.targetClassId = '' }
 const openChange = row => { selectedStudent.value = row; resetChangeForm(); changeDialog.value = true }
@@ -179,6 +188,12 @@ const rejectChange = async row => {
   ElMessage.success('学籍异动已驳回')
   await openHistory(selectedStudent.value)
 }
+const cancelChange = async row => {
+  await ElMessageBox.confirm('确认取消这笔尚未生效的学籍异动？', '取消学籍异动', { type: 'warning' })
+  await cancelStudentStatusChange(row.id)
+  ElMessage.success('学籍异动已取消')
+  await openHistory(selectedStudent.value)
+}
 const changeTypeLabel = value => changeTypeOptions.value.find(item => item.dictValue === value)?.dictName || value
 const rowActions = [
   { label: '学籍异动', run: openChange, successMessage: false, reload: false },
@@ -206,7 +221,7 @@ const fields = [
   { prop: 'studentNo', label: '学号' },
   { prop: 'studentName', label: '姓名' },
   { prop: 'gender', label: '性别', dictCode: 'COMMON_GENDER' },
-  { prop: 'gradeYear', label: '入学年份', type: 'number' },
+  { prop: 'gradeYear', label: '入学年份', type: 'number', immutableOnEdit: true },
   { prop: 'gradeId', label: '所属年级', lookup: 'grades', labelProp: 'gradeName', immutableOnEdit: true },
   { prop: 'majorId', label: '所属专业', lookup: 'majors', labelProp: 'majorName', immutableOnEdit: true },
   { prop: 'administrativeClassId', label: '行政班', lookup: 'classes', labelProp: 'className', immutableOnEdit: true },

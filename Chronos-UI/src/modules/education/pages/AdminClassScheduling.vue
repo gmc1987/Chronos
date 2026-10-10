@@ -352,6 +352,13 @@
           <el-table-column prop="offeringCode" label="教学班编码" />
           <el-table-column prop="courseName" label="课程" />
           <el-table-column prop="teachingClassName" label="教学班" />
+          <el-table-column label="来源行政班" min-width="160">
+            <template #default="scope">
+              <span v-if="scope.row.offeringMode === 'COMBINED'">合班来源</span>
+              <span v-else-if="scope.row.administrativeClassId">{{ administrativeClasses.find(item => item.id === scope.row.administrativeClassId)?.className || '已绑定' }}</span>
+              <el-tag v-else type="warning">未配置，成员需单独维护</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="teacherName" label="教师" />
           <el-table-column prop="studentCount" label="人数" width="90" />
           <el-table-column prop="weeklyLessons" label="周课时" width="90" />
@@ -544,6 +551,12 @@
           </el-select>
         </el-form-item>
         <el-form-item label="教学班名称"><el-input v-model="offeringForm.teachingClassName" /></el-form-item>
+        <el-form-item v-if="offeringForm.offeringMode !== 'COMBINED'" label="来源行政班">
+          <el-select v-model="offeringForm.administrativeClassId" clearable filterable placeholder="行政班课程请选择来源班级">
+            <el-option v-for="item in availableOfferingClasses" :key="item.id" :label="item.className" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-alert v-if="offeringForm.offeringMode !== 'COMBINED' && !offeringForm.administrativeClassId" type="warning" :closable="false" show-icon title="未绑定来源行政班：转班、留级不会自动同步该教学班成员，请单独维护成员。" />
         <el-form-item label="任课教师">
           <el-select v-model="offeringForm.teacherId" filterable @change="selectTeacher">
             <el-option v-for="teacher in teachers" :key="teacher.id" :label="`${teacher.teacherName}（${teacher.teacherNo}）`" :value="teacher.id" />
@@ -555,7 +568,7 @@
         <el-form-item label="授课周模式"><el-select v-model="offeringForm.weekPattern"><el-option label="每周" value="ALL" /><el-option label="单周" value="ODD" /><el-option label="双周" value="EVEN" /></el-select></el-form-item>
         <el-form-item label="教室类型要求"><el-select v-model="offeringForm.requiredRoomType" clearable><el-option v-for="item in roomTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item label="设备要求"><el-input v-model="offeringForm.requiredEquipmentCodes" placeholder="多个设备编码使用英文逗号分隔" /></el-form-item>
-        <el-form-item label="所属校区"><el-select v-model="offeringForm.campusId" filterable><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="所属校区"><el-select v-model="offeringForm.campusId" filterable @change="handleOfferingCampusChange"><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="offeringDialog = false">取消</el-button><el-button type="primary" @click="saveOffering">保存</el-button></template>
     </el-dialog>
@@ -692,6 +705,7 @@ import ScheduleGrid from '../components/ScheduleGrid.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
+import { todayLocalDate } from '../../../utils/localDate'
 import {
   applyScheduleCandidate,
   batchRetryCourseAdjustmentIncidents,
@@ -789,7 +803,7 @@ const teacherConstraints = ref([])
 const roomConstraints = ref([])
 const occurrences = ref([])
 const dateExceptionHistory = ref([])
-const occurrenceDate = ref(new Date().toISOString().slice(0, 10))
+const occurrenceDate = ref(todayLocalDate())
 const schedule = ref([])
 const quality = ref({})
 const policy = reactive({})
@@ -853,6 +867,8 @@ const orgName = item => item.organizationName || item.orgName || item.name || it
 const selectedTerm = computed(() => terms.value.find(item => item.termCode === semesterCode.value))
 const availableCombinedClasses = computed(() => administrativeClasses.value.filter(item =>
   item.status === 'ACTIVE' && item.campusId === combinedOffering.value?.campusId))
+const availableOfferingClasses = computed(() => administrativeClasses.value.filter(item =>
+  item.status === 'ACTIVE' && item.campusId === offeringForm.campusId))
 const selectedClassroom = computed(() => classroomOptions.value.find(item => item.id === entryForm.classroomId))
 const availablePeriods = computed(() => {
   const schedule = bellSchedules.value.find(item =>
@@ -1246,13 +1262,27 @@ const exportSchedule = async () => saveBlob(
   `课表-${semesterCode.value}.xlsx`,
 )
 const openOffering = (row) => { reset(offeringForm, row ? { ...row } : { studentCount: 30, weeklyLessons: 2, preferredDurationPeriods: 1, weekPattern: 'ALL', status: 'ACTIVE' }); offeringDialog.value = true }
+const handleOfferingCampusChange = () => {
+  if (!availableOfferingClasses.value.some(item => item.id === offeringForm.administrativeClassId)) {
+    offeringForm.administrativeClassId = null
+  }
+}
 const selectCourse = code => {
   offeringForm.courseName = courses.value.find(item => item.courseCode === code)?.courseName || ''
 }
 const selectTeacher = id => {
   offeringForm.teacherName = teachers.value.find(item => item.id === id)?.teacherName || ''
 }
-const saveOffering = async () => { const payload = { ...offeringForm, semesterCode: semesterCode.value }; await (offeringForm.id ? updateCourseOffering(offeringForm.id, payload) : createCourseOffering(payload)); offeringDialog.value = false; ElMessage.success('教学任务已保存'); await loadAll() }
+const saveOffering = async () => {
+  if (offeringForm.offeringMode !== 'COMBINED' && !offeringForm.administrativeClassId) {
+    await ElMessageBox.confirm('未绑定来源行政班。转班、留级时不会自动同步该教学班成员，确认作为独立教学班保存吗？', '确认教学班成员维护方式', { type: 'warning' })
+  }
+  const payload = { ...offeringForm, semesterCode: semesterCode.value }
+  await (offeringForm.id ? updateCourseOffering(offeringForm.id, payload) : createCourseOffering(payload))
+  offeringDialog.value = false
+  ElMessage.success('教学任务已保存')
+  await loadAll()
+}
 const openCombined = async row => {
   combinedOffering.value = row
   try {

@@ -217,6 +217,14 @@ public class AcademicDataController {
 						size == null ? 10 : size)));
 	}
 
+	@GetMapping("/admin/education/administrative-classes/head-teacher-candidates")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:view','education:class:manage')")
+	public ResultData<?> headTeacherCandidates(
+			@RequestParam String campusId,
+			Authentication authentication) {
+		return ok(service.headTeacherCandidates(campusId, dataScopes.resolve(authentication.getName())));
+	}
+
 	@PostMapping("/admin/education/administrative-classes")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:create','education:class:manage')")
 	public ResultData<AdministrativeClass> createAdministrativeClass(

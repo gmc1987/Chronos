@@ -3,7 +3,7 @@
 </template>
 <script setup>
 import AcademicCrudPage from '../components/AcademicCrudPage.vue'
-import { createAdministrativeClass, deleteAdministrativeClass, listAdministrativeClasses, listEducationGrades, listEducationMajors, listEducationTeachers, updateAdministrativeClass } from '../../../api/admin'
+import { createAdministrativeClass, deleteAdministrativeClass, listAdministrativeClasses, listEducationGrades, listEducationMajors, listHeadTeacherCandidates, updateAdministrativeClass } from '../../../api/admin'
 const columns = [
   { prop: 'classCode', label: '班级编码' },
   { prop: 'className', label: '班级名称' },
@@ -24,6 +24,6 @@ const defaults = { status: 'ACTIVE' }
 const lookups = [
   { key: 'grades', loader: listEducationGrades, labelProp: 'gradeName' },
   { key: 'majors', loader: listEducationMajors, labelProp: 'majorName' },
-  { key: 'teachers', loader: listEducationTeachers, labelProp: 'teacherName' },
+  { key: 'teachers', loader: campusId => campusId ? listHeadTeacherCandidates({ campusId }) : Promise.resolve({ data: [] }), dependentOn: 'campusId', labelProp: 'teacherName' },
 ]
 </script>

@@ -16,6 +16,7 @@ import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.CourseCatalogRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.dao.EducationGradeRepository;
 import com.chronos.education.scheduling.dao.MajorRepository;
 import com.chronos.education.scheduling.dao.ParentProfileRepository;
@@ -264,6 +265,23 @@ public class AcademicDataService {
 			grades.findById(command.getGradeId())
 					.orElseThrow(() -> new IllegalArgumentException("年级不存在"));
 		}
+		if (command.getHeadTeacherId() != null && !command.getHeadTeacherId().isBlank()) {
+			var headTeacher = teachers.findById(command.getHeadTeacherId())
+					.orElseThrow(() -> new IllegalArgumentException("班主任教师不存在"));
+			if (!Boolean.TRUE.equals(headTeacher.getEnabled())
+					|| !"ACTIVE".equals(headTeacher.getEmploymentStatus())) {
+				throw new IllegalArgumentException("班主任必须是在岗教师");
+			}
+			String campusId = command.getCampusId();
+			boolean sameCampus = campusId != null && !campusId.isBlank()
+					&& (campusId.equals(headTeacher.getDepartmentId())
+							|| offerings.existsByTeacherIdAndCampusIdIn(headTeacher.getId(), List.of(campusId))
+							|| administrativeClasses.findByHeadTeacherId(headTeacher.getId()).stream()
+									.anyMatch(item -> campusId.equals(item.getCampusId())));
+			if (!sameCampus) {
+				throw new IllegalArgumentException("班主任必须与行政班属于同一校区，请先完成教师归属或任教关系配置");
+			}
+		}
 		return administrativeClasses.save(entity(id, command, administrativeClasses));
 	}
 
@@ -335,14 +353,14 @@ public class AcademicDataService {
 			if (!java.util.Objects.equals(existing.getEnrollmentStatus(), command.getEnrollmentStatus())
 					|| !java.util.Objects.equals(existing.getAdministrativeClassId(), command.getAdministrativeClassId())
 					|| !java.util.Objects.equals(existing.getGradeId(), command.getGradeId())
+					|| !java.util.Objects.equals(existing.getGradeYear(), command.getGradeYear())
 					|| !java.util.Objects.equals(existing.getMajorId(), command.getMajorId())) {
-				throw new IllegalStateException("学籍状态、年级、专业和行政班必须通过学籍异动功能修改");
+				throw new IllegalStateException("学籍状态、入学年份、年级、专业和行政班必须通过学籍异动功能修改");
 			}
 			// 普通档案编辑只更新非学籍字段，防止绕过异动审批覆盖历史关系。
 			existing.setStudentNo(command.getStudentNo());
 			existing.setStudentName(command.getStudentName());
 			existing.setGender(command.getGender());
-			existing.setGradeYear(command.getGradeYear());
 			existing.setPhone(command.getPhone());
 			return students.save(existing);
 		}
@@ -354,8 +372,13 @@ public class AcademicDataService {
 			grades.findById(command.getGradeId())
 					.orElseThrow(() -> new IllegalArgumentException("年级不存在"));
 		}
-		administrativeClasses.findById(command.getAdministrativeClassId())
+		var targetClass = administrativeClasses.findById(command.getAdministrativeClassId())
 				.orElseThrow(() -> new IllegalArgumentException("行政班不存在"));
+		if (!java.util.Objects.equals(command.getGradeId(), targetClass.getGradeId())
+				|| !java.util.Objects.equals(command.getMajorId(), targetClass.getMajorId())
+				|| !java.util.Objects.equals(command.getGradeYear(), targetClass.getGradeYear())) {
+			throw new IllegalArgumentException("学生的入学年份、年级和专业必须与行政班一致");
+		}
 		if (!"ACTIVE".equals(command.getEnrollmentStatus())) {
 			throw new IllegalArgumentException("新建学生的初始学籍状态必须为在读");
 		}
@@ -364,6 +387,25 @@ public class AcademicDataService {
 
 	public List<TeacherAcademicProfile> teachers() {
 		return withAccountStatus(teachers.findAllByOrderByTeacherNo());
+	}
+
+	public List<TeacherAcademicProfile> headTeacherCandidates(String campusId, EducationDataScope scope) {
+		if (campusId == null || campusId.isBlank()) {
+			return List.of();
+		}
+		if (!scope.fullAccess() && !scope.campusIds().contains(campusId)) {
+			throw new IllegalArgumentException("无权查看该校区的班主任候选人");
+		}
+		var eligibleIds = new java.util.HashSet<>(offerings.findDistinctTeacherIdsByCampusIdIn(List.of(campusId)));
+		administrativeClasses.findAll().stream()
+				.filter(item -> campusId.equals(item.getCampusId()) && item.getHeadTeacherId() != null)
+				.map(AdministrativeClass::getHeadTeacherId)
+				.forEach(eligibleIds::add);
+		return withAccountStatus(teachers.findAllByOrderByTeacherNo().stream()
+				.filter(item -> Boolean.TRUE.equals(item.getEnabled())
+						&& "ACTIVE".equals(item.getEmploymentStatus())
+						&& (campusId.equals(item.getDepartmentId()) || eligibleIds.contains(item.getId())))
+				.toList());
 	}
 
 	public Page<TeacherAcademicProfile> teachers(int page, int size) {
@@ -399,8 +441,9 @@ public class AcademicDataService {
 		TeacherAccountProvisioning account = teacherAccounts.find(teacher.getEmployeeId());
 		var binding = bindings.findByProfileTypeAndProfileId("TEACHER", teacher.getId());
 		teacher.setAccountUsername(account == null ? null : account.username());
-		teacher.setAccountStatus(binding.filter(item -> "ACTIVE".equals(item.getStatus())).isPresent()
-				? "ACTIVE" : account == null ? "UNBOUND" : "ACCOUNT_EXISTS");
+		teacher.setAccountStatus(binding.map(item -> "ACTIVE".equals(item.getStatus())
+				? "ACTIVE" : "INACTIVE")
+				.orElse(account == null ? "UNBOUND" : "ACCOUNT_EXISTS"));
 	}
 
 	public Page<TeacherAcademicProfile> teachers(
@@ -655,6 +698,19 @@ public class AcademicDataService {
 		return members.save(restored);
 	}
 
+	/** 校内转班时将学生加入目标行政班关联的普通教学任务。 */
+	@Transactional
+	public TeachingClassMember enrollFromAdministrativeClass(String offeringId, String studentId) {
+		CourseOffering offering = offerings.findById(offeringId)
+				.orElseThrow(() -> new IllegalArgumentException("目标教学任务不存在"));
+		if (!"NORMAL".equals(offering.getOfferingMode())) {
+			throw new IllegalStateException("合班任务须由来源行政班同步成员");
+		}
+		TeachingClassMember member = enrollInternal(offeringId, studentId, false);
+		member.setEnrollmentSource("SOURCE_CLASS");
+		return members.save(member);
+	}
+
 	private TeachingClassMember enrollInternal(
 			String offeringId,
 			String studentId,
@@ -667,7 +723,7 @@ public class AcademicDataService {
 		students.findById(studentId).orElseThrow(() -> new IllegalArgumentException("学生不存在"));
 		TeachingClassMember member = members.findByOfferingIdAndStudentId(offeringId, studentId)
 				.orElseGet(TeachingClassMember::new);
-		if ("ENROLLED".equals(member.getEnrollmentStatus())) {
+		if (member.getId() != null && "ENROLLED".equals(member.getEnrollmentStatus())) {
 			return member;
 		}
 		assertStudentScheduleAvailable(studentId, offeringId);

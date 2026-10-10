@@ -1,6 +1,6 @@
 <template>
   <div class="portal-page">
-    <section class="portal-title"><div><span>APPLICATION CENTER</span><h1>应用中心</h1><p>你能够访问的所有医院协同应用。</p></div><input v-model="keyword" placeholder="搜索应用" /></section>
+    <section class="portal-title"><div><span>APPLICATION CENTER</span><h1>应用中心</h1><p>你能够访问的所有业务应用。</p></div><input v-model="keyword" placeholder="搜索应用" /></section>
     <section v-if="error" class="portal-state portal-state--error">{{ error }}</section>
     <section class="portal-app-grid">
       <article v-for="app in filtered" :key="app.id" class="portal-app-card">

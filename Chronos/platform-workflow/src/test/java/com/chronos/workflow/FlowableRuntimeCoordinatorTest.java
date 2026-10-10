@@ -21,6 +21,8 @@ import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.engine.runtime.ProcessInstanceQuery;
+import org.flowable.task.api.history.HistoricTaskInstance;
+import org.flowable.task.api.history.HistoricTaskInstanceQuery;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.TaskQuery;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +32,7 @@ class FlowableRuntimeCoordinatorTest {
 	private TaskService taskService;
 	private TaskQuery taskQuery;
 	private RuntimeService runtimeService;
+	private HistoryService historyService;
 	private IWorkflowInstanceRepository instances;
 	private IWorkflowTaskRepository tasks;
 	private IWorkflowNodeRepository nodes;
@@ -40,6 +43,7 @@ class FlowableRuntimeCoordinatorTest {
 		taskService = mock(TaskService.class);
 		taskQuery = mock(TaskQuery.class);
 		runtimeService = mock(RuntimeService.class);
+		historyService = mock(HistoryService.class);
 		instances = mock(IWorkflowInstanceRepository.class);
 		tasks = mock(IWorkflowTaskRepository.class);
 		nodes = mock(IWorkflowNodeRepository.class);
@@ -49,7 +53,7 @@ class FlowableRuntimeCoordinatorTest {
 		coordinator = new FlowableRuntimeCoordinator(
 				runtimeService,
 				taskService,
-				mock(HistoryService.class),
+				historyService,
 				instances,
 				tasks,
 				mock(IWorkflowInstanceParticipantRepository.class),
@@ -57,6 +61,36 @@ class FlowableRuntimeCoordinatorTest {
 				mock(IWorkflowDelegationRepository.class),
 				nodes,
 				mock(WorkflowAssigneeResolver.class));
+	}
+
+	@Test
+	void synchronizeCancelsLosingAnyApprovalTask() {
+		WorkflowTask sibling = task();
+		sibling.setStatus("PENDING");
+		when(taskQuery.processInstanceId("engine-instance-1")).thenReturn(taskQuery);
+		when(taskQuery.list()).thenReturn(java.util.List.of());
+		when(tasks.findByInstanceIdOrderByCreateTimeAsc("instance-1"))
+				.thenReturn(java.util.List.of(sibling));
+		HistoricTaskInstanceQuery historicQuery = mock(HistoricTaskInstanceQuery.class);
+		HistoricTaskInstance historicTask = mock(HistoricTaskInstance.class);
+		when(historyService.createHistoricTaskInstanceQuery()).thenReturn(historicQuery);
+		when(historicQuery.taskId("engine-task-1")).thenReturn(historicQuery);
+		when(historicQuery.singleResult()).thenReturn(historicTask);
+		when(historicTask.getDeleteReason()).thenReturn("MI_END");
+		ProcessInstanceQuery processQuery = mock(ProcessInstanceQuery.class);
+		when(runtimeService.createProcessInstanceQuery()).thenReturn(processQuery);
+		when(processQuery.processInstanceId("engine-instance-1")).thenReturn(processQuery);
+		when(processQuery.singleResult()).thenReturn(mock(ProcessInstance.class));
+		WorkflowInstance instance = new WorkflowInstance();
+		instance.setId("instance-1");
+		instance.setEngineType("FLOWABLE");
+		instance.setEngineInstanceId("engine-instance-1");
+		instance.setStatus("RUNNING");
+
+		coordinator.synchronize(instance);
+
+		verify(tasks).save(argThat(task -> "CANCELLED".equals(task.getStatus())
+				&& task.getCompletedAt() != null));
 	}
 
 	@Test

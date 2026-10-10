@@ -1,49 +1,104 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>4.0.7</version><relativePath/></parent>
-  <groupId>com.chronos</groupId><artifactId>chronos-platform</artifactId><version>0.1.0-SNAPSHOT</version><packaging>pom</packaging>
-  <name>Chronos Industry Platform</name>
-  <properties><java.version>25</java.version><spring-ai.version>2.0.0</spring-ai.version><jjwt.version>0.11.5</jjwt.version><flowable.version>8.0.0</flowable.version></properties>
-  <modules>
-    <module>platform-common</module><module>platform-audit</module><module>platform-iam</module><module>chronos-scheduling</module>
-    <module>platform-form</module><module>platform-workflow</module><module>platform-file</module><module>platform-message</module>
-    <module>platform-industry</module><module>industry-hospital-template</module><module>industry-education-template</module>
-    <module>education-class-scheduling</module>
-    <module>hospital-oa</module><module>ai-gateway</module><module>agent-runtime</module><module>policy-engine</module>
-    <module>knowledge-center</module><module>integration-center</module><module>hospital-app</module><module>education-app</module>
-  </modules>
-  <dependencyManagement><dependencies><dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-bom</artifactId><version>${spring-ai.version}</version><type>pom</type><scope>import</scope></dependency><dependency><groupId>org.flowable</groupId><artifactId>flowable-bom</artifactId><version>${flowable.version}</version><type>pom</type><scope>import</scope></dependency></dependencies></dependencyManagement>
-  <build>
-    <pluginManagement>
-      <plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-surefire-plugin</artifactId>
-          <configuration>
-            <!-- -am runs upstream modules that do not contain the selected test. -->
-            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
-          </configuration>
-        </plugin>
-        <plugin>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-maven-plugin</artifactId>
-          <!--
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>4.0.7</version>
+		<relativePath />
+	</parent>
+	<groupId>com.chronos</groupId>
+	<artifactId>chronos-platform</artifactId>
+	<version>0.1.0-SNAPSHOT</version>
+	<packaging>pom</packaging>
+	<name>Chronos Industry Platform</name>
+	<properties>
+		<java.version>25</java.version>
+		<spring-ai.version>2.0.0</spring-ai.version>
+		<jjwt.version>0.11.5</jjwt.version>
+		<flowable.version>8.0.0</flowable.version>
+	</properties>
+	<modules>
+		<module>platform-common</module>
+		<module>platform-audit</module>
+		<module>platform-iam</module>
+		<module>chronos-scheduling</module>
+		<module>platform-form</module>
+		<module>platform-workflow</module>
+		<module>platform-file</module>
+		<module>platform-message</module>
+		<module>platform-industry</module>
+		<module>industry-hospital-template</module>
+		<module>industry-education-template</module>
+		<module>education-class-scheduling</module>
+		<module>hospital-oa</module>
+		<module>ai-gateway</module>
+		<module>agent-runtime</module>
+		<module>policy-engine</module>
+		<module>knowledge-center</module>
+		<module>integration-center</module>
+		<module>hospital-app</module>
+		<module>education-app</module>
+	</modules>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.ai</groupId>
+				<artifactId>spring-ai-bom</artifactId>
+				<version>${spring-ai.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.flowable</groupId>
+				<artifactId>flowable-bom</artifactId>
+				<version>${flowable.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<configuration>
+						<!-- -am runs upstream modules that do not contain the
+						selected test. -->
+						<failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-maven-plugin</artifactId>
+					<!--
             根工程和平台模块都不是可启动应用。
             当命令携带 -am 时，先跳过这些模块的 spring-boot:run，
             由具体的行业应用模块显式开启启动目标。
           -->
-          <configuration>
-            <skip>true</skip>
-          </configuration>
-        </plugin>
-      </plugins>
-    </pluginManagement>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
-        <configuration><annotationProcessorPaths><path><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId></path></annotationProcessorPaths></configuration>
-      </plugin>
-    </plugins>
-  </build>
+					<configuration>
+						<skip>true</skip>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<annotationProcessorPaths>
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
 </project>

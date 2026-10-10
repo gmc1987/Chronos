@@ -473,6 +473,7 @@ export const createEducationMajor = (payload) => http.post('/admin/education/maj
 export const updateEducationMajor = (id, payload) => http.put(`/admin/education/majors/${id}`, payload)
 export const deleteEducationMajor = (id) => http.delete(`/admin/education/majors/${id}`)
 export const listAdministrativeClasses = (params) => http.get(`/admin/education/administrative-classes?${qs(params)}`)
+export const listHeadTeacherCandidates = (params) => http.get(`/admin/education/administrative-classes/head-teacher-candidates?${qs(params)}`)
 export const createAdministrativeClass = (payload) => http.post('/admin/education/administrative-classes', payload)
 export const updateAdministrativeClass = (id, payload) => http.put(`/admin/education/administrative-classes/${id}`, payload)
 export const deleteAdministrativeClass = (id) => http.delete(`/admin/education/administrative-classes/${id}`)
@@ -481,6 +482,7 @@ export const exportEducationStudents = () => http.download('/admin/education/stu
 export const createEducationStudent = (payload) => http.post('/admin/education/students', payload)
 export const updateEducationStudent = (id, payload) => http.put(`/admin/education/students/${id}`, payload)
 export const listStudentStatusChanges = (studentId, params = {}) => http.get(`/admin/education/student-status-changes?${qs({ studentId, ...params })}`)
+export const cancelStudentStatusChange = (id) => http.post(`/admin/education/student-status-changes/${id}/cancel`)
 export const requestStudentStatusChange = (studentId, payload) => http.post(`/admin/education/student-status-changes/${studentId}`, payload)
 export const approveStudentStatusChange = (id, comment = '') =>
   http.post(`/admin/education/student-status-changes/${id}/approve`, {
