@@ -73,7 +73,8 @@ public class LeaveRecordService {
 		form.put("startDate", start.toString());
 		form.put("endDate", end.toString());
 		form.put("reason", reason);
-		form.put("applicantType", leaveIdentity.type());
+		// The chosen flow and the persisted leave record carry applicant identity.
+		// Keep the workflow payload limited to fields declared in its main form.
 		if ("STUDENT".equals(leaveIdentity.type())) form.put("studentId", leaveIdentity.id());
 		String flowCode = "STUDENT".equals(leaveIdentity.type())
 				? "EDU_STUDENT_LEAVE_APPROVAL" : "EDU_TEACHER_LEAVE_APPROVAL";

@@ -5,6 +5,58 @@
 
 BEGIN;
 
+-- Seed IDs are stable for a fresh database. If the same business definition
+-- already exists under a generated UUID, resolve its actual ID before writing
+-- child rows; otherwise the children would silently attach to orphan IDs.
+CREATE OR REPLACE FUNCTION pg_temp.demo_form_id(seed_id text) RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT id FROM form_definition
+  WHERE form_key = CASE seed_id
+    WHEN 'demo-form-leave' THEN 'OA_LEAVE'
+    WHEN 'demo-form-travel' THEN 'OA_TRAVEL'
+    WHEN 'demo-form-purchase' THEN 'OA_PURCHASE'
+  END AND version = 'v1'
+$$;
+
+CREATE OR REPLACE FUNCTION pg_temp.demo_flow_id(seed_id text) RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT id FROM wf_definition
+  WHERE flow_code = CASE seed_id
+    WHEN 'demo-flow-leave' THEN 'OA_LEAVE_APPROVAL'
+    WHEN 'demo-flow-travel' THEN 'OA_TRAVEL_APPROVAL'
+    WHEN 'demo-flow-purchase' THEN 'OA_PURCHASE_APPROVAL'
+  END AND version = 'v1'
+$$;
+
+CREATE OR REPLACE FUNCTION pg_temp.demo_field_permissions(raw_json text) RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT replace(replace(replace(raw_json,
+    'demo-form-leave.', pg_temp.demo_form_id('demo-form-leave') || '.'),
+    'demo-form-travel.', pg_temp.demo_form_id('demo-form-travel') || '.'),
+    'demo-form-purchase.', pg_temp.demo_form_id('demo-form-purchase') || '.')
+$$;
+
+-- Abort rather than overwrite a real account, form or published workflow that
+-- happens to use one of the demonstration business keys.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM t_admin_user
+    WHERE username IN ('wf.admin','zhangsan','lisi','wanghr','zhaofin','sunfin','qianbuy')
+      AND create_by IS DISTINCT FROM 'demo_seed'
+  ) OR EXISTS (
+    SELECT 1 FROM form_definition
+    WHERE form_key IN ('OA_LEAVE','OA_TRAVEL','OA_PURCHASE')
+      AND version = 'v1' AND create_by IS DISTINCT FROM 'demo_seed'
+  ) OR EXISTS (
+    SELECT 1 FROM wf_definition
+    WHERE flow_code IN ('OA_LEAVE_APPROVAL','OA_TRAVEL_APPROVAL','OA_PURCHASE_APPROVAL')
+      AND version = 'v1' AND create_by IS DISTINCT FROM 'demo_seed'
+  ) THEN
+    RAISE EXCEPTION 'Demo account, form or workflow key is already owned by non-demo data';
+  END IF;
+END $$;
+
 -- ---------------------------------------------------------------------------
 -- 1. 权限与角色
 -- ---------------------------------------------------------------------------
@@ -127,7 +179,10 @@ VALUES
 ON CONFLICT (form_key,version) DO UPDATE SET form_name=EXCLUDED.form_name,status='PUBLISHED',description=EXCLUDED.description,last_update_by='demo_seed',last_update_time=now();
 
 INSERT INTO form_field (id,form_id,field_key,field_label,field_type,sort_order,required,options_json,create_by,create_time)
-VALUES
+SELECT id, pg_temp.demo_form_id(form_id), field_key, field_label, field_type,
+       sort_order, required, lo_from_bytea(0, convert_to(options_json, 'UTF8')),
+       create_by, create_time
+FROM (VALUES
  ('demo-fld-leave-type','demo-form-leave','leaveType','请假类型','SELECT',10,true,'[{"label":"年假","value":"ANNUAL"},{"label":"病假","value":"SICK"},{"label":"事假","value":"PERSONAL"}]','demo_seed',now()),
  ('demo-fld-leave-start','demo-form-leave','startDate','开始日期','DATE',20,true,'[]','demo_seed',now()),
  ('demo-fld-leave-end','demo-form-leave','endDate','结束日期','DATE',30,true,'[]','demo_seed',now()),
@@ -143,21 +198,45 @@ VALUES
  ('demo-fld-buy-amount','demo-form-purchase','amount','采购总额','NUMBER',30,true,'[]','demo_seed',now()),
  ('demo-fld-buy-supplier','demo-form-purchase','supplier','建议供应商','TEXT',40,false,'[]','demo_seed',now()),
  ('demo-fld-buy-reason','demo-form-purchase','reason','采购原因','TEXTAREA',50,true,'[]','demo_seed',now())
+) AS fields(id,form_id,field_key,field_label,field_type,sort_order,required,options_json,create_by,create_time)
 ON CONFLICT (form_id,field_key) DO UPDATE SET field_label=EXCLUDED.field_label,field_type=EXCLUDED.field_type,sort_order=EXCLUDED.sort_order,required=EXCLUDED.required,options_json=EXCLUDED.options_json,last_update_by='demo_seed',last_update_time=now();
 
 -- ---------------------------------------------------------------------------
 -- 5. 三套已发布 OA 流程定义
 -- ---------------------------------------------------------------------------
 INSERT INTO wf_definition (id,flow_code,flow_name,category,version,description,entry_node_key,status,tags,config_json,main_form_id,manager_user,starter_scope_json,ai_assist_enabled,published_at,create_by,create_time)
-VALUES
- ('demo-flow-leave','OA_LEAVE_APPROVAL','请假审批','HR','v1','3天及以下部门负责人审批，超过3天追加HR审批','start','PUBLISHED','OA,请假,演示','{}','demo-form-leave','wf.admin','{"type":"ALL"}',false,now(),'demo_seed',now()),
- ('demo-flow-travel','OA_TRAVEL_APPROVAL','差旅审批','ADMIN','v1','部门负责人审批后由任意一名财务审批','start','PUBLISHED','OA,差旅,演示','{}','demo-form-travel','wf.admin','{"type":"ALL"}',false,now(),'demo_seed',now()),
- ('demo-flow-purchase','OA_PURCHASE_APPROVAL','采购审批','PURCHASE','v1','低额采购走采购审批，高额采购追加财务全员会签','start','PUBLISHED','OA,采购,演示','{}','demo-form-purchase','wf.admin','{"type":"ALL"}',false,now(),'demo_seed',now())
+SELECT id, flow_code, flow_name, category, version, description,
+       entry_node_key, status, tags,
+       lo_from_bytea(0, convert_to(config_json, 'UTF8')),
+       main_form_id, manager_user,
+       lo_from_bytea(0, convert_to(starter_scope_json, 'UTF8')),
+       ai_assist_enabled, published_at, create_by, create_time
+FROM (VALUES
+ ('demo-flow-leave','OA_LEAVE_APPROVAL','请假审批','HR','v1','3天及以下部门负责人审批，超过3天追加HR审批','start','PUBLISHED','OA,请假,演示','{}',pg_temp.demo_form_id('demo-form-leave'),'wf.admin','{"type":"ALL"}',false,now(),'demo_seed',now()),
+ ('demo-flow-travel','OA_TRAVEL_APPROVAL','差旅审批','ADMIN','v1','部门负责人审批后由任意一名财务审批','start','PUBLISHED','OA,差旅,演示','{}',pg_temp.demo_form_id('demo-form-travel'),'wf.admin','{"type":"ALL"}',false,now(),'demo_seed',now()),
+ ('demo-flow-purchase','OA_PURCHASE_APPROVAL','采购审批','PURCHASE','v1','低额采购走采购审批，高额采购追加财务全员会签','start','PUBLISHED','OA,采购,演示','{}',pg_temp.demo_form_id('demo-form-purchase'),'wf.admin','{"type":"ALL"}',false,now(),'demo_seed',now())
+) AS flows(id,flow_code,flow_name,category,version,description,entry_node_key,status,tags,config_json,main_form_id,manager_user,starter_scope_json,ai_assist_enabled,published_at,create_by,create_time)
 ON CONFLICT (flow_code,version) DO UPDATE SET flow_name=EXCLUDED.flow_name,status='PUBLISHED',main_form_id=EXCLUDED.main_form_id,entry_node_key='start',description=EXCLUDED.description,last_update_by='demo_seed',last_update_time=now();
+
+INSERT INTO wf_definition_acl (id,definition_id,subject_type,subject_id,action,enabled,create_by,create_time)
+SELECT gen_random_uuid()::text, pg_temp.demo_flow_id(flow_id), 'ROLE', 'WORKFLOW_USER', 'START', true, 'demo_seed', now()
+FROM (VALUES ('demo-flow-leave'),('demo-flow-travel'),('demo-flow-purchase')) AS flows(flow_id)
+ON CONFLICT (definition_id,subject_type,subject_id,action) DO UPDATE SET enabled=true;
+
+INSERT INTO wf_definition_acl (id,definition_id,subject_type,subject_id,action,enabled,create_by,create_time)
+SELECT gen_random_uuid()::text, pg_temp.demo_flow_id(flow_id), 'USER', 'wf.admin', 'MANAGE', true, 'demo_seed', now()
+FROM (VALUES ('demo-flow-leave'),('demo-flow-travel'),('demo-flow-purchase')) AS flows(flow_id)
+ON CONFLICT (definition_id,subject_type,subject_id,action) DO UPDATE SET enabled=true;
 
 -- 节点字段权限约定：发起人可编辑；审批节点主表单只读。
 INSERT INTO wf_node (id,flow_id,node_key,node_name,node_type,executor,timeout_sec,retry_max,retry_interval_sec,input_schema,output_schema,properties_json,additional_form_ids,field_permissions_json,create_by,create_time)
-VALUES
+SELECT id, pg_temp.demo_flow_id(flow_id), node_key, node_name, node_type,
+       executor, timeout_sec, retry_max, retry_interval_sec, NULL::oid, NULL::oid,
+       lo_from_bytea(0, convert_to(properties_json, 'UTF8')),
+       lo_from_bytea(0, convert_to(additional_form_ids, 'UTF8')),
+       lo_from_bytea(0, convert_to(pg_temp.demo_field_permissions(field_permissions_json), 'UTF8')),
+       create_by, create_time
+FROM (VALUES
  ('demo-node-leave-start','demo-flow-leave','start','开始','START','',0,0,0,'','','{"position":{"x":80,"y":180}}','[]','{"permissions":{},"required":{}}','demo_seed',now()),
  ('demo-node-leave-manager','demo-flow-leave','manager','部门负责人审批','APPROVAL','',0,0,0,'','','{"position":{"x":260,"y":180},"assigneeMode":"INITIATOR_MANAGER","assigneeValue":"","approvalMode":"SINGLE","dueHours":24,"returnPolicy":"PREVIOUS"}','[]','{"permissions":{"demo-form-leave.leaveType":"READ","demo-form-leave.startDate":"READ","demo-form-leave.endDate":"READ","demo-form-leave.days":"READ","demo-form-leave.reason":"READ"},"required":{}}','demo_seed',now()),
  ('demo-node-leave-gateway','demo-flow-leave','days_gate','请假天数判断','CONDITION','',0,0,0,'','','{"position":{"x":440,"y":180}}','[]','{"permissions":{},"required":{}}','demo_seed',now()),
@@ -175,12 +254,15 @@ VALUES
  ('demo-node-buy-proc','demo-flow-purchase','procurement','采购审批','APPROVAL','',0,0,0,'','','{"position":{"x":610,"y":270},"assigneeMode":"ROLE","assigneeValue":"PROCUREMENT_APPROVER","approvalMode":"SINGLE","dueHours":48,"returnPolicy":"PREVIOUS"}','[]','{"permissions":{"demo-form-purchase.itemName":"READ","demo-form-purchase.quantity":"READ","demo-form-purchase.amount":"READ","demo-form-purchase.supplier":"EDIT","demo-form-purchase.reason":"READ"},"required":{}}','demo_seed',now()),
  ('demo-node-buy-fin','demo-flow-purchase','finance_all','财务会签','APPROVAL','',0,0,0,'','','{"position":{"x":610,"y":90},"assigneeMode":"ROLE","assigneeValue":"FINANCE_APPROVER","approvalMode":"ALL","dueHours":48,"returnPolicy":"PREVIOUS"}','[]','{"permissions":{"demo-form-purchase.itemName":"READ","demo-form-purchase.quantity":"READ","demo-form-purchase.amount":"READ","demo-form-purchase.supplier":"READ","demo-form-purchase.reason":"READ"},"required":{}}','demo_seed',now()),
  ('demo-node-buy-end','demo-flow-purchase','end','结束','END','',0,0,0,'','','{"position":{"x":820,"y":180}}','[]','{"permissions":{},"required":{}}','demo_seed',now())
+) AS nodes(id,flow_id,node_key,node_name,node_type,executor,timeout_sec,retry_max,retry_interval_sec,input_schema,output_schema,properties_json,additional_form_ids,field_permissions_json,create_by,create_time)
 ON CONFLICT (flow_id,node_key) DO UPDATE SET node_name=EXCLUDED.node_name,node_type=EXCLUDED.node_type,properties_json=EXCLUDED.properties_json,additional_form_ids=EXCLUDED.additional_form_ids,field_permissions_json=EXCLUDED.field_permissions_json,last_update_by='demo_seed',last_update_time=now();
 
 -- 重复执行前只删除本演示流程的连线，避免 wf_edge 没有业务唯一约束造成重复。
-DELETE FROM wf_edge WHERE flow_id IN ('demo-flow-leave','demo-flow-travel','demo-flow-purchase');
+DELETE FROM wf_edge WHERE flow_id IN (pg_temp.demo_flow_id('demo-flow-leave'),pg_temp.demo_flow_id('demo-flow-travel'),pg_temp.demo_flow_id('demo-flow-purchase'));
 INSERT INTO wf_edge (id,flow_id,from_node_key,to_node_key,condition_expr,is_default,create_by,create_time)
-VALUES
+SELECT id, pg_temp.demo_flow_id(flow_id), from_node_key, to_node_key,
+       condition_expr, is_default, create_by, create_time
+FROM (VALUES
  ('demo-edge-leave-1','demo-flow-leave','start','manager','',false,'demo_seed',now()),
  ('demo-edge-leave-2','demo-flow-leave','manager','days_gate','',false,'demo_seed',now()),
  ('demo-edge-leave-3','demo-flow-leave','days_gate','hr','days > 3',false,'demo_seed',now()),
@@ -194,7 +276,8 @@ VALUES
  ('demo-edge-buy-3','demo-flow-purchase','amount_gate','finance_all','amount >= 10000',false,'demo_seed',now()),
  ('demo-edge-buy-4','demo-flow-purchase','amount_gate','procurement','',true,'demo_seed',now()),
  ('demo-edge-buy-5','demo-flow-purchase','finance_all','procurement','',false,'demo_seed',now()),
- ('demo-edge-buy-6','demo-flow-purchase','procurement','end','',false,'demo_seed',now());
+ ('demo-edge-buy-6','demo-flow-purchase','procurement','end','',false,'demo_seed',now())
+) AS edges(id,flow_id,from_node_key,to_node_key,condition_expr,is_default,create_by,create_time);
 
 COMMIT;
 

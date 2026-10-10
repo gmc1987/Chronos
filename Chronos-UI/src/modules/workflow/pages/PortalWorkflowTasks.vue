@@ -69,7 +69,9 @@
           <el-table-column prop="flowName" label="流程" />
           <el-table-column prop="businessKey" label="业务编号" />
           <el-table-column prop="nodeName" label="节点" />
-          <el-table-column prop="status" label="结果" width="130" />
+          <el-table-column label="结果" width="130">
+            <template #default="{ row }">{{ taskStatusText(row.status) }}</template>
+          </el-table-column>
           <el-table-column prop="comment" label="意见" />
           <AdaptiveActionColumn label="操作" width="90">
             <template #default="{ row }"><el-button link @click="openForm(row)">查看</el-button></template>
@@ -81,7 +83,9 @@
         <el-table :data="initiated" v-loading="loading">
           <el-table-column prop="flowName" label="流程" />
           <el-table-column prop="businessKey" label="业务编号" />
-          <el-table-column prop="status" label="状态" width="130" />
+          <el-table-column label="状态" width="130">
+            <template #default="{ row }">{{ instanceStatusText(row.status) }}</template>
+          </el-table-column>
           <el-table-column prop="currentNodeKey" label="当前节点" />
           <el-table-column prop="createTime" label="发起时间" width="190" />
           <AdaptiveActionColumn label="操作" width="210">
@@ -209,6 +213,8 @@ const openForm = row => row.flowCode === 'EDU_GRADEBOOK_REVIEW'
 const openInstance = row => router.push(`/portal/workflow-instances/${row.id}/forms`)
 const slaText = status => ({ NORMAL: '正常', DUE_SOON: '即将到期', OVERDUE: '已逾期', ESCALATED: '已升级' }[status] || '正常')
 const slaType = status => ({ DUE_SOON: 'warning', OVERDUE: 'danger', ESCALATED: 'danger' }[status] || 'success')
+const taskStatusText = status => ({ APPROVED: '已通过', REJECTED: '已拒绝', RETURNED: '已退回', CANCELLED: '已取消', COMPLETED: '已完成' }[status] || status || '未知')
+const instanceStatusText = status => ({ RUNNING: '审批中', COMPLETED: '已完成', REJECTED: '已拒绝', WITHDRAWN: '已撤回', CANCELLED: '已取消', TERMINATED: '已终止' }[status] || status || '未知')
 
 const claim = async row => { await claimWorkflowTask(row.id); ElMessage.success('任务认领成功'); await load() }
 const approve = async row => {
