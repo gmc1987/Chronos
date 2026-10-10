@@ -12,15 +12,22 @@ struct ChronosMobileApp: App {
     let session = ChronosSession()
     @Published var loggedIn = false
     @Published var roles: [Role] = []
+    @Published var profileTypes: Set<String> = []
+    @Published var permissions: Set<String> = []
+    @Published var displayName = ""
     @Published var error: String?
     @Published var selectedRole: Role?
     @Published var isLoggingIn = false
     init() {
         Task {
             if await session.restorePersisted() != nil {
-                roles = Self.loadRoles()
-                selectedRole = roles.first
-                loggedIn = !roles.isEmpty
+                do {
+                    try await loadPortalIdentity(fallbackRoles: Self.loadRoles())
+                    loggedIn = true
+                } catch {
+                    await session.clear()
+                    Self.saveRoles([])
+                }
             }
         }
     }
@@ -35,10 +42,39 @@ struct ChronosMobileApp: App {
             roles = payload.roles ?? []
             Self.saveRoles(roles)
             selectedRole = roles.first
+            permissions = Set((payload.permissions ?? []).compactMap(\.permissionCode))
+            try await loadPortalIdentity(fallbackRoles: roles)
             loggedIn = true
         } catch let loginError { error = loginError.localizedDescription }
     }
-    func logout() { Task { await session.revoke() }; loggedIn = false; roles = []; selectedRole = nil; error = nil }
+    func logout() {
+        Task { await session.revoke() }
+        loggedIn = false
+        roles = []
+        profileTypes = []
+        permissions = []
+        displayName = ""
+        selectedRole = nil
+        error = nil
+        Self.saveRoles([])
+    }
+
+    private func loadPortalIdentity(fallbackRoles: [Role]) async throws {
+        let bootstrap = try await session.get("/portal/bootstrap", as: PortalBootstrap.self)
+        displayName = bootstrap.user.displayName ?? bootstrap.user.username
+        permissions = Set(bootstrap.user.permissions)
+        profileTypes = Set(
+            bootstrap.contributions["DATA"]?.data?.profileTypes?
+                .map { $0.uppercased() } ?? []
+        )
+        if roles.isEmpty {
+            roles = fallbackRoles.isEmpty
+                ? bootstrap.user.roles.map { Role(roleName: $0, roleCode: nil) }
+                : fallbackRoles
+            selectedRole = roles.first
+            Self.saveRoles(roles)
+        }
+    }
     private static func saveRoles(_ value: [Role]) {
         UserDefaults.standard.set(try? JSONEncoder().encode(value), forKey: "chronos.mobile.roles")
     }
@@ -323,15 +359,22 @@ struct PortalView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         TabView {
-            ForEach(features(for: model.selectedRole), id: \.path) { feature in
+            ForEach(features, id: \.path) { feature in
                 FeatureView(title: feature.title, path: feature.path)
                     .tabItem { Label(feature.title, systemImage: feature.icon) }
             }
             NavigationStack {
                 Form {
-                    if model.roles.count > 1 {
-                        Picker("当前身份", selection: Binding(get: { model.selectedRole ?? model.roles[0] }, set: { model.selectedRole = $0 })) {
-                            ForEach(model.roles, id: \.id) { role in Text(role.displayName).tag(role) }
+                    if !model.displayName.isEmpty {
+                        Section("账号") {
+                            LabeledContent("姓名", value: model.displayName)
+                        }
+                    }
+                    if !model.roles.isEmpty {
+                        Section("系统角色") {
+                            ForEach(model.roles, id: \.id) { role in
+                                Text(role.displayName)
+                            }
                         }
                     }
                     Section { Button("退出登录", role: .destructive, action: model.logout) }
@@ -339,15 +382,35 @@ struct PortalView: View {
             }.tabItem { Label("我的", systemImage: "person") }
         }
     }
-    private func features(for role: Role?) -> [Feature] {
-        switch role?.kind {
-        case .teacher:
-            return [Feature("教学中心", "/portal/education/teaching-center", "book"), Feature("课表", "/portal/education/schedule", "calendar"), Feature("通知", "/portal/education/class-notices", "bell")]
-        case .parent:
-            return [Feature("孩子", "/portal/education/family/children", "person.2"), Feature("家校通知", "/portal/education/family/notices", "bell"), Feature("成绩", "/portal/education/grades", "graduationcap")]
-        default:
-            return [Feature("成绩", "/portal/education/grades", "graduationcap"), Feature("课表", "/portal/education/schedule", "calendar"), Feature("作业", "/portal/education/homework", "checklist"), Feature("通知", "/portal/education/class-notices", "bell")]
+    private var features: [Feature] {
+        if model.profileTypes.contains("TEACHER") {
+            return [
+                Feature("课表", "/portal/education/schedule", "calendar"),
+                Feature("会议", "/portal/education/meetings", "person.3"),
+                Feature("监考", "/portal/education/exam/my-invigilations", "checkmark.seal"),
+                Feature("通知", "/portal/education/class-notices", "bell"),
+            ]
         }
+        if model.profileTypes.contains("PARENT") {
+            return [
+                Feature("孩子", "/portal/education/family/children", "person.2"),
+                Feature("家校通知", "/portal/education/family/notices", "bell"),
+                Feature("班级通知", "/portal/education/class-notices", "megaphone"),
+            ]
+        }
+        if model.profileTypes.contains("STUDENT") {
+            return [
+                Feature("课表", "/portal/education/schedule", "calendar"),
+                Feature("成绩", "/portal/education/grades", "graduationcap"),
+                Feature("考试", "/portal/education/exam/my-exams", "doc.text"),
+                Feature("通知", "/portal/education/class-notices", "bell"),
+            ]
+        }
+        return [
+            Feature("门户", "/portal/bootstrap", "rectangle.grid.2x2"),
+            Feature("应用", "/portal/applications", "square.grid.2x2"),
+            Feature("公告", "/publications", "megaphone"),
+        ]
     }
 }
 
@@ -404,11 +467,4 @@ struct AnyCodable: Decodable, CustomStringConvertible {
 private extension Role {
     var id: String { roleCode ?? roleName ?? "role" }
     var displayName: String { roleName ?? roleCode ?? "门户用户" }
-    var kind: RoleKind {
-        let value = (roleCode ?? roleName ?? "").lowercased()
-        if value.contains("teacher") || value.contains("教师") { return .teacher }
-        if value.contains("parent") || value.contains("家长") { return .parent }
-        return .student
-    }
 }
-private enum RoleKind { case teacher, student, parent }
