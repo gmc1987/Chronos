@@ -13,6 +13,49 @@ public struct SessionTokens: Codable, Sendable { public let accessToken: String;
 public struct Role: Codable, Hashable, Sendable { public let roleName: String?; public let roleCode: String? }
 public struct LoginPayload: Codable, Sendable { public let accessToken: String; public let refreshToken: String?; public let roles: [Role]?; public let permissions: [Permission]? }
 public struct Permission: Codable, Sendable { public let permissionCode: String? }
+public struct PortalBootstrap: Decodable, Sendable {
+    public let user: PortalUserContext
+    public let applications: [PortalApplication]
+    public let contributions: [String: PortalContribution]
+}
+public struct PortalUserContext: Decodable, Sendable {
+    public let username: String
+    public let displayName: String?
+    public let employeeId: String?
+    public let roles: [String]
+    public let permissions: [String]
+}
+public struct PortalApplication: Decodable, Sendable {
+    public let id: String
+    public let name: String
+    public let description: String?
+    public let routePath: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case appName
+        case description
+        case routePath
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+            ?? container.decodeIfPresent(String.self, forKey: .appName)
+            ?? "应用"
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        routePath = try container.decode(String.self, forKey: .routePath)
+    }
+}
+public struct PortalContribution: Decodable, Sendable {
+    public let available: Bool
+    public let data: PortalContributionData?
+}
+public struct PortalContributionData: Decodable, Sendable {
+    public let profileTypes: [String]?
+}
 public enum ChronosAPIError: Error, LocalizedError {
     case invalidResponse, server(String)
     public var errorDescription: String? { switch self { case .invalidResponse: return "服务器响应无效"; case .server(let message): return message } }
