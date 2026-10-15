@@ -52,12 +52,30 @@ class MeetingCenterServiceTest {
 	@Mock
 	private MeetingNotificationService notifications;
 	@Mock
+	private CalendarIntegrationService calendar;
+	@Mock
 	private IAuditLogService auditLogs;
 	@Mock
 	private EntityManager entityManager;
 
 	@InjectMocks
 	private MeetingCenterService service;
+
+	@Test
+	void remindersOnlyTargetPublishedMeetingOrganizerAndParticipants() {
+		LocalDateTime now = LocalDateTime.of(2026, 10, 15, 9, 0);
+		Meeting meeting = publishedMeeting(now.plusHours(2), now.plusHours(3));
+		meeting.setOrganizerUsername("organizer");
+		MeetingParticipant participant = participant("teacher01");
+		when(meetings.findByStatusAndStartTimeBetweenOrderByStartTimeAsc(
+				"PUBLISHED", now, now.plusHours(24))).thenReturn(List.of(meeting));
+		when(participants.findByMeetingIdOrderByCreateTimeAsc(meeting.getId()))
+				.thenReturn(List.of(participant));
+
+		assertThat(service.enqueueUpcomingReminders(now)).isEqualTo(2);
+		verify(notifications).reminder(meeting, "organizer", "24H");
+		verify(notifications).reminder(meeting, "teacher01", "24H");
+	}
 
 	@Test
 	void invitedParticipantCanCheckInWithinWindow() {

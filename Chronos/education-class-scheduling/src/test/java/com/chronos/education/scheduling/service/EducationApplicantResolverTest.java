@@ -5,24 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.chronos.Idao.IAdminUserRepository;
-import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
-import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
-import com.chronos.model.pojo.AdminUser;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class EducationApplicantResolverTest {
 	private final EducationUserBindingRepository bindings = mock(EducationUserBindingRepository.class);
-	private final IAdminUserRepository users = mock(IAdminUserRepository.class);
-	private final TeacherAcademicProfileRepository teachers = mock(TeacherAcademicProfileRepository.class);
 	private final StudentGuardianRepository guardians = mock(StudentGuardianRepository.class);
-	private final EducationApplicantResolver resolver = new EducationApplicantResolver(bindings, users, teachers);
+	private final EducationApplicantResolver resolver = new EducationApplicantResolver(bindings, guardians);
 
 	@Test
 	void resolvesExplicitEducationProfileBindingFirst() {
@@ -36,17 +30,13 @@ class EducationApplicantResolverTest {
 	}
 
 	@Test
-	void resolvesLegacyTeacherAccountThroughEmployeeProfile() {
-		AdminUser account = new AdminUser();
-		account.setEmployeeId("employee-1");
-		TeacherAcademicProfile teacher = new TeacherAcademicProfile();
-		teacher.setId("teacher-1");
+	void revokedTeacherBindingCannotResolveApplicantFromEmployeeProfile() {
 		when(bindings.findByUsernameAndStatusOrderByProfileType("teacher", "ACTIVE"))
 				.thenReturn(List.of());
-		when(users.findByUsername("teacher")).thenReturn(account);
-		when(teachers.findByEmployeeId("employee-1")).thenReturn(Optional.of(teacher));
 
-		assertThat(resolver.resolve("teacher", "TEACHER")).isEqualTo("teacher-1");
+		assertThatThrownBy(() -> resolver.resolve("teacher", "TEACHER"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("未绑定有效的 TEACHER 教务档案");
 	}
 
 	@Test
@@ -61,8 +51,7 @@ class EducationApplicantResolverTest {
 
 	@Test
 	void resolvesParentRequestOnlyForRelatedStudent() {
-		EducationApplicantResolver parentResolver = new EducationApplicantResolver(
-				bindings, users, teachers, guardians);
+		EducationApplicantResolver parentResolver = new EducationApplicantResolver(bindings, guardians);
 		EducationUserBinding parent = new EducationUserBinding();
 		parent.setProfileId("parent-1");
 		when(bindings.findByUsernameAndProfileTypeAndStatus("parent", "PARENT", "ACTIVE")).thenReturn(Optional.of(parent));

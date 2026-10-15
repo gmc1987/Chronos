@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.SchedulingAiRunService;
+import com.chronos.education.scheduling.service.SchedulingAiRuleEvidenceService;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,8 @@ class SchedulingAiRunControllerContractTest {
 	void exposesOnlyGovernedRunEndpointsAndJointPermissions() {
 		SchedulingAiRunController controller = new SchedulingAiRunController(
 				mock(SchedulingAiRunService.class),
-				mock(EducationDataScopeService.class));
+				mock(EducationDataScopeService.class),
+				mock(SchedulingAiRuleEvidenceService.class));
 		var methods = Arrays.stream(SchedulingAiRunController.class.getDeclaredMethods())
 				.filter(method -> method.isAnnotationPresent(GetMapping.class)
 						|| method.isAnnotationPresent(PostMapping.class))
@@ -29,7 +31,8 @@ class SchedulingAiRunControllerContractTest {
 					return Arrays.stream(get == null ? post.value() : get.value());
 				})
 				.collect(Collectors.toSet());
-		assertThat(paths).allMatch(path -> path.startsWith("/admin/education/scheduling/ai/runs"));
+		assertThat(paths).allMatch(path -> path.startsWith("/admin/education/scheduling/ai/runs")
+				|| path.equals("/admin/education/scheduling/ai/rule-catalog"));
 		assertThat(paths).contains(
 				"/admin/education/scheduling/ai/runs/{id}/candidates/{candidateId}/explanation");
 		assertThat(paths).noneMatch(path -> path.contains("/apply")

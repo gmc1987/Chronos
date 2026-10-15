@@ -2,7 +2,7 @@
 
 ## 导入
 
-1. 至少启动一次 `hospital-app`，确认 Hibernate 已创建最新表结构。
+1. 仅在独立演示数据库使用；先启动对应行业应用，确认迁移已创建最新流程表结构。
 2. 执行：
 
 ```bash
@@ -10,7 +10,7 @@ psql -h localhost -p 5432 -U Chronos -d Chronos \
   -f docs/sql/workflow-center-demo-data.sql
 ```
 
-脚本采用固定 ID 和 upsert，可重复执行；它不会删除非演示数据，仅会重建三个演示流程的连线。
+脚本采用固定种子 ID 和业务键 upsert，可重复执行。若演示业务键已属于非 `demo_seed` 账号、表单或流程，脚本会中止事务，避免覆盖正式数据。对于先前以 UUID 建立的同一演示定义，脚本会解析实际 ID 写入字段、节点、连线及 ACL，并重建三套演示流程的连线。
 
 ## 测试账号
 

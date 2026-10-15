@@ -8,8 +8,8 @@ public struct ChronosAPIConfiguration: Sendable {
     }
 
     public static var fromEnvironment: Self {
-        let raw = ProcessInfo.processInfo.environment["CHRONOS_API_BASE_URL"] ?? "http://localhost:8080"
-        return Self(baseURL: URL(string: raw) ?? URL(string: "http://localhost:8080")!)
+        let raw = ProcessInfo.processInfo.environment["CHRONOS_API_BASE_URL"] ?? "http://192.168.0.104:8080"
+        return Self(baseURL: URL(string: raw) ?? URL(string: "http://192.168.0.104:8080")!)
     }
 }
 

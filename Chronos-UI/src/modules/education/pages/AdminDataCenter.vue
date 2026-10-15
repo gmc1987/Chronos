@@ -2,8 +2,9 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createEducationDataSnapshot, getEducationDataDashboard, requestEducationDataReport, listEducationDataReports, listEducationQualityIssues, retryEducationDataReport } from '../../../api/admin'
+import { todayLocalDate } from '../../../utils/localDate'
 
-const date = ref(new Date().toISOString().slice(0, 10))
+const date = ref(todayLocalDate())
 const active = ref('academic')
 const rows = ref([])
 const reports = ref([])

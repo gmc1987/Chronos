@@ -65,13 +65,81 @@ public class TeachingCollaborationService {
    Set<String> teacherIds = currentTeacherIds(actor);
    boolean invited = members.findByPreparationId(id).stream().anyMatch(member ->
      teacherIds.contains(member.getTeacherId())
-       && Set.of("PENDING", "ACCEPT").contains(member.getInvitationStatus()));
+       && "ACCEPT".equals(member.getInvitationStatus()));
    if (invited) return preparation;
    scopes.assertOfferingAccess(scope, preparation.getOfferingId());
    return preparation;
  }
  public Preparation submitPreparation(String id,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);if(!"DRAFT".equals(p.getStatus()))throw new IllegalStateException("只有草稿备课可以提交审核");if("COLLECTIVE".equals(p.getPreparationType())){var accepted=members.findByPreparationId(id).stream().filter(x->"ACCEPT".equals(x.getInvitationStatus())).count();if(accepted<2)throw new IllegalStateException("集体备课至少需要两名已接受成员");if(p.getScheduledAt()==null||p.getAgenda()==null||p.getAgenda().isBlank())throw new IllegalStateException("集体备课必须填写时间和议程");}var review=reviews.submit("PREPARATION",id,p.getOfferingId(),Map.of("preparationType",p.getPreparationType()),a);p.setStatus("SUBMITTED");return preparations.save(p);}
- public PreparationMember invite(String id,MemberInviteRequest r,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);var teacher=canonicalTeacher(r.teacherId());scopes.assertTeacherAccess(scopes.resolve(a.getName()),teacher.getId());var m=new PreparationMember();m.setId(UUID.randomUUID().toString());m.setPreparationId(id);m.setTeacherId(teacher.getId());m.setRole(r.role());m.setInvitedBy(a.getName());m.setInvitedAt(Instant.now());var saved=members.save(m);if(notifications!=null)notifications.preparationInvited(p,teacher.getId());return saved;}
+ public PreparationMember invite(String id, MemberInviteRequest request, Authentication actor) {
+   Preparation preparation = getPreparation(id, actor);
+   assertPreparationOwner(preparation, actor);
+   TeacherAcademicProfile teacher = canonicalTeacher(request.teacherId());
+   scopes.assertTeacherAccess(scopes.resolve(actor.getName()), teacher.getId());
+   var existing = members.findByPreparationId(id).stream()
+       .filter(member -> teacher.getId().equals(member.getTeacherId()))
+       .findFirst();
+   if (existing.isPresent()) {
+     PreparationMember member = existing.get();
+     if (Set.of("PENDING", "ACCEPT").contains(member.getInvitationStatus())) return member;
+     // The unique preparation/teacher pair is reused for a fresh invitation.
+     member.setInvitationStatus("PENDING");
+     member.setRole(request.role());
+     member.setInvitedBy(actor.getName());
+     member.setInvitedAt(Instant.now());
+     member.setRespondedAt(null);
+     member.setResponseComment(null);
+     member.setJoinedAt(null);
+     PreparationMember saved = members.save(member);
+     if (notifications != null) notifications.preparationInvited(preparation, teacher.getId());
+     return saved;
+   }
+   PreparationMember member = new PreparationMember();
+   member.setId(UUID.randomUUID().toString());
+   member.setPreparationId(id);
+   member.setTeacherId(teacher.getId());
+   member.setRole(request.role());
+   member.setInvitedBy(actor.getName());
+   member.setInvitedAt(Instant.now());
+   PreparationMember saved = members.save(member);
+   if (notifications != null) notifications.preparationInvited(preparation, teacher.getId());
+   return saved;
+ }
+
+ public List<PreparationMemberView> preparationMembers(String id, Authentication actor) {
+   Preparation preparation = getPreparation(id, actor);
+   assertPreparationOwner(preparation, actor);
+   return members.findByPreparationId(id).stream()
+       .map(member -> {
+         TeacherAcademicProfile teacher = em.find(TeacherAcademicProfile.class, member.getTeacherId());
+         return new PreparationMemberView(
+             member.getId(),
+             member.getTeacherId(),
+             teacher == null ? member.getTeacherId() : teacher.getTeacherName(),
+             member.getInvitationStatus());
+       })
+       .toList();
+ }
+
+ public record PreparationMemberView(
+     String id, String teacherId, String teacherName, String invitationStatus) {}
+
+ public PreparationMember revokeInvitation(String id, String memberId, Authentication actor) {
+   Preparation preparation = getPreparation(id, actor);
+   assertPreparationOwner(preparation, actor);
+   PreparationMember member = members.findById(memberId)
+       .orElseThrow(() -> new IllegalArgumentException("备课成员不存在"));
+   if (!id.equals(member.getPreparationId())) {
+     throw new IllegalArgumentException("备课成员不属于当前备课");
+   }
+   if ("REVOKED".equals(member.getInvitationStatus())) {
+     return member;
+   }
+   member.setInvitationStatus("REVOKED");
+   member.setResponseComment("主持人撤销邀请");
+   member.setRespondedAt(Instant.now());
+   return members.save(member);
+ }
  private TeacherAcademicProfile canonicalTeacher(String id) {
    TeacherAcademicProfile profile = em.find(TeacherAcademicProfile.class, id);
    if (profile != null) return profile;
@@ -87,6 +155,9 @@ public class TeachingCollaborationService {
    }
    if (!currentTeacherIds(actor).contains(member.getTeacherId())) {
      throw new org.springframework.security.access.AccessDeniedException("只能响应发给本人的邀请");
+   }
+   if (!"PENDING".equals(member.getInvitationStatus())) {
+     throw new IllegalStateException("邀请已处理，不能重复响应");
    }
    member.setInvitationStatus(request.response());
    member.setResponseComment(request.comment());

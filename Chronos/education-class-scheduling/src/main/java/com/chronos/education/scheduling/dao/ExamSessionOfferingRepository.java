@@ -8,5 +8,6 @@ import com.chronos.education.scheduling.model.ExamSessionOffering;
 
 public interface ExamSessionOfferingRepository extends JpaRepository<ExamSessionOffering, String> {
 	List<ExamSessionOffering> findBySessionId(String sessionId);
+	List<ExamSessionOffering> findByOfferingId(String offeringId);
 	void deleteBySessionId(String sessionId);
 }

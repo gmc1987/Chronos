@@ -5,13 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.StudentStatusChangeRepository;
-import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
@@ -42,8 +40,6 @@ class HeadTeacherWorkbenchServiceTest {
 		statusChanges = mock(StudentStatusChangeRepository.class);
 		bindings = mock(EducationUserBindingRepository.class);
 		service = new HeadTeacherWorkbenchService(
-				mock(IAdminUserRepository.class),
-				mock(TeacherAcademicProfileRepository.class),
 				bindings,
 				classes,
 				students,
@@ -115,5 +111,15 @@ class HeadTeacherWorkbenchServiceTest {
 		assertThatThrownBy(() -> service.classDetail("head", "class-other"))
 				.isInstanceOf(AccessDeniedException.class)
 				.hasMessage("无权查看该班级工作台");
+	}
+
+	@Test
+	void revokedTeacherBindingImmediatelyRemovesHeadTeacherClassAccess() {
+		when(bindings.findByUsernameAndStatusOrderByProfileType("head", "ACTIVE"))
+				.thenReturn(List.of());
+
+		assertThat(service.classes("head")).isEmpty();
+		assertThatThrownBy(() -> service.classDetail("head", "class-1"))
+				.isInstanceOf(AccessDeniedException.class);
 	}
 }

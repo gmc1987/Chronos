@@ -42,6 +42,10 @@ public class ScheduleDateException extends BaseEntity {
 	@Column(name = "substitute_teacher_id", length = 64)
 	private String substituteTeacherId;
 
+	/** 请假触发的代课所关联的请假台账；销假后据此撤销不再需要的未来代课。 */
+	@Column(name = "leave_record_id", length = 64)
+	private String leaveRecordId;
+
 	/** 审批流程实例。用于保证 Flowable 完成事件重复投递时不会重复生成日期例外。 */
 	@Column(name = "workflow_instance_id", length = 64, unique = true)
 	private String workflowInstanceId;

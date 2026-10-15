@@ -12,8 +12,12 @@ public final class GradeDtos {
 			List<ComponentCommand> components, Long rowVersion) {
 	}
 
-	public record ComponentCommand(String code, String name, String sourceType, BigDecimal weight,
-			BigDecimal maxScore, Integer sortOrder) {
+	public record ComponentCommand(String code, String name, String sourceType, String sourceRefId,
+			BigDecimal weight, BigDecimal maxScore, Integer sortOrder) {
+		public ComponentCommand(String code, String name, String sourceType, BigDecimal weight,
+				BigDecimal maxScore, Integer sortOrder) {
+			this(code, name, sourceType, null, weight, maxScore, sortOrder);
+		}
 	}
 
 	public record SchemeDetailResponse(
@@ -61,12 +65,12 @@ public final class GradeDtos {
 			LocalDateTime withdrawnAt, Integer snapshotVersion, String snapshotHash) {
 	}
 
-	public record ComponentDetail(String id, String code, String name, String sourceType, BigDecimal weight,
-			BigDecimal maxScore, Integer sortOrder) {
+	public record ComponentDetail(String id, String code, String name, String sourceType, String sourceRefId,
+			BigDecimal weight, BigDecimal maxScore, Integer sortOrder) {
 	}
 
 	public record GradeItemDetail(String id, String componentId, String studentId, BigDecimal rawScore,
-			BigDecimal convertedScore, String specialStatus, String remark, Long rowVersion) {
+			BigDecimal convertedScore, String sourceEventId, String specialStatus, String remark, Long rowVersion) {
 	}
 
 	public record SnapshotMetadata(Integer versionNo, String snapshotHash, String publishedBy,

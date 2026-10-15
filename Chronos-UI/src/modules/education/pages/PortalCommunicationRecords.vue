@@ -5,15 +5,21 @@ import { portalCommunicationRecords, portalFamilyChildren } from '../../../api/p
 const records = ref([])
 const loading = ref(false)
 const children = ref([])
+const loadError = ref('')
 const unwrap = response => response?.data?.content || response?.data || []
 const studentName = id => children.value.find(item => item.id === id)?.studentName || id || '-'
 const channelName = channel => ({ PHONE: '电话', IN_PERSON: '面谈', ONLINE: '线上', OTHER: '其他' }[channel] || channel || '-')
 async function load() {
   loading.value = true
+  records.value = []
+  children.value = []
+  loadError.value = ''
   try {
     const [recordResponse, childResponse] = await Promise.all([portalCommunicationRecords(), portalFamilyChildren()])
     records.value = unwrap(recordResponse)
     children.value = unwrap(childResponse)
+  } catch (error) {
+    loadError.value = error?.message || '家校沟通记录加载失败'
   } finally { loading.value = false }
 }
 onMounted(load)
@@ -22,6 +28,7 @@ onMounted(load)
 <template>
   <section class="page">
     <header><div><h1>家校沟通记录</h1><p>查看学校与家长之间的历史沟通，保证信息连续可追溯。</p></div><el-button :loading="loading" @click="load">刷新</el-button></header>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon class="load-error" />
     <el-table v-loading="loading" :data="records" border>
       <el-table-column label="学生" width="130"><template #default="{ row }">{{ studentName(row.studentId) }}</template></el-table-column>
       <el-table-column prop="teacherUsername" label="记录人" width="140" />
@@ -38,4 +45,5 @@ onMounted(load)
 .page { padding: 24px; }
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 h1 { margin: 0 0 8px; } p { margin: 0; color: #84909a; }
+.load-error { margin-bottom: 16px; }
 </style>

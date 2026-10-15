@@ -48,6 +48,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { todayLocalDate } from '../../../utils/localDate'
 import {
   cancelPortalClassroomReservation,
   portalClassroomReservations,
@@ -65,7 +66,7 @@ const load = async () => {
   }
 }
 
-const canCancel = (row) => row.status === 'ACTIVE' && row.usageDate > new Date().toISOString().slice(0, 10)
+const canCancel = (row) => row.status === 'ACTIVE' && row.usageDate > todayLocalDate()
 const statusName = (status) => ({
   ACTIVE: '已生效',
   CANCELLED: '已撤销',

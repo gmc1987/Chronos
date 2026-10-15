@@ -11,6 +11,16 @@ public class TeachingCollaborationController {
  @GetMapping("/preparations/{id}") @PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:preparation:view','education:teaching:manage')") public ResultData<?> get(@PathVariable String id,Authentication a){return ok(service.getPreparation(id,a));}
  @PostMapping("/preparations/{id}/submit") @PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:preparation:manage','education:teaching:manage')") public ResultData<?> submitPreparation(@PathVariable String id,Authentication a){return ok(service.submitPreparation(id,a));}
  @PostMapping("/preparations/{id}/members") @PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:preparation:manage','education:teaching:manage')") public ResultData<?> invite(@PathVariable String id,@Valid @RequestBody MemberInviteRequest r,Authentication a){return ok(service.invite(id,r,a));}
+ @GetMapping("/preparations/{id}/members")
+ @PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:preparation:manage','education:teaching:manage')")
+ public ResultData<?> preparationMembers(@PathVariable String id, Authentication actor) {
+  return ok(service.preparationMembers(id, actor));
+ }
+ @PostMapping("/preparations/{id}/members/{memberId}/revoke")
+ @PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:preparation:manage','education:teaching:manage')")
+ public ResultData<?> revokeInvitation(@PathVariable String id, @PathVariable String memberId, Authentication actor) {
+  return ok(service.revokeInvitation(id, memberId, actor));
+ }
  @GetMapping("/preparation-invitations/mine") @PreAuthorize("isAuthenticated()") public ResultData<?> myInvitations(Authentication a){return ok(service.myPreparationInvitations(a));}
  @PostMapping("/preparation-members/{id}/response") @PreAuthorize("isAuthenticated()") public ResultData<?> response(@PathVariable String id,@Valid @RequestBody MemberResponseRequest r,Authentication a){return ok(service.respond(id,r,a));}
  @PostMapping("/preparations/{id}/materials") @PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:preparation:manage','education:teaching:manage')") public ResultData<?> material(@PathVariable String id,@Valid @RequestBody MaterialRequest r,Authentication a){return ok(service.addMaterial(id,r,a));}

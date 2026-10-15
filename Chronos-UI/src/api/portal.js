@@ -87,9 +87,17 @@ export const portalParentFeedback = () => http.get('/portal/education/family/fee
 export const submitParentFeedback = payload => http.post('/portal/education/family/feedback', payload)
 export const portalCommunicationRecords = () => http.get('/portal/education/family/communications')
 export const portalSupervisionTasks = () => http.get('/portal/education/supervision/tasks')
+export const portalSupervisionTeachingTasks = () => http.get('/portal/education/supervision/teaching-tasks')
+export const issueSupervisionProof = (id) => http.post(`/portal/education/supervision/teaching-tasks/${id}/proof`)
+export const portalSupervisionIssues = () => http.get('/portal/education/supervision/issues')
+export const rectifySupervisionIssue = (id, payload) => http.post(`/portal/education/supervision/issues/${id}/rectify`, payload)
 export const acceptSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/accept`)
-export const checkInSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/check-in`)
+export const checkInSupervisionTask = (id, proof) => http.post(`/portal/education/supervision/tasks/${id}/check-in`, { proof })
+export const supervisionEvaluationForms = () => http.get('/portal/education/supervision/evaluation-forms')
+export const supervisionEvaluationFields = (formId) => http.get(`/portal/education/supervision/evaluation-forms/${formId}/fields`)
+export const saveSupervisionEvaluationForm = (id, payload) => http.post(`/portal/education/supervision/tasks/${id}/form`, payload)
 export const submitSupervisionEvaluation = (id, payload) => http.post(`/portal/education/supervision/tasks/${id}/submit`, payload)
+export const completeSupervisionTask = (id) => http.post(`/portal/education/supervision/tasks/${id}/complete`)
 
 // 协同办公
 export const fetchCollaborationResources = type => http.get(

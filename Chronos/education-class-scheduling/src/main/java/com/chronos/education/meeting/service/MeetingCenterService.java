@@ -52,6 +52,7 @@ public class MeetingCenterService {
 	private final IAdminUserRepository users;
 	private final ManagedFileService managedFiles;
 	private final MeetingNotificationService notifications;
+	private final CalendarIntegrationService calendar;
 	private final IAuditLogService auditLogs;
 	private final EntityManager entityManager;
 
@@ -75,6 +76,26 @@ public class MeetingCenterService {
 	@Transactional
 	public int completeExpiredMeetings() {
 		return meetings.completeExpired(LocalDateTime.now());
+	}
+
+	@Transactional
+	public int enqueueUpcomingReminders(LocalDateTime now) {
+		List<Meeting> upcoming = meetings.findByStatusAndStartTimeBetweenOrderByStartTimeAsc(
+				"PUBLISHED", now, now.plusHours(24));
+		int sent = 0;
+		for (Meeting meeting : upcoming) {
+			String window = meeting.getStartTime().isAfter(now.plusHours(1)) ? "24H" : "1H";
+			Set<String> recipients = new LinkedHashSet<>();
+			recipients.add(meeting.getOrganizerUsername());
+			for (MeetingParticipant participant : participants.findByMeetingIdOrderByCreateTimeAsc(meeting.getId())) {
+				recipients.add(participant.getUsername());
+			}
+			for (String username : recipients) {
+				notifications.reminder(meeting, username, window);
+				sent++;
+			}
+		}
+		return sent;
 	}
 
 	@Transactional
@@ -195,6 +216,7 @@ public class MeetingCenterService {
 			}
 			if ("PUBLISHED".equals(value.getStatus())) {
 				notifyParticipantChanges(value, participantChange);
+				calendarIfSeries(value, "UPSERT");
 			}
 		}
 		auditLogs.log("MEETING_SAVE", "MEETING", value.getId());
@@ -210,6 +232,7 @@ public class MeetingCenterService {
 		preparePublication(meeting);
 		if ("PUBLISHED".equals(meeting.getStatus())) {
 			notifyParticipants(meeting, false);
+			calendarIfSeries(meeting, "UPSERT");
 		}
 		auditLogs.log("MEETING_PUBLISH", "MEETING", meeting.getId());
 		return view(meetings.save(meeting));
@@ -254,6 +277,7 @@ public class MeetingCenterService {
 			meeting.setPublishedAt(LocalDateTime.now());
 			meetings.save(meeting);
 			notifyParticipants(meeting, false);
+			calendarIfSeries(meeting, "UPSERT");
 			notifications.organizerResult(meeting, "已批准");
 		} else {
 			meeting.setStatus("REJECTED");
@@ -481,12 +505,17 @@ public class MeetingCenterService {
 		meeting.setCancelledAt(LocalDateTime.now());
 		meeting.setCancelReason(command.reason().trim());
 		meetings.save(meeting);
+		calendarIfSeries(meeting, "CANCEL");
 		for (MeetingParticipant participant : participants
 				.findByMeetingIdOrderByCreateTimeAsc(id)) {
 			notifications.cancelled(meeting, participant.getUsername());
 		}
 		auditLogs.log("MEETING_CANCEL", "MEETING", id);
 		return view(meeting);
+	}
+
+	private void calendarIfSeries(Meeting meeting, String operation) {
+		if (meeting.getSeriesId() != null) calendar.enqueue(meeting, operation);
 	}
 
 	private void preparePublication(Meeting meeting) {

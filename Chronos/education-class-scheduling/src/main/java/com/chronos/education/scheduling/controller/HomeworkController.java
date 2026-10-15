@@ -8,6 +8,7 @@ import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.HomeworkAssignment;
 import com.chronos.education.scheduling.model.HomeworkSubmission;
+import com.chronos.education.scheduling.model.dto.HomeworkDtos.StudentSubmissionView;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
@@ -90,7 +91,7 @@ public class HomeworkController {
 
 	@GetMapping("/homeworks/{id}/my-submission")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:homework:submission:view','education:homework:view','education:homework:manage')")
-	public ResultData<HomeworkSubmission> mySubmission(@PathVariable String id, Authentication auth) {
+	public ResultData<StudentSubmissionView> mySubmission(@PathVariable String id, Authentication auth) {
 		return ok(service.mySubmission(id, auth));
 	}
 

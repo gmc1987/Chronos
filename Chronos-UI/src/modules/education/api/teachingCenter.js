@@ -19,8 +19,8 @@ export const teachingDomainChildrenApi = (domain, id, child, params = {}) => {
   const query = queryString(params)
   return http.get(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/${child}?${query}`)
 }
-export const publishedScheduleEntries = (offeringId) =>
-  http.get(`/admin/education/schedules?dimension=OFFERING&targetId=${encodeURIComponent(offeringId)}&published=true`)
+export const publishedScheduleEntries = (offeringId, semesterCode) =>
+  http.get(`/admin/education/schedules?semesterCode=${encodeURIComponent(semesterCode)}&dimension=TEACHING_CLASS&targetId=${encodeURIComponent(offeringId)}`)
 export const teachingProduction = (offeringId) =>
   http.get(`/education/teaching/offerings/${encodeURIComponent(offeringId)}/production`)
 export const offeringPlans = (offeringId) =>
@@ -33,6 +33,8 @@ export const createTeachingPlan = body => http.post('/education/teaching/plans',
 export const updateTeachingPlan = (id, body) => http.put(`/education/teaching/plans/${encodeURIComponent(id)}`, body)
 export const teachingPlanDetail = id => http.get(`/education/teaching/plans/${encodeURIComponent(id)}`)
 export const teachingPlanVersions = id => http.get(`/education/teaching/plans/${encodeURIComponent(id)}/versions`)
+export const reviseTeachingPlan = (id, rowVersion) =>
+  http.post(`/education/teaching/plans/${encodeURIComponent(id)}/revise?rowVersion=${encodeURIComponent(rowVersion)}`)
 export const submitTeachingPlan = (id, idempotencyKey) =>
   http.post(`/education/teaching/plans/${encodeURIComponent(id)}/submit`, null,
     idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined)
@@ -108,6 +110,12 @@ export const submitPreparation = (id) =>
   http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/submit`)
 export const invitePreparationMember = (id, body) =>
   http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/members`, body)
+export const collaborationPreparationDetail = (id) =>
+  http.get(`/education/teaching-center/preparations/${encodeURIComponent(id)}`)
+export const preparationMembers = (id) =>
+  http.get(`/education/teaching-center/preparations/${encodeURIComponent(id)}/members`)
+export const revokePreparationMember = (id, memberId) =>
+  http.post(`/education/teaching-center/preparations/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}/revoke`)
 export const myPreparationInvitations = () =>
   http.get('/education/teaching-center/preparation-invitations/mine')
 export const respondPreparationInvitation = (memberId, response) =>

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
+import java.util.Objects;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,7 +31,10 @@ class CalendarIntegrationServiceTest {
 		meeting.setOrganizerUsername("teacher-1");
 		meeting.setOccurrenceKey("2026-10-05T09:00");
 		CalendarOutbox existing = new CalendarOutbox();
-		existing.setIdempotencyKey("meeting-1:2026-10-05T09:00:UPSERT");
+		existing.setIdempotencyKey("meeting-1:2026-10-05T09:00:UPSERT:"
+				+ Integer.toUnsignedString(Objects.hash(
+						meeting.getTitle(), meeting.getStartTime(), meeting.getEndTime(),
+						meeting.getRoomId(), meeting.getJoinUrl(), meeting.getStatus())));
 		when(outbox.findByIdempotencyKey(existing.getIdempotencyKey()))
 				.thenReturn(Optional.of(existing));
 

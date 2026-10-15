@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.education.scheduling.dao.ClassroomRepository;
+import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.ClassroomUnavailableSlotRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
@@ -30,6 +31,7 @@ import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 @Service
 public class ClassSchedulingService {
 	private final CourseOfferingRepository offerings;
+	private final AdministrativeClassRepository administrativeClasses;
 	private final ClassroomRepository classrooms;
 	private final ClassroomUnavailableSlotRepository unavailableSlots;
 	private final ScheduleEntryRepository entries;
@@ -42,6 +44,7 @@ public class ClassSchedulingService {
 
 	public ClassSchedulingService(
 			CourseOfferingRepository offerings,
+			AdministrativeClassRepository administrativeClasses,
 			ClassroomRepository classrooms,
 			ClassroomUnavailableSlotRepository unavailableSlots,
 			ScheduleEntryRepository entries,
@@ -52,6 +55,7 @@ public class ClassSchedulingService {
 			ExamResourceReservationService examReservations,
 			EducationResourceTransactionLock resourceLock) {
 		this.offerings = offerings;
+		this.administrativeClasses = administrativeClasses;
 		this.classrooms = classrooms;
 		this.unavailableSlots = unavailableSlots;
 		this.entries = entries;
@@ -105,6 +109,7 @@ public class ClassSchedulingService {
 		value.setRequiredRoomType(command.getRequiredRoomType());
 		value.setRequiredEquipmentCodes(command.getRequiredEquipmentCodes());
 		value.setCampusId(command.getCampusId());
+		value.setAdministrativeClassId(command.getAdministrativeClassId());
 		value.setStatus(command.getStatus() == null ? "ACTIVE" : command.getStatus());
 		return offerings.save(value);
 	}
@@ -526,6 +531,15 @@ public class ClassSchedulingService {
 		if (value.getWeekPattern() != null
 				&& !Set.of("ALL", "ODD", "EVEN").contains(value.getWeekPattern())) {
 			throw new IllegalArgumentException("周模式必须为 ALL、ODD 或 EVEN");
+		}
+		if (value.getAdministrativeClassId() != null
+				&& !value.getAdministrativeClassId().isBlank()) {
+			var source = administrativeClasses.findById(value.getAdministrativeClassId())
+					.orElseThrow(() -> new IllegalArgumentException("来源行政班不存在"));
+			if (!"ACTIVE".equals(source.getStatus())
+					|| !java.util.Objects.equals(source.getCampusId(), value.getCampusId())) {
+				throw new IllegalArgumentException("来源行政班必须为同校区启用班级");
+			}
 		}
 	}
 

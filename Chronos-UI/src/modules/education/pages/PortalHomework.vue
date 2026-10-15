@@ -21,13 +21,24 @@
         <el-descriptions-item label="截止时间">{{ current?.dueAt || '未设置' }}</el-descriptions-item>
         <el-descriptions-item label="作业说明">{{ current?.instructionsJson || '—' }}</el-descriptions-item>
         <el-descriptions-item label="题目/要求">{{ current?.questionSnapshotJson || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="作业附件">
+          <el-button v-for="attachment in attachmentRefs(current?.attachmentSnapshotJson)" :key="attachment.fileId"
+            link type="primary" @click="downloadAttachment(attachment)">{{ attachment.name || attachment.fileId }}</el-button>
+          <span v-if="!attachmentRefs(current?.attachmentSnapshotJson).length">—</span>
+        </el-descriptions-item>
         <el-descriptions-item label="提交状态">{{ statusLabel(current?.submission?.status) }}</el-descriptions-item>
         <el-descriptions-item label="成绩">{{ current?.submission?.score ?? '—' }} / {{ current?.maxScore }}</el-descriptions-item>
         <el-descriptions-item label="教师评语">{{ current?.submission?.teacherFeedback || '—' }}</el-descriptions-item>
       </el-descriptions>
       <el-form label-width="90px" class="answer-form">
         <el-form-item label="我的答案"><el-input v-model="answerSnapshotJson" type="textarea" :rows="10" :disabled="!canEdit(current)" placeholder="请输入答案或按题目编号填写" /></el-form-item>
-        <el-form-item label="附件引用"><el-input v-model="attachmentSnapshotJson" type="textarea" :rows="3" :disabled="!canEdit(current)" placeholder='已上传文件引用 JSON，例如 [{"fileId":"..."}]' /></el-form-item>
+        <el-form-item label="我的附件">
+          <div class="attachment-editor">
+            <input v-if="canEdit(current)" type="file" :disabled="uploadingAttachment" @change="uploadSubmissionAttachment" />
+            <el-button v-for="attachment in attachmentRefs(attachmentSnapshotJson)" :key="attachment.fileId"
+              link type="primary" @click="downloadAttachment(attachment)">{{ attachment.name || attachment.fileId }}</el-button>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog=false">关闭</el-button><template v-if="canEdit(current)"><el-button @click="saveDraft">保存草稿</el-button><el-button type="primary" @click="submit">提交作业</el-button></template></template>
     </el-dialog>
@@ -38,6 +49,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { homeworkPage, myHomeworkSubmission, saveHomeworkSubmission, submitHomework } from '../api/teachingCenter'
+import { uploadManagedFile, downloadManagedFile } from '../../../api/admin'
 
 const rows = ref([])
 const current = ref(null)
@@ -47,6 +59,38 @@ const loadError = ref('')
 const dialog = ref(false)
 const submissionId = ref('')
 const attachmentSnapshotJson = ref('[]')
+const uploadingAttachment = ref(false)
+const attachmentRefs = raw => { try { const refs = JSON.parse(raw || '[]'); return Array.isArray(refs) ? refs.filter(ref => ref?.fileId) : [] } catch { return [] } }
+const downloadAttachment = async attachment => {
+  try {
+    const blob = await downloadManagedFile(attachment.fileId)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url; link.download = attachment.name || '作业附件'; link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) { ElMessage.error(error.message || '附件下载失败') }
+}
+const uploadSubmissionAttachment = async event => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !canEdit(current.value)) return
+  uploadingAttachment.value = true
+  try {
+    if (!submissionId.value) await saveDraft()
+    if (!submissionId.value) return
+    const uploaded = await uploadManagedFile(file)
+    const fileId = uploaded?.data?.id
+    if (!fileId) throw new Error('文件上传未返回文件编号')
+    const next = JSON.stringify([...attachmentRefs(attachmentSnapshotJson.value), { fileId, name: file.name }])
+    const saved = await saveHomeworkSubmission(current.value.id, {
+      answerSnapshotJson: answerSnapshotJson.value || '{}', attachmentSnapshotJson: next,
+    })
+    attachmentSnapshotJson.value = next
+    current.value.submission = saved?.data || current.value.submission
+    ElMessage.success('答案附件已上传')
+  } catch (error) { ElMessage.error(error.message || '答案附件上传失败') }
+  finally { uploadingAttachment.value = false }
+}
 const unwrap = response => response?.data?.content || response?.data || []
 const statusLabels = { NOT_STARTED: '未开始', DRAFT: '草稿', SUBMITTED: '待批改', GRADED: '已评分', RETURNED_FOR_REVISION: '退回重做' }
 const statusLabel = status => statusLabels[status] || '未提交'
@@ -96,4 +140,4 @@ const submit = async () => {
 onMounted(load)
 </script>
 
-<style scoped>.homework-page{padding:24px}.homework-page header{margin-bottom:18px}.homework-page h1{margin:0 0 6px}.homework-page p{margin:0;color:#667085}.el-alert{margin-bottom:16px}.answer-form{margin-top:20px}</style>
+<style scoped>.homework-page{padding:24px}.homework-page header{margin-bottom:18px}.homework-page h1{margin:0 0 6px}.homework-page p{margin:0;color:#667085}.el-alert{margin-bottom:16px}.answer-form{margin-top:20px}.attachment-editor{display:flex;flex-direction:column;align-items:flex-start;gap:8px}</style>

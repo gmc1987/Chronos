@@ -33,6 +33,15 @@ public class GradeProductionController {
 		return ok(service.publishedGrades(id, authentication.getName()));
 	}
 
+	@GetMapping("/changes/{id}/review")
+	@PreAuthorize("@iamAuthorization.any(authentication, 'education:score:change:request', 'education:score:change:approve')")
+	public ResultData<GradeChangeReviewView> reviewChange(
+			@PathVariable String id,
+			@RequestParam String instanceId,
+			Authentication authentication) {
+		return ok(service.reviewChange(id, instanceId, authentication.getName()));
+	}
+
 	@PostMapping("/gradebooks/{id}/changes")
 	@PreAuthorize("hasAuthority('education:score:change:request')")
 	public ResultData<GradeChangeRequest> requestChange(

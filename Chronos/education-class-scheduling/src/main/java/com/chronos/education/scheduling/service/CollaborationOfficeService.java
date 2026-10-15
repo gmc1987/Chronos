@@ -291,21 +291,8 @@ public class CollaborationOfficeService {
 	@Transactional(readOnly = true)
 	public List<CollaborationFileShare> visibleShares(String username, String organizationId) {
 		return shares.findByStatusOrderByCreateTimeDesc("ACTIVE").stream()
-				.filter(value -> canReadShare(value, username, organizationId))
+				.filter(value -> CollaborationShareAudience.canRead(value, username, organizationId))
 				.toList();
-	}
-
-	public boolean canReadShare(CollaborationFileShare value, String username, String organizationId) {
-		if (username.equals(value.getOwnerUsername())) {
-			return true;
-		}
-		return switch (value.getAudienceType()) {
-			case "ALL" -> true;
-			case "USER" -> List.of(value.getAudienceValue().split(",")).stream()
-					.map(String::trim).anyMatch(username::equals);
-			case "DEPARTMENT" -> organizationId != null && organizationId.equals(value.getAudienceValue());
-			default -> false;
-		};
 	}
 
 	@Transactional

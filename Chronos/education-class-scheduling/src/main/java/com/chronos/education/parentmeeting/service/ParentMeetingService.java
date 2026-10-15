@@ -17,11 +17,13 @@ import com.chronos.education.parentmeeting.model.ParentMeetingCommands;
 import com.chronos.education.parentmeeting.model.ParentMeetingScope;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
+import com.chronos.education.scheduling.dao.ParentProfileRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.model.EducationUserBinding;
+import com.chronos.education.scheduling.model.ParentProfile;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.Idao.IAdminUserRepository;
@@ -34,16 +36,19 @@ public class ParentMeetingService {
 	private final StudentProfileRepository students;
 	private final StudentGuardianRepository guardians;
 	private final EducationUserBindingRepository bindings;
+	private final ParentProfileRepository parents;
 	private final EducationDataScopeService dataScope;
 	private final IAuditLogService audit;
 	private final IAdminUserRepository accounts;
 
 	public ParentMeetingService(MeetingCenterService meetings, ParentMeetingScopeRepository scopes,
 			StudentProfileRepository students, StudentGuardianRepository guardians,
-			EducationUserBindingRepository bindings, EducationDataScopeService dataScope,
+			EducationUserBindingRepository bindings, ParentProfileRepository parents,
+			EducationDataScopeService dataScope,
 			IAuditLogService audit, IAdminUserRepository accounts) {
 		this.meetings = meetings; this.scopes = scopes; this.students = students;
-		this.guardians = guardians; this.bindings = bindings; this.dataScope = dataScope; this.audit = audit;
+		this.guardians = guardians; this.bindings = bindings; this.parents = parents;
+		this.dataScope = dataScope; this.audit = audit;
 		this.accounts = accounts;
 	}
 
@@ -94,13 +99,44 @@ public class ParentMeetingService {
 
 	@Transactional(readOnly = true)
 	public List<MeetingView> mine(String username) {
+		String parentId = activeParentId(username);
 		Set<String> ids = scopes.findAll().stream().map(ParentMeetingScope::getMeetingId).collect(Collectors.toSet());
-		return meetings.myMeetings(username).stream().filter(view -> ids.contains(view.meeting().getId())).toList();
+		return meetings.myMeetings(username).stream()
+				.filter(view -> ids.contains(view.meeting().getId()))
+				.filter(view -> hasCurrentGuardianship(view.meeting().getId(), parentId))
+				.toList();
 	}
 
 	public MeetingView respond(String id, MeetingCommands.Response response, String username) {
 		assertParentMeeting(id);
+		if (!hasCurrentGuardianship(id, activeParentId(username))) {
+			throw new AccessDeniedException("当前账号已无该家长会范围的有效监护关系");
+		}
 		return meetings.respond(id, response, username);
+	}
+
+	private String activeParentId(String username) {
+		EducationUserBinding binding = bindings.findByUsernameAndProfileTypeAndStatus(username, "PARENT", "ACTIVE")
+				.orElseThrow(() -> new AccessDeniedException("当前账号不是有效家长账号"));
+		ParentProfile parent = parents.findById(binding.getProfileId())
+				.orElseThrow(() -> new AccessDeniedException("家长档案不存在"));
+		if (!"ACTIVE".equals(parent.getStatus())) {
+			throw new AccessDeniedException("家长档案已失效");
+		}
+		return parent.getId();
+	}
+
+	private boolean hasCurrentGuardianship(String meetingId, String parentId) {
+		List<ParentMeetingScope> meetingScopes = scopes.findByMeetingId(meetingId);
+		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.map(relation -> students.findById(relation.getStudentId()).orElse(null))
+				.filter(student -> student != null && active(student))
+				.anyMatch(student -> meetingScopes.stream().anyMatch(scope ->
+						("STUDENT".equals(scope.getScopeType()) && student.getId().equals(scope.getScopeId()))
+								|| ("CLASS".equals(scope.getScopeType())
+										&& student.getAdministrativeClassId().equals(scope.getScopeId()))
+								|| ("GRADE".equals(scope.getScopeType())
+										&& scope.getScopeId().equals(student.getGradeId()))));
 	}
 
 	private List<StudentProfile> resolveStudents(String type, String id, EducationDataScope scope) {

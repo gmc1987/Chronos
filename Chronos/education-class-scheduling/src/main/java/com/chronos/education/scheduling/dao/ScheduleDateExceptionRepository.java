@@ -20,4 +20,6 @@ public interface ScheduleDateExceptionRepository extends JpaRepository<ScheduleD
 			String status);
 
 	Optional<ScheduleDateException> findByWorkflowInstanceId(String workflowInstanceId);
+	List<ScheduleDateException> findByLeaveRecordIdAndExceptionTypeAndStatusAndSourceDateAfter(
+			String leaveRecordId, String exceptionType, String status, LocalDate sourceDate);
 }

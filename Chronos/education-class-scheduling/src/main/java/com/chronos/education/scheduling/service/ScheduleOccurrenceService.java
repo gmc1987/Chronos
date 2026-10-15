@@ -21,6 +21,7 @@ import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ScheduleDateExceptionRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.TeacherTimeConstraintRepository;
+import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.dao.LeaveRequestRecordRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
@@ -33,11 +34,15 @@ import com.chronos.education.scheduling.model.ScheduleEntryView;
 import com.chronos.education.scheduling.model.ScheduleOccurrenceView;
 import com.chronos.education.scheduling.model.PendingMakeupView;
 import com.chronos.education.scheduling.model.TeacherLeaveCoverageView;
+import com.chronos.education.scheduling.model.LeaveRequestRecord;
 
 /** 将周期课表展开为具体日期课表，并在读取时叠加停课、调课、代课和补课例外。 */
 @Service
 public class ScheduleOccurrenceService {
 	private static final Set<String> TYPES = Set.of("MOVE", "CANCEL", "SUBSTITUTE", "MAKEUP");
+	private static final Set<String> TEACHER_LEAVE_TYPES = Set.of("STAFF", "TEACHER");
+	private static final Set<String> APPROVED_LEAVE_STATUSES =
+			Set.of("APPROVED", "PARTIALLY_CANCELLED");
 	private final AcademicTermRepository terms;
 	private final AcademicCalendarDayRepository calendarDays;
 	private final ScheduleEntryRepository entries;
@@ -51,6 +56,7 @@ public class ScheduleOccurrenceService {
 	private final ExamResourceReservationService examReservations;
 	private final EducationResourceTransactionLock resourceLock;
 	private final LeaveRequestRecordRepository leaveRecords;
+	private final TeacherAcademicProfileRepository teacherProfiles;
 
 	public ScheduleOccurrenceService(
 			AcademicTermRepository terms,
@@ -65,7 +71,8 @@ public class ScheduleOccurrenceService {
 			TeachingClassMemberRepository teachingClassMembers,
 			ExamResourceReservationService examReservations,
 			EducationResourceTransactionLock resourceLock,
-			LeaveRequestRecordRepository leaveRecords) {
+			LeaveRequestRecordRepository leaveRecords,
+			TeacherAcademicProfileRepository teacherProfiles) {
 		this.terms = terms;
 		this.calendarDays = calendarDays;
 		this.entries = entries;
@@ -79,6 +86,7 @@ public class ScheduleOccurrenceService {
 		this.examReservations = examReservations;
 		this.resourceLock = resourceLock;
 		this.leaveRecords = leaveRecords;
+		this.teacherProfiles = teacherProfiles;
 	}
 
 	@Transactional(readOnly = true)
@@ -230,16 +238,20 @@ public class ScheduleOccurrenceService {
 				.collect(Collectors.toMap(CourseOffering::getId, CourseOffering::getTeacherId));
 		return leaveRecords.findByStartDateLessThanEqualAndEndDateGreaterThanEqual(
 				term.getEndDate(), term.getStartDate()).stream()
-				.filter(leave -> "TEACHER".equals(leave.getApplicantType()))
-				.filter(leave -> "APPROVED".equals(leave.getStatus()))
+				.filter(leave -> TEACHER_LEAVE_TYPES.contains(leave.getApplicantType()))
+				.filter(this::isEffectiveApprovedLeave)
 				.flatMap(leave -> {
+					Set<String> teacherIds = teacherIdsForLeave(leave);
+					if (teacherIds.isEmpty()) return java.util.stream.Stream.empty();
 					LocalDate first = leave.getStartDate().isBefore(term.getStartDate())
 							? term.getStartDate() : leave.getStartDate();
-					LocalDate last = leave.getEndDate().isAfter(term.getEndDate())
-							? term.getEndDate() : leave.getEndDate();
+					LocalDate effectiveEnd = effectiveLeaveEnd(leave);
+					LocalDate last = effectiveEnd.isAfter(term.getEndDate())
+							? term.getEndDate() : effectiveEnd;
+					if (last.isBefore(first)) return java.util.stream.Stream.empty();
 					return first.datesUntil(last.plusDays(1))
 							.flatMap(date -> leaveCoverageOn(
-									date, leave.getId(), leave.getApplicantId(),
+									date, leave.getId(), teacherIds,
 									semesterCode, teacherByOffering));
 				})
 				.sorted(Comparator.comparing(TeacherLeaveCoverageView::date)
@@ -250,14 +262,48 @@ public class ScheduleOccurrenceService {
 	private java.util.stream.Stream<TeacherLeaveCoverageView> leaveCoverageOn(
 			LocalDate date,
 			String leaveId,
-			String teacherId,
+			Set<String> teacherIds,
 			String semesterCode,
 			Map<String, String> teacherByOffering) {
 		return occurrences(semesterCode, date).stream()
-				.filter(item -> teacherId.equals(teacherByOffering.get(item.entry().offeringId())))
+				.filter(item -> teacherIds.contains(teacherByOffering.get(item.entry().offeringId())))
 				.filter(item -> !Set.of("CANCELLED", "MOVED_OUT", "SUBSTITUTED")
 						.contains(item.occurrenceStatus()))
-				.map(item -> new TeacherLeaveCoverageView(leaveId, teacherId, date, item));
+				.map(item -> new TeacherLeaveCoverageView(
+						leaveId, teacherByOffering.get(item.entry().offeringId()), date, item));
+	}
+
+	/** 新请假台账用员工 ID，旧教师台账用教师档案 ID；教学任务可能使用其中任一种。 */
+	private Set<String> teacherIdsForLeave(LeaveRequestRecord leave) {
+		if ("STAFF".equals(leave.getApplicantType())) {
+			return teacherProfiles.findByEmployeeId(leave.getApplicantId())
+					.map(profile -> Set.of(profile.getId(), leave.getApplicantId()))
+					.orElse(Set.of());
+		}
+		if ("TEACHER".equals(leave.getApplicantType())) {
+			return teacherProfiles.findById(leave.getApplicantId())
+					.map(profile -> Set.of(profile.getId(), profile.getEmployeeId()))
+					.orElse(Set.of(leave.getApplicantId()));
+		}
+		return Set.of();
+	}
+
+	private boolean isEffectiveApprovedLeave(LeaveRequestRecord leave) {
+		return APPROVED_LEAVE_STATUSES.contains(leave.getStatus());
+	}
+
+	private LocalDate effectiveLeaveEnd(LeaveRequestRecord leave) {
+		return "APPROVED".equals(leave.getCancellationStatus())
+				&& leave.getActualEndDate() != null ? leave.getActualEndDate() : leave.getEndDate();
+	}
+
+	private boolean teacherOnApprovedLeave(String teacherId, LocalDate date) {
+		return leaveRecords.findByStartDateLessThanEqualAndEndDateGreaterThanEqual(date, date)
+				.stream()
+				.filter(leave -> TEACHER_LEAVE_TYPES.contains(leave.getApplicantType()))
+				.filter(this::isEffectiveApprovedLeave)
+				.filter(leave -> !effectiveLeaveEnd(leave).isBefore(date))
+				.anyMatch(leave -> teacherIdsForLeave(leave).contains(teacherId));
 	}
 
 	@Transactional
@@ -310,6 +356,7 @@ public class ScheduleOccurrenceService {
 						|| command.getSubstituteTeacherId().isBlank())) {
 			throw new IllegalArgumentException("代课教师不能为空");
 		}
+		assertLeaveLink(command, source);
 		validateConflict(command, source, term);
 		ScheduleDateException value = id == null
 				? new ScheduleDateException()
@@ -323,10 +370,31 @@ public class ScheduleOccurrenceService {
 		value.setTargetPeriodNo(command.getTargetPeriodNo());
 		value.setTargetClassroomId(command.getTargetClassroomId());
 		value.setSubstituteTeacherId(command.getSubstituteTeacherId());
+		value.setLeaveRecordId(command.getLeaveRecordId());
 		value.setWorkflowInstanceId(command.getWorkflowInstanceId());
 		value.setReason(required(command.getReason(), "变更原因不能为空"));
 		value.setStatus("ACTIVE");
 		return exceptions.save(value);
+	}
+
+	private void assertLeaveLink(ScheduleDateException command, ScheduleEntry source) {
+		if (command.getLeaveRecordId() != null && !command.getLeaveRecordId().isBlank()) {
+			if (!"SUBSTITUTE".equals(command.getExceptionType())) {
+				throw new IllegalArgumentException("请假关联只能用于代课调整");
+			}
+			LeaveRequestRecord leave = leaveRecords.findById(command.getLeaveRecordId())
+					.orElseThrow(() -> new IllegalArgumentException("关联请假记录不存在"));
+			if (!isEffectiveApprovedLeave(leave)
+					|| command.getSourceDate().isBefore(leave.getStartDate())
+					|| command.getSourceDate().isAfter(effectiveLeaveEnd(leave))) {
+				throw new IllegalStateException("关联请假未覆盖代课日期");
+			}
+			CourseOffering sourceOffering = offerings.findById(source.getOfferingId())
+					.orElseThrow(() -> new IllegalArgumentException("源教学任务不存在"));
+			if (!teacherIdsForLeave(leave).contains(sourceOffering.getTeacherId())) {
+				throw new IllegalArgumentException("关联请假人与原任课教师不一致");
+			}
+		}
 	}
 
 	@Transactional
@@ -350,6 +418,7 @@ public class ScheduleOccurrenceService {
 		if (duplicateActive) {
 			throw new IllegalStateException("该课程日期已有其他生效调整，不能恢复");
 		}
+		assertLeaveLink(value, source);
 		validateConflict(value, source, term(value.getSemesterCode()));
 		value.setStatus("ACTIVE");
 		return exceptions.save(value);
@@ -445,8 +514,7 @@ public class ScheduleOccurrenceService {
 				&& teacherId.equals(sourceOffering.getTeacherId())) {
 			throw new IllegalArgumentException("代课教师不能是原任课教师");
 		}
-		if (leaveRecords.existsByApplicantTypeAndApplicantIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
-				"TEACHER", teacherId, "APPROVED", date, date)) {
+		if (teacherOnApprovedLeave(teacherId, date)) {
 			throw new IllegalStateException("目标教师在所选日期已批准请假");
 		}
 

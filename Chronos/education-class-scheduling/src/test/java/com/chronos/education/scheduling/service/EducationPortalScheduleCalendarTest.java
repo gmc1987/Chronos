@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.BellPeriodRepository;
@@ -61,7 +60,6 @@ class EducationPortalScheduleCalendarTest {
 		bellSchedules = mock(BellScheduleRepository.class);
 		bellPeriods = mock(BellPeriodRepository.class);
 		service = new EducationPortalContributionProvider(
-				mock(IAdminUserRepository.class),
 				teachers,
 				mock(StudentProfileRepository.class),
 				mock(AdministrativeClassRepository.class),
@@ -75,6 +73,32 @@ class EducationPortalScheduleCalendarTest {
 				mock(TeachingClassMemberRepository.class),
 				mock(StudentGuardianRepository.class),
 				occurrences);
+	}
+
+	@Test
+	void revokedTeacherBindingRemovesPortalIdentityAndPersonalSchedule() {
+		AcademicTerm term = new AcademicTerm();
+		term.setTermCode("2026-FALL");
+		term.setTermName("秋季学期");
+		when(terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE"))
+				.thenReturn(Optional.of(term));
+		CourseOffering offering = new CourseOffering();
+		ReflectionTestUtils.setField(offering, "id", "offering-1");
+		offering.setTeacherId("teacher-1");
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-FALL"))
+				.thenReturn(List.of(offering));
+		ScheduleEntry entry = new ScheduleEntry();
+		entry.setOfferingId("offering-1");
+		when(planVersions.latestPublishedEntries("2026-FALL"))
+				.thenReturn(List.of(entry));
+		when(bindings.findByUsernameAndStatusOrderByProfileType("teacher", "ACTIVE"))
+				.thenReturn(List.of());
+
+		Map<String, Object> data = service.load("teacher").data();
+
+		assertThat(data.get("profileTypes")).isEqualTo(List.of());
+		assertThat(data.get("mySchedule")).isEqualTo(List.of());
+		assertThat(data).doesNotContainKey("teacherSummary");
 	}
 
 	@Test

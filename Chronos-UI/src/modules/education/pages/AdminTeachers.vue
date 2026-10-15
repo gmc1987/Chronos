@@ -1,5 +1,6 @@
 <template>
   <AcademicCrudPage
+    :key="crudRevision"
     title="教师档案"
     description="维护教师专业方向、所属单位和最大周课时。可用时间在排课约束中维护。"
     entity-label="教师档案"
@@ -73,6 +74,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AcademicCrudPage from '../components/AcademicCrudPage.vue'
+import { todayLocalDate } from '../../../utils/localDate'
 import {
   bindEducationTeacherAccount,
   cancelTeacherEmploymentChange,
@@ -148,6 +150,7 @@ const resetTeacherPassword = async (row) => {
   ElMessage.success('密码已重置，用户下次登录须修改密码')
 }
 const changeDialog = ref(false),
+  crudRevision = ref(0),
   historyDrawer = ref(false),
   selectedTeacher = ref(null),
   changeHistory = ref([]),
@@ -163,7 +166,7 @@ const openChange = (row) => {
   Object.assign(changeForm, {
     changeType: '',
     targetDepartmentId: '',
-    effectiveDate: new Date().toISOString().slice(0, 10),
+    effectiveDate: todayLocalDate(),
     reason: ''
   })
   changeDialog.value = true
@@ -185,6 +188,7 @@ const submitChange = async () => {
   })
   changeDialog.value = false
   ElMessage.success('教师任职异动已登记')
+  crudRevision.value += 1
 }
 const cancelChange = async (row) => {
   await ElMessageBox.confirm('确认取消该待生效任职异动？', '提示', {

@@ -24,9 +24,11 @@ import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.chronos.model.vo.DataScopeContext;
 import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.Idao.IEmployeeAssignmentRepository;
 import com.chronos.model.pojo.Organization;
 import com.chronos.service.iService.IDataScopeService;
 import java.util.HashSet;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -59,6 +61,7 @@ public class EducationDataScopeService {
 	private final ClassroomRepository classrooms;
 	private final ScheduleEntryRepository scheduleEntries;
 	private final IOrganizationRepository organizations;
+	private final IEmployeeAssignmentRepository employeeAssignments;
 
 	@Autowired
 	public EducationDataScopeService(
@@ -73,7 +76,8 @@ public class EducationDataScopeService {
 			TeachingClassMemberRepository members,
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository scheduleEntries,
-			IOrganizationRepository organizations) {
+			IOrganizationRepository organizations,
+			IEmployeeAssignmentRepository employeeAssignments) {
 		this.platformScopes = platformScopes;
 		this.teachers = teachers;
 		this.assignments = assignments;
@@ -86,6 +90,24 @@ public class EducationDataScopeService {
 		this.classrooms = classrooms;
 		this.scheduleEntries = scheduleEntries;
 		this.organizations = organizations;
+		this.employeeAssignments = employeeAssignments;
+	}
+
+	public EducationDataScopeService(
+			IDataScopeService platformScopes,
+			TeacherAcademicProfileRepository teachers,
+			TeacherTeachingAssignmentRepository assignments,
+			AdministrativeClassRepository classes,
+			StudentProfileRepository students,
+			StudentGuardianRepository guardians,
+			EducationUserBindingRepository bindings,
+			CourseOfferingRepository offerings,
+			TeachingClassMemberRepository members,
+			ClassroomRepository classrooms,
+			ScheduleEntryRepository scheduleEntries,
+			IOrganizationRepository organizations) {
+		this(platformScopes, teachers, assignments, classes, students, guardians, bindings,
+				offerings, members, classrooms, scheduleEntries, organizations, null);
 	}
 
 	public EducationDataScopeService(
@@ -99,7 +121,7 @@ public class EducationDataScopeService {
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository scheduleEntries) {
 		this(platformScopes, teachers, assignments, classes, students, guardians, null,
-				offerings, null, classrooms, scheduleEntries, null);
+				offerings, null, classrooms, scheduleEntries, null, null);
 	}
 
 	public EducationDataScopeService(
@@ -115,7 +137,7 @@ public class EducationDataScopeService {
 			ClassroomRepository classrooms,
 			ScheduleEntryRepository scheduleEntries) {
 		this(platformScopes, teachers, assignments, classes, students, guardians, bindings,
-				offerings, members, classrooms, scheduleEntries, null);
+				offerings, members, classrooms, scheduleEntries, null, null);
 	}
 
 	public EducationDataScope resolve(String username) {
@@ -176,6 +198,16 @@ public class EducationDataScopeService {
 		TeacherAcademicProfile currentTeacher = platform.employeeId() == null
 				? null
 				: teachers.findByEmployeeId(platform.employeeId()).orElse(null);
+		if (currentTeacher != null && bindings != null) {
+			String teacherProfileId = currentTeacher.getId();
+			// 教育身份以有效绑定为准；员工关系不能重新授予已撤销的教师数据范围。
+			if (bindings.findByUsernameAndProfileTypeAndStatus(username, "TEACHER", "ACTIVE")
+					.map(EducationUserBinding::getProfileId)
+					.filter(teacherProfileId::equals)
+					.isEmpty()) {
+				currentTeacher = null;
+			}
+		}
 		if (currentTeacher == null) {
 			return new EducationDataScope(
 					false,
@@ -491,6 +523,56 @@ public class EducationDataScopeService {
 			return;
 		}
 		throw new AccessDeniedException("无权访问该教室");
+	}
+
+	/** 教室申请只补充本人有效任职学校的教室权限，不扩大其他教务数据范围。 */
+	public void assertReservableClassroom(String username, String classroomId) {
+		Classroom classroom = classrooms.findById(classroomId)
+				.orElseThrow(() -> new IllegalArgumentException("教室不存在"));
+		if (!canReserveClassroom(username, classroom)) {
+			throw new AccessDeniedException("无权申请该教室");
+		}
+	}
+
+	public boolean canReserveClassroom(String username, Classroom classroom) {
+		EducationDataScope scope = resolve(username);
+		if (scope.fullAccess() || classroom.getCampusId() != null
+				&& scope.campusIds().contains(classroom.getCampusId())) {
+			return true;
+		}
+		return classroom.getCampusId() != null
+				&& reservableCampusIds(username).contains(classroom.getCampusId());
+	}
+
+	public Set<String> reservableCampusIds(String username) {
+		Set<String> campusIds = new HashSet<>(resolve(username).campusIds());
+		if (employeeAssignments == null || bindings == null
+				|| organizations == null) {
+			return campusIds;
+		}
+		String employeeId = platformScopes.resolve(username).employeeId();
+		if (employeeId == null || bindings.findByUsernameAndProfileTypeAndStatus(
+				username, "TEACHER", "ACTIVE")
+				.flatMap(binding -> teachers.findById(binding.getProfileId()))
+				.filter(teacher -> employeeId.equals(teacher.getEmployeeId())
+						&& Boolean.TRUE.equals(teacher.getEnabled()))
+				.isEmpty()) {
+			return campusIds;
+		}
+		employeeAssignments.findCurrentPrimaryAssignment(employeeId, LocalDate.now())
+				.ifPresent(assignment -> {
+					Organization school = organizations.findById(assignment.getOrganizationId()).orElse(null);
+					if (school == null || !Integer.valueOf(1).equals(school.getStatus())) {
+						return;
+					}
+					campusIds.add(school.getId());
+					campusIds.addAll(organizations.findByParentOrgId_Id(school.getId()).stream()
+							.filter(child -> "CAMPUS".equals(child.getOrganizationType())
+									&& Integer.valueOf(1).equals(child.getStatus()))
+							.map(Organization::getId)
+							.toList());
+				});
+		return Set.copyOf(campusIds);
 	}
 
 	public void assertScheduleEntryAccess(EducationDataScope scope, String entryId) {

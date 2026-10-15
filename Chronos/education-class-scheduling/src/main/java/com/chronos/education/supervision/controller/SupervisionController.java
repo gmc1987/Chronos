@@ -4,6 +4,10 @@ import com.chronos.commons.model.ResultData;
 import com.chronos.education.supervision.dto.SupervisionDtos.*;
 import com.chronos.education.supervision.model.*;
 import com.chronos.education.supervision.service.SupervisionCenterService;
+import com.chronos.education.supervision.service.SupervisionCheckInProofProvider;
+import com.chronos.model.form.FormDefinition;
+import com.chronos.model.form.FormField;
+import com.chronos.model.form.FormInstance;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -69,6 +73,19 @@ public class SupervisionController {
 		return ok(service.myAssignments(auth.getName()).stream().map(this::assignment).toList());
 	}
 
+	@GetMapping("/portal/education/supervision/teaching-tasks")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<List<AssignmentResponse>> teachingTasks(Authentication auth) {
+		return ok(service.teachingAssignments(auth.getName()).stream().map(this::assignment).toList());
+	}
+
+	@PostMapping("/portal/education/supervision/teaching-tasks/{id}/proof")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<SupervisionCheckInProofProvider.Proof> issueProof(
+			@PathVariable String id, Authentication auth) {
+		return ok(service.issueTeacherProof(id, auth.getName()));
+	}
+
 	@PostMapping("/portal/education/supervision/tasks/{id}/accept")
 	@PreAuthorize("hasAuthority('education:supervision:assignment:accept')")
 	public ResultData<AssignmentResponse> accept(@PathVariable String id, Authentication auth) {
@@ -86,6 +103,26 @@ public class SupervisionController {
 	@PreAuthorize("hasAuthority('education:supervision:assignment:update')")
 	public ResultData<AssignmentResponse> complete(@PathVariable String id, Authentication auth) {
 		return ok(assignment(service.completeAssignment(id, auth.getName())));
+	}
+
+	@GetMapping("/portal/education/supervision/evaluation-forms")
+	@PreAuthorize("hasAuthority('education:supervision:record:create')")
+	public ResultData<List<FormDefinition>> evaluationForms(Authentication auth) {
+		return ok(service.evaluationForms(auth.getName()));
+	}
+
+	@GetMapping("/portal/education/supervision/evaluation-forms/{formId}/fields")
+	@PreAuthorize("hasAuthority('education:supervision:record:create')")
+	public ResultData<List<FormField>> evaluationFields(@PathVariable String formId, Authentication auth) {
+		return ok(service.evaluationFields(auth.getName(), formId));
+	}
+
+	@PostMapping("/portal/education/supervision/tasks/{id}/form")
+	@PreAuthorize("hasAuthority('education:supervision:record:create')")
+	public ResultData<FormInstance> saveEvaluationForm(@PathVariable String id,
+			@Valid @RequestBody EvaluationFormCommand command, Authentication auth) {
+		return ok(service.saveEvaluationForm(id, auth.getName(), command.formTemplateId(),
+				command.values(), command.draft()));
 	}
 
 	@PostMapping("/portal/education/supervision/tasks/{id}/submit")
@@ -107,6 +144,24 @@ public class SupervisionController {
 			Authentication auth) {
 		return ok(issue(service.createIssue(recordId, auth.getName(), command.severity(), command.title(),
 				command.description(), command.ownerId(), command.dueAt())));
+	}
+
+	@GetMapping("/admin/education/supervision/records")
+	@PreAuthorize("hasAuthority('education:supervision:issue:create')")
+	public ResultData<List<RecordResponse>> records(Authentication auth) {
+		return ok(service.listRecords(auth.getName()).stream().map(this::record).toList());
+	}
+
+	@GetMapping("/admin/education/supervision/issues")
+	@PreAuthorize("hasAuthority('education:supervision:review:create')")
+	public ResultData<List<IssueResponse>> issues(Authentication auth) {
+		return ok(service.listIssues(auth.getName()).stream().map(this::issue).toList());
+	}
+
+	@GetMapping("/portal/education/supervision/issues")
+	@PreAuthorize("isAuthenticated()")
+	public ResultData<List<IssueResponse>> myIssues(Authentication auth) {
+		return ok(service.myIssues(auth.getName()).stream().map(this::issue).toList());
 	}
 
 	@PostMapping("/portal/education/supervision/issues/{id}/rectify")

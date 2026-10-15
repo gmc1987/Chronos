@@ -10,6 +10,12 @@
       <el-radio-group v-else-if="field.fieldType === 'RADIO'" v-model="value[field.fieldKey]" :disabled="readonly(field)"><el-radio v-for="option in options(field)" :key="option.value" :value="option.value">{{ option.label }}</el-radio></el-radio-group>
       <el-checkbox-group v-else-if="field.fieldType === 'CHECKBOX'" v-model="value[field.fieldKey]" :disabled="readonly(field)"><el-checkbox v-for="option in options(field)" :key="option.value" :value="option.value">{{ option.label }}</el-checkbox></el-checkbox-group>
       <el-switch v-else-if="field.fieldType === 'BOOLEAN'" v-model="value[field.fieldKey]" :disabled="readonly(field)" />
+      <div v-else-if="field.fieldType === 'FILE' && readonly(field)" class="readonly-attachments">
+        <el-button v-for="file in attachments(field)" :key="file.id" link type="primary" @click="preview(file)">
+          {{ file.name || '附件' }}
+        </el-button>
+        <span v-if="!attachments(field).length">暂无附件</span>
+      </div>
       <el-upload
         v-else-if="field.fieldType === 'FILE'"
         :file-list="fileList(field)"

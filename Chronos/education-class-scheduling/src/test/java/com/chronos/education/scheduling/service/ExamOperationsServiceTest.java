@@ -195,6 +195,16 @@ class ExamOperationsServiceTest {
 		assertThat(old.getRevokedAt()).isNotNull();
 	}
 
+	@Test
+	void ticketNumberFitsColumnAndChangesWithPublishedVersion() {
+		String planId = "a0c3a84d-9914-42c2-a59a-b6bf6c0ac4e5";
+		String candidateId = "f7b8b6b9-7474-48b1-ae49-bc2319874427";
+		String first = ExamOperationsService.ticketNo(planId, 1, candidateId);
+		assertThat(first).hasSizeLessThanOrEqualTo(64);
+		assertThat(first).isEqualTo(ExamOperationsService.ticketNo(planId, 1, candidateId));
+		assertThat(first).isNotEqualTo(ExamOperationsService.ticketNo(planId, 2, candidateId));
+	}
+
 	private ExamSession session(String status) {
 		ExamSession value = new ExamSession();
 		value.setId("session-1");

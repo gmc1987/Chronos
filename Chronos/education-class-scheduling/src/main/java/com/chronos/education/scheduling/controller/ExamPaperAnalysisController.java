@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.ExamItemScore;
@@ -32,9 +33,10 @@ public class ExamPaperAnalysisController {
 
 	@GetMapping("/admin/education/exam/paper-questions")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:exam:paper-analysis:manage')")
-	public ResultData<List<AvailableQuestion>> availableQuestions(Authentication authentication) {
+	public ResultData<List<AvailableQuestion>> availableQuestions(
+			@RequestParam String sessionId, Authentication authentication) {
 		requireFullAccess(authentication);
-		return ok(service.availableQuestions());
+		return ok(service.availableQuestions(sessionId));
 	}
 
 	@GetMapping("/admin/education/exam/sessions/{sessionId}/paper-items")
@@ -86,6 +88,17 @@ public class ExamPaperAnalysisController {
 			Authentication authentication) {
 		requireFullAccess(authentication);
 		return ok(service.saveScore(sessionId, itemId, command));
+	}
+
+	@PutMapping("/admin/education/exam/sessions/{sessionId}/paper-items/{itemId}/scores/batch")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:exam:paper-analysis:manage')")
+	public ResultData<List<ExamItemScore>> saveScoresBatch(
+			@PathVariable String sessionId,
+			@PathVariable String itemId,
+			@RequestBody List<ScoreCommand> commands,
+			Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.saveScoresBatch(sessionId, itemId, commands));
 	}
 
 	@PostMapping("/admin/education/exam/sessions/{sessionId}/scores/confirm")

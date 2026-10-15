@@ -109,7 +109,7 @@ class EducationAgentServiceTest {
 	}
 
 	@Test
-	void confirmUsesLockedProposalAndCreatesSingleConstraint() {
+	void confirmFreezesProposalAndApplyCreatesSingleConstraint() {
 		SchedulingAgentProposal proposal = new SchedulingAgentProposal();
 		proposal.setId("proposal-1");
 		proposal.setSemesterCode("2026-2027-1");
@@ -132,10 +132,18 @@ class EducationAgentServiceTest {
 		SchedulingAgentProposal result = service.confirm("proposal-1", authentication);
 
 		assertThat(result.getStatus()).isEqualTo("CONFIRMED");
+		assertThat(result.getAppliedConstraintId()).isNull();
+		org.mockito.Mockito.verify(constraints, org.mockito.Mockito.never())
+				.save(org.mockito.ArgumentMatchers.any());
+
+		result = service.apply("proposal-1", authentication);
+		assertThat(result.getStatus()).isEqualTo("APPLIED");
 		assertThat(result.getAppliedConstraintId()).isEqualTo("constraint-1");
-		org.mockito.Mockito.verify(proposals).findLockedById("proposal-1");
+		org.mockito.Mockito.verify(proposals, org.mockito.Mockito.times(2)).findLockedById("proposal-1");
 		org.mockito.Mockito.verify(constraints, org.mockito.Mockito.times(1))
 				.save(org.mockito.ArgumentMatchers.any());
+		assertThatThrownBy(() -> service.apply("proposal-1", authentication))
+				.isInstanceOf(IllegalStateException.class);
 	}
 
 	private CourseOffering offering(

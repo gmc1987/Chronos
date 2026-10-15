@@ -27,4 +27,15 @@ public final class GradeProductionDtos {
 			Boolean passed,
 			Integer versionNo) {
 	}
+
+	/** 审批人只读取当前更正单的必要事实，避免泄露整本成绩册。 */
+	public record GradeChangeReviewView(
+			String requestId,
+			String studentNo,
+			String studentName,
+			BigDecimal beforeScore,
+			BigDecimal afterScore,
+			String reason,
+			String status) {
+	}
 }

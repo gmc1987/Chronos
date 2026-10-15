@@ -8,4 +8,5 @@ public interface IFormDefinitionRepository extends JpaRepository<FormDefinition,
 	boolean existsByFormKeyAndVersion(String formKey, String version);
 
 	List<FormDefinition> findByFormKeyOrderByCreateTimeDesc(String formKey);
+	List<FormDefinition> findByFormKeyStartingWithAndStatusOrderByFormNameAsc(String prefix, String status);
 }

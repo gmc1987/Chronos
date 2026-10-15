@@ -22,21 +22,18 @@ public class CollaborationManagedFileAccessPolicy implements ManagedFileAccessPo
 	private final OfficeApprovalRequestRepository requests;
 	private final IAdminUserRepository accounts;
 	private final IEmployeeAssignmentRepository assignments;
-	private final CollaborationOfficeService collaboration;
 
 	public CollaborationManagedFileAccessPolicy(
 			CollaborationFileShareRepository shares,
 			OfficialDocumentRepository documents,
 			OfficeApprovalRequestRepository requests,
 			IAdminUserRepository accounts,
-			IEmployeeAssignmentRepository assignments,
-			CollaborationOfficeService collaboration) {
+			IEmployeeAssignmentRepository assignments) {
 		this.shares = shares;
 		this.documents = documents;
 		this.requests = requests;
 		this.accounts = accounts;
 		this.assignments = assignments;
-		this.collaboration = collaboration;
 	}
 
 	@Override
@@ -44,7 +41,7 @@ public class CollaborationManagedFileAccessPolicy implements ManagedFileAccessPo
 		if (SHARE_TYPE.equals(businessType)) {
 			String organizationId = organizationId(username);
 			return shares.findById(businessId)
-					.map(value -> collaboration.canReadShare(value, username, organizationId))
+					.map(value -> CollaborationShareAudience.canRead(value, username, organizationId))
 					.orElse(false);
 		}
 		if (DOCUMENT_TYPE.equals(businessType)) {

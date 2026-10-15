@@ -1,6 +1,5 @@
 package com.chronos.education.scheduling.service;
 
-import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.BellPeriodRepository;
@@ -38,7 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
 /** 为统一门户提供学校概览和当前教师个人课表。 */
 @Component
 public class EducationPortalContributionProvider implements PortalContributionProvider {
-	private final IAdminUserRepository users;
 	private final TeacherAcademicProfileRepository teachers;
 	private final StudentProfileRepository students;
 	private final AdministrativeClassRepository classes;
@@ -54,7 +52,6 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	private final ScheduleOccurrenceService occurrences;
 
 	public EducationPortalContributionProvider(
-			IAdminUserRepository users,
 			TeacherAcademicProfileRepository teachers,
 			StudentProfileRepository students,
 			AdministrativeClassRepository classes,
@@ -68,7 +65,6 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 			TeachingClassMemberRepository teachingClassMembers,
 			StudentGuardianRepository guardians,
 			ScheduleOccurrenceService occurrences) {
-		this.users = users;
 		this.teachers = teachers;
 		this.students = students;
 		this.classes = classes;
@@ -98,11 +94,6 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 				.stream()
 				.map(EducationUserBinding::getProfileType)
 				.collect(Collectors.toSet());
-		var account = users.findByUsername(username);
-		if (account != null && account.getEmployeeId() != null
-				&& teachers.findByEmployeeId(account.getEmployeeId()).isPresent()) {
-			profileTypes.add("TEACHER");
-		}
 		data.put("profileTypes", profileTypes.stream().sorted().toList());
 		data.put("metrics", List.of(
 				metric("教师", teachers.count()),
@@ -121,11 +112,11 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	}
 
 	private void loadTeacherSummary(String username, Map<String, Object> data) {
-		var account = users.findByUsername(username);
-		if (account == null || account.getEmployeeId() == null) {
+		Set<String> teacherIds = resolveTeacherProfileIds(username);
+		if (teacherIds.isEmpty()) {
 			return;
 		}
-		teachers.findByEmployeeId(account.getEmployeeId()).ifPresent(teacher -> {
+		teachers.findById(teacherIds.iterator().next()).ifPresent(teacher -> {
 			long courseCount = offerings.findByTeacherIdOrderByOfferingCode(teacher.getId()).size();
 			data.put("teacherSummary", Map.of(
 					"teacherName", teacher.getTeacherName(),
@@ -183,15 +174,6 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 			}
 		}
 
-		// 兼容已有教师账号；迁移到绑定表前仍可通过 IAM employeeId 使用个人课表。
-		var account = users.findByUsername(username);
-		if (account != null && account.getEmployeeId() != null) {
-			teachers.findByEmployeeId(account.getEmployeeId()).ifPresent(teacher -> byId.values().stream()
-					.filter(item -> teacher.getId().equals(item.getTeacherId())
-							|| teacher.getEmployeeId().equals(item.getTeacherId()))
-					.map(CourseOffering::getId)
-					.forEach(result::add));
-		}
 		return result;
 	}
 
@@ -423,12 +405,6 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 				.filter(item -> "TEACHER".equals(item.getProfileType()))
 				.map(EducationUserBinding::getProfileId)
 				.collect(Collectors.toSet());
-		var account = users.findByUsername(username);
-		if (account != null && account.getEmployeeId() != null) {
-			teachers.findByEmployeeId(account.getEmployeeId())
-					.map(value -> value.getId())
-					.ifPresent(result::add);
-		}
 		return result;
 	}
 

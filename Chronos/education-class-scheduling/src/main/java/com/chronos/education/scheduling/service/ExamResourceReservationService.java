@@ -17,6 +17,7 @@ import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.BellPeriodRepository;
 import com.chronos.education.scheduling.dao.BellScheduleRepository;
 import com.chronos.education.scheduling.dao.ExamCandidateRepository;
+import com.chronos.education.scheduling.dao.ExamCourseSuspensionItemRepository;
 import com.chronos.education.scheduling.dao.ExamInvigilationRepository;
 import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
@@ -41,9 +42,9 @@ public class ExamResourceReservationService {
 	private final AcademicTermRepository terms;
 	private final BellScheduleRepository bellSchedules;
 	private final BellPeriodRepository bellPeriods;
+	private final ExamCourseSuspensionItemRepository suspensions;
 
 	/** 周课表会覆盖一个日期区间，逐个已发布考试日期验证实际发生的周次。 */
-	@Transactional(readOnly = true)
 	public void assertWeeklyCourseAvailable(
 			String semesterCode,
 			String campusId,
@@ -56,6 +57,16 @@ public class ExamResourceReservationService {
 			String classroomId,
 			String teacherId,
 			Set<String> studentIds) {
+		assertWeeklyCourseAvailable(semesterCode, campusId, dayOfWeek, periodNo,
+				durationPeriods, startWeek, endWeek, weekPattern, classroomId,
+				teacherId, studentIds, null);
+	}
+
+	/** 已批准的考试停课覆盖指定课程发生日，不能再把它当作资源冲突。 */
+	public void assertWeeklyCourseAvailable(
+			String semesterCode, String campusId, Integer dayOfWeek, Integer periodNo,
+			Integer durationPeriods, Integer startWeek, Integer endWeek, String weekPattern,
+			String classroomId, String teacherId, Set<String> studentIds, String sourceEntryId) {
 		AcademicTerm term = term(semesterCode);
 		for (ExamSession exam : sessions.findByExamDateBetweenAndStatus(
 				term.getStartDate(), term.getEndDate(), "PUBLISHED")) {
@@ -66,6 +77,10 @@ public class ExamResourceReservationService {
 			int week = (int) (ChronoUnit.DAYS.between(
 					term.getStartDate(), exam.getExamDate()) / 7) + 1;
 			if (week < startWeek || week > endWeek || !weekMatches(weekPattern, week)) {
+				continue;
+			}
+			if (sourceEntryId != null && suspensions.existsActiveApprovedSuspension(
+					sourceEntryId, exam.getExamDate(), exam.getPlanId())) {
 				continue;
 			}
 			assertAvailableAt(

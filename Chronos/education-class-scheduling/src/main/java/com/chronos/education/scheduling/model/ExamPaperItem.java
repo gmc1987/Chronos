@@ -29,6 +29,14 @@ public class ExamPaperItem extends BaseEntity {
 	@Column(name = "question_id", length = 64)
 	private String questionId;
 
+	/** 组卷时引用的已发布题库版本；旧试卷记录为空，不能据此推断历史版本。 */
+	@Column(name = "question_version_id", length = 64)
+	private String questionVersionId;
+
+	/** 发布版本的内容哈希，用于复核题库快照是否被意外修改。 */
+	@Column(name = "question_snapshot_hash", length = 64)
+	private String questionSnapshotHash;
+
 	@Column(name = "title", nullable = false, length = 200)
 	private String title;
 

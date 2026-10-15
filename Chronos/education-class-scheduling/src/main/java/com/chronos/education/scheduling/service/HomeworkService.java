@@ -40,8 +40,10 @@ import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.GradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.BatchGradeRequest;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.SubmissionRequest;
+import com.chronos.education.scheduling.model.dto.HomeworkDtos.StudentSubmissionView;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
 import com.chronos.education.grade.dto.GradeSourceEventContracts.HomeworkGradesPublishedV1;
+import com.chronos.file.service.ManagedFileService;
 
 @Service
 @Transactional
@@ -59,6 +61,7 @@ public class HomeworkService {
 	private final QuestionRepository questions;
 	private final QuestionVersionRepository questionVersions;
 	private final EducationDomainEventService domainEvents;
+	private final ManagedFileService managedFiles;
 	@org.springframework.beans.factory.annotation.Autowired
 	private StudentProfileRepository studentProfiles;
 
@@ -68,7 +71,7 @@ public class HomeworkService {
 			TeachingPlanItemRepository planItems, TeachingPlanRepository plans,
 			PreparationRepository preparations, LessonPlanRepository lessonPlans,
 			QuestionRepository questions, QuestionVersionRepository questionVersions,
-			EducationDomainEventService domainEvents) {
+			EducationDomainEventService domainEvents, ManagedFileService managedFiles) {
 		this.assignments = assignments;
 		this.submissions = submissions;
 		this.members = members;
@@ -78,6 +81,7 @@ public class HomeworkService {
 		this.preparations = preparations; this.lessonPlans = lessonPlans;
 		this.questions = questions; this.questionVersions = questionVersions;
 		this.domainEvents = domainEvents;
+		this.managedFiles = managedFiles;
 	}
 
 	private EducationDataScope scope(Authentication auth) {
@@ -166,6 +170,9 @@ public class HomeworkService {
 		validateReferences(request, request.offeringId());
 		HomeworkAssignment result = new HomeworkAssignment();
 		apply(result, request);
+		if (!fileIds(result.getAttachmentSnapshotJson()).isEmpty()) {
+			throw new IllegalArgumentException("请先保存作业草稿，再上传附件");
+		}
 		return assignments.save(result);
 	}
 
@@ -178,6 +185,8 @@ public class HomeworkService {
 		}
 		validateReferences(request, request.offeringId());
 		apply(result, request);
+		bindAttachments(result.getAttachmentSnapshotJson(), "EDUCATION_HOMEWORK_ASSIGNMENT",
+				result.getId(), auth);
 		return result;
 	}
 
@@ -254,6 +263,43 @@ public class HomeworkService {
 		} catch (Exception ex) {
 			throw new IllegalArgumentException(field + "格式无效", ex);
 		}
+	}
+
+	/** 附件引用必须指向当前作业或当前学生提交，不能复用其他业务的文件。 */
+	private List<String> fileIds(String raw) {
+		try {
+			JsonNode refs = JSON.readTree(raw == null ? "[]" : raw);
+			if (refs == null || !refs.isArray()) throw new IllegalArgumentException("附件引用必须是 JSON 数组");
+			List<String> ids = new java.util.ArrayList<>();
+			for (JsonNode ref : refs) {
+				String id = ref.path("fileId").asText("");
+				if (id.isBlank()) throw new IllegalArgumentException("附件引用缺少 fileId");
+				ids.add(id);
+			}
+			return ids;
+		} catch (IllegalArgumentException ex) {
+			throw ex;
+		} catch (Exception ex) {
+			throw new IllegalArgumentException("附件引用格式无效", ex);
+		}
+	}
+
+	private void bindAttachments(String raw, String businessType, String businessId,
+			Authentication auth) {
+		List<String> ids = fileIds(raw);
+		List<String> drafts = new java.util.ArrayList<>();
+		for (String id : ids) {
+			var file = managedFiles.metadata(id, auth);
+			if (businessType.equals(file.businessType()) && businessId.equals(file.businessId())) {
+				continue;
+			}
+			if (!"WORKFLOW_FORM_DRAFT".equals(file.businessType())) {
+				throw new IllegalArgumentException("附件已绑定其他业务");
+			}
+			drafts.add(id);
+		}
+		if (!drafts.isEmpty()) managedFiles.bind(drafts, businessType, businessId, auth.getName());
+		managedFiles.requireBound(ids, businessType, businessId);
 	}
 
 	private void validateReferences(AssignmentRequest request, String offeringId) {
@@ -340,6 +386,13 @@ public class HomeworkService {
 		result.setAnswerSnapshotJson(request.answerSnapshotJson());
 		result.setAttachmentSnapshotJson(request.attachmentSnapshotJson() == null ? "[]" : request.attachmentSnapshotJson());
 		result.setStatus("DRAFT");
+		if (result.getId() == null && !fileIds(result.getAttachmentSnapshotJson()).isEmpty()) {
+			throw new IllegalArgumentException("请先保存答案草稿，再上传附件");
+		}
+		if (result.getId() != null) {
+			bindAttachments(result.getAttachmentSnapshotJson(), "EDUCATION_HOMEWORK_SUBMISSION",
+					result.getId(), auth);
+		}
 		return submissions.save(result);
 	}
 
@@ -431,11 +484,12 @@ public class HomeworkService {
 	}
 
 	@Transactional(readOnly = true)
-	public HomeworkSubmission mySubmission(String assignmentId, Authentication auth) {
+	public StudentSubmissionView mySubmission(String assignmentId, Authentication auth) {
 		HomeworkAssignment homework = assignment(assignmentId);
 		String student = studentId(auth);
 		studentCan(scope(auth), homework, student);
-		return submissions.findByAssignmentIdAndStudentId(assignmentId, student).orElse(null);
+		return StudentSubmissionView.from(
+				submissions.findByAssignmentIdAndStudentId(assignmentId, student).orElse(null));
 	}
 
 	public HomeworkSubmission grade(String id, GradeRequest request, Authentication auth) {

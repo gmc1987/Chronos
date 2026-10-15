@@ -3,8 +3,11 @@ package com.chronos.education.scheduling.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import java.nio.charset.StandardCharsets;
 
@@ -20,13 +23,18 @@ import com.chronos.education.scheduling.dao.ExamPlanRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
 import com.chronos.education.scheduling.dao.ExamSessionOfferingRepository;
+import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.dao.QuestionKnowledgePointRepository;
 import com.chronos.education.scheduling.dao.QuestionRepository;
+import com.chronos.education.scheduling.dao.QuestionVersionRepository;
+import com.chronos.education.scheduling.dao.QuestionBankRepository;
+import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.model.ExamCandidate;
 import com.chronos.education.scheduling.model.ExamItemScore;
 import com.chronos.education.scheduling.model.ExamPaperItem;
 import com.chronos.education.grade.dto.GradeSourceEventContracts.ExamScoresConfirmedV1;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.WrongAnswerConfirmed;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 
@@ -37,8 +45,10 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class ExamPaperAnalysisService {
+	private static final ObjectMapper QUESTION_JSON = new ObjectMapper();
 	private final ExamSessionRepository sessions;
 	private final ExamSessionOfferingRepository sessionOfferings;
+	private final TeachingClassMemberRepository teachingClassMembers;
 	private final ExamRoomRepository rooms;
 	private final ExamCandidateRepository candidates;
 	private final ExamPaperItemRepository items;
@@ -46,6 +56,9 @@ public class ExamPaperAnalysisService {
 	private final ExamPlanRepository plans;
 	private final EducationDomainEventService domainEvents;
 	private final QuestionRepository questions;
+	private final QuestionVersionRepository questionVersions;
+	private final QuestionBankRepository questionBanks;
+	private final CourseOfferingRepository courseOfferings;
 	private final QuestionKnowledgePointRepository questionKnowledgePoints;
 
 	/**
@@ -64,6 +77,7 @@ public class ExamPaperAnalysisService {
 			QuestionKnowledgePointRepository questionKnowledgePoints) {
 		this.sessions = sessions;
 		this.sessionOfferings = null;
+		this.teachingClassMembers = null;
 		this.rooms = rooms;
 		this.candidates = candidates;
 		this.items = items;
@@ -71,6 +85,9 @@ public class ExamPaperAnalysisService {
 		this.plans = plans;
 		this.domainEvents = domainEvents;
 		this.questions = questions;
+		this.questionVersions = null;
+		this.questionBanks = null;
+		this.courseOfferings = null;
 		this.questionKnowledgePoints = questionKnowledgePoints;
 	}
 
@@ -81,10 +98,15 @@ public class ExamPaperAnalysisService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<AvailableQuestion> availableQuestions() {
+	public List<AvailableQuestion> availableQuestions(String sessionId) {
+		requireSession(sessionId);
+		var allowed = allowedQuestionCourses(sessionId);
 		// 考试中心只暴露组卷所需快照字段，避免考务角色依赖教学中心管理权限。
 		return questions.findByStatusAndArchivedFalseOrderByIdDesc("PUBLISHED").stream()
 				.filter(question -> questionKnowledgePoints.existsByQuestionId(question.getId()))
+				.filter(question -> questionBanks.findById(question.getBankId())
+						.map(bank -> questionBankAllowed(bank, allowed))
+						.orElse(false))
 				.map(question -> new AvailableQuestion(
 						question.getId(),
 						question.getStem(),
@@ -117,13 +139,64 @@ public class ExamPaperAnalysisService {
 		if (questionKnowledgePoints.findByQuestionId(question.getId()).isEmpty()) {
 			throw new IllegalArgumentException("所选题目尚未关联知识点");
 		}
+		var allowed = allowedQuestionCourses(sessionId);
+		var bank = questionBanks.findById(question.getBankId())
+				.orElseThrow(() -> new IllegalArgumentException("题目所属题库不存在"));
+		if (!questionBankAllowed(bank, allowed)) {
+			throw new IllegalArgumentException("题目不属于本场考试关联的课程");
+		}
+		if (questionVersions == null || blank(question.getPublishedVersionId())) {
+			throw new IllegalStateException("所选题目缺少已发布版本，不能加入试卷");
+		}
+		var version = questionVersions.findById(question.getPublishedVersionId())
+				.orElseThrow(() -> new IllegalStateException("题库已发布版本不存在"));
+		if (!question.getId().equals(version.getQuestionId())
+				|| !"PUBLISHED".equals(version.getStatus())
+				|| blank(version.getSnapshotJson())
+				|| blank(version.getSnapshotHash())) {
+			throw new IllegalStateException("题库已发布版本无效，不能加入试卷");
+		}
+		try {
+			String publishedStem = QUESTION_JSON.readTree(version.getSnapshotJson())
+					.path("stem").asText();
+			if (!publishedStem.equals(command.title().trim())) {
+				throw new IllegalArgumentException("试卷题目必须与题库已发布版本一致");
+			}
+		} catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+			throw new IllegalStateException("题库已发布版本快照不可读取", ex);
+		}
 		ExamPaperItem item = new ExamPaperItem();
 		item.setSessionId(sessionId);
 		item.setQuestionNo(command.questionNo().trim());
 		item.setQuestionId(question.getId());
+		item.setQuestionVersionId(version.getId());
+		item.setQuestionSnapshotHash(version.getSnapshotHash());
 		item.setTitle(command.title().trim());
 		item.setMaxScore(command.maxScore());
 		return items.save(item);
+	}
+
+	private AllowedQuestionCourses allowedQuestionCourses(String sessionId) {
+		if (sessionOfferings == null || courseOfferings == null || questionBanks == null) {
+			throw new IllegalStateException("考试课程映射不可用，不能组卷");
+		}
+		Set<String> offeringIds = sessionOfferings.findBySessionId(sessionId).stream()
+				.map(mapping -> mapping.getOfferingId()).collect(Collectors.toSet());
+		Set<String> courseCodes = courseOfferings.findAllById(offeringIds).stream()
+				.map(offering -> offering.getCourseCode()).collect(Collectors.toSet());
+		return new AllowedQuestionCourses(offeringIds, courseCodes);
+	}
+
+	private record AllowedQuestionCourses(Set<String> offeringIds, Set<String> courseCodes) {
+	}
+
+	private boolean questionBankAllowed(
+			com.chronos.education.scheduling.model.QuestionBank bank,
+			AllowedQuestionCourses allowed) {
+		if (bank.isArchived()) return false;
+		// 教学班私有题库不得仅凭相同课程编码流入其他教学班的试卷。
+		if (!blank(bank.getOfferingId())) return allowed.offeringIds().contains(bank.getOfferingId());
+		return !blank(bank.getCourseId()) && allowed.courseCodes().contains(bank.getCourseId());
 	}
 
 	@Transactional
@@ -170,6 +243,24 @@ public class ExamPaperAnalysisService {
 		return scores.save(value);
 	}
 
+	/** 一次提交整题的多名考生得分，任一行无效时整体回滚。 */
+	@Transactional
+	public List<ExamItemScore> saveScoresBatch(
+			String sessionId, String itemId, List<ScoreCommand> commands) {
+		if (commands == null || commands.isEmpty()) {
+			throw new IllegalArgumentException("请提供至少一名考生的逐题得分");
+		}
+		Set<String> uniqueCandidates = new java.util.HashSet<>();
+		for (ScoreCommand command : commands) {
+			if (command == null || blank(command.candidateId())
+					|| !uniqueCandidates.add(command.candidateId())) {
+				throw new IllegalArgumentException("批量成绩含空考生或重复考生");
+			}
+			saveScore(sessionId, itemId, command);
+		}
+		return scores.findByItemId(itemId);
+	}
+
 	@Transactional
 	public com.chronos.education.scheduling.model.ExamSession confirmScores(String sessionId) {
 		return confirmScores(sessionId, "SYSTEM");
@@ -206,6 +297,14 @@ public class ExamPaperAnalysisService {
 		if (offeringIds.isEmpty()) {
 			throw new IllegalStateException("考试场次缺少课程开设映射，不能确认成绩");
 		}
+		if (teachingClassMembers == null) {
+			throw new IllegalStateException("教学班成员存储不可用，不能确认成绩");
+		}
+		Map<String, Set<String>> offeringsByStudent = teachingClassMembers
+				.findByOfferingIdInAndEnrollmentStatus(offeringIds, "ENROLLED")
+				.stream().collect(Collectors.groupingBy(
+						member -> member.getStudentId(),
+						Collectors.mapping(member -> member.getOfferingId(), Collectors.toSet())));
 		var confirmedAt = java.time.OffsetDateTime.now();
 		var plan = plans.findById(session.getPlanId())
 				.orElseThrow(() -> new IllegalStateException("考试计划不存在"));
@@ -218,9 +317,16 @@ public class ExamPaperAnalysisService {
 			BigDecimal maxScore = paperItems.stream()
 					.map(ExamPaperItem::getMaxScore)
 					.reduce(BigDecimal.ZERO, BigDecimal::add);
-			for (String offeringId : offeringIds) {
+			Set<String> candidateOfferings = offeringsByStudent.getOrDefault(
+					candidate.getStudentId(), Set.of());
+			if (candidateOfferings.isEmpty()) {
+				throw new IllegalStateException("考生未选修本场考试关联的课程："
+						+ candidate.getStudentId());
+			}
+			for (String offeringId : candidateOfferings) {
 				ExamScoresConfirmedV1 event = new ExamScoresConfirmedV1(
-						"EXAM_SCORES_CONFIRMED:" + sessionId + ":" + offeringId + ":" + candidate.getStudentId(),
+						// 三个 UUID 加长前缀会超过 outbox.event_id 的 128 字符上限。
+						"ESC:" + sessionId + ":" + offeringId + ":" + candidate.getStudentId(),
 						"ExamScoresConfirmedV1",
 						confirmedAt,
 						1,

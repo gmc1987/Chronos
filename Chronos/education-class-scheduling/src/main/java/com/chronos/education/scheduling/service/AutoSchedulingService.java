@@ -75,6 +75,7 @@ public class AutoSchedulingService {
 	private final IAdminUserRepository users;
 	private final IAuditLogService audit;
 	private final EntityManager entityManager;
+	private final SchedulePlanVersionService versionService;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
 	public AutoSchedulingService(
@@ -91,7 +92,8 @@ public class AutoSchedulingService {
 			SchedulePolicyService policyService,
 			IAdminUserRepository users,
 			IAuditLogService audit,
-			EntityManager entityManager) {
+			EntityManager entityManager,
+			SchedulePlanVersionService versionService) {
 		this.candidates = candidates;
 		this.entries = entries;
 		this.offerings = offerings;
@@ -106,6 +108,7 @@ public class AutoSchedulingService {
 		this.users = users;
 		this.audit = audit;
 		this.entityManager = entityManager;
+		this.versionService = versionService;
 	}
 
 	@Transactional
@@ -327,6 +330,8 @@ public class AutoSchedulingService {
 			throw new IllegalStateException("当前课表在候选方案生成后已变化，请重新生成方案");
 		}
 		List<ScheduleEntry> snapshot = readEntries(candidate.getSnapshotJson());
+		// 应用前重查已发布考试，避免已审核候选写入无法发布的草稿。
+		versionService.assertExamAvailability(snapshot);
 		Map<String, CourseOffering> currentOfferings = offerings
 				.findBySemesterCodeOrderByOfferingCode(candidate.getSemesterCode()).stream()
 				.collect(Collectors.toMap(CourseOffering::getId, value -> value));
@@ -451,6 +456,7 @@ public class AutoSchedulingService {
 		if (!List.of("DRAFT", "REJECTED").contains(candidate.getReviewStatus())) {
 			throw new IllegalStateException("当前方案状态不能提交审核");
 		}
+		versionService.assertExamAvailability(readEntries(candidate.getSnapshotJson()));
 		candidate.setReviewStatus("SUBMITTED");
 		candidate.setReviewComment(null);
 		candidate.setReviewedBy(null);
@@ -474,6 +480,9 @@ public class AutoSchedulingService {
 		}
 		if (!approved && (comment == null || comment.isBlank())) {
 			throw new IllegalArgumentException("驳回时必须填写原因");
+		}
+		if (approved) {
+			versionService.assertExamAvailability(readEntries(candidate.getSnapshotJson()));
 		}
 		candidate.setReviewStatus(approved ? "APPROVED" : "REJECTED");
 		candidate.setReviewedBy(actor);

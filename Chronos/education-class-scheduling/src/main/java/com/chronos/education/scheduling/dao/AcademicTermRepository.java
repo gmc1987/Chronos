@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.dao;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDate;
 
 import jakarta.persistence.LockModeType;
 
@@ -20,6 +21,8 @@ public interface AcademicTermRepository extends JpaRepository<AcademicTerm, Stri
 	Optional<AcademicTerm> findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc(String status);
 
 	Optional<AcademicTerm> findByTermCode(String termCode);
+	List<AcademicTerm> findByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatus(
+			LocalDate startBoundary, LocalDate endBoundary, String status);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select term from AcademicTerm term where term.termCode = :termCode")

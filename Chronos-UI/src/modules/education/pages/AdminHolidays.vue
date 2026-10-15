@@ -46,6 +46,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import AdaptiveActionColumn from '../../../components/AdaptiveActionColumn.vue'
+import { todayLocalDate } from '../../../utils/localDate'
 import { createAcademicCalendarDay, importAcademicHolidays, listAcademicCalendarDays, listAcademicTerms, updateAcademicCalendarDay } from '../../../api/admin'
 
 const terms = ref([])
@@ -69,7 +70,7 @@ const importManual = async () => { importing.value = true; try { showResult((awa
 const readFile = async event => { const file = event.target.files?.[0]; if (file) manualContent.value = await file.text() }
 const openDay = row => { Object.keys(dayForm).forEach(key => delete dayForm[key]); Object.assign(dayForm, row ? { ...row } : { academicTermId: termId.value, calendarDate: `${year.value}-01-01`, dayType: 'HOLIDAY', teachingDay: false }); dayDialog.value = true }
 const saveDay = async () => { const payload = { ...dayForm, scheduleDate: dayForm.teachingDay ? dayForm.scheduleDate || null : null }; await (dayForm.id ? updateAcademicCalendarDay(dayForm.id, payload) : createAcademicCalendarDay(payload)); dayDialog.value = false; ElMessage.success('已保存学校日期设置'); await loadDays() }
-onMounted(async () => { const response = await listAcademicTerms({ page: 0, size: 100 }); terms.value = response.data?.content || response.data || []; const today = new Date().toISOString().slice(0, 10); termId.value = (terms.value.find(term => term.startDate <= today && term.endDate >= today) || terms.value.find(term => term.currentTerm) || terms.value[0])?.id || ''; await loadDays() })
+onMounted(async () => { const response = await listAcademicTerms({ page: 0, size: 100 }); terms.value = response.data?.content || response.data || []; const today = todayLocalDate(); termId.value = (terms.value.find(term => term.startDate <= today && term.endDate >= today) || terms.value.find(term => term.currentTerm) || terms.value[0])?.id || ''; await loadDays() })
 </script>
 
 <style scoped>

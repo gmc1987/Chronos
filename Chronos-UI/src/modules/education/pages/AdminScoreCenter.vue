@@ -10,6 +10,7 @@ import {
   getAssessmentScheme,
   getGradebook,
   listGradeOfferingOptions,
+  listGradeExamSessions,
   listAssessmentSchemes,
   listGradebookSnapshots,
   listGradebooks,
@@ -28,11 +29,13 @@ import {
   publishGradebook,
   submitGradebook,
   updateGradebookItems,
+  syncGradebookExamScores,
   updateAssessmentScheme,
 } from '../../../api/admin'
 
 const schemes = ref([])
 const offerings = ref([])
+const examSessions = ref([])
 const gradebooks = ref([])
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -47,7 +50,8 @@ const schemeForm = ref(emptySchemeForm())
 const editingSchemeId = ref('')
 const gradebookDialog = ref(false)
 const gradebookForm = ref({ schemeId: '', offeringId: '' })
-const componentDraft = ref({ code: '', name: '', weight: 0, maxScore: 100, sourceType: 'MANUAL' })
+const emptyComponentDraft = () => ({ code: '', name: '', weight: 0, maxScore: 100, sourceType: 'MANUAL', sourceRefId: null })
+const componentDraft = ref(emptyComponentDraft())
 const selected = ref(null)
 const draftItems = ref([])
 const snapshots = ref([])
@@ -319,8 +323,20 @@ function addSchemeComponent() {
     ElMessage.warning('请填写成绩项目编码和名称')
     return
   }
+  if (componentDraft.value.sourceType === 'EXAM' && !componentDraft.value.sourceRefId) {
+    ElMessage.warning('请选择考试来源场次')
+    return
+  }
   schemeForm.value.components.push({ ...componentDraft.value })
-  componentDraft.value = { code: '', name: '', weight: 0, maxScore: 100, sourceType: 'MANUAL' }
+  componentDraft.value = emptyComponentDraft()
+}
+
+async function loadExamSessions() {
+  examSessions.value = []
+  componentDraft.value.sourceRefId = null
+  if (!schemeForm.value.offeringId) return
+  const response = await listGradeExamSessions(schemeForm.value.offeringId)
+  examSessions.value = response?.data || []
 }
 
 function removeSchemeComponent(index) {
@@ -365,16 +381,21 @@ async function editScheme(row) {
       code: item.code,
       name: item.name,
       sourceType: item.sourceType,
+      sourceRefId: item.sourceRefId,
       weight: Number(item.weight),
       maxScore: Number(item.maxScore),
       sortOrder: item.sortOrder,
     })),
   }
+  const responseSessions = await listGradeExamSessions(detail.offeringId)
+  examSessions.value = responseSessions?.data || []
 }
 
 function resetSchemeForm() {
   editingSchemeId.value = ''
   schemeForm.value = emptySchemeForm()
+  componentDraft.value = emptyComponentDraft()
+  examSessions.value = []
 }
 
 async function publishScheme(row) {
@@ -416,7 +437,8 @@ async function saveItems() {
   if (!selected.value || !canEdit.value) return
   await updateGradebookItems(selected.value.id, {
     rowVersion: selected.value.rowVersion,
-    items: draftItems.value.map(({ studentId, componentId, rawScore, specialStatus, remark }) => ({
+    items: draftItems.value.filter(item => components.value.find(component => component.id === item.componentId)?.sourceType === 'MANUAL')
+      .map(({ studentId, componentId, rawScore, specialStatus, remark }) => ({
       studentId,
       componentId,
       rawScore: rawScore === '' ? null : rawScore,
@@ -427,6 +449,16 @@ async function saveItems() {
   dirty.value = false
   ElMessage.success('成绩已批量保存')
   await refresh()
+  await selectGradebook(selected.value)
+}
+
+async function syncExamScores() {
+  if (!selected.value || dirty.value) {
+    ElMessage.warning('请先保存当前人工成绩')
+    return
+  }
+  const response = await syncGradebookExamScores(selected.value.id)
+  ElMessage.success(`已同步 ${response?.data || 0} 条考试项目成绩`)
   await selectGradebook(selected.value)
 }
 
@@ -523,7 +555,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
     <header class="page-header">
       <div>
         <h1>成绩中心</h1>
-        <p>维护考核方案、人工录入成绩并完成提交审核与发布。</p>
+      <p>维护考核方案，录入人工成绩或同步已发布考试成绩，并完成审核与发布。</p>
       </div>
       <el-button :loading="loading" @click="refresh">刷新</el-button>
     </header>
@@ -582,6 +614,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                   批量保存
                 </el-button>
                 <el-button
+                  v-if="components.some(component => component.sourceType === 'EXAM')"
+                  v-permission="['education:score:gradebook:update']"
+                  :disabled="dirty || !['EDITING', 'REJECTED'].includes(selected.status)"
+                  @click="syncExamScores"
+                >同步考试成绩</el-button>
+                <el-button
                   v-permission="['education:score:gradebook:submit']"
                   type="warning"
                   :disabled="dirty || !['EDITING', 'REJECTED'].includes(selected.status)"
@@ -622,14 +660,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                       :max="Number(component.maxScore || 100)"
                       :precision="2"
                       controls-position="right"
-                      :disabled="!canEdit"
+                      :disabled="!canEdit || component.sourceType !== 'MANUAL'"
                       @update:model-value="(value) => { findDraftItem(row.studentId, component.id).rawScore = value; markDirty() }"
                       @change="markDirty"
                     />
                     <el-select
                       :model-value="findDraftItem(row.studentId, component.id).specialStatus"
                       clearable
-                      :disabled="!canEdit"
+                      :disabled="!canEdit || component.sourceType !== 'MANUAL'"
                       placeholder="状态"
                       @update:model-value="(value) => { findDraftItem(row.studentId, component.id).specialStatus = value || ''; markDirty() }"
                       @change="markDirty"
@@ -724,6 +762,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               :disabled="Boolean(editingSchemeId)"
               placeholder="选择课程开设"
               style="width: 320px"
+              @change="loadExamSessions"
             >
               <el-option
                 v-for="offering in offerings"
@@ -739,6 +778,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
         <div class="component-builder">
           <el-input v-model="componentDraft.code" placeholder="项目编码" />
           <el-input v-model="componentDraft.name" placeholder="项目名称" />
+          <el-select v-model="componentDraft.sourceType" style="width: 120px" @change="componentDraft.sourceRefId = null">
+            <el-option label="人工录入" value="MANUAL" />
+            <el-option label="考试成绩" value="EXAM" />
+          </el-select>
+          <el-select v-if="componentDraft.sourceType === 'EXAM'" v-model="componentDraft.sourceRefId"
+            placeholder="选择考试场次" style="width: 230px" filterable>
+            <el-option v-for="session in examSessions" :key="session.sessionId"
+              :label="`${session.examDate} ${session.startTime} · ${session.scoreStatus}`"
+              :value="session.sessionId" />
+          </el-select>
           <el-input-number v-model="componentDraft.weight" :min="0" :max="100" placeholder="权重%" />
           <el-input-number v-model="componentDraft.maxScore" :min="1" placeholder="满分" />
           <el-button @click="addSchemeComponent">添加项目</el-button>
@@ -746,6 +795,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
         <el-table :data="schemeForm.components" size="small" border>
           <el-table-column prop="code" label="编码" />
           <el-table-column prop="name" label="项目" />
+          <el-table-column label="来源" min-width="170">
+            <template #default="{ row }">{{ row.sourceType === 'EXAM' ? `考试场次 ${row.sourceRefId?.slice(0, 8) || '未选'}` : '人工录入' }}</template>
+          </el-table-column>
           <el-table-column prop="weight" label="权重%" />
           <el-table-column prop="maxScore" label="满分" />
           <AdaptiveActionColumn label="操作" width="80">

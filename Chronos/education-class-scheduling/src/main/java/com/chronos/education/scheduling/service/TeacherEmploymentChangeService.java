@@ -1,5 +1,7 @@
 package com.chronos.education.scheduling.service;
 
+import com.chronos.Idao.IEmployeeAssignmentRepository;
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
@@ -33,6 +35,8 @@ public class TeacherEmploymentChangeService {
 	private final CourseOfferingRepository offerings;
 	private final AdministrativeClassRepository classes;
 	private final EducationUserBindingRepository bindings;
+	private final IOrganizationRepository organizations;
+	private final IEmployeeAssignmentRepository employeeAssignments;
 	private final IAuditLogService audit;
 
 	public TeacherEmploymentChangeService(
@@ -42,6 +46,8 @@ public class TeacherEmploymentChangeService {
 			CourseOfferingRepository offerings,
 			AdministrativeClassRepository classes,
 			EducationUserBindingRepository bindings,
+			IOrganizationRepository organizations,
+			IEmployeeAssignmentRepository employeeAssignments,
 			IAuditLogService audit) {
 		this.teachers = teachers;
 		this.changes = changes;
@@ -49,6 +55,8 @@ public class TeacherEmploymentChangeService {
 		this.offerings = offerings;
 		this.classes = classes;
 		this.bindings = bindings;
+		this.organizations = organizations;
+		this.employeeAssignments = employeeAssignments;
 		this.audit = audit;
 	}
 
@@ -72,6 +80,9 @@ public class TeacherEmploymentChangeService {
 			throw new IllegalArgumentException("不支持的教师任职异动类型");
 		}
 		validateTransition(teacher, type, command.targetDepartmentId());
+		if ("TRANSFER".equals(type)) {
+			assertTargetSchool(command.targetDepartmentId());
+		}
 		if (changes.existsByTeacherIdAndStatus(teacherId, "SCHEDULED")) {
 			throw new IllegalStateException("该教师已有待生效任职异动");
 		}
@@ -118,8 +129,19 @@ public class TeacherEmploymentChangeService {
 			throw new IllegalStateException("教师档案已变化，请取消后重新登记异动");
 		}
 		if ("SUSPEND".equals(change.getChangeType())
-				|| "TERMINATE".equals(change.getChangeType())) {
+				|| "TERMINATE".equals(change.getChangeType())
+				|| "TRANSFER".equals(change.getChangeType())) {
 			assertDutiesHandedOver(teacher.getId());
+		}
+		if ("TRANSFER".equals(change.getChangeType())) {
+			assertTargetSchool(change.getToDepartmentId());
+			boolean assignedToTarget = employeeAssignments
+					.findCurrentPrimaryAssignment(teacher.getEmployeeId(), LocalDate.now())
+					.filter(item -> change.getToDepartmentId().equals(item.getOrganizationId()))
+					.isPresent();
+			if (!assignedToTarget) {
+				throw new IllegalStateException("请先在机构员工管理完成目标学校的有效任职关系，再生效教师调动");
+			}
 		}
 		teacher.setDepartmentId(change.getToDepartmentId());
 		teacher.setEmploymentStatus(change.getToStatus());
@@ -174,6 +196,15 @@ public class TeacherEmploymentChangeService {
 						.anyMatch(item -> "ACTIVE".equals(item.getStatus()))
 				|| !classes.findByHeadTeacherId(teacherId).isEmpty()) {
 			throw new IllegalStateException("教师仍承担任教、开课或班主任职责，请完成交接后再生效");
+		}
+	}
+
+	private void assertTargetSchool(String id) {
+		var target = organizations.findById(required(id, "目标学校不能为空"))
+				.orElseThrow(() -> new IllegalArgumentException("目标学校不存在"));
+		if (!"SCHOOL".equals(target.getOrganizationType())
+				|| !Integer.valueOf(1).equals(target.getStatus())) {
+			throw new IllegalArgumentException("目标学校必须为启用的学校机构");
 		}
 	}
 
