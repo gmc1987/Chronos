@@ -19,6 +19,7 @@ import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.workflow.WorkflowService;
+import com.chronos.model.workflow.WorkflowInstance;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.util.List;
@@ -108,6 +109,24 @@ class GradeProductionServiceTest {
 		assertThatThrownBy(() -> service.replayApprovedChange("change-1", "admin"))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("已完成审批");
+	}
+
+	@Test
+	void rejectsIncidentReplayWithoutRecordedApprover() {
+		var request = new com.chronos.education.grade.model.GradeChangeRequest();
+		request.setId("change-1");
+		request.setStatus("REVIEWING");
+		request.setWorkflowInstanceId("instance-1");
+		WorkflowInstance instance = new WorkflowInstance();
+		instance.setStatus("COMPLETED");
+		when(changes.findByIdForUpdate("change-1")).thenReturn(Optional.of(request));
+		when(workflows.instance("instance-1")).thenReturn(instance);
+		when(workflowTasks.findByInstanceIdOrderByCreateTimeAsc("instance-1"))
+			.thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.replayApprovedChange("change-1", "admin"))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("缺少批准人");
 	}
 
 	private void stubAccess(

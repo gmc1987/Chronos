@@ -365,7 +365,14 @@ public class SchedulingAiRunService {
 				"constraints.validate." + current.getPlanVersion(),
 				AgentRunStatus.READY_FOR_CONFIRMATION,
 				new SchedulingAgentCapabilities.GenerationInput(current.getPlanVersion()));
-		current.setConfirmedPlanJson(current.getParsedPlanJson());
+		// 确认时冻结每条原话的目录语义；候选生成只读取这份不可由模型改写的快照。
+		SchedulingAiPlan confirmed = new SchedulingAiPlan(plan.schemaVersion(), plan.skillCode(),
+				plan.semesterCode(), plan.mode(), plan.selectedOfferingIds(), plan.candidateCount(),
+				plan.constraints(), plan.clarifications(), plan.unsupported(), plan.unresolvedClauses(),
+				plan.offeringConstraints(), plan.weekRules(), plan.lockedEntries(),
+				plan.softPriorities(), plan.slotRules(), plan.generationOptions(), plan.dateRules(),
+				SchedulingAiRuleCatalog.VERSION, SchedulingAiRuleCatalog.freeze(plan));
+		current.setConfirmedPlanJson(write(confirmed));
 		current.setStatus("CONFIRMED");
 		recordStep(current, "requirements.confirm." + current.getPlanVersion(),
 				"SCHEDULE_CONSTRAINTS_V1", "OK");
@@ -595,7 +602,8 @@ public class SchedulingAiRunService {
 				run.getClientRequestId(),
 				run.getStatus(),
 				run.getPlanVersion(),
-				readPlan(run.getParsedPlanJson()),
+				readPlan(run.getConfirmedPlanJson() == null
+						? run.getParsedPlanJson() : run.getConfirmedPlanJson()),
 				run.getRelatedJobId(),
 				run.getErrorCode(),
 				run.getErrorMessage(),

@@ -6,6 +6,7 @@ import { portalFamilyChildren, portalParentFeedback, submitParentFeedback } from
 const children = ref([])
 const records = ref([])
 const loading = ref(false)
+const loadError = ref('')
 const dialog = ref(false)
 const form = ref({ studentId: '', subject: '', content: '' })
 const unwrap = response => response?.data?.content || response?.data || []
@@ -13,10 +14,15 @@ const statusName = status => ({ SUBMITTED: '待受理', ACCEPTED: '已受理', I
 
 async function load() {
   loading.value = true
+  children.value = []
+  records.value = []
+  loadError.value = ''
   try {
     const [childResponse, feedbackResponse] = await Promise.all([portalFamilyChildren(), portalParentFeedback()])
     children.value = unwrap(childResponse)
     records.value = unwrap(feedbackResponse)
+  } catch (error) {
+    loadError.value = error?.message || '家长反馈加载失败'
   } finally {
     loading.value = false
   }
@@ -36,7 +42,8 @@ onMounted(load)
 
 <template>
   <section class="page">
-    <header><div><h1>家长反馈</h1><p>向学校反馈孩子在校学习和生活中的问题或建议。</p></div><el-button type="primary" @click="openForm">提交反馈</el-button></header>
+    <header><div><h1>家长反馈</h1><p>向学校反馈孩子在校学习和生活中的问题或建议。</p></div><el-button type="primary" :disabled="!children.length || !!loadError" @click="openForm">提交反馈</el-button></header>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon class="load-error" />
     <el-table v-loading="loading" :data="records" border>
       <el-table-column label="学生" width="130"><template #default="{ row }">{{ children.find(item => item.id === row.studentId)?.studentName || row.studentId }}</template></el-table-column>
       <el-table-column prop="title" label="主题" min-width="180" />
@@ -61,4 +68,5 @@ onMounted(load)
 .page { padding: 24px; }
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 h1 { margin: 0 0 8px; } p { margin: 0; color: #84909a; }
+.load-error { margin-bottom: 16px; }
 </style>

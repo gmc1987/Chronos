@@ -1,5 +1,7 @@
 package com.chronos.education.meeting.service;
 
+import java.time.LocalDateTime;
+
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -14,5 +16,10 @@ public class MeetingLifecycleScheduler {
 	@Scheduled(fixedDelayString = "${education.meeting.completion-scan-ms:300000}")
 	public void completeExpiredMeetings() {
 		meetings.completeExpiredMeetings();
+	}
+
+	@Scheduled(fixedDelayString = "${education.meeting.reminder-scan-ms:300000}")
+	public void remindUpcomingMeetings() {
+		meetings.enqueueUpcomingReminders(LocalDateTime.now());
 	}
 }

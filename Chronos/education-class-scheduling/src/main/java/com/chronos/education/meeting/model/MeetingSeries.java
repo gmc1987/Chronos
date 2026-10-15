@@ -45,5 +45,5 @@ public class MeetingSeries extends BaseEntity {
 
 	@Version
 	@Column(name = "version_no", nullable = false)
-	private Long versionNo = 0L;
+	private Long versionNo;
 }

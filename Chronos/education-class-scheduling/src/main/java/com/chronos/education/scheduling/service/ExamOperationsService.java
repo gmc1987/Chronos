@@ -1,7 +1,11 @@
 package com.chronos.education.scheduling.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -373,13 +377,26 @@ public class ExamOperationsService {
 		ExamAdmissionTicket ticket = new ExamAdmissionTicket();
 		ticket.setCandidateId(candidate.getId());
 		ticket.setPublishedVersion(plan.getPublishedVersion());
-		ticket.setTicketNo("EXAM-" + plan.getId() + "-" + plan.getPublishedVersion()
-				+ "-" + candidate.getId());
+		ticket.setTicketNo(ticketNo(plan.getId(), plan.getPublishedVersion(),
+				candidate.getId()));
 		ticket.setSeatSnapshotJson(snapshot(plan, session, room, candidate));
 		ticket.setIssuedAt(LocalDateTime.now());
 		ticket.setStatus("ISSUED");
 		ticket.setCreateBy(actor);
 		return tickets.save(ticket);
+	}
+
+	/** 准考证号在数据库的 64 字符上限内，版本变化时也必须产生新号码。 */
+	static String ticketNo(String planId, int version, String candidateId) {
+		try {
+			byte[] digest = MessageDigest.getInstance("SHA-256").digest(
+					(planId + ":" + version + ":" + candidateId)
+							.getBytes(StandardCharsets.UTF_8));
+			return "EXAM-" + version + "-"
+					+ HexFormat.of().formatHex(digest, 0, 20);
+		} catch (NoSuchAlgorithmException error) {
+			throw new IllegalStateException("无法生成准考证号", error);
+		}
 	}
 
 	private void revokeOlderTickets(String candidateId, int version) {

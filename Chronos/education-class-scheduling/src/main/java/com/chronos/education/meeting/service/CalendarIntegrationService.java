@@ -1,6 +1,7 @@
 package com.chronos.education.meeting.service;
 
 import java.util.Locale;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,8 +66,11 @@ public class CalendarIntegrationService {
 	public CalendarOutbox enqueue(Meeting meeting, String operation) {
 		String occurrenceKey = meeting.getOccurrenceKey() == null
 				? meeting.getId() : meeting.getOccurrenceKey();
+		String fingerprint = Integer.toUnsignedString(Objects.hash(
+				meeting.getTitle(), meeting.getStartTime(), meeting.getEndTime(),
+				meeting.getRoomId(), meeting.getJoinUrl(), meeting.getStatus()));
 		String key = meeting.getId() + ":" + occurrenceKey + ":"
-				+ operation.toUpperCase(Locale.ROOT);
+				+ operation.toUpperCase(Locale.ROOT) + ":" + fingerprint;
 		return outbox.findByIdempotencyKey(key).orElseGet(() -> {
 			CalendarOutbox event = new CalendarOutbox();
 			event.setIdempotencyKey(key);

@@ -222,7 +222,7 @@ public class SchedulePlanVersionService {
 	}
 
 	/** 版本回滚走原生 SQL，须在恢复前单独校验考试资源占用。 */
-	private void assertExamAvailability(List<ScheduleEntry> snapshot) {
+	public void assertExamAvailability(List<ScheduleEntry> snapshot) {
 		for (ScheduleEntry entry : snapshot) {
 			if ("CANCELLED".equals(entry.getStatus())) {
 				continue;
@@ -239,12 +239,19 @@ public class SchedulePlanVersionService {
 					.filter(member -> "ENROLLED".equals(member.getEnrollmentStatus()))
 					.map(member -> member.getStudentId())
 					.collect(Collectors.toSet());
-			examReservations.assertWeeklyCourseAvailable(
-					entry.getSemesterCode(), campusId,
-					entry.getDayOfWeek(), entry.getPeriodNo(),
-					entry.getDurationPeriods(), entry.getStartWeek(),
-					entry.getEndWeek(), entry.getWeekPattern(),
-					entry.getClassroomId(), offering.getTeacherId(), studentIds);
+			try {
+				examReservations.assertWeeklyCourseAvailable(
+						entry.getSemesterCode(), campusId,
+						entry.getDayOfWeek(), entry.getPeriodNo(),
+						entry.getDurationPeriods(), entry.getStartWeek(),
+						entry.getEndWeek(), entry.getWeekPattern(),
+						entry.getClassroomId(), offering.getTeacherId(), studentIds,
+						entry.getId());
+			} catch (IllegalStateException exception) {
+				throw new IllegalStateException("课程“" + offering.getCourseName() + "”周"
+						+ entry.getDayOfWeek() + "第" + entry.getPeriodNo() + "节："
+						+ exception.getMessage(), exception);
+			}
 		}
 	}
 

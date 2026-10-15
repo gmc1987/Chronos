@@ -56,6 +56,12 @@ public class SchedulingAgentProposal extends BaseEntity {
 	@Column(name = "applied_constraint_id", length = 64)
 	private String appliedConstraintId;
 
+	@Column(name = "rule_catalog_version", length = 48)
+	private String ruleCatalogVersion;
+
+	@Column(name = "validator_version", length = 48)
+	private String validatorVersion;
+
 	/** Nullable compatibility link for proposals created by the AI Run API. */
 	@Column(name = "agent_run_id", length = 64)
 	private String agentRunId;

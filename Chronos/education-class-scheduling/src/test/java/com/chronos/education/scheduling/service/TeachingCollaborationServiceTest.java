@@ -14,6 +14,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.util.ReflectionTestUtils;
+import jakarta.persistence.EntityManager;
+import java.util.List;
+import java.util.Set;
 
 @ExtendWith(MockitoExtension.class)
 class TeachingCollaborationServiceTest {
@@ -31,7 +36,75 @@ class TeachingCollaborationServiceTest {
 	@Mock ManagedFileRepository files;
 	@Mock ManagedFileService managedFiles;
 	@Mock TeachingReviewService reviews;
+	@Mock EducationIdentityService identities;
+	@Mock TeachingCollaborationNotificationService notifications;
+	@Mock EntityManager entityManager;
 	@Mock Authentication authentication;
+
+	@Test
+	void reinvitingRevokedTeacherReusesTheUniqueMemberRow() {
+		var service = service();
+		var preparation = new Preparation();
+		preparation.setId("prep-1");
+		preparation.setCreateBy("owner");
+		var teacher = new TeacherAcademicProfile();
+		teacher.setId("teacher-1");
+		var member = new PreparationMember();
+		member.setId("member-1");
+		member.setPreparationId("prep-1");
+		member.setTeacherId("teacher-1");
+		member.setInvitationStatus("REVOKED");
+		var scope = mock(EducationDataScope.class);
+		when(authentication.getName()).thenReturn("owner");
+		when(preparations.findById("prep-1")).thenReturn(Optional.of(preparation));
+		when(scopes.resolve("owner")).thenReturn(scope);
+		when(scope.fullAccess()).thenReturn(true);
+		when(entityManager.find(TeacherAcademicProfile.class, "teacher-1")).thenReturn(teacher);
+		when(members.findByPreparationId("prep-1")).thenReturn(List.of(member));
+		when(members.save(member)).thenReturn(member);
+
+		var result = service.invite("prep-1", new com.chronos.education.scheduling.model.dto.CollaborationDtos.MemberInviteRequest("teacher-1", "MEMBER"), authentication);
+
+		assertSame(member, result);
+		assertEquals("PENDING", result.getInvitationStatus());
+		verify(members).save(member);
+	}
+
+	@Test
+	void revokedCrossSchoolInvitationImmediatelyRemovesPreparationAccess() {
+		var service = service();
+		var preparation = new Preparation();
+		preparation.setId("prep-1");
+		preparation.setOfferingId("another-school-offering");
+		preparation.setCreateBy("owner");
+		var member = new PreparationMember();
+		member.setId("member-1");
+		member.setPreparationId("prep-1");
+		member.setTeacherId("guest-teacher");
+		member.setInvitationStatus("ACCEPT");
+		var guestScope = mock(EducationDataScope.class);
+		var ownerScope = mock(EducationDataScope.class);
+		var guest = mock(Authentication.class);
+		var owner = mock(Authentication.class);
+		when(preparations.findById("prep-1")).thenReturn(Optional.of(preparation));
+		when(members.findByPreparationId("prep-1")).thenReturn(List.of(member));
+		when(members.findById("member-1")).thenReturn(Optional.of(member));
+		when(members.save(member)).thenReturn(member);
+		when(scopes.resolve("guest")).thenReturn(guestScope);
+		when(scopes.resolve("owner")).thenReturn(ownerScope);
+		when(ownerScope.fullAccess()).thenReturn(true);
+		when(identities.teacherIds("guest")).thenReturn(Set.of("guest-teacher"));
+		when(guest.getName()).thenReturn("guest");
+		when(owner.getName()).thenReturn("owner");
+		doThrow(new AccessDeniedException("跨校教学班不可访问"))
+				.when(scopes).assertOfferingAccess(guestScope, "another-school-offering");
+
+		assertSame(preparation, service.getPreparation("prep-1", guest));
+		service.revokeInvitation("prep-1", "member-1", owner);
+		assertEquals("REVOKED", member.getInvitationStatus());
+		assertThrows(AccessDeniedException.class,
+				() -> service.getPreparation("prep-1", guest));
+	}
 
 	@Test
 	void generatesDraftCoursewareOnlyWithinPreparationOffering() {
@@ -146,8 +219,11 @@ class TeachingCollaborationServiceTest {
 	}
 
 	private TeachingCollaborationService service() {
-		return new TeachingCollaborationService(
+		var service = new TeachingCollaborationService(
 				preparations, members, prepMaterials, comments, coursewares, coursewareVersions,
-				materials, materialVersions, offerings, schedules, scopes, files, managedFiles, reviews);
+				materials, materialVersions, offerings, schedules, scopes, files, managedFiles, reviews,
+				identities, notifications);
+		ReflectionTestUtils.setField(service, "em", entityManager);
+		return service;
 	}
 }

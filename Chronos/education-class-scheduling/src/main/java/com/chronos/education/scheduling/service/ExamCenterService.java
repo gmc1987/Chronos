@@ -4,6 +4,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -19,6 +22,8 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
+import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.model.pojo.Organization;
 import com.chronos.service.iService.IAuditLogService;
 
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
@@ -27,6 +32,7 @@ import com.chronos.education.scheduling.dao.BellPeriodRepository;
 import com.chronos.education.scheduling.dao.BellScheduleRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.CourseCatalogRepository;
 import com.chronos.education.scheduling.dao.ExamCandidateRepository;
 import com.chronos.education.scheduling.dao.ExamCourseSuspensionItemRepository;
 import com.chronos.education.scheduling.dao.ExamCourseSuspensionRequestRepository;
@@ -69,6 +75,8 @@ import com.chronos.education.scheduling.model.ScheduleOccurrenceView;
 import com.chronos.education.scheduling.model.ScheduleDateException;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
+import com.chronos.education.scheduling.model.StudentProfile;
+import com.chronos.education.scheduling.model.TeachingClassMember;
 
 import lombok.RequiredArgsConstructor;
 
@@ -86,6 +94,7 @@ public class ExamCenterService {
 	private final AcademicTermRepository terms;
 	private final SubjectRepository subjects;
 	private final ClassroomRepository classrooms;
+	private final IOrganizationRepository organizations;
 	private final StudentProfileRepository students;
 	private final AdministrativeClassRepository administrativeClasses;
 	private final TeacherAcademicProfileRepository teachers;
@@ -99,6 +108,7 @@ public class ExamCenterService {
 	private final ScheduleEntryRepository scheduleEntries;
 	private final ExamResourceReservationService examReservations;
 	private final CourseOfferingRepository offerings;
+	private final CourseCatalogRepository courseCatalog;
 	private final BellScheduleRepository bellSchedules;
 	private final BellPeriodRepository bellPeriods;
 	private final ScheduleOccurrenceService occurrences;
@@ -130,6 +140,244 @@ public class ExamCenterService {
 	public List<ExamCandidate> candidates(String roomId) {
 		room(roomId);
 		return candidates.findByRoomIdOrderBySeatNoAsc(roomId);
+	}
+
+	/**
+	 * 从场次关联课程的有效选课名单生成三种座位候选。预览不写库；确认时用
+	 * fingerprint 防止考生、考场容量或原座位变化后套用过期方案。
+	 */
+	@Transactional(readOnly = true)
+	public SeatComparison seatCandidates(String sessionId) {
+		ExamSession examSession = session(sessionId);
+		ExamPlan examPlan = draft(examSession.getPlanId());
+		if (!"DRAFT".equals(examSession.getStatus())) {
+			throw new IllegalStateException("只有草稿场次可以调整考生座位");
+		}
+		List<ExamRoom> examRooms = rooms.findBySessionId(sessionId).stream()
+				.sorted(Comparator.comparing(ExamRoom::getId)).toList();
+		if (examRooms.isEmpty()) {
+			throw new IllegalStateException("请先配置考场，再生成座位候选");
+		}
+		Map<String, Integer> capacities = new LinkedHashMap<>();
+		for (ExamRoom examRoom : examRooms) {
+			Classroom classroom = classrooms.findById(examRoom.getClassroomId())
+					.orElseThrow(() -> new IllegalStateException("考场教室不存在"));
+			capacities.put(examRoom.getId(), classroom.getCapacity());
+		}
+		List<String> offeringIds = sessionOfferings.findBySessionId(sessionId).stream()
+				.map(ExamSessionOffering::getOfferingId).distinct().sorted().toList();
+		if (offeringIds.isEmpty()) {
+			throw new IllegalStateException("请先关联本场考试的课程");
+		}
+		Set<String> studentIds = teachingClassMembers
+				.findByOfferingIdInAndEnrollmentStatus(offeringIds, "ENROLLED").stream()
+				.map(member -> member.getStudentId()).collect(Collectors.toSet());
+		studentIds.addAll(teachingClassMembers
+				.findByOfferingIdInAndEnrollmentStatus(offeringIds, "ACTIVE").stream()
+				.map(member -> member.getStudentId()).toList());
+		List<StudentProfile> pool = students.findAllById(studentIds).stream()
+				.filter(student -> "ACTIVE".equals(student.getEnrollmentStatus()))
+				.sorted(Comparator.comparing(StudentProfile::getStudentNo)).toList();
+		if (pool.isEmpty()) {
+			throw new IllegalStateException("关联课程没有在读且已选课的考生");
+		}
+		if (pool.size() > capacities.values().stream().mapToInt(Integer::intValue).sum()) {
+			throw new IllegalStateException("考场总容量不足，请先增加考场");
+		}
+		for (StudentProfile student : pool) {
+			for (ExamCandidate existing : candidates.findByStudentId(student.getId())) {
+				ExamRoom otherRoom = room(existing.getRoomId());
+				if (sessionId.equals(otherRoom.getSessionId()) || "CANCELLED".equals(otherRoom.getStatus())) {
+					continue;
+				}
+				ExamSession other = session(otherRoom.getSessionId());
+				if (!"CANCELLED".equals(other.getStatus())
+						&& !"CANCELLED".equals(plan(other.getPlanId()).getStatus())
+						&& sameTime(examSession, other)) {
+					throw new IllegalStateException("考生同一时间已有考试：" + student.getStudentNo());
+				}
+			}
+		}
+		List<ExamCandidate> current = examRooms.stream()
+				.flatMap(examRoom -> candidates.findByRoomIdOrderBySeatNoAsc(examRoom.getId()).stream())
+				.sorted(Comparator.comparing(ExamCandidate::getId)).toList();
+		Set<String> eligibleIds = pool.stream().map(StudentProfile::getId).collect(Collectors.toSet());
+		if (current.stream().anyMatch(candidate -> !eligibleIds.contains(candidate.getStudentId()))) {
+			throw new IllegalStateException("现有座位含未选修本场课程的考生，请先核对并移除");
+		}
+		String fingerprint = seatFingerprint(examPlan, examSession, offeringIds,
+				examRooms, capacities, pool, current);
+		List<StudentProfile> grouped = pool.stream()
+				.sorted(Comparator.comparing(StudentProfile::getAdministrativeClassId)
+						.thenComparing(StudentProfile::getStudentNo)).toList();
+		List<StudentProfile> interleaved = interleaveClasses(grouped);
+		return new SeatComparison(fingerprint, pool.size(), List.of(
+				seatCandidate("CLASS_GROUPED", "按班级顺序", grouped, examRooms, capacities, false),
+				seatCandidate("CLASS_INTERLEAVED", "跨班交错", interleaved, examRooms, capacities, false),
+				seatCandidate("ROOM_BALANCED", "考场均衡", interleaved, examRooms, capacities, true),
+				balancedMixedCandidate(grouped, examRooms, capacities)));
+	}
+
+	@Transactional
+	public SeatComparison applySeatCandidate(String sessionId, SeatApplyCommand command, String actor) {
+		ExamSession examSession = session(sessionId);
+		ExamPlan examPlan = draft(examSession.getPlanId());
+		resourceLock.lockSemester(examPlan.getSemesterCode());
+		SeatComparison comparison = seatCandidates(sessionId);
+		if (command == null || !comparison.fingerprint().equals(command.fingerprint())) {
+			throw new IllegalStateException("考生或考场已变化，请重新生成座位候选");
+		}
+		SeatCandidate chosen = comparison.candidates().stream()
+				.filter(candidate -> candidate.strategy().equals(command.strategy()))
+				.findFirst().orElseThrow(() -> new IllegalArgumentException("座位候选不存在"));
+		for (var item : paperAnalysis.items(sessionId)) {
+			if (!paperAnalysis.itemScores(sessionId, item.getId()).isEmpty()) {
+				throw new IllegalStateException("该场次已有逐题成绩，不能重新分配座位");
+			}
+		}
+		List<ExamCandidate> current = rooms.findBySessionId(sessionId).stream()
+				.flatMap(examRoom -> candidates.findByRoomIdOrderBySeatNoAsc(examRoom.getId()).stream())
+				.toList();
+		candidates.deleteAll(current);
+		candidates.flush();
+		for (ExamRoom examRoom : rooms.findBySessionId(sessionId)) {
+			List<String> assigned = chosen.placements().stream()
+					.filter(placement -> examRoom.getId().equals(placement.roomId()))
+					.sorted(Comparator.comparingInt(SeatPlacement::seatNo))
+					.map(SeatPlacement::studentId).toList();
+			if (!assigned.isEmpty()) {
+				addCandidates(examRoom.getId(), new ExamCommands.Candidates(assigned));
+			}
+		}
+		audit.log(actor, "EDUCATION_EXAM_SEAT_CANDIDATE_APPLY",
+				"sessionId=" + sessionId + ", strategy=" + chosen.strategy()
+						+ ", count=" + chosen.placements().size()
+						+ ", fingerprint=" + comparison.fingerprint());
+		return seatCandidates(sessionId);
+	}
+
+	private List<StudentProfile> interleaveClasses(List<StudentProfile> grouped) {
+		Map<String, java.util.ArrayDeque<StudentProfile>> byClass = new LinkedHashMap<>();
+		for (StudentProfile student : grouped) {
+			byClass.computeIfAbsent(student.getAdministrativeClassId(), ignored -> new java.util.ArrayDeque<>())
+					.add(student);
+		}
+		List<StudentProfile> result = new ArrayList<>(grouped.size());
+		while (result.size() < grouped.size()) {
+			for (var queue : byClass.values()) {
+				if (!queue.isEmpty()) result.add(queue.removeFirst());
+			}
+		}
+		return result;
+	}
+
+	private SeatCandidate seatCandidate(String strategy, String name, List<StudentProfile> pool,
+			List<ExamRoom> examRooms, Map<String, Integer> capacities, boolean balanceRooms) {
+		Map<String, List<SeatPlacement>> byRoom = new LinkedHashMap<>();
+		for (ExamRoom examRoom : examRooms) byRoom.put(examRoom.getId(), new ArrayList<>());
+		int nextRoom = 0;
+		for (StudentProfile student : pool) {
+			int attempts = 0;
+			while (byRoom.get(examRooms.get(nextRoom).getId()).size()
+					>= capacities.get(examRooms.get(nextRoom).getId())) {
+				nextRoom = (nextRoom + 1) % examRooms.size();
+				if (++attempts > examRooms.size()) throw new IllegalStateException("考场容量不足");
+			}
+			String roomId = examRooms.get(nextRoom).getId();
+			List<SeatPlacement> placements = byRoom.get(roomId);
+			placements.add(new SeatPlacement(roomId, placements.size() + 1,
+					student.getId(), student.getStudentNo(), student.getStudentName(),
+					student.getAdministrativeClassId()));
+			if (balanceRooms) nextRoom = (nextRoom + 1) % examRooms.size();
+		}
+		return scoreSeatCandidate(strategy, name, byRoom);
+	}
+
+	/** 每间考场轮流取人，优先选与本考场上一座不同班的考生。 */
+	private SeatCandidate balancedMixedCandidate(List<StudentProfile> pool,
+			List<ExamRoom> examRooms, Map<String, Integer> capacities) {
+		Map<String, java.util.ArrayDeque<StudentProfile>> byClass = new LinkedHashMap<>();
+		for (StudentProfile student : pool) {
+			byClass.computeIfAbsent(student.getAdministrativeClassId(), ignored -> new java.util.ArrayDeque<>())
+					.add(student);
+		}
+		Map<String, List<SeatPlacement>> byRoom = new LinkedHashMap<>();
+		for (ExamRoom examRoom : examRooms) byRoom.put(examRoom.getId(), new ArrayList<>());
+		int nextRoom = 0;
+		for (int assigned = 0; assigned < pool.size(); assigned++) {
+			int attempts = 0;
+			while (byRoom.get(examRooms.get(nextRoom).getId()).size()
+					>= capacities.get(examRooms.get(nextRoom).getId())) {
+				nextRoom = (nextRoom + 1) % examRooms.size();
+				if (++attempts > examRooms.size()) throw new IllegalStateException("考场容量不足");
+			}
+			String roomId = examRooms.get(nextRoom).getId();
+			List<SeatPlacement> placements = byRoom.get(roomId);
+			String previousClass = placements.isEmpty() ? null : placements.get(placements.size() - 1).classId();
+			String chosenClass = byClass.entrySet().stream()
+					.filter(entry -> !entry.getValue().isEmpty())
+					.sorted(Comparator.<Map.Entry<String, java.util.ArrayDeque<StudentProfile>>>comparingInt(
+							entry -> entry.getKey().equals(previousClass) ? 1 : 0)
+							.thenComparing(Comparator.comparingInt(
+								(Map.Entry<String, java.util.ArrayDeque<StudentProfile>> entry) -> entry.getValue().size())
+								.reversed()))
+					.findFirst().orElseThrow().getKey();
+			StudentProfile student = byClass.get(chosenClass).removeFirst();
+			placements.add(new SeatPlacement(roomId, placements.size() + 1,
+					student.getId(), student.getStudentNo(), student.getStudentName(),
+					student.getAdministrativeClassId()));
+			nextRoom = (nextRoom + 1) % examRooms.size();
+		}
+		return scoreSeatCandidate("BALANCED_MIXED", "均衡且跨班交错", byRoom);
+	}
+
+	private SeatCandidate scoreSeatCandidate(String strategy, String name,
+			Map<String, List<SeatPlacement>> byRoom) {
+		int adjacency = 0;
+		for (List<SeatPlacement> placements : byRoom.values()) {
+			for (int i = 1; i < placements.size(); i++) {
+				if (placements.get(i - 1).classId().equals(placements.get(i).classId())) adjacency++;
+			}
+		}
+		int max = byRoom.values().stream().mapToInt(List::size).max().orElse(0);
+		int min = byRoom.values().stream().mapToInt(List::size).min().orElse(0);
+		return new SeatCandidate(strategy, name, adjacency, max - min,
+				byRoom.values().stream().flatMap(List::stream).toList());
+	}
+
+	private String seatFingerprint(ExamPlan plan, ExamSession examSession,
+			List<String> offeringIds,
+			List<ExamRoom> examRooms, Map<String, Integer> capacities,
+			List<StudentProfile> pool, List<ExamCandidate> current) {
+		String body = plan.getId() + ":" + plan.getStatus() + ":" + examSession.getId()
+				+ ":" + examSession.getStatus() + ":" + examSession.getExamDate()
+				+ ":" + examSession.getStartTime() + ":" + examSession.getEndTime()
+				+ ":" + String.join("|", offeringIds) + ":"
+				+ examRooms.stream().map(value -> value.getId() + ":" + value.getClassroomId()
+						+ ":" + value.getStatus() + ":" + capacities.get(value.getId()))
+						.collect(Collectors.joining("|")) + ":"
+				+ pool.stream().map(value -> value.getId() + ":" + value.getAdministrativeClassId())
+						.collect(Collectors.joining("|")) + ":"
+				+ current.stream().map(value -> value.getId() + ":" + value.getRoomId() + ":" + value.getSeatNo())
+						.collect(Collectors.joining("|"));
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+					.digest(body.getBytes(StandardCharsets.UTF_8)));
+		} catch (java.security.NoSuchAlgorithmException ex) {
+			throw new IllegalStateException("座位候选快照失败", ex);
+		}
+	}
+
+	public record SeatPlacement(String roomId, int seatNo, String studentId,
+			String studentNo, String studentName, String classId) {
+	}
+	public record SeatCandidate(String strategy, String name, int sameClassAdjacent,
+			int roomLoadDifference, List<SeatPlacement> placements) {
+	}
+	public record SeatComparison(String fingerprint, int studentCount,
+			List<SeatCandidate> candidates) {
+	}
+	public record SeatApplyCommand(String strategy, String fingerprint) {
 	}
 
 	@Transactional(readOnly = true)
@@ -407,12 +655,6 @@ public class ExamCenterService {
 				|| command.examDate().isAfter(plan.getEndDate())) {
 			throw new IllegalArgumentException("考试场次日期或时间无效");
 		}
-		List<String> offeringIds = command.offeringIds() == null ? List.of()
-				: command.offeringIds().stream().filter(Objects::nonNull).map(String::trim)
-						.filter(id -> !id.isEmpty()).distinct().toList();
-		if (!offeringIds.isEmpty() && offeringIds.stream().anyMatch(id -> !offerings.existsById(id))) {
-			throw new IllegalArgumentException("课程开设不存在，不能建立考试场次映射");
-		}
 		ExamSession value = sessionId == null ? new ExamSession() : session(sessionId);
 		if (sessionId != null && (!value.getPlanId().equals(planId)
 				|| !rooms.findBySessionId(sessionId).isEmpty())) {
@@ -424,6 +666,54 @@ public class ExamCenterService {
 		value.setStartTime(command.startTime());
 		value.setEndTime(command.endTime());
 		value = sessions.save(value);
+		saveSessionOfferings(value, plan, command.offeringIds());
+		return value;
+	}
+
+	@Transactional(readOnly = true)
+	public List<String> sessionOfferingIds(String planId, String sessionId) {
+		ExamSession value = session(sessionId);
+		if (!value.getPlanId().equals(planId)) {
+			throw new IllegalArgumentException("考试场次不属于当前计划");
+		}
+		return sessionOfferings.findBySessionId(sessionId).stream()
+				.map(ExamSessionOffering::getOfferingId).toList();
+	}
+
+	/** 已发布排期不变时，允许在成绩确认前补齐成绩回写目标。 */
+	@Transactional
+	public List<String> updateSessionOfferings(
+			String planId, String sessionId, List<String> offeringIds) {
+		ExamPlan plan = plans.findById(planId)
+				.orElseThrow(() -> new IllegalArgumentException("考试计划不存在"));
+		ExamSession value = session(sessionId);
+		if (!value.getPlanId().equals(planId) || !"PUBLISHED".equals(plan.getStatus())
+				|| !"DRAFT".equals(value.getScoreStatus())) {
+			throw new IllegalStateException("仅可在已发布且成绩未确认的场次维护课程映射");
+		}
+		resourceLock.lockSemester(plan.getSemesterCode());
+		saveSessionOfferings(value, plan, offeringIds);
+		return sessionOfferingIds(planId, sessionId);
+	}
+
+	private void saveSessionOfferings(
+			ExamSession value, ExamPlan plan, List<String> requestedIds) {
+		List<String> offeringIds = requestedIds == null ? List.of()
+				: requestedIds.stream().filter(Objects::nonNull).map(String::trim)
+						.filter(id -> !id.isEmpty()).distinct().toList();
+		for (String offeringId : offeringIds) {
+			CourseOffering offering = offerings.findById(offeringId)
+					.orElseThrow(() -> new IllegalArgumentException("课程开设不存在"));
+			if (!plan.getSemesterCode().equals(offering.getSemesterCode())
+					|| !"ACTIVE".equals(offering.getStatus())) {
+				throw new IllegalArgumentException("课程开设不属于当前学期或未启用");
+			}
+			var course = courseCatalog.findByCourseCode(offering.getCourseCode())
+					.orElseThrow(() -> new IllegalArgumentException("课程目录不存在"));
+			if (!value.getSubjectId().equals(course.getSubjectId())) {
+				throw new IllegalArgumentException("课程开设与考试科目不一致");
+			}
+		}
 		sessionOfferings.deleteBySessionId(value.getId());
 		for (String offeringId : offeringIds) {
 			ExamSessionOffering mapping = new ExamSessionOffering();
@@ -431,7 +721,6 @@ public class ExamCenterService {
 			mapping.setOfferingId(offeringId);
 			sessionOfferings.save(mapping);
 		}
-		return value;
 	}
 
 	@Transactional
@@ -526,7 +815,16 @@ public class ExamCenterService {
 				continue;
 			}
 			for (ExamCandidate existing : candidates.findByStudentId(studentId)) {
-				ExamSession other = session(room(existing.getRoomId()).getSessionId());
+				ExamRoom otherRoom = room(existing.getRoomId());
+				if ("CANCELLED".equals(otherRoom.getStatus())) {
+					continue;
+				}
+				ExamSession other = session(otherRoom.getSessionId());
+				// Keep historical seats for audit, but a cancelled exam no longer reserves the student.
+				if ("CANCELLED".equals(other.getStatus())
+						|| "CANCELLED".equals(plan(other.getPlanId()).getStatus())) {
+					continue;
+				}
 				if (sameTime(session, other)) {
 					throw new IllegalStateException("学生同一时间已有考试：" + studentId);
 				}
@@ -597,26 +895,31 @@ public class ExamCenterService {
 			if ("CANCELLED".equals(session.getStatus())) {
 				continue;
 			}
+			Set<String> candidateStudentIds = new HashSet<>();
 			for (ExamRoom room : rooms.findBySessionId(session.getId())) {
 				conflicts.addAll(roomConflicts(room, session));
-				for (ExamCandidate candidate : candidates
-						.findByRoomIdOrderBySeatNoAsc(room.getId())) {
-					for (ScheduleOccurrenceView occurrence : courseOccurrences(session)) {
-						if (!overlaps(session, occurrence)) {
-							continue;
-						}
-						boolean enrolled = teachingClassMembers
-								.findByOfferingIdAndStudentId(
-										occurrence.entry().offeringId(),
-										candidate.getStudentId())
-									.filter(member -> "ENROLLED".equals(
-											member.getEnrollmentStatus()))
-									.isPresent();
-						if (enrolled) {
-							conflicts.add("考生与课程冲突：" + candidate.getStudentId());
-						}
-					}
-				}
+				candidates.findByRoomIdOrderBySeatNoAsc(room.getId()).stream()
+						.map(ExamCandidate::getStudentId)
+						.forEach(candidateStudentIds::add);
+			}
+			if (candidateStudentIds.isEmpty()) {
+				continue;
+			}
+			// Resolve each occurrence and enrollment set once per session. The previous
+			// candidate × occurrence loop generated thousands of SQL queries on a
+			// normal multi-class exam and made publication appear to hang.
+			List<String> overlappingOfferingIds = courseOccurrences(session).stream()
+					.filter(occurrence -> overlaps(session, occurrence))
+					.map(occurrence -> occurrence.entry().offeringId())
+					.distinct()
+					.toList();
+			if (!overlappingOfferingIds.isEmpty()) {
+				teachingClassMembers.findByOfferingIdInAndEnrollmentStatus(
+						overlappingOfferingIds, "ENROLLED").stream()
+						.map(TeachingClassMember::getStudentId)
+						.filter(candidateStudentIds::contains)
+						.distinct()
+						.forEach(studentId -> conflicts.add("考生与课程冲突：" + studentId));
 			}
 		}
 		return conflicts.stream().distinct().toList();
@@ -635,6 +938,16 @@ public class ExamCenterService {
 		for (ExamSession session : sessions
 				.findByPlanIdOrderByExamDateAscStartTimeAsc(planId)) {
 			List<ExamRoom> examRooms = rooms.findBySessionId(session.getId());
+			Set<String> schoolIds = Set.of();
+			if ("SCHOOL_WIDE".equals(scopeMode)) {
+				schoolIds = examRooms.stream()
+						.map(room -> schoolIdForClassroom(room.getClassroomId()))
+						.collect(Collectors.toSet());
+				if (schoolIds.size() != 1) {
+					throw new IllegalStateException(
+							"校级占课须先在同一学校分配考场");
+				}
+			}
 			Set<String> classroomIds = examRooms.stream()
 					.map(ExamRoom::getClassroomId)
 					.collect(Collectors.toSet());
@@ -650,6 +963,11 @@ public class ExamCenterService {
 					.collect(Collectors.toSet());
 			for (ScheduleOccurrenceView occurrence : courseOccurrences(session)) {
 				if (!overlaps(session, occurrence)) {
+					continue;
+				}
+				if ("SCHOOL_WIDE".equals(scopeMode)
+						&& !schoolIds.contains(schoolIdForClassroom(
+								occurrence.effectiveClassroomId()))) {
 					continue;
 				}
 				if ("AFFECTED_ONLY".equals(scopeMode)) {
@@ -678,6 +996,21 @@ public class ExamCenterService {
 			}
 		}
 		return List.copyOf(impacted.values());
+	}
+
+	private String schoolIdForClassroom(String classroomId) {
+		String campusId = classrooms.findById(classroomId)
+				.orElseThrow(() -> new IllegalStateException("占课教室不存在"))
+				.getCampusId();
+		Organization current = organizations.findById(campusId)
+				.orElseThrow(() -> new IllegalStateException("占课校区不存在"));
+		while (current != null) {
+			if ("SCHOOL".equals(current.getOrganizationType())) {
+				return current.getId();
+			}
+			current = current.getParentOrgId();
+		}
+		throw new IllegalStateException("占课教室未归属学校");
 	}
 
 	@Transactional(readOnly = true)
@@ -1417,18 +1750,13 @@ public class ExamCenterService {
 							plan(session.getPlanId()).getSemesterCode()))
 					.map(CourseOffering::getId)
 					.collect(Collectors.toSet());
-			for (ExamCandidate candidate : candidates
-					.findByRoomIdOrderBySeatNoAsc(roomId)) {
+			List<String> roomStudentIds = candidates.findByRoomIdOrderBySeatNoAsc(roomId)
+					.stream().map(ExamCandidate::getStudentId).distinct().toList();
+			if (!roomStudentIds.isEmpty()) {
 				boolean ownStudent = teachingClassMembers
-						.findByStudentIdAndEnrollmentStatus(
-								candidate.getStudentId(), "ENROLLED")
-						.stream()
-						.anyMatch(member -> teachingOfferings.contains(
-								member.getOfferingId()));
-				if (ownStudent) {
-					conflicts.add("教师不得监考本人授课学生");
-					break;
-				}
+						.findByStudentIdInAndEnrollmentStatus(roomStudentIds, "ENROLLED")
+						.stream().anyMatch(member -> teachingOfferings.contains(member.getOfferingId()));
+				if (ownStudent) conflicts.add("教师不得监考本人授课学生");
 			}
 		}
 		return conflicts;

@@ -91,21 +91,21 @@ class CollaborationOfficeServiceTest {
 		share.setOwnerUsername("owner");
 
 		share.setAudienceType("PRIVATE");
-		assertThat(service.canReadShare(share, "owner", "dept-1")).isTrue();
-		assertThat(service.canReadShare(share, "reader", "dept-1")).isFalse();
+		assertThat(CollaborationShareAudience.canRead(share, "owner", "dept-1")).isTrue();
+		assertThat(CollaborationShareAudience.canRead(share, "reader", "dept-1")).isFalse();
 
 		share.setAudienceType("USER");
 		share.setAudienceValue("reader, reviewer");
-		assertThat(service.canReadShare(share, "reader", "dept-1")).isTrue();
-		assertThat(service.canReadShare(share, "other", "dept-1")).isFalse();
+		assertThat(CollaborationShareAudience.canRead(share, "reader", "dept-1")).isTrue();
+		assertThat(CollaborationShareAudience.canRead(share, "other", "dept-1")).isFalse();
 
 		share.setAudienceType("DEPARTMENT");
 		share.setAudienceValue("dept-1");
-		assertThat(service.canReadShare(share, "reader", "dept-1")).isTrue();
-		assertThat(service.canReadShare(share, "reader", "dept-2")).isFalse();
+		assertThat(CollaborationShareAudience.canRead(share, "reader", "dept-1")).isTrue();
+		assertThat(CollaborationShareAudience.canRead(share, "reader", "dept-2")).isFalse();
 
 		share.setAudienceType("ALL");
-		assertThat(service.canReadShare(share, "anyone", null)).isTrue();
+		assertThat(CollaborationShareAudience.canRead(share, "anyone", null)).isTrue();
 	}
 
 	@Test

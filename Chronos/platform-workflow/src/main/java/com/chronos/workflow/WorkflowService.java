@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.*;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
@@ -55,6 +56,7 @@ public class WorkflowService {
 	private final IAuditLogService audit;
 	private final ApplicationEventPublisher eventPublisher;
 	private final List<WorkflowStartValidator> startValidators;
+	private List<WorkflowTaskAccessGuard> taskAccessGuards = List.of();
 	private final ObjectMapper json = new ObjectMapper();
 
 	public WorkflowService(IWorkflowDefinitionRepository definitions, IWorkflowNodeRepository nodes,
@@ -96,6 +98,11 @@ public class WorkflowService {
 		this.sla = sla;
 		this.eventPublisher = eventPublisher;
 		this.startValidators = startValidators;
+	}
+
+	@Autowired(required = false)
+	public void setTaskAccessGuards(List<WorkflowTaskAccessGuard> taskAccessGuards) {
+		this.taskAccessGuards = List.copyOf(taskAccessGuards);
 	}
 
 	@Transactional(readOnly = true)
@@ -834,10 +841,21 @@ public class WorkflowService {
 		}
 		security.requireInstanceView(actor, instanceId);
 		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
-		WorkflowNode node = nodes.findByFlowIdAndNodeKey(definition.getId(), instance.getCurrentNodeKey())
-				.orElseThrow(() -> new IllegalArgumentException("当前节点不存在"));
+		requireTaskAccess(instance, definition, actor);
 		List<WorkflowTask> history = tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId);
-		WorkflowTask currentTask = history.stream()
+		boolean finished = Set.of("COMPLETED", "REJECTED", "WITHDRAWN", "CANCELLED")
+				.contains(instance.getStatus());
+		String displayNodeKey = instance.getCurrentNodeKey();
+		if ((displayNodeKey == null || displayNodeKey.isBlank()) && finished) {
+			// Flowable clears the active node after completion. Use the last task only to
+			// render the archived form and audit trail; a finished instance is never editable.
+			displayNodeKey = history.isEmpty()
+					? definition.getEntryNodeKey()
+					: history.get(history.size() - 1).getNodeKey();
+		}
+		WorkflowNode node = nodes.findByFlowIdAndNodeKey(definition.getId(), displayNodeKey)
+				.orElseThrow(() -> new IllegalArgumentException("当前节点不存在"));
+		WorkflowTask currentTask = finished ? null : history.stream()
 				.filter(t -> "PENDING".equals(t.getStatus()) && actor.equals(t.getAssignee()))
 				.findFirst()
 				.orElse(null);
@@ -845,7 +863,11 @@ public class WorkflowService {
 		Map<String, String> permissions = starterRework
 				? starterReworkPermissions(definition, node)
 				: permissionMap(node, "permissions");
-		Set<String> required = permissionSet(node, "required");
+		if (finished) {
+			permissions = new HashMap<>(permissions);
+			permissions.replaceAll((key, permission) -> "EDIT".equals(permission) ? "READ" : permission);
+		}
+		Set<String> required = finished ? Set.of() : permissionSet(node, "required");
 		List<Map<String, Object>> forms = new ArrayList<>();
 		if (definition.getMainFormId() != null && !definition.getMainFormId().isBlank())
 			forms.add(runtimeForm(instance, definition.getMainFormId(), "_MAIN", "MAIN", permissions, required));
@@ -914,6 +936,7 @@ public class WorkflowService {
 			}
 		}
 		return visible.values().stream()
+				.filter(task -> canAccessTask(task, actor))
 				.sorted(Comparator.comparing(WorkflowTask::getCreateTime,
 						Comparator.nullsLast(Comparator.reverseOrder())))
 				.map(this::taskView)
@@ -1012,6 +1035,7 @@ public class WorkflowService {
 		if (!flowableRuntime.isFlowable(instance)) {
 			throw new IllegalArgumentException("Legacy 任务不支持候选认领");
 		}
+		requireTaskAccess(instance, requireDefinition(instance.getDefinitionId()), actor);
 		WorkflowTask result = flowableRuntime.claim(snapshot, actor);
 		addParticipant(instance.getId(), actor, "ASSIGNEE", result.getId());
 		audit.log(actor, "WORKFLOW_TASK_CLAIM", "taskId=" + taskId);
@@ -1526,7 +1550,33 @@ public class WorkflowService {
 			throw new IllegalStateException("任务已处理，请勿重复提交");
 		if (!actor.equals(task.getAssignee()))
 			throw new AccessDeniedException("不是当前任务处理人");
+		WorkflowInstance instance = requireInstance(task.getInstanceId());
+		requireTaskAccess(instance, requireDefinition(instance.getDefinitionId()), actor);
 		return task;
+	}
+
+	private boolean canAccessTask(WorkflowTask task, String actor) {
+		try {
+			WorkflowInstance instance = requireInstance(task.getInstanceId());
+			WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+			for (WorkflowTaskAccessGuard guard : taskAccessGuards) {
+				if (guard.supports(definition.getFlowCode())
+						&& !guard.canAccess(instance.getBusinessKey(), actor)) {
+					return false;
+				}
+			}
+			return true;
+		} catch (AccessDeniedException | IllegalArgumentException exception) {
+			return false;
+		}
+	}
+
+	private void requireTaskAccess(WorkflowInstance instance, WorkflowDefinition definition, String actor) {
+		for (WorkflowTaskAccessGuard guard : taskAccessGuards) {
+			if (guard.supports(definition.getFlowCode())) {
+				guard.requireAccess(instance.getBusinessKey(), actor);
+			}
+		}
 	}
 
 	private void cancelPending(String instanceId, String comment) {

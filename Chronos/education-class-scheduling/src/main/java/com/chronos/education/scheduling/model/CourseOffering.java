@@ -67,6 +67,10 @@ public class CourseOffering extends BaseEntity {
 	@Column(name = "campus_id", length = 64)
 	private String campusId;
 
+	/** 普通教学任务所属的来源行政班；用于学籍转班后的成员同步。 */
+	@Column(name = "administrative_class_id", length = 64)
+	private String administrativeClassId;
+
 	@Column(name = "status", length = 24, nullable = false)
 	private String status = "ACTIVE";
 }

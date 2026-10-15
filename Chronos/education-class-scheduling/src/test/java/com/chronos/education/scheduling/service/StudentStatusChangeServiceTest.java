@@ -8,12 +8,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
+import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CombinedOfferingSourceClassRepository;
+import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.StudentStatusChangeRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.CombinedOfferingSourceClass;
+import com.chronos.education.scheduling.model.AcademicTerm;
+import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.model.StudentStatusChange;
 import com.chronos.education.scheduling.model.TeachingClassMember;
@@ -32,6 +36,8 @@ class StudentStatusChangeServiceTest {
 	private CombinedOfferingSourceClassRepository combinedSources;
 	private CombinedOfferingService combinedOfferings;
 	private AcademicDataService academicData;
+	private CourseOfferingRepository offerings;
+	private AcademicTermRepository terms;
 	private TeachingClassMemberRepository members;
 	private StudentStatusChangeService service;
 
@@ -43,6 +49,8 @@ class StudentStatusChangeServiceTest {
 		combinedSources = mock(CombinedOfferingSourceClassRepository.class);
 		combinedOfferings = mock(CombinedOfferingService.class);
 		academicData = mock(AcademicDataService.class);
+		offerings = mock(CourseOfferingRepository.class);
+		terms = mock(AcademicTermRepository.class);
 		members = mock(TeachingClassMemberRepository.class);
 		service = new StudentStatusChangeService(
 				changes,
@@ -52,6 +60,8 @@ class StudentStatusChangeServiceTest {
 				combinedSources,
 				combinedOfferings,
 				academicData,
+				offerings,
+				terms,
 				mock(IAuditLogService.class));
 		when(changes.save(any(StudentStatusChange.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
@@ -60,7 +70,7 @@ class StudentStatusChangeServiceTest {
 	@Test
 	void suspendRequestCapturesCurrentStudentSnapshot() {
 		StudentProfile student = activeStudent();
-		when(students.findById("student-1")).thenReturn(Optional.of(student));
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(student));
 		when(changes.existsByStudentIdAndStatus("student-1", "PENDING")).thenReturn(false);
 
 		StudentStatusChange result = service.request(
@@ -130,9 +140,63 @@ class StudentStatusChangeServiceTest {
 	}
 
 	@Test
+	void approvedButNotYetEffectiveChangeBlocksAnotherRequest() {
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(activeStudent()));
+		when(changes.existsByStudentIdAndStatus("student-1", "APPROVED_PENDING"))
+				.thenReturn(true);
+
+		assertThatThrownBy(() -> service.request("student-1",
+				new StudentStatusChangeCommand("SUSPEND", null, LocalDate.now(), "再次申请"),
+				"registrar"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("待生效");
+	}
+
+	@Test
+	void futureTransferRejectsTargetClassChangedAfterApproval() {
+		StudentProfile student = activeStudent();
+		StudentStatusChange change = pendingChange("TRANSFER_CLASS", "ACTIVE");
+		change.setToClassId("class-2");
+		change.setStatus("APPROVED_PENDING");
+		when(changes.findLockedById("change-1")).thenReturn(Optional.of(change));
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(student));
+		when(classes.findById("class-1"))
+				.thenReturn(Optional.of(classRecord("class-1", "campus-1", "grade-1", 2024)));
+		when(classes.findById("class-2"))
+				.thenReturn(Optional.of(classRecord("class-2", "campus-2", "grade-1", 2024)));
+
+		assertThatThrownBy(() -> service.applyDue("change-1"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("同一校区");
+		assertThat(student.getAdministrativeClassId()).isEqualTo("class-1");
+	}
+
+	@Test
+	void approvedFutureChangeCanBeCancelledBeforeApplying() {
+		StudentStatusChange change = pendingChange("SUSPEND", "SUSPENDED");
+		change.setStatus("APPROVED_PENDING");
+		when(changes.findLockedById("change-1")).thenReturn(Optional.of(change));
+
+		assertThat(service.cancel("change-1", "registrar-manager").getStatus())
+				.isEqualTo("CANCELLED");
+		assertThat(change.getAppliedAt()).isNull();
+	}
+
+	@Test
+	void appliedChangeCannotBeCancelled() {
+		StudentStatusChange change = pendingChange("SUSPEND", "SUSPENDED");
+		change.setStatus("APPROVED");
+		when(changes.findLockedById("change-1")).thenReturn(Optional.of(change));
+
+		assertThatThrownBy(() -> service.cancel("change-1", "registrar-manager"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("待生效");
+	}
+
+	@Test
 	void transferClassRejectsAnotherSchoolOrGrade() {
 		StudentProfile student = activeStudent();
-		when(students.findById("student-1")).thenReturn(Optional.of(student));
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(student));
 		when(classes.findById("class-1")).thenReturn(Optional.of(classRecord("class-1", "campus-1", "grade-1", 2024)));
 		when(classes.findById("class-2")).thenReturn(Optional.of(classRecord("class-2", "campus-2", "grade-1", 2024)));
 		when(classes.findById("class-3")).thenReturn(Optional.of(classRecord("class-3", "campus-1", "grade-2", 2025)));
@@ -149,7 +213,7 @@ class StudentStatusChangeServiceTest {
 	void retainGradeUpdatesEnrollmentYearWhenApproved() {
 		StudentProfile student = activeStudent();
 		AdministrativeClass target = classRecord("class-3", "campus-1", "grade-2", 2025);
-		when(students.findById("student-1")).thenReturn(Optional.of(student));
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(student));
 		when(classes.findById("class-1")).thenReturn(Optional.of(classRecord("class-1", "campus-1", "grade-1", 2024)));
 		when(classes.findById("class-3")).thenReturn(Optional.of(target));
 		StudentStatusChange change = service.request("student-1",
@@ -208,6 +272,32 @@ class StudentStatusChangeServiceTest {
 		when(members.findById("member-1")).thenReturn(Optional.of(member));
 		service.approve("change-1", "同意", "registrar-manager");
 		verify(academicData).restoreAfterStatusChange("offering-1", "student-1");
+	}
+
+	@Test
+	void transferEnrollsTargetClassOfferingsInEffectiveTerm() {
+		StudentProfile student = activeStudent();
+		StudentStatusChange change = pendingChange("TRANSFER_CLASS", "ACTIVE");
+		change.setToClassId("class-2");
+		AcademicTerm term = new AcademicTerm();
+		term.setTermCode("2026-2027-1");
+		CourseOffering offering = new CourseOffering();
+		offering.setId("target-offering");
+		when(changes.findLockedById("change-1")).thenReturn(Optional.of(change));
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(student));
+		when(classes.findById("class-1"))
+				.thenReturn(Optional.of(classRecord("class-1", "campus-1", "grade-1", 2024)));
+		when(classes.findById("class-2"))
+				.thenReturn(Optional.of(classRecord("class-2", "campus-1", "grade-1", 2024)));
+		when(terms.findByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatus(
+				any(LocalDate.class), any(LocalDate.class), org.mockito.ArgumentMatchers.eq("ACTIVE")))
+				.thenReturn(List.of(term));
+		when(offerings.findByAdministrativeClassIdAndSemesterCodeAndStatus(
+				"class-2", "2026-2027-1", "ACTIVE")).thenReturn(List.of(offering));
+
+		service.approve("change-1", "同意", "registrar-manager");
+
+		verify(academicData).enrollFromAdministrativeClass("target-offering", "student-1");
 	}
 
 	private StudentProfile activeStudent() {

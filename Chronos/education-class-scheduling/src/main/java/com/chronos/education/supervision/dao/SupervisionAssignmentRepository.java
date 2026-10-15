@@ -5,5 +5,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 public interface SupervisionAssignmentRepository extends JpaRepository<SupervisionAssignment, String> {
 	List<SupervisionAssignment> findBySupervisorIdOrderByCreateTimeDesc(String supervisorId);
+	List<SupervisionAssignment> findByTeacherIdInOrderByCreateTimeDesc(List<String> teacherIds);
+	List<SupervisionAssignment> findByPlanId(String planId);
 	Optional<SupervisionAssignment> findByIdAndSupervisorId(String id, String supervisorId);
 }

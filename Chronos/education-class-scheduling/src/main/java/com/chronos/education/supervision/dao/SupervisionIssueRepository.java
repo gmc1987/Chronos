@@ -5,4 +5,7 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 public interface SupervisionIssueRepository extends JpaRepository<SupervisionIssue, String> {
 	List<SupervisionIssue> findByStatusAndDueAtBefore(String status, LocalDateTime time);
+	List<SupervisionIssue> findBySchoolIdOrderByCreateTimeDesc(String schoolId);
+	List<SupervisionIssue> findByOwnerIdOrderByCreateTimeDesc(String ownerId);
+	List<SupervisionIssue> findByRecordId(String recordId);
 }

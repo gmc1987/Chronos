@@ -29,6 +29,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         "com.chronos.file.dao",
         "com.chronos.industry.dao",
         "com.chronos.education.scheduling.dao",
+        "com.chronos.education.scheduling.repository",
         "com.chronos.education.grade.dao",
         "com.chronos.education.meeting.dao",
         "com.chronos.education.homeschool.dao",

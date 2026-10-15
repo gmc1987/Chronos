@@ -35,6 +35,12 @@ public class MeetingRecurrenceController {
 		return ok(recurrence.preview(command));
 	}
 
+	@GetMapping("/meetings/recurring")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:series:view','education:meeting:series:manage','education:meeting:view','education:meeting:manage')")
+	public ResultData<List<MeetingView>> roots(Authentication authentication) {
+		return ok(recurrence.roots(authentication.getName()));
+	}
+
 	@PostMapping("/meetings/recurring")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:series:manage','education:meeting:create','education:meeting:manage')")
 	public ResultData<MeetingView> create(

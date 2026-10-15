@@ -27,6 +27,16 @@ public class MeetingNotificationService {
 				occurrence);
 	}
 
+	public void reminder(Meeting meeting, String username, String window) {
+		notifications.enqueueUserEvent(
+				"EDUCATION_MEETING_REMINDER",
+				meeting.getId(),
+				username,
+				"会议即将开始：" + meeting.getTitle(),
+				meeting.getStartTime() + " 至 " + meeting.getEndTime(),
+				"REMINDER:" + meeting.getStartTime() + ":" + window);
+	}
+
 	public void roomApproval(Meeting meeting, String approver) {
 		notifications.enqueueUserEvent(
 				"EDUCATION_MEETING_ROOM_APPROVAL",

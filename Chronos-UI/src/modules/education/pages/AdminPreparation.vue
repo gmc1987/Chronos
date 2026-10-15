@@ -7,7 +7,7 @@
         <el-table-column prop="title" label="主题" min-width="220" />
         <el-table-column prop="scheduledAt" label="时间" min-width="180" />
         <el-table-column label="状态" width="110"><template #default="{ row }">{{ invitationStatus(row.status) }}</template></el-table-column>
-        <el-table-column label="操作" width="150"><template #default="{ row }"><template v-if="row.status === 'PENDING'"><el-button link type="success" @click="respondInvitation(row, 'ACCEPT')">接受</el-button><el-button link type="danger" @click="respondInvitation(row, 'DECLINE')">婉拒</el-button></template></template></el-table-column>
+        <el-table-column label="操作" width="180"><template #default="{ row }"><template v-if="row.status === 'PENDING'"><el-button link type="success" @click="respondInvitation(row, 'ACCEPT')">接受</el-button><el-button link type="danger" @click="respondInvitation(row, 'DECLINE')">婉拒</el-button></template><el-button v-if="row.status === 'ACCEPT'" link type="primary" @click="viewInvitation(row)">查看备课</el-button></template></el-table-column>
       </el-table>
     </section>
     <el-form inline @submit.prevent="load"><el-form-item label="教学班"><el-select v-model="filters.offeringId" clearable filterable style="width:280px"><el-option v-for="item in offerings" :key="item.id" :value="item.id" :label="offeringLabel(item)" /></el-select></el-form-item><el-button @click="load">查询</el-button></el-form>
@@ -24,20 +24,40 @@
         <el-form-item label="地点"><el-input v-model="form.location" maxlength="200" /></el-form-item>
         <el-form-item label="议程"><el-input v-model="form.agenda" type="textarea" :rows="3" /></el-form-item><el-form-item label="关联教案"><el-select v-model="form.outcomeLessonPlanId" clearable filterable style="width:100%"><el-option v-for="item in lessons" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
         <el-form-item v-if="isCollective" label="邀请成员"><el-select v-model="form.memberIds" multiple filterable style="width:100%"><el-option v-for="item in teachers" :key="item.id" :value="item.id" :label="personLabel(item)" /></el-select></el-form-item>
+        <el-form-item v-if="editing && isCollective" label="现有成员">
+          <el-table :data="preparationMemberRows" border style="width:100%">
+            <el-table-column prop="teacherName" label="教师" min-width="180" />
+            <el-table-column label="邀请状态" width="110"><template #default="{ row }">{{ invitationStatus(row.invitationStatus) }}</template></el-table-column>
+            <el-table-column label="操作" width="100"><template #default="{ row }"><el-button v-if="row.invitationStatus === 'PENDING' || row.invitationStatus === 'ACCEPT'" link type="danger" @click="revokeMember(row)">撤销</el-button></template></el-table-column>
+          </el-table>
+        </el-form-item>
         <el-form-item label="讨论"><el-input v-model="form.discussion" type="textarea" :rows="3" /></el-form-item><el-form-item label="结论"><el-input v-model="form.conclusion" type="textarea" :rows="3" /></el-form-item>
       </el-form>      <template #footer><el-button @click="dialog=false">取消</el-button><el-button v-if="editing && isCollective" @click="conclude">形成结论</el-button><el-button type="primary" @click="save">保存草稿</el-button></template>
     </el-dialog>
     <el-dialog v-model="discussionDialog" title="备课讨论与资料" width="700px"><el-form label-width="80px"><el-form-item label="讨论"><el-input v-model="discussion.content" type="textarea" :rows="4" /></el-form-item><el-form-item label="资料"><el-upload :show-file-list="false" :before-upload="uploadMaterial"><el-button>上传资料</el-button></el-upload><span class="file-name">{{ discussion.fileName }}</span></el-form-item></el-form><template #footer><el-button @click="discussionDialog=false">关闭</el-button><el-button type="primary" @click="saveDiscussion">保存</el-button></template></el-dialog>
+    <el-dialog v-model="invitationDetailDialog" title="受邀备课详情" width="620px">
+      <el-descriptions v-if="invitationDetail" :column="1" border>
+        <el-descriptions-item label="主题">{{ invitationDetail.title }}</el-descriptions-item>
+        <el-descriptions-item label="时间">{{ invitationDetail.scheduledAt }}</el-descriptions-item>
+        <el-descriptions-item label="议程">{{ invitationDetail.agenda || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="结论">{{ invitationDetail.conclusion || '尚未形成' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
   </section>
 </template>
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { dictionaryOptions, employees } from '../../iam/api'
-import { concludePreparation, createCoursewareFromPreparation, createPreparation, createPreparationChild, invitePreparationMember, myPreparationInvitations, offeringLessons, preparationPage, publishedScheduleEntries, respondPreparationInvitation, submitPreparation, teachingCenterOfferings, updatePreparation, uploadTeachingFile } from '../api/teachingCenter'
+import { collaborationPreparationDetail, concludePreparation, createCoursewareFromPreparation, createPreparation, createPreparationChild, invitePreparationMember, myPreparationInvitations, offeringLessons, preparationMembers, preparationPage, publishedScheduleEntries, respondPreparationInvitation, revokePreparationMember, submitPreparation, teachingCenterOfferings, updatePreparation, uploadTeachingFile } from '../api/teachingCenter'
 const offerings=ref([]), teachers=ref([]), lessons=ref([]), schedules=ref([]), types=ref([]), rows=ref([]), total=ref(0), page=ref(1), size=ref(20), loading=ref(false), dialog=ref(false), editing=ref(''), formRef=ref()
 const invitations=ref([])
-const invitationStatus=status=>({PENDING:'待响应',ACCEPT:'已接受',DECLINE:'已婉拒'})[status]||status
+const invitationDetailDialog=ref(false), invitationDetail=ref(null)
+const viewInvitation=async row=>{try{invitationDetail.value=(await collaborationPreparationDetail(row.preparationId))?.data||null;invitationDetailDialog.value=true}catch(e){ElMessage.error(e.message)}}
+const preparationMemberRows=ref([])
+const invitationStatus=status=>({PENDING:'待响应',ACCEPT:'已接受',DECLINE:'已婉拒',REVOKED:'已撤销'})[status]||status
+const loadMembers=async id=>{preparationMemberRows.value=(await preparationMembers(id))?.data||[]}
+const revokeMember=async row=>{try{await revokePreparationMember(editing.value,row.id);ElMessage.success('邀请已撤销，成员访问权限已失效');await loadMembers(editing.value)}catch(e){ElMessage.error(e.message)}}
 const loadInvitations=async()=>{try{invitations.value=(await myPreparationInvitations())?.data||[]}catch(e){ElMessage.error(e.message)}}
 const respondInvitation=async(row,response)=>{try{await respondPreparationInvitation(row.memberId,response);ElMessage.success(response==='ACCEPT'?'已接受邀请':'已婉拒邀请');await loadInvitations()}catch(e){ElMessage.error(e.message)}}
 const filters=reactive({offeringId:''}); const form=reactive({offeringId:'',title:'',preparationType:'',scheduledAt:'',ownerTeacherId:'',scheduleEntryId:'',location:'',agenda:'',outcomeLessonPlanId:'',memberIds:[],discussion:'',conclusion:''}); const discussionDialog=ref(false); const discussion=reactive({preparationId:'',content:'',fileName:''})
@@ -45,9 +65,9 @@ const rules={offeringId:[{required:true,message:'请选择教学班'}],title:[{r
 const isCollective=computed(()=>types.value.find(item=>item.value===form.preparationType)?.label?.includes('集体')); const unwrap=r=>r?.data?.content||r?.data||[]; const labelOf=(a,v)=>a.find(x=>x.value===v)?.label||v||'-'; const offeringLabel=i=>`${i.semesterCode||''} · ${i.courseName||''} · ${i.teachingClassName||''}`; const personLabel=i=>i.name||i.employeeName||i.realName||i.id; const scheduleLabel=i=>`${i.startTime||i.date||''} · ${i.courseName||i.location||''}`
 const selectedOffering=computed(()=>offerings.value.find(item=>item.id===form.offeringId)); const ownerLabel=computed(()=>{const item=selectedOffering.value; return item?.teacherName||item?.teacherId||'由教学班任课教师主持'})
 const load=async()=>{loading.value=true;try{const r=await preparationPage({...filters,page:page.value-1,size:size.value});rows.value=unwrap(r);total.value=r?.data?.totalElements||rows.value.length}catch(e){ElMessage.error(e.message)}finally{loading.value=false}}
-const loadSchedule=async()=>{if(!form.offeringId||schedules.value.length)return;try{schedules.value=unwrap(await publishedScheduleEntries(form.offeringId))}catch(e){ElMessage.error(e.message)}}
+const loadSchedule=async()=>{if(!form.offeringId||schedules.value.length)return;try{schedules.value=unwrap(await publishedScheduleEntries(form.offeringId, selectedOffering.value?.semesterCode))}catch(e){ElMessage.error(e.message)}}
 const openCreate=()=>{editing.value='';Object.assign(form,{offeringId:filters.offeringId,title:'',preparationType:types.value[0]?.value||'',scheduledAt:'',ownerTeacherId:'',scheduleEntryId:'',location:'',agenda:'',outcomeLessonPlanId:'',memberIds:[],discussion:'',conclusion:''});schedules.value=[];dialog.value=true}
-const edit=row=>{editing.value=row.id;Object.assign(form,row,{memberIds:row.memberIds||[],location:row.location||''});dialog.value=true}
+const edit=async row=>{editing.value=row.id;Object.assign(form,row,{memberIds:[],location:row.location||''});dialog.value=true;try{await loadMembers(row.id)}catch(e){ElMessage.error(e.message)}}
 const save=async()=>{try{await formRef.value.validate();const body={offeringId:form.offeringId,scheduleEntryId:form.scheduleEntryId||undefined,title:form.title,preparationType:form.preparationType,scheduledAt:form.scheduledAt||undefined,location:form.location||undefined,agenda:form.agenda||undefined,conclusion:form.conclusion||undefined,conclusionLessonPlanId:form.outcomeLessonPlanId||undefined};if(editing.value)body.rowVersion=form.rowVersion;const saved=editing.value?await updatePreparation(editing.value,body):await createPreparation(body);const id=editing.value||saved?.data?.id;if(id&&isCollective.value)for(const teacherId of form.memberIds||[])await invitePreparationMember(id,{teacherId,role:'MEMBER'});dialog.value=false;ElMessage.success('草稿已保存');await load()}catch(e){if(e?.message)ElMessage.error(e.message)}}
 const conclude=async()=>{try{await formRef.value.validate();if(!form.conclusion)throw new Error('请填写结论');await concludePreparation(editing.value,{conclusion:form.conclusion,lessonPlanId:form.outcomeLessonPlanId||undefined});dialog.value=false;ElMessage.success('已形成结论');await load()}catch(e){ElMessage.error(e.message)}}
 const submit=async row=>{try{await submitPreparation(row.id);ElMessage.success('已提交审核');await load()}catch(e){ElMessage.error(e.message)}}

@@ -84,6 +84,6 @@ class SupervisionCheckInProofSecurityTest {
 				mock(SupervisionPlanRepository.class), assignments,
 				mock(SupervisionRecordRepository.class), mock(SupervisionIssueRepository.class),
 				mock(SupervisionRectificationRepository.class), mock(SupervisionReviewRepository.class),
-				null, mock(DomainEventOutboxService.class), audit, null, null, provider);
+				null, null, mock(DomainEventOutboxService.class), audit, null, null, provider);
 	}
 }

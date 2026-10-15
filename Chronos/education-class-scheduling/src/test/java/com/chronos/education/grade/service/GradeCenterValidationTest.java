@@ -47,6 +47,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @ExtendWith(MockitoExtension.class)
 class GradeCenterValidationTest {
@@ -68,6 +72,7 @@ class GradeCenterValidationTest {
 	@Mock IAuditLogService audit;
 	@Mock ObjectMapper json;
 	@Mock DomainEventOutboxService domainEvents;
+	@Mock ExamGradebookSourceService examSources;
 	@InjectMocks GradeCenterService service;
 
 	@Test
@@ -174,7 +179,30 @@ class GradeCenterValidationTest {
 		gradebook.setId("gradebook-1");
 		gradebook.setStatus("PUBLISHED");
 		when(gradebooks.findById("gradebook-1")).thenReturn(Optional.of(gradebook));
+		when(dataScopes.resolve("publisher")).thenReturn(new EducationDataScope(
+				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
 		org.junit.jupiter.api.Assertions.assertSame(gradebook, service.publish("gradebook-1", "publisher"));
+	}
+
+	@Test
+	void publisherCannotUseAnAlreadyPublishedGradebookFromAnotherSchool() {
+		Gradebook gradebook = gradebook("gradebook-1", "PUBLISHED");
+		gradebook.setSchoolId("other-school");
+		gradebook.setTeacherId("other-teacher");
+		when(gradebooks.findById("gradebook-1")).thenReturn(Optional.of(gradebook));
+		when(dataScopes.resolve("publisher")).thenReturn(new EducationDataScope(
+				false, Set.of("own-school"), Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
+		SecurityContextHolder.getContext().setAuthentication(
+				new UsernamePasswordAuthenticationToken("publisher", null,
+						List.of(new SimpleGrantedAuthority("education:score:gradebook:publish"))));
+		try {
+			org.assertj.core.api.Assertions.assertThatThrownBy(
+						() -> service.publish("gradebook-1", "publisher"))
+						.isInstanceOf(AccessDeniedException.class);
+		} finally {
+			SecurityContextHolder.clearContext();
+		}
+		org.mockito.Mockito.verifyNoInteractions(snapshots, notifications);
 	}
 
 	@Test
@@ -312,6 +340,8 @@ class GradeCenterValidationTest {
 		CourseOffering offering = new CourseOffering();
 		offering.setId("offering-1");
 		when(gradebooks.findById("gradebook-1")).thenReturn(Optional.of(gradebook));
+		when(dataScopes.resolve("publisher")).thenReturn(new EducationDataScope(
+				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
 		when(students.findByGradebookId("gradebook-1")).thenReturn(List.of(student));
 		when(components.findBySchemeIdOrderBySortOrder("scheme-1")).thenReturn(List.of(component));
 		when(items.findByGradebookId("gradebook-1")).thenReturn(List.of(item));

@@ -34,6 +34,9 @@ public final class ExamCommands {
 		}
 	}
 
+	public record SessionOfferings(List<String> offeringIds) {
+	}
+
 	public record Room(String classroomId, Integer requiredInvigilators) {
 	}
 

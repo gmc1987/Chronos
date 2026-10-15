@@ -1,6 +1,5 @@
 package com.chronos.education.scheduling.service;
 
-import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.workflow.WorkflowStartValidator;
 import java.time.LocalDate;
 import java.util.Map;
@@ -36,8 +35,7 @@ public class ClassroomReservationStartValidator implements WorkflowStartValidato
 		int attendeeCount = positiveInteger(formData, "attendeeCount", "使用人数必须是正整数");
 		required(formData, "purpose", "用途不能为空");
 
-		EducationDataScope scope = dataScopes.resolve(actor);
-		dataScopes.assertClassroomAccess(scope, classroomId);
+		dataScopes.assertReservableClassroom(actor, classroomId);
 		conflicts.assertAvailable(
 				semesterCode,
 				classroomId,

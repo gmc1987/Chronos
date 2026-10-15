@@ -10,9 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeAssignmentRepository;
 import com.chronos.Idao.IOrganizationUnitRepository;
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.Idao.IRoleDataScopeRepository;
 import com.chronos.model.pojo.BaseEntity;
 import com.chronos.model.pojo.OrganizationUnit;
+import com.chronos.model.pojo.Organization;
 import com.chronos.model.pojo.RoleDataScope;
 import com.chronos.model.vo.DataScopeContext;
 import com.chronos.service.iService.IDataScopeService;
@@ -23,13 +25,16 @@ public class DataScopeServiceImpl implements IDataScopeService {
 	private final IAdminUserRepository users;
 	private final IEmployeeAssignmentRepository assignments;
 	private final IOrganizationUnitRepository units;
+	private final IOrganizationRepository organizations;
 	private final IRoleDataScopeRepository scopes;
 
 	public DataScopeServiceImpl(IAdminUserRepository users, IEmployeeAssignmentRepository assignments,
-			IOrganizationUnitRepository units, IRoleDataScopeRepository scopes) {
+			IOrganizationUnitRepository units, IOrganizationRepository organizations,
+			IRoleDataScopeRepository scopes) {
 		this.users = users;
 		this.assignments = assignments;
 		this.units = units;
+		this.organizations = organizations;
 		this.scopes = scopes;
 	}
 
@@ -54,15 +59,17 @@ public class DataScopeServiceImpl implements IDataScopeService {
 					Map.of());
 		var primary = employeeId == null ? java.util.Optional.<com.chronos.model.pojo.EmployeeAssignment>empty()
 				: assignments.findCurrentPrimaryAssignment(employeeId, java.time.LocalDate.now());
+		primary = primary.filter(a -> activeOrganization(a.getOrganizationId())
+				&& activeUnit(a.getOrganizationUnitId()));
 		if (configured.isEmpty() || configured.stream().anyMatch(s -> "SELF".equals(s.getScopeType())))
 			employeeIds.add(employeeId);
 		Set<String> scopeTypes = new HashSet<>();
 		Map<String, Set<String>> resourceIds = new HashMap<>();
 		for (RoleDataScope scope : configured) {
 			scopeTypes.add(scope.getScopeType());
-			if (scope.getOrganizationId() != null)
+			if (scope.getOrganizationId() != null && activeOrganization(scope.getOrganizationId()))
 				orgIds.add(scope.getOrganizationId());
-			if (scope.getOrganizationUnitId() != null)
+			if (scope.getOrganizationUnitId() != null && activeUnit(scope.getOrganizationUnitId()))
 				unitIds.add(scope.getOrganizationUnitId());
 			if (scope.getEmployeeId() != null)
 				employeeIds.add(scope.getEmployeeId());
@@ -97,6 +104,32 @@ public class DataScopeServiceImpl implements IDataScopeService {
 				Set.copyOf(employeeIds),
 				Set.copyOf(scopeTypes),
 				immutableResources);
+	}
+
+	private boolean activeOrganization(String organizationId) {
+		if (organizationId == null) return false;
+		Organization organization = organizations.findById(organizationId).orElse(null);
+		if (organization == null) return false;
+		Set<String> visited = new HashSet<>();
+		// A disabled ancestor also revokes access through an otherwise active campus.
+		while (organization != null && visited.add(organization.getId())) {
+			if (!Integer.valueOf(1).equals(organization.getStatus())) return false;
+			organization = organization.getParentOrgId();
+		}
+		return organization == null;
+	}
+
+	private boolean activeUnit(String unitId) {
+		if (unitId == null) return false;
+		OrganizationUnit unit = units.findById(unitId).orElse(null);
+		if (unit == null) return false;
+		Set<String> visited = new HashSet<>();
+		while (unit != null && visited.add(unit.getId())) {
+			if (!Integer.valueOf(1).equals(unit.getStatus())
+					|| !activeOrganization(unit.getOrgId())) return false;
+			unit = unit.getParentOrganizationUnit();
+		}
+		return unit == null;
 	}
 
 	private void addDescendants(String orgId, String rootId, Set<String> result) {

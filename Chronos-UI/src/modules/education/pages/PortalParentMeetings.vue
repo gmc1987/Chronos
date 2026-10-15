@@ -6,13 +6,18 @@ import { listParentMeetings, respondParentMeeting } from '../../../api/admin'
 const meetings = ref([])
 const loading = ref(false)
 const respondingId = ref('')
+const loadError = ref('')
 const unwrap = response => response?.data?.content || response?.data || []
 const responseLabels = { INVITED: '待回复', ACCEPTED: '参加', DECLINED: '不参加', LEAVE: '请假' }
 
 async function load() {
   loading.value = true
+  meetings.value = []
+  loadError.value = ''
   try {
     meetings.value = unwrap(await listParentMeetings())
+  } catch (error) {
+    loadError.value = error?.message || '家长会邀请加载失败'
   } finally {
     loading.value = false
   }
@@ -35,6 +40,7 @@ onMounted(load)
 <template>
   <section class="page">
     <header><div><h1>家长会邀请</h1><p>查看学校发给您的邀请并回复参会意向。</p></div><el-button :loading="loading" @click="load">刷新</el-button></header>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon class="load-error" />
     <el-table v-loading="loading" :data="meetings" border>
       <el-table-column prop="meeting.title" label="主题" min-width="200" />
       <el-table-column prop="meeting.agenda" label="议程" min-width="220" show-overflow-tooltip />
@@ -58,5 +64,6 @@ onMounted(load)
 .page { padding: 24px; }
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 h1 { margin: 0 0 8px; } p { margin: 0; color: #84909a; }
+.load-error { margin-bottom: 16px; }
 .actions { display: flex; align-items: center; white-space: nowrap; }
 </style>

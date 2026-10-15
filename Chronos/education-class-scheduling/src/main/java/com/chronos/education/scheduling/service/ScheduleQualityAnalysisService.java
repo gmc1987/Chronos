@@ -109,6 +109,7 @@ public class ScheduleQualityAnalysisService {
 				policy.getCourseConcentrationThreshold());
 		List<Map<String, Object>> risks = new ArrayList<>();
 		risks.addAll(hardConflictRisks(schedule, offeringById));
+		risks.addAll(weekPatternRisks(schedule, offeringById));
 		risks.addAll(incompleteOfferingRisks(schedule, offeringById));
 		teacherLoads.stream()
 				.filter(item -> Boolean.TRUE.equals(item.get("overloaded")))
@@ -156,8 +157,33 @@ public class ScheduleQualityAnalysisService {
 			return Boolean.TRUE.equals(policy.getBlockIncompleteOfferings());
 		}
 		return Boolean.TRUE.equals(policy.getBlockHardConflicts())
-				&& Set.of("ROOM_CONFLICT", "TEACHER_CONFLICT", "STUDENT_CONFLICT")
+				&& Set.of("ROOM_CONFLICT", "TEACHER_CONFLICT", "STUDENT_CONFLICT",
+						"WEEK_PATTERN_MISMATCH")
 						.contains(type);
+	}
+
+	/** 教学任务改为单双周后，旧草稿仍可能保留每周课，发布前必须识别这种失配。 */
+	private List<Map<String, Object>> weekPatternRisks(
+			List<ScheduleEntry> schedule,
+			Map<String, CourseOffering> offeringById) {
+		return schedule.stream()
+				.filter(entry -> {
+					CourseOffering offering = offeringById.get(entry.getOfferingId());
+					if (offering == null || !"ACTIVE".equals(offering.getStatus())) {
+						return false;
+					}
+					String expected = offering.getWeekPattern() == null ? "ALL" : offering.getWeekPattern();
+					String actual = entry.getWeekPattern() == null ? "ALL" : entry.getWeekPattern();
+					return !expected.equals(actual);
+				})
+				.map(entry -> {
+					CourseOffering offering = offeringById.get(entry.getOfferingId());
+					return risk("WEEK_PATTERN_MISMATCH", "HIGH",
+							offering.getCourseName() + " / " + offering.getTeachingClassName()
+									+ " 的课表授课周模式与教学任务不一致，请重新排课");
+				})
+				.distinct()
+				.toList();
 	}
 
 	/**

@@ -36,6 +36,7 @@ class ClassSchedulingServiceTest {
 		members = mock(TeachingClassMemberRepository.class);
 		service = new ClassSchedulingService(
 				offerings,
+				mock(com.chronos.education.scheduling.dao.AdministrativeClassRepository.class),
 				classrooms,
 				mock(ClassroomUnavailableSlotRepository.class),
 				entries,

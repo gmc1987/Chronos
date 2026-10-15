@@ -89,6 +89,7 @@
             <input ref="scheduleFileInput" type="file" accept=".xlsx" hidden @change="importSchedule" />
           </div>
         </div>
+        <el-alert v-if="publicationError" type="error" :closable="false" :title="publicationError" class="schedule-action-error" />
         <el-empty
           v-if="scheduleDimension !== 'ALL' && !scheduleTargetId"
           description="选择教师、班级、学生或教室后查看课表" />
@@ -118,7 +119,7 @@
 
       <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="日期课表" name="date-schedule">
         <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button></div>
-        <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
+        <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.substituteTeacherId ? `${teacherName(s.row.substituteTeacherId)}（代 ${s.row.entry.teacherName}）` : s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
         <h3>节假日待补课（{{ pendingMakeups.length }}）</h3>
         <el-alert type="info" :closable="false" title="非教学日的原课次不会自动挤占后续课表；选择提前或顺延的目标日期、节次后按实际日期检查冲突。" />
         <el-table :data="pendingMakeups" border empty-text="当前没有待补课次">
@@ -352,6 +353,13 @@
           <el-table-column prop="offeringCode" label="教学班编码" />
           <el-table-column prop="courseName" label="课程" />
           <el-table-column prop="teachingClassName" label="教学班" />
+          <el-table-column label="来源行政班" min-width="160">
+            <template #default="scope">
+              <span v-if="scope.row.offeringMode === 'COMBINED'">合班来源</span>
+              <span v-else-if="scope.row.administrativeClassId">{{ administrativeClasses.find(item => item.id === scope.row.administrativeClassId)?.className || '已绑定' }}</span>
+              <el-tag v-else type="warning">未配置，成员需单独维护</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="teacherName" label="教师" />
           <el-table-column prop="studentCount" label="人数" width="90" />
           <el-table-column prop="weeklyLessons" label="周课时" width="90" />
@@ -507,6 +515,7 @@
         <el-form-item label="授课周次"><el-input-number v-model="entryForm.startWeek" :min="1" /><span class="separator">至</span><el-input-number v-model="entryForm.endWeek" :min="1" /></el-form-item>
         <el-form-item label="锁定课程"><el-switch v-model="entryForm.locked" /><span class="form-tip">锁定后自动排课不会移动该课程</span></el-form-item>
       </el-form>
+      <el-alert v-if="entryError" type="error" :closable="false" :title="entryError" />
       <template #footer><el-button @click="entryDialog = false">取消</el-button><el-button type="primary" @click="saveEntry">保存并校验</el-button></template>
     </el-dialog>
 
@@ -544,6 +553,12 @@
           </el-select>
         </el-form-item>
         <el-form-item label="教学班名称"><el-input v-model="offeringForm.teachingClassName" /></el-form-item>
+        <el-form-item v-if="offeringForm.offeringMode !== 'COMBINED'" label="来源行政班">
+          <el-select v-model="offeringForm.administrativeClassId" clearable filterable placeholder="行政班课程请选择来源班级">
+            <el-option v-for="item in availableOfferingClasses" :key="item.id" :label="item.className" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-alert v-if="offeringForm.offeringMode !== 'COMBINED' && !offeringForm.administrativeClassId" type="warning" :closable="false" show-icon title="未绑定来源行政班：转班、留级不会自动同步该教学班成员，请单独维护成员。" />
         <el-form-item label="任课教师">
           <el-select v-model="offeringForm.teacherId" filterable @change="selectTeacher">
             <el-option v-for="teacher in teachers" :key="teacher.id" :label="`${teacher.teacherName}（${teacher.teacherNo}）`" :value="teacher.id" />
@@ -555,7 +570,7 @@
         <el-form-item label="授课周模式"><el-select v-model="offeringForm.weekPattern"><el-option label="每周" value="ALL" /><el-option label="单周" value="ODD" /><el-option label="双周" value="EVEN" /></el-select></el-form-item>
         <el-form-item label="教室类型要求"><el-select v-model="offeringForm.requiredRoomType" clearable><el-option v-for="item in roomTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item label="设备要求"><el-input v-model="offeringForm.requiredEquipmentCodes" placeholder="多个设备编码使用英文逗号分隔" /></el-form-item>
-        <el-form-item label="所属校区"><el-select v-model="offeringForm.campusId" filterable><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="所属校区"><el-select v-model="offeringForm.campusId" filterable @change="handleOfferingCampusChange"><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="offeringDialog = false">取消</el-button><el-button type="primary" @click="saveOffering">保存</el-button></template>
     </el-dialog>
@@ -692,6 +707,7 @@ import ScheduleGrid from '../components/ScheduleGrid.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
+import { todayLocalDate } from '../../../utils/localDate'
 import {
   applyScheduleCandidate,
   batchRetryCourseAdjustmentIncidents,
@@ -789,7 +805,7 @@ const teacherConstraints = ref([])
 const roomConstraints = ref([])
 const occurrences = ref([])
 const dateExceptionHistory = ref([])
-const occurrenceDate = ref(new Date().toISOString().slice(0, 10))
+const occurrenceDate = ref(todayLocalDate())
 const schedule = ref([])
 const quality = ref({})
 const policy = reactive({})
@@ -821,6 +837,8 @@ const classroomPage = ref(1)
 const classroomPageSize = ref(10)
 const classroomTotal = ref(0)
 const entryDialog = ref(false)
+const entryError = ref('')
+const publicationError = ref('')
 const offeringDialog = ref(false)
 const combinedDialog = ref(false)
 const combinedSaving = ref(false)
@@ -853,6 +871,8 @@ const orgName = item => item.organizationName || item.orgName || item.name || it
 const selectedTerm = computed(() => terms.value.find(item => item.termCode === semesterCode.value))
 const availableCombinedClasses = computed(() => administrativeClasses.value.filter(item =>
   item.status === 'ACTIVE' && item.campusId === combinedOffering.value?.campusId))
+const availableOfferingClasses = computed(() => administrativeClasses.value.filter(item =>
+  item.status === 'ACTIVE' && item.campusId === offeringForm.campusId))
 const selectedClassroom = computed(() => classroomOptions.value.find(item => item.id === entryForm.classroomId))
 const availablePeriods = computed(() => {
   const schedule = bellSchedules.value.find(item =>
@@ -1187,8 +1207,23 @@ const changeDimension = async () => {
     loadSchedule(),
   ])
 }
-const openEntry = (row) => { reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, durationPeriods: 1, weekPattern: 'ALL', startWeek: 1, endWeek: selectedTerm.value?.weekCount || 20, locked: false }); entryDialog.value = true }
-const saveEntry = async () => { const payload = { ...entryForm, semesterCode: semesterCode.value }; await (entryForm.id ? updateScheduleEntry(entryForm.id, payload) : createScheduleEntry(payload)); entryDialog.value = false; ElMessage.success('课表已保存'); await loadAll() }
+const openEntry = (row) => {
+  entryError.value = ''
+  reset(entryForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, durationPeriods: 1, weekPattern: 'ALL', startWeek: 1, endWeek: selectedTerm.value?.weekCount || 20, locked: false })
+  entryDialog.value = true
+}
+const saveEntry = async () => {
+  entryError.value = ''
+  const payload = { ...entryForm, semesterCode: semesterCode.value }
+  try {
+    await (entryForm.id ? updateScheduleEntry(entryForm.id, payload) : createScheduleEntry(payload))
+    entryDialog.value = false
+    ElMessage.success('课表已保存')
+    await loadAll()
+  } catch (error) {
+    entryError.value = error.message || '课表保存失败'
+  }
+}
 const moveEntry = async (entry, target) => {
   if (entry.dayOfWeek === target.dayOfWeek && entry.periodNo === target.periodNo) return
   await updateScheduleEntry(entry.id, { ...entry, ...target, semesterCode: semesterCode.value })
@@ -1246,13 +1281,27 @@ const exportSchedule = async () => saveBlob(
   `课表-${semesterCode.value}.xlsx`,
 )
 const openOffering = (row) => { reset(offeringForm, row ? { ...row } : { studentCount: 30, weeklyLessons: 2, preferredDurationPeriods: 1, weekPattern: 'ALL', status: 'ACTIVE' }); offeringDialog.value = true }
+const handleOfferingCampusChange = () => {
+  if (!availableOfferingClasses.value.some(item => item.id === offeringForm.administrativeClassId)) {
+    offeringForm.administrativeClassId = null
+  }
+}
 const selectCourse = code => {
   offeringForm.courseName = courses.value.find(item => item.courseCode === code)?.courseName || ''
 }
 const selectTeacher = id => {
   offeringForm.teacherName = teachers.value.find(item => item.id === id)?.teacherName || ''
 }
-const saveOffering = async () => { const payload = { ...offeringForm, semesterCode: semesterCode.value }; await (offeringForm.id ? updateCourseOffering(offeringForm.id, payload) : createCourseOffering(payload)); offeringDialog.value = false; ElMessage.success('教学任务已保存'); await loadAll() }
+const saveOffering = async () => {
+  if (offeringForm.offeringMode !== 'COMBINED' && !offeringForm.administrativeClassId) {
+    await ElMessageBox.confirm('未绑定来源行政班。转班、留级时不会自动同步该教学班成员，确认作为独立教学班保存吗？', '确认教学班成员维护方式', { type: 'warning' })
+  }
+  const payload = { ...offeringForm, semesterCode: semesterCode.value }
+  await (offeringForm.id ? updateCourseOffering(offeringForm.id, payload) : createCourseOffering(payload))
+  offeringDialog.value = false
+  ElMessage.success('教学任务已保存')
+  await loadAll()
+}
 const openCombined = async row => {
   combinedOffering.value = row
   try {
@@ -1347,6 +1396,7 @@ const openSubstitution = item => {
     targetPeriodNo: null,
     targetClassroomId: null,
     substituteTeacherId: null,
+    leaveRecordId: item.leaveId,
     reason: `教师请假代课（请假记录：${item.leaveId}）`,
   })
   dateExceptionDialog.value = true
@@ -1583,13 +1633,19 @@ const changeTypeName = (type) => ({
   REMOVED: '移除',
 })[type] || type
 const publishVersion = async () => {
+  publicationError.value = ''
   const diff = (await previewSchedulePublication(semesterCode.value)).data
   await ElMessageBox.confirm(
     `发布后会生成不可变版本快照。本次将新增 ${diff.added}、移动 ${diff.moved}、移除 ${diff.removed} 条安排，确认发布？`,
     '发布课表',
     { type: 'warning' },
   )
-  await publishScheduleVersion(semesterCode.value)
+  try {
+    await publishScheduleVersion(semesterCode.value)
+  } catch (error) {
+    publicationError.value = error.message || '课表发布失败'
+    return
+  }
   ElMessage.success('课表版本已发布')
   await loadVersions()
 }

@@ -1,6 +1,7 @@
 package com.chronos.education.supervision.service;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @ConditionalOnMissingBean(SupervisionCheckInProofProvider.class)
+@ConditionalOnProperty(name = "chronos.supervision.qr.secret", havingValue = "false", matchIfMissing = true)
 public class UnavailableSupervisionCheckInProofProvider implements SupervisionCheckInProofProvider {
 	@Override
 	public VerificationResult verify(VerificationRequest request) {

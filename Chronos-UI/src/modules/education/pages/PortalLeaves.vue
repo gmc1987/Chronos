@@ -76,6 +76,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
 import {
   portalFamilyChildren,
+  portalBootstrap,
   portalLeaveBalances,
   portalLeaveRecords,
   requestLeaveCancellation,
@@ -123,10 +124,12 @@ const cancellationLabel = (value) => ({
 const load = async () => {
   loading.value = true
   try {
+    const { data: context } = await portalBootstrap()
+    const profileTypes = context.contributions?.DATA?.data?.profileTypes || []
     const [records, family, balanceResult, typeResult] = await Promise.all([
       portalLeaveRecords(),
-      portalFamilyChildren().catch(() => ({ data: [] })),
-      portalLeaveBalances(currentYear).catch(() => ({ data: [] })),
+      profileTypes.includes('PARENT') ? portalFamilyChildren() : Promise.resolve({ data: [] }),
+      context.user?.employeeId ? portalLeaveBalances(currentYear) : Promise.resolve({ data: [] }),
       dictionaryOptions('EDU_LEAVE_TYPE').catch(() => ({ data: [] })),
     ])
     rows.value = records.data || []

@@ -20,7 +20,9 @@ public record SchedulingAiPlan(
 		List<SchedulingAiSoftPriority> softPriorities,
 		List<SchedulingAiSlotRule> slotRules,
 		SchedulingAiGenerationOptions generationOptions,
-		List<SchedulingAiDateRule> dateRules) {
+		List<SchedulingAiDateRule> dateRules,
+		String ruleCatalogVersion,
+		List<SchedulingAiRuleClaim> ruleClaims) {
 	public SchedulingAiPlan {
 		selectedOfferingIds = selectedOfferingIds == null ? Set.of() : Set.copyOf(selectedOfferingIds);
 		constraints = constraints == null ? List.of() : List.copyOf(constraints);
@@ -33,6 +35,26 @@ public record SchedulingAiPlan(
 		softPriorities = softPriorities == null ? List.of() : List.copyOf(softPriorities);
 		slotRules = slotRules == null ? List.of() : List.copyOf(slotRules);
 		dateRules = dateRules == null ? List.of() : List.copyOf(dateRules);
+		// 未确认的解析结果与旧 Run 都不能伪称已冻结新版规则目录。
+		ruleCatalogVersion = ruleCatalogVersion == null ? "LEGACY_UNVERSIONED" : ruleCatalogVersion;
+		ruleClaims = ruleClaims == null ? List.of() : List.copyOf(ruleClaims);
+	}
+
+	public SchedulingAiPlan(int schemaVersion, String skillCode, String semesterCode,
+			String mode, Set<String> selectedOfferingIds, int candidateCount,
+			List<SchedulingAiConstraint> constraints, List<String> clarifications,
+			List<String> unsupported, List<String> unresolvedClauses,
+			List<SchedulingAiOfferingConstraint> offeringConstraints,
+			List<SchedulingAiWeekRule> weekRules,
+			List<SchedulingAiLockedEntry> lockedEntries,
+			List<SchedulingAiSoftPriority> softPriorities,
+			List<SchedulingAiSlotRule> slotRules,
+			SchedulingAiGenerationOptions generationOptions,
+			List<SchedulingAiDateRule> dateRules) {
+		this(schemaVersion, skillCode, semesterCode, mode, selectedOfferingIds,
+				candidateCount, constraints, clarifications, unsupported, unresolvedClauses,
+				offeringConstraints, weekRules, lockedEntries, softPriorities, slotRules,
+				generationOptions, dateRules, null, List.of());
 	}
 
 	public SchedulingAiPlan(int schemaVersion, String skillCode, String semesterCode,

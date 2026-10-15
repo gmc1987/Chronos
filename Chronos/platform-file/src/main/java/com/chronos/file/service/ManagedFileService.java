@@ -77,7 +77,8 @@ public class ManagedFileService {
 			value.setBindState(value.getBusinessId() == null ? "PENDING_BIND" : "BOUND");
 			value.setScanStatus("PASSED");
 			value.setBoundAt(value.getBusinessId() == null ? null : LocalDateTime.now());
-			value.setExpiresAt(LocalDateTime.now().plusHours(24));
+			// 仅未绑定的临时上传会过期；正式业务附件需随业务生命周期保留。
+			value.setExpiresAt(value.getBusinessId() == null ? LocalDateTime.now().plusHours(24) : null);
 			value = files.save(value);
 			audit.log(actor, "FILE_UPLOAD", "fileId=" + value.getId() + ", type=" + value.getBusinessType());
 			return ManagedFileView.from(value);
@@ -118,6 +119,7 @@ public class ManagedFileService {
 			file.setBusinessId(targetId);
 			file.setBindState("BOUND");
 			file.setBoundAt(LocalDateTime.now());
+			file.setExpiresAt(null);
 			return ManagedFileView.from(files.save(file));
 		}).toList();
 		audit.log(actor, "FILE_BIND", "businessType=" + type + ", businessId=" + targetId

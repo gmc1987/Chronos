@@ -103,6 +103,9 @@ public class GradeExcelService {
 			assertHeader(sheet.getRow(0), detail);
 			Map<String, StudentSnapshot> studentByNo = new HashMap<>();
 			detail.students().forEach(student -> studentByNo.put(student.studentNo(), student));
+			Map<String, BigDecimal> existingScores = new HashMap<>();
+			detail.items().forEach(item -> existingScores.put(
+					item.studentId() + ":" + item.componentId(), item.rawScore()));
 			List<GradeItemCommand> commands = new ArrayList<>();
 			List<String> errors = new ArrayList<>();
 			DataFormatter formatter = new DataFormatter();
@@ -124,8 +127,16 @@ public class GradeExcelService {
 							continue;
 						}
 						BigDecimal score = new BigDecimal(formatter.formatCellValue(cell).trim());
+						var component = detail.components().get(index);
+						if ("EXAM".equals(component.sourceType())) {
+							BigDecimal existing = existingScores.get(student.studentId() + ":" + component.id());
+							if (existing == null || existing.compareTo(score) != 0) {
+								throw new IllegalArgumentException("考试来源成绩不可通过 Excel 修改，请在考试中心更正后同步");
+							}
+							continue;
+						}
 						commands.add(new GradeItemCommand(
-							detail.components().get(index).id(), student.studentId(), score, null, "Excel导入"));
+							component.id(), student.studentId(), score, null, "Excel导入"));
 					}
 				} catch (RuntimeException exception) {
 					errors.add("第 " + (rowIndex + 1) + " 行：" + exception.getMessage());

@@ -179,10 +179,10 @@ public class ClassroomReservationService {
 	public List<Map<String, Object>> classroomOptions(String username) {
 		// 选项接口仍按账号数据范围过滤，避免通过流程表单枚举无权访问的校区资源。
 		var scope = dataScopes.resolve(username);
+		var reservableCampusIds = dataScopes.reservableCampusIds(username);
 		return classrooms.findByEnabledTrueOrderByRoomCode().stream()
-				.filter(classroom -> scope.fullAccess()
-						|| classroom.getCampusId() != null
-						&& scope.campusIds().contains(classroom.getCampusId()))
+				.filter(classroom -> scope.fullAccess() || classroom.getCampusId() != null
+						&& reservableCampusIds.contains(classroom.getCampusId()))
 				.map(this::classroomOption)
 				.toList();
 	}
