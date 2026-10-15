@@ -301,6 +301,10 @@ public class AcademicDataService {
 		return students.findByAdministrativeClassId(classId);
 	}
 
+	public List<StudentProfile> studentsByIds(List<String> ids) {
+		return students.findAllById(ids);
+	}
+
 	public Page<StudentProfile> students(int page, int size) {
 		return students.findAllByOrderByStudentNo(pageable(page, size));
 	}

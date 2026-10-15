@@ -18,7 +18,7 @@
       <el-table-column prop="status" label="状态" width="110" />
       <AdaptiveActionColumn label="操作" width="250" fixed="right"><template #default="{ row }">
         <el-button link type="primary" @click="openWorkbench(row)">工作台</el-button>
-        <el-button link @click="editPlan(row)">编辑</el-button>
+        <el-button link :disabled="row.status !== 'DRAFT'" @click="editPlan(row)">编辑</el-button>
         <el-button link type="danger" @click="archive(row)">归档</el-button>
       </template></AdaptiveActionColumn>
     </el-table>
@@ -36,23 +36,23 @@
         </el-descriptions>
         <el-tabs v-model="activeTab" class="workbench-tabs">
           <el-tab-pane label="章节编排" name="chapters">
-            <div class="toolbar"><el-button type="primary" @click="addChapter">新增章节</el-button><span :class="{ danger: chapterError }">{{ chapterError || '周次 1–60，起始不得晚于结束，课时必须大于 0' }}</span></div>
+            <div class="toolbar"><el-button type="primary" :disabled="selected.status !== 'DRAFT'" @click="addChapter">新增章节</el-button><span :class="{ danger: chapterError }">{{ chapterError || '周次 1–60，起始不得晚于结束，课时必须大于 0' }}</span></div>
             <el-table :data="chapters" border>
               <el-table-column label="#" width="55"><template #default="{ $index }">{{ $index + 1 }}</template></el-table-column>
-              <el-table-column label="章节名称" min-width="190"><template #default="{ row }"><el-input v-model="row.chapterName" /></template></el-table-column>
-              <el-table-column label="周次" width="190"><template #default="{ row }"><div class="week-input"><el-input-number v-model="row.weekStart" :min="1" :max="60" /><span>至</span><el-input-number v-model="row.weekEnd" :min="1" :max="60" /></div></template></el-table-column>
-              <el-table-column label="课时" width="105"><template #default="{ row }"><el-input-number v-model="row.lessonHours" :min="1" /></template></el-table-column>
-              <el-table-column label="目标/重点" min-width="260"><template #default="{ row }"><el-input v-model="row.objectives" type="textarea" :rows="2" /></template></el-table-column>
+              <el-table-column label="章节名称" min-width="190"><template #default="{ row }"><el-input v-model="row.chapterName" :disabled="selected.status !== 'DRAFT'" /></template></el-table-column>
+              <el-table-column label="周次" width="190"><template #default="{ row }"><div class="week-input"><el-input-number v-model="row.weekStart" :min="1" :max="60" :controls="false" :disabled="selected.status !== 'DRAFT'" /><span>至</span><el-input-number v-model="row.weekEnd" :min="1" :max="60" :controls="false" :disabled="selected.status !== 'DRAFT'" /></div></template></el-table-column>
+              <el-table-column label="课时" width="105"><template #default="{ row }"><el-input-number v-model="row.lessonHours" :min="1" :disabled="selected.status !== 'DRAFT'" /></template></el-table-column>
+              <el-table-column label="目标/重点" min-width="260"><template #default="{ row }"><el-input v-model="row.objectives" type="textarea" :rows="2" :disabled="selected.status !== 'DRAFT'" /></template></el-table-column>
               <AdaptiveActionColumn label="操作" width="170"><template #default="{ $index }">
-                <el-button link @click="moveChapter($index, -1)" :disabled="$index === 0">上移</el-button><el-button link @click="moveChapter($index, 1)" :disabled="$index === chapters.length - 1">下移</el-button><el-button link @click="duplicateChapter($index)">复制</el-button><el-button link type="danger" @click="removeChapter($index)">删除</el-button>
+                <el-button link @click="moveChapter($index, -1)" :disabled="selected.status !== 'DRAFT' || $index === 0">上移</el-button><el-button link @click="moveChapter($index, 1)" :disabled="selected.status !== 'DRAFT' || $index === chapters.length - 1">下移</el-button><el-button link :disabled="selected.status !== 'DRAFT'" @click="duplicateChapter($index)">复制</el-button><el-button link type="danger" :disabled="selected.status !== 'DRAFT'" @click="removeChapter($index)">删除</el-button>
               </template></AdaptiveActionColumn>
             </el-table>
-            <div class="chapter-footer">章节合计 <strong>{{ chapterHours }}</strong> 课时 <el-button type="primary" :disabled="!!chapterError" @click="saveChapters">保存章节</el-button></div>
+            <div class="chapter-footer">章节合计 <strong>{{ chapterHours }}</strong> 课时 <el-button type="primary" :disabled="selected.status !== 'DRAFT' || !!chapterError" @click="saveChapters">保存章节</el-button></div>
           </el-tab-pane>
           <el-tab-pane label="版本" name="versions"><el-table v-loading="versionsLoading" :data="versions" border><el-table-column prop="versionNo" label="版本" width="90" /><el-table-column prop="status" label="状态" width="120" /><el-table-column prop="createTime" label="生成时间" /><el-table-column prop="publishedAt" label="发布时间" /></el-table></el-tab-pane>
           <el-tab-pane label="审核" name="review"><el-empty v-if="!reviewStatus" description="暂无审核记录" /><el-descriptions v-else border :column="2"><el-descriptions-item label="状态">{{ reviewStatus.status }}</el-descriptions-item><el-descriptions-item label="处理人">{{ reviewStatus.reviewerName || '—' }}</el-descriptions-item><el-descriptions-item label="意见" :span="2">{{ reviewStatus.comment || '—' }}</el-descriptions-item></el-descriptions></el-tab-pane>
         </el-tabs>
-        <div class="drawer-actions"><el-button @click="workbench=false">关闭</el-button><el-button type="primary" :disabled="selected.status !== 'DRAFT'" @click="submitPlan">提交审核</el-button></div>
+        <div class="drawer-actions"><el-button @click="workbench=false">关闭</el-button><el-button v-if="['PUBLISHED', 'REJECTED'].includes(selected.status)" type="warning" @click="revisePlan">修订新版本</el-button><el-button type="primary" :disabled="selected.status !== 'DRAFT'" @click="submitPlan">提交审核</el-button></div>
       </template>
     </el-drawer>
 
@@ -70,7 +70,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
-import { archiveTeachingDomainApi, createPlanItem, createTeachingPlan, teachingCenterOfferings, offeringPlans, teachingPlanDetail, teachingPlanVersions, submitTeachingPlan, updatePlanItem, updateTeachingPlan } from '../api/teachingCenter'
+import { archiveTeachingDomainApi, createPlanItem, createTeachingPlan, teachingCenterOfferings, offeringPlans, teachingPlanDetail, teachingPlanVersions, teachingReviewStatus, reviseTeachingPlan, submitTeachingPlan, updatePlanItem, updateTeachingPlan } from '../api/teachingCenter'
 const offerings = ref([]); const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20); const loading = ref(false)
 const filters = reactive({ offeringId: '' }); const planTypes = ref([])
 const editor = ref(false); const editing = ref(''); const wizardStep = ref(0); const formRef = ref()
@@ -85,7 +85,28 @@ const nextStep = () => { if (wizardStep.value === 0 && !form.offeringId) return 
 const checkError = computed(() => !form.offeringId || !form.name || !form.planType || !form.objective || !form.assessmentMethod || form.totalHours < 1 ? '请完成教学班、目标、考核方式和总课时。' : '')
 const checkText = computed(() => checkError.value || `已选择 ${offeringLabel(findOffering(form.offeringId))}，将保存为草稿。章节可在工作台继续编排。`)
 const savePlan = async () => { try { const offering = findOffering(form.offeringId); const payload = { offeringId: form.offeringId, academicTermId: offering?.semesterCode, name: form.name, planType: form.planType, totalHours: form.totalHours, objective: form.objective, assessmentMethod: form.assessmentMethod, remarks: form.remarks, ...(editing.value ? { rowVersion: form.rowVersion } : {}) }; editing.value ? await updateTeachingPlan(editing.value, payload) : await createTeachingPlan(payload); editor.value = false; ElMessage.success('草稿已保存'); await load() } catch (e) { ElMessage.error(e.message) } }
-const openWorkbench = async (row) => { try { const r = await teachingPlanDetail(row.id); selected.value = r.data?.plan || row; chapters.value = r.data?.items || []; versionsLoading.value = true; const vr = await teachingPlanVersions(row.id); versions.value = vr.data || []; workbench.value = true } catch (e) { ElMessage.error(e.message) } finally { versionsLoading.value = false } }
+const openWorkbench = async (row) => {
+  try {
+    versionsLoading.value = true
+    const reviewRequest = row.currentVersionNo > 0
+      ? teachingReviewStatus('PLAN', row.id)
+      : Promise.resolve(null)
+    const [detail, versionResult, reviewResult] = await Promise.all([
+      teachingPlanDetail(row.id),
+      teachingPlanVersions(row.id),
+      reviewRequest
+    ])
+    selected.value = detail.data?.plan || row
+    chapters.value = detail.data?.items || []
+    versions.value = versionResult.data || []
+    reviewStatus.value = reviewResult?.data || null
+    workbench.value = true
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    versionsLoading.value = false
+  }
+}
 const chapterHours = computed(() => chapters.value.reduce((sum, x) => sum + (Number(x.lessonHours) || 0), 0))
 const chapterError = computed(() => chapters.value.some(x => !x.chapterName || !(x.lessonHours > 0) || !(x.weekStart >= 1 && x.weekStart <= 60) || !(x.weekEnd >= 1 && x.weekEnd <= 60) || x.weekStart > x.weekEnd) ? '请修正章节名称、周次和课时' : '')
 const addChapter = () => chapters.value.push({ chapterNo: chapters.value.length + 1, chapterName: '', lessonHours: 1, weekStart: 1, weekEnd: 1, objectives: '', keyPoints: '', difficultPoints: '', sortOrder: chapters.value.length })
@@ -94,6 +115,7 @@ const duplicateChapter = (i) => chapters.value.splice(i + 1, 0, { ...chapters.va
 const moveChapter = (i, delta) => { const target = i + delta; if (target < 0 || target >= chapters.value.length) return; [chapters.value[i], chapters.value[target]] = [chapters.value[target], chapters.value[i]] }
 const saveChapters = async () => { if (chapterError.value) return ElMessage.warning(chapterError.value); try { await Promise.all(chapters.value.map((item, i) => { const payload = { chapterNo: i + 1, chapterName: item.chapterName, lessonHours: item.lessonHours, weekStart: item.weekStart, weekEnd: item.weekEnd, objectives: item.objectives || '—', keyPoints: item.keyPoints || '—', difficultPoints: item.difficultPoints || '—', sortOrder: i }; return item.id ? updatePlanItem(item.id, payload) : createPlanItem(selected.value.id, payload) })); ElMessage.success('章节已保存'); await openWorkbench(selected.value) } catch (e) { ElMessage.error(e.message) } }
 const submitPlan = async () => { try { await submitTeachingPlan(selected.value.id, `plan-${selected.value.id}-${Date.now()}`); ElMessage.success('已提交审核'); workbench.value = false; await load() } catch (e) { ElMessage.error(e.message) } }
+const revisePlan = async () => { try { await ElMessageBox.confirm('将从已发布版本创建可编辑草稿，原发布版本保持不变。', '修订教学计划'); await reviseTeachingPlan(selected.value.id, selected.value.rowVersion); ElMessage.success('已创建修订草稿'); await load(); await openWorkbench(selected.value) } catch (e) { if (e !== 'cancel') ElMessage.error(e.message) } }
 const reviewText = computed(() => reviewStatus.value?.status || '待提交')
 const archive = async (row) => { await ElMessageBox.confirm('归档后将从默认列表隐藏，是否继续？', '确认'); try { await archiveTeachingDomainApi('plans', row.id); ElMessage.success('已归档'); await load() } catch (e) { ElMessage.error(e.message) } }
 onMounted(async () => { try { const [o, d] = await Promise.all([teachingCenterOfferings(), dictionaryOptions('EDU_TEACHING_PLAN_TYPE')]); offerings.value = o.data || []; planTypes.value = (d.data || []).map(x => ({ label: x.dictName || x.itemName || x.name || x.label, value: x.dictValue || x.itemValue || x.value || x.code })); if (!filters.offeringId && offerings.value[0]) filters.offeringId = offerings.value[0].id; await load() } catch (e) { ElMessage.error(e.message) } })

@@ -4,6 +4,7 @@
  import com.chronos.Idao.IOrganizationUnitRepository;
  import com.chronos.Idao.IEmployeeAssignmentRepository;
  import com.chronos.Idao.IAdminUserRepository;
+ import com.chronos.Idao.IRoleDataScopeRepository;
  import com.chronos.commons.utils.BeanCopyUtil;
  import com.chronos.model.dto.OrganizationDTO;
  import com.chronos.model.pojo.Organization;
@@ -31,6 +32,7 @@ import com.chronos.industry.service.IndustryTemplateRegistry;
    @Autowired private IOrganizationUnitRepository unitRepository;
    @Autowired private IEmployeeAssignmentRepository assignmentRepository;
    @Autowired private IAdminUserRepository userRepository;
+   @Autowired private IRoleDataScopeRepository roleDataScopeRepository;
    @Autowired private IAuditLogService audit;
    @Autowired private IndustryTemplateRegistry industryTemplates;
    
@@ -101,7 +103,15 @@ import com.chronos.industry.service.IndustryTemplateRegistry;
      audit.log(actor(),"ORGANIZATION_DISABLE","id="+id+", impact="+impact(id));
    }
 
-   public Map<String,Long> impact(String id){organizationRepository.findById(id).orElseThrow(()->new IllegalArgumentException("organization not found"));return Map.of("departments",unitRepository.countByOrgId(id),"assignments",assignmentRepository.countByOrganizationId(id),"accounts",userRepository.countByOrganizationId(id));}
+   public Map<String,Long> impact(String id) {
+     organizationRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("organization not found"));
+     return Map.of(
+       "childOrganizations", organizationRepository.countByParentOrgId_Id(id),
+       "departments", unitRepository.countByOrgId(id),
+       "assignments", assignmentRepository.countByOrganizationId(id),
+       "accounts", userRepository.countByOrganizationId(id),
+       "roleScopes", roleDataScopeRepository.countByOrganizationId(id));
+   }
    private String actor(){var auth=org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();return auth==null?"system":auth.getName();}
 
    private void validateOrganizationType(String organizationType) {

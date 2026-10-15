@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -23,7 +24,10 @@ import com.chronos.education.scheduling.dao.TeachingPlanItemRepository;
 import com.chronos.education.scheduling.dao.TeachingPlanRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
+import com.chronos.education.scheduling.model.HomeworkSubmission;
 import com.chronos.education.scheduling.model.dto.HomeworkDtos.AssignmentRequest;
+import com.chronos.education.scheduling.model.dto.HomeworkDtos.StudentSubmissionView;
+import com.chronos.file.service.ManagedFileService;
 
 class HomeworkDeliveryContractTest {
 	private HomeworkService service;
@@ -52,7 +56,8 @@ class HomeworkDeliveryContractTest {
 				mock(LessonPlanRepository.class),
 				mock(QuestionRepository.class),
 				mock(QuestionVersionRepository.class),
-				mock(EducationDomainEventService.class));
+				mock(EducationDomainEventService.class),
+				mock(ManagedFileService.class));
 	}
 
 	private CourseOfferingRepository mockOfferings() {
@@ -79,5 +84,22 @@ class HomeworkDeliveryContractTest {
 		assertThatThrownBy(() -> service.create(request("REJECT", "{}"), authentication))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("作业附件快照必须是 JSON 数组");
+	}
+
+	@Test
+	void studentViewRevealsGradesOnlyAfterPublication() {
+		HomeworkSubmission submission = new HomeworkSubmission();
+		submission.setScore(10);
+		submission.setTeacherFeedback("已批改，待发布");
+		submission.setQuestionScoresJson("{\"q1\":10}");
+		StudentSubmissionView draft = StudentSubmissionView.from(submission);
+		assertThat(draft.score()).isNull();
+		assertThat(draft.teacherFeedback()).isNull();
+		assertThat(draft.questionScoresJson()).isNull();
+		submission.setGradesPublished(true);
+		StudentSubmissionView published = StudentSubmissionView.from(submission);
+		assertThat(published.score()).isEqualTo(10);
+		assertThat(published.teacherFeedback()).isEqualTo("已批改，待发布");
+		assertThat(published.questionScoresJson()).isEqualTo("{\"q1\":10}");
 	}
 }

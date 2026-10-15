@@ -85,6 +85,23 @@ public class GradeProductionService {
 		return changes.findByGradebookIdOrderByCreateTimeDesc(gradebookId);
 	}
 
+	/** 复用工作流实时参与人校验，审批人无需获授整本成绩册的教师范围。 */
+	@Transactional
+	public GradeChangeReviewView reviewChange(String requestId, String instanceId, String actor) {
+		GradeChangeRequest request = changes.findById(requestId)
+			.orElseThrow(() -> new IllegalArgumentException("成绩更正单不存在"));
+		if (!Objects.equals(instanceId, request.getWorkflowInstanceId())) {
+			throw new AccessDeniedException("成绩更正单与审批流程不匹配");
+		}
+		workflows.runtimeForms(instanceId, actor);
+		GradebookStudent student = gradebookStudents.findByGradebookId(request.getGradebookId()).stream()
+			.filter(item -> request.getStudentId().equals(item.getStudentId()))
+			.findFirst().orElseThrow(() -> new IllegalArgumentException("成绩册学生快照不存在"));
+		return new GradeChangeReviewView(request.getId(), student.getStudentNo(),
+			student.getStudentName(), request.getBeforeScore(), request.getAfterScore(),
+			request.getReason(), request.getStatus());
+	}
+
 	@Transactional(readOnly = true)
 	public List<PublishedGradeView> publishedGrades(String gradebookId, String actor) {
 		authorizedGradebook(gradebookId, actor);
@@ -273,7 +290,16 @@ public class GradeProductionService {
 				|| !"COMPLETED".equals(workflows.instance(request.getWorkflowInstanceId()).getStatus())) {
 			throw new IllegalStateException("只能重放已完成审批的成绩更正单");
 		}
-		applyApprovedChange(request, actor, "EDU_GRADE_CHANGE_INCIDENT_REPLAY");
+		// 回写执行人不等于业务审批人：从已完成的工作流任务恢复真正批准者。
+		String approver = workflowTasks.findByInstanceIdOrderByCreateTimeAsc(request.getWorkflowInstanceId())
+			.stream()
+			.filter(task -> "APPROVED".equals(task.getStatus()))
+			.map(task -> task.getAssignee())
+			.filter(value -> value != null && !value.isBlank())
+			.reduce((first, second) -> second)
+			.orElseThrow(() -> new IllegalStateException("审批流程缺少批准人，不能重放成绩"));
+		applyApprovedChange(request, approver, "EDU_GRADE_CHANGE_APPROVE");
+		audit.log(actor, "EDU_GRADE_CHANGE_INCIDENT_REPLAY", "changeRequestId=" + requestId);
 		return request;
 	}
 

@@ -1,12 +1,10 @@
 package com.chronos.education.scheduling.service;
 
-import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.StudentStatusChangeRepository;
-import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
@@ -27,8 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 /** 聚合班主任日常所需的班级、学生、监护关系和学籍待办，不复制领域主数据。 */
 @Service
 public class HeadTeacherWorkbenchService {
-	private final IAdminUserRepository users;
-	private final TeacherAcademicProfileRepository teachers;
 	private final EducationUserBindingRepository bindings;
 	private final AdministrativeClassRepository classes;
 	private final StudentProfileRepository students;
@@ -36,15 +32,11 @@ public class HeadTeacherWorkbenchService {
 	private final StudentStatusChangeRepository statusChanges;
 
 	public HeadTeacherWorkbenchService(
-			IAdminUserRepository users,
-			TeacherAcademicProfileRepository teachers,
 			EducationUserBindingRepository bindings,
 			AdministrativeClassRepository classes,
 			StudentProfileRepository students,
 			StudentGuardianRepository guardians,
 			StudentStatusChangeRepository statusChanges) {
-		this.users = users;
-		this.teachers = teachers;
 		this.bindings = bindings;
 		this.classes = classes;
 		this.students = students;
@@ -122,12 +114,6 @@ public class HeadTeacherWorkbenchService {
 				.filter(item -> "TEACHER".equals(item.getProfileType()))
 				.map(EducationUserBinding::getProfileId)
 				.collect(Collectors.toSet());
-		var account = users.findByUsername(username);
-		if (account != null && account.getEmployeeId() != null) {
-			teachers.findByEmployeeId(account.getEmployeeId())
-					.map(value -> value.getId())
-					.ifPresent(result::add);
-		}
 		return result;
 	}
 

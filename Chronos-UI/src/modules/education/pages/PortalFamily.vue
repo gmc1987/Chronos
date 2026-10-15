@@ -7,16 +7,28 @@ const children = ref([])
 const notices = ref([])
 const grades = ref([])
 const selectedChildId = ref(null)
+const loadError = ref('')
 const childNameById = computed(() => new Map(children.value.map(child => [child.id, child.studentName])))
 const loading = ref(false)
 const unwrap = response => response?.data?.content || response?.data || []
 async function load() {
   loading.value = true
+  // A revoked parent binding must not leave the previous child's private data on screen.
+  children.value = []
+  notices.value = []
+  grades.value = []
+  selectedChildId.value = null
+  loadError.value = ''
   try {
-    children.value = unwrap(await portalFamilyChildren())
-    notices.value = unwrap(await portalFamilyNotices())
-    grades.value = unwrap(await portalFamilyGrades())
+    const [childResponse, noticeResponse, gradeResponse] = await Promise.all([
+      portalFamilyChildren(), portalFamilyNotices(), portalFamilyGrades(),
+    ])
+    children.value = unwrap(childResponse)
+    notices.value = unwrap(noticeResponse)
+    grades.value = unwrap(gradeResponse)
     selectedChildId.value = children.value[0]?.id || null
+  } catch (error) {
+    loadError.value = error?.message || '家校数据加载失败'
   } finally { loading.value = false }
 }
 async function receipt(row) {
@@ -30,6 +42,7 @@ onMounted(load)
 <template>
   <section class="page">
     <header><div><h1>家长门户</h1><p>仅展示当前账号绑定且仍具有效监护关系的学生。</p></div><el-button :loading="loading" @click="load">刷新</el-button></header>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon class="load-error" />
     <div class="family-links"><RouterLink to="/portal/education/family/feedback">家长反馈</RouterLink><RouterLink to="/portal/education/family/communications">家校沟通记录</RouterLink><RouterLink to="/portal/education/family/meetings">家长会邀请</RouterLink></div>
     <el-card class="children"><template #header>我的孩子</template><el-radio-group v-model="selectedChildId"><el-radio-button v-for="child in children" :key="child.id" :value="child.id">{{ child.studentName }}</el-radio-button></el-radio-group><el-empty v-if="!children.length" description="暂无有效监护关系" /></el-card>
     <el-empty v-if="!loading && !notices.length" description="暂无班级通知" />
@@ -56,4 +69,5 @@ header { display: flex; justify-content: space-between; align-items: center; mar
 h1 { margin: 0 0 8px; }.children { margin-bottom: 20px; }.notice { margin-bottom: 14px; }.content { white-space: pre-wrap; line-height: 1.7; }.receipt { margin-top: 14px; }
 .grades { margin-top: 20px; }
 .family-links { display: flex; gap: 18px; margin-bottom: 18px; }
+.load-error { margin-bottom: 16px; }
 </style>

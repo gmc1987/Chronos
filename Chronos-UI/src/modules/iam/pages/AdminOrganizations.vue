@@ -172,7 +172,7 @@ const submit = async () => {
 
 const remove = async (row) => {
   const impact=(await orgImpact(row.id))?.data||{}
-  await ElMessageBox.confirm(`停用后将禁止新增部门和任职。当前关联：部门 ${impact.departments||0}、任职 ${impact.assignments||0}、账号 ${impact.accounts||0}。确认停用？`,'停用机构',{type:'warning'})
+  await ElMessageBox.confirm(`停用后该机构及下级机构的范围授权将失效。当前关联：下级机构 ${impact.childOrganizations||0}、部门 ${impact.departments||0}、任职 ${impact.assignments||0}、账号 ${impact.accounts||0}、角色数据范围 ${impact.roleScopes||0}。确认停用？`,'停用机构',{type:'warning'})
   await deleteOrg(row.id)
   ElMessage.success('机构已停用，历史数据已保留')
   load()

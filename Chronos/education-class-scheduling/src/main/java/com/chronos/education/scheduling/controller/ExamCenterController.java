@@ -152,6 +152,27 @@ public class ExamCenterController {
 		return ok(service.saveSession(planId, sessionId, command));
 	}
 
+	@GetMapping("/admin/education/exam/plans/{planId}/sessions/{sessionId}/offerings")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:exam:plan:view','education:exam:plan:manage','education:exam:paper-analysis:view','education:exam:paper-analysis:manage')")
+	public ResultData<List<String>> sessionOfferings(
+			@PathVariable String planId,
+			@PathVariable String sessionId,
+			Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.sessionOfferingIds(planId, sessionId));
+	}
+
+	@PutMapping("/admin/education/exam/plans/{planId}/sessions/{sessionId}/offerings")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:exam:plan:manage')")
+	public ResultData<List<String>> updateSessionOfferings(
+			@PathVariable String planId,
+			@PathVariable String sessionId,
+			@RequestBody ExamCommands.SessionOfferings command,
+			Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.updateSessionOfferings(planId, sessionId, command.offeringIds()));
+	}
+
 	@DeleteMapping("/admin/education/exam/plans/{planId}/sessions/{sessionId}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:exam:plan:delete','education:exam:plan:manage')")
 	public ResultData<Void> deleteSession(
@@ -200,6 +221,24 @@ public class ExamCenterController {
 			Authentication authentication) {
 		requireFullAccess(authentication);
 		return ok(service.candidates(id));
+	}
+
+	@GetMapping("/admin/education/exam/sessions/{sessionId}/seat-candidates")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:exam:room:manage','education:exam:plan:manage')")
+	public ResultData<ExamCenterService.SeatComparison> seatCandidates(
+			@PathVariable String sessionId, Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.seatCandidates(sessionId));
+	}
+
+	@PostMapping("/admin/education/exam/sessions/{sessionId}/seat-candidates/apply")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:exam:room:manage','education:exam:plan:manage')")
+	public ResultData<ExamCenterService.SeatComparison> applySeatCandidate(
+			@PathVariable String sessionId,
+			@RequestBody ExamCenterService.SeatApplyCommand command,
+			Authentication authentication) {
+		requireFullAccess(authentication);
+		return ok(service.applySeatCandidate(sessionId, command, authentication.getName()));
 	}
 
 	@PostMapping("/admin/education/exam/rooms/{id}/candidates")

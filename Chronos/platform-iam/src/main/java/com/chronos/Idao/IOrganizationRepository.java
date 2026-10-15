@@ -8,4 +8,5 @@ import org.springframework.stereotype.Repository;
 public interface IOrganizationRepository extends JpaRepository<Organization, String> {
   Organization findByOrgCode(String paramString);
   java.util.List<Organization> findByParentOrgId_Id(String parentId);
+  long countByParentOrgId_Id(String parentId);
 }

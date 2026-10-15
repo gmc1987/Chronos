@@ -10,7 +10,10 @@ import {
   dictionaryOptions,
   listAcademicTerms,
   listClassrooms,
+  listCourseCatalog,
+  listCourseOfferings,
   listEducationSubjects,
+  listExamSessionOfferings,
   listExamPlans,
   listExamSessions,
   listExamRooms,
@@ -25,6 +28,7 @@ import {
   publishExamPlan,
   updateExamPlan,
   updateExamSession,
+  updateExamSessionOfferings,
 } from '../../../api/admin'
 
 const route = useRoute()
@@ -33,6 +37,8 @@ const terms = ref([])
 const examTypes = ref([])
 const subjects = ref([])
 const classrooms = ref([])
+const courses = ref([])
+const offerings = ref([])
 const plans = ref([])
 const sessions = ref([])
 const conflicts = ref([])
@@ -48,10 +54,12 @@ const busy = ref(false)
 const dialogs = reactive({
   plan: false,
   session: false,
+  offerings: false,
   publishedChange: false,
 })
 const planForm = reactive({})
 const sessionForm = reactive({})
+const offeringForm = reactive({ sessionId: '', offeringIds: [] })
 const publishedChangeForm = reactive({
   changeType: 'RESCHEDULE',
   sessionId: '',
@@ -64,6 +72,13 @@ const publishedChangeForm = reactive({
 })
 
 const editable = computed(() => selectedPlan.value?.status === 'DRAFT')
+const eligibleOfferings = computed(() => {
+  const subjectId = dialogs.offerings ? sessions.value.find(
+    (item) => item.id === offeringForm.sessionId)?.subjectId : sessionForm.subjectId
+  const codes = new Set(courses.value.filter((item) => item.subjectId === subjectId)
+    .map((item) => item.courseCode))
+  return offerings.value.filter((item) => codes.has(item.courseCode) && item.status === 'ACTIVE')
+})
 const subjectName = (id) => subjects.value.find((item) => item.id === id)?.subjectName || id
 const classroomName = (id) => classrooms.value.find((item) => item.id === id)?.roomName || id
 const examTypeName = (value) => examTypes.value.find(
@@ -106,6 +121,15 @@ async function loadLookups() {
     && terms.value.some((item) => item.termCode === requestedTerm)
     ? requestedTerm
     : terms.value.find((item) => item.currentTerm)?.termCode || terms.value[0]?.termCode || ''
+}
+
+async function loadOfferingOptions() {
+  if (!semesterCode.value) return
+  const [courseResult, offeringResult] = await Promise.all([
+    listCourseCatalog({}), listCourseOfferings(semesterCode.value),
+  ])
+  courses.value = unwrap(courseResult)
+  offerings.value = unwrap(offeringResult)
 }
 
 async function loadPlans() {
@@ -214,15 +238,41 @@ async function savePlan() {
   }, '考试计划已保存')
 }
 
-function openSession(session) {
+async function openSession(session) {
   Object.assign(sessionForm, {
     id: session?.id || '',
     subjectId: session?.subjectId || '',
     examDate: session?.examDate || '',
     startTime: session?.startTime || '',
     endTime: session?.endTime || '',
+    offeringIds: [],
   })
+  try {
+    await loadOfferingOptions()
+    if (session?.id) sessionForm.offeringIds = unwrap(
+      await listExamSessionOfferings(selectedPlan.value.id, session.id))
+  } catch (error) { return showError(error) }
   dialogs.session = true
+}
+
+async function openOfferings(session) {
+  try {
+    await loadOfferingOptions()
+    offeringForm.sessionId = session.id
+    offeringForm.offeringIds = unwrap(
+      await listExamSessionOfferings(selectedPlan.value.id, session.id))
+    dialogs.offerings = true
+  } catch (error) { showError(error) }
+}
+
+async function saveOfferings() {
+  if (!offeringForm.offeringIds.length) return ElMessage.warning('请选择课程开设')
+  await run(async () => {
+    await updateExamSessionOfferings(selectedPlan.value.id, offeringForm.sessionId, {
+      offeringIds: offeringForm.offeringIds,
+    })
+    dialogs.offerings = false
+  }, '课程映射已保存')
 }
 
 async function saveSession() {
@@ -487,6 +537,15 @@ onMounted(() => {
                   @click.stop="removeSession(scope.row)">删除</el-button>
               </template>
             </AdaptiveActionColumn>
+            <AdaptiveActionColumn v-else label="操作" width="110">
+              <template #default="scope">
+                <el-button
+                  v-if="selectedPlan.status === 'PUBLISHED' && scope.row.scoreStatus === 'DRAFT'"
+                  v-permission="['education:exam:plan:manage']"
+                  link
+                  @click.stop="openOfferings(scope.row)">课程映射</el-button>
+              </template>
+            </AdaptiveActionColumn>
           </el-table>
           <template v-if="selectedPlan.status !== 'DRAFT' || publishedChanges.length">
             <div class="section-heading"><h3>已发布考试变更记录</h3></div>
@@ -578,6 +637,13 @@ onMounted(() => {
               :value="item.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="关联课程">
+          <el-select v-model="sessionForm.offeringIds" multiple filterable collapse-tags
+            placeholder="选择本学期本科目的课程开设" style="width: 100%">
+            <el-option v-for="item in eligibleOfferings" :key="item.id"
+              :label="`${item.teachingClassName} · ${item.courseName}`" :value="item.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="考试日期">
           <el-date-picker v-model="sessionForm.examDate" value-format="YYYY-MM-DD" />
         </el-form-item>
@@ -591,6 +657,18 @@ onMounted(() => {
       <template #footer>
         <el-button @click="dialogs.session = false">取消</el-button>
         <el-button type="primary" @click="saveSession">保存</el-button>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="dialogs.offerings" title="维护考试课程映射" width="580px">
+      <p>选择本场考试成绩要回写的课程开设；仅在逐题成绩确认前可修改。</p>
+      <el-select v-model="offeringForm.offeringIds" multiple filterable collapse-tags
+        placeholder="选择本学期本科目的课程开设" style="width: 100%">
+        <el-option v-for="item in eligibleOfferings" :key="item.id"
+          :label="`${item.teachingClassName} · ${item.courseName}`" :value="item.id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="dialogs.offerings = false">取消</el-button>
+        <el-button type="primary" :loading="busy" @click="saveOfferings">保存</el-button>
       </template>
     </el-dialog>
 

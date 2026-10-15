@@ -26,7 +26,7 @@ import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.chronos.service.iService.IAuditLogService;
 
-/** 受控教务 Agent：只生成可审查草稿，只有确认接口能够写入正式约束。 */
+/** 受控教务 Agent：确认冻结解释，应用才写入正式约束。 */
 @Service
 public class EducationAgentService {
 	private static final Pattern PERIOD_PATTERN = Pattern.compile("第?([一二三四五六七八九十\\d]+)节");
@@ -96,6 +96,8 @@ public class EducationAgentService {
 		proposal.setPeriodNo(periodNo);
 		proposal.setConstraintType(constraintType);
 		proposal.setReason(requestText);
+		proposal.setRuleCatalogVersion(SchedulingAiRuleCatalog.VERSION);
+		proposal.setValidatorVersion("SCHEDULE_VALIDATOR_V1");
 		proposal.setStatus("DRAFT");
 		proposal = proposals.save(proposal);
 		audit(authentication, "SCHEDULING_AGENT_PROPOSE", "proposalId=" + proposal.getId());
@@ -104,7 +106,7 @@ public class EducationAgentService {
 
 	@Transactional
 	public SchedulingAgentProposal confirm(String id, Authentication authentication) {
-		// 对草稿加行锁，避免两个管理员并发确认时重复生成正式约束。
+		// 确认只冻结人工认可的解释；正式规则仍需显式应用。
 		SchedulingAgentProposal proposal = proposals.findLockedById(id)
 				.orElseThrow(() -> new IllegalArgumentException("排课建议不存在"));
 		dataScopes.assertTeacherAccess(
@@ -113,6 +115,23 @@ public class EducationAgentService {
 		if (!"DRAFT".equals(proposal.getStatus())) {
 			throw new IllegalStateException("只有草稿状态的建议可以确认");
 		}
+		proposal.setStatus("CONFIRMED");
+		proposal.setConfirmedBy(authentication.getName());
+		proposal.setConfirmedAt(LocalDateTime.now());
+		proposal = proposals.save(proposal);
+		audit(authentication, "SCHEDULING_AGENT_CONFIRM", "proposalId=" + proposal.getId());
+		return proposal;
+	}
+
+	@Transactional
+	public SchedulingAgentProposal apply(String id, Authentication authentication) {
+		// 与确认共用行锁，防止并发点击生成重复正式约束。
+		SchedulingAgentProposal proposal = proposals.findLockedById(id)
+				.orElseThrow(() -> new IllegalArgumentException("排课建议不存在"));
+		dataScopes.assertTeacherAccess(dataScopes.resolve(authentication.getName()), proposal.getTeacherId());
+		if (!"CONFIRMED".equals(proposal.getStatus()) || proposal.getAppliedConstraintId() != null) {
+			throw new IllegalStateException("只有已确认且尚未应用的建议可以应用");
+		}
 		TeacherTimeConstraint constraint = new TeacherTimeConstraint();
 		constraint.setSemesterCode(proposal.getSemesterCode());
 		constraint.setTeacherId(proposal.getTeacherId());
@@ -120,14 +139,12 @@ public class EducationAgentService {
 		constraint.setPeriodNo(proposal.getPeriodNo());
 		constraint.setConstraintType(proposal.getConstraintType());
 		constraint.setWeight("FORBIDDEN".equals(proposal.getConstraintType()) ? 100 : 10);
-		constraint.setReason("排课 Agent 建议，经人工确认：" + proposal.getReason());
+		constraint.setReason("排课 Agent 已确认并应用：" + proposal.getReason());
 		constraint = constraints.save(constraint);
-		proposal.setStatus("CONFIRMED");
-		proposal.setConfirmedBy(authentication.getName());
-		proposal.setConfirmedAt(LocalDateTime.now());
 		proposal.setAppliedConstraintId(constraint.getId());
+		proposal.setStatus("APPLIED");
 		proposal = proposals.save(proposal);
-		audit(authentication, "SCHEDULING_AGENT_CONFIRM", "proposalId=" + proposal.getId());
+		audit(authentication, "SCHEDULING_AGENT_APPLY", "proposalId=" + proposal.getId());
 		return proposal;
 	}
 

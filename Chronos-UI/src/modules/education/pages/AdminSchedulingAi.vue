@@ -12,6 +12,7 @@ import {
   generateAiSchedulingRun,
   getAiSchedulingRun,
   getAiSchedulingDateImpact,
+  getAiSchedulingRuleEvidence,
   listAiSchedulingCandidates,
   listAcademicTerms,
   listCourseOfferings,
@@ -67,6 +68,7 @@ const offerings = ref([])
 const run = ref(null)
 const candidates = ref([])
 const dateImpact = ref(null)
+const refreshingDateImpact = ref(false)
 let dateImpactKey = ''
 const candidateSelection = ref([])
 const previewCandidate = ref(null)
@@ -77,6 +79,10 @@ const previewItems = computed(() => (previewDiff.value?.items || []).slice(
   previewPage.value * 20,
 ))
 const modelExplanation = ref(null)
+const ruleEvidence = ref(null)
+const ruleEvidenceError = ref('')
+const ruleEvidenceVisible = ref(false)
+const loadingRuleEvidence = ref(false)
 let explanationRequestSequence = 0
 const comparedCandidates = ref([])
 const clarificationReply = ref('')
@@ -188,6 +194,24 @@ const loadCandidates = async (runId, sequence = runRequestSequence.value) => {
     if (sequence === runRequestSequence.value) showError(error)
   } finally {
     if (sequence === runRequestSequence.value) loadingCandidates.value = false
+  }
+}
+
+const refreshDateImpact = async () => {
+  const runId = run.value?.id
+  if (!runId || !parsedPlan.value?.dateRules?.length) return
+  const sequence = runRequestSequence.value
+  refreshingDateImpact.value = true
+  try {
+    const impact = unwrapData(await getAiSchedulingDateImpact(runId))
+    if (sequence !== runRequestSequence.value || run.value?.id !== runId) return
+    dateImpact.value = impact
+    dateImpactKey = `${runId}:${run.value.planVersion}`
+    ElMessage.success('日期规则影响已按当前工作课表重新核对')
+  } catch (error) {
+    if (sequence === runRequestSequence.value) showError(error)
+  } finally {
+    if (sequence === runRequestSequence.value) refreshingDateImpact.value = false
   }
 }
 
@@ -470,6 +494,27 @@ const showModelExplanation = async candidate => {
     if (sequence === explanationRequestSequence) showError(error)
   }
 }
+
+const showRuleEvidence = async candidate => {
+  loadingRuleEvidence.value = true
+	ruleEvidenceError.value = ''
+  try {
+    const response = await getAiSchedulingRuleEvidence(run.value.id, candidate.id)
+    ruleEvidence.value = response.data
+    ruleEvidenceVisible.value = true
+  } catch (error) {
+	ruleEvidenceError.value = errorText(error)
+    showError(error)
+  } finally {
+    loadingRuleEvidence.value = false
+  }
+}
+
+const evidenceStatus = status => ({
+  SATISFIED: '已满足', VIOLATED: '违规', PENDING_UNSCHEDULED: '待排课完成',
+  PENDING_NO_ENTRY: '待生成课程', OBSERVED: '仅展示指标',
+  SEPARATE_WORKFLOW: '独立日期流程待办',
+})[status] || status
 const selectCandidates = rows => {
   candidateSelection.value = rows
   comparedCandidates.value = []
@@ -643,9 +688,23 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="confirming" @click="confirmRun">确认解析计划</el-button>
       </section>
 
+      <section v-if="parsedPlan?.ruleClaims?.length" class="workflow-section">
+        <h3>已确认的版本化规则（{{ parsedPlan.ruleCatalogVersion }}）</h3>
+        <p>下列原话、目标及约束强度已随 Run 冻结；日期规则须在独立业务流程核对。</p>
+        <el-table :data="parsedPlan.ruleClaims" border size="small">
+          <el-table-column prop="claimId" label="编号" width="75" />
+          <el-table-column prop="sourceText" label="用户原话" min-width="260" />
+          <el-table-column prop="ruleType" label="规则" width="150" />
+          <el-table-column prop="targetId" label="目标" min-width="150" />
+          <el-table-column prop="strength" label="强度" width="100" />
+          <el-table-column prop="effectScope" label="作用范围" width="130" />
+        </el-table>
+      </section>
+
       <section v-if="parsedPlan?.dateRules?.length" class="workflow-section">
         <div class="section-heading">
           <div><h3>日期规则影响核对</h3><p>以下影响依据当前工作课表计算；应用候选周课表后需重新核对。Agent 从校历、考试计划和已批准请假读取真实日期事项。补课和代课由教务确定日期、资源并通过硬冲突校验后保存；考试占课走独立审批。周课表候选本身不会自动结清这些事项。</p></div>
+          <el-button :loading="refreshingDateImpact" @click="refreshDateImpact">刷新日期影响</el-button>
         </div>
         <el-alert v-if="!dateImpact" title="正在读取日期规则对应的业务数据" type="info" :closable="false" />
         <template v-else>
@@ -713,6 +772,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <el-empty v-if="!candidates.length" description="当前 Run 暂无候选方案" />
+        <el-alert v-if="ruleEvidenceError" :title="ruleEvidenceError" type="error" :closable="false" />
         <el-table v-else :data="candidates" border @selection-change="selectCandidates">
           <el-table-column type="selection" width="48" />
           <el-table-column prop="name" label="方案" min-width="180">
@@ -734,10 +794,11 @@ onBeforeUnmount(() => {
           <el-table-column label="审核状态" width="100">
             <template #default="scope">{{ ({ DRAFT: '草稿', SUBMITTED: '待审核', APPROVED: '审核通过', REJECTED: '已驳回' })[scope.row.reviewStatus] || scope.row.reviewStatus }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="260" fixed="right">
+          <el-table-column label="操作" width="350" fixed="right">
             <template #default="scope">
               <el-button link type="primary" @click="showCandidatePreview(scope.row)">预览</el-button>
               <el-button link type="primary" @click="showModelExplanation(scope.row)">模型解读</el-button>
+              <el-button link type="primary" :loading="loadingRuleEvidence" @click="showRuleEvidence(scope.row)">逐条核验</el-button>
               <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" link type="warning" :loading="submittingCandidateId === scope.row.id" @click="confirmCandidateForReview(scope.row)">确认并提交审核</el-button>
             </template>
           </el-table-column>
@@ -781,6 +842,24 @@ onBeforeUnmount(() => {
     </el-card>
 
     <el-empty v-else description="填写需求后创建一个 AI 排课 Run" />
+
+    <el-dialog v-model="ruleEvidenceVisible" title="候选方案逐条规则核验" width="85%">
+      <template v-if="ruleEvidence">
+        <p>规则目录：{{ ruleEvidence.catalogVersion }}；未排课时数：{{ ruleEvidence.unscheduledLessons }}</p>
+        <el-alert v-if="ruleEvidence.publicationBlocker" :title="`当前候选不可提交审核或发布：${ruleEvidence.publicationBlocker}`" type="error" :closable="false" />
+        <el-table :data="ruleEvidence.rows || []" border>
+          <el-table-column prop="rule.claimId" label="编号" width="70" />
+          <el-table-column prop="rule.sourceText" label="用户原话" min-width="230" />
+          <el-table-column prop="rule.ruleType" label="规则" width="145" />
+          <el-table-column prop="rule.targetId" label="目标" min-width="140" />
+          <el-table-column label="核验结果" width="150"><template #default="scope">{{ evidenceStatus(scope.row.status) }}</template></el-table-column>
+          <el-table-column prop="observed" label="命中/待办" width="95" />
+          <el-table-column prop="violations" label="违规" width="70" />
+          <el-table-column prop="detail" label="说明" min-width="300" />
+        </el-table>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   analyzeAcademicSchedule,
+  applySchedulingAgentProposal,
   confirmSchedulingAgentProposal,
   createSchedulingAgentProposal,
   listAcademicTerms,
@@ -61,12 +62,19 @@ const propose = async () => {
 
 const confirm = async row => {
   await ElMessageBox.confirm(
-    `确认把“${row.teacherName} 周${row.dayOfWeek}第${row.periodNo}节”写入正式排课约束？`,
+    `确认“${row.teacherName} 周${row.dayOfWeek}第${row.periodNo}节”的规则解释？确认后仍需点击“应用正式规则”才影响排课。`,
     '人工确认',
     { type: 'warning' },
   )
   await confirmSchedulingAgentProposal(row.id)
-  ElMessage.success('建议已确认并写入正式约束')
+  ElMessage.success('规则解释已确认，尚未应用到正式排课')
+  await loadProposals()
+}
+
+const apply = async row => {
+  await ElMessageBox.confirm('应用后将写入正式教师时段约束，影响后续排课。确认应用？', '应用正式规则', { type: 'warning' })
+  await applySchedulingAgentProposal(row.id)
+  ElMessage.success('已应用到正式排课约束')
   await loadProposals()
 }
 
@@ -86,7 +94,8 @@ const analyze = async () => {
   }
 }
 
-const statusType = status => ({ DRAFT: 'warning', CONFIRMED: 'success', REJECTED: 'info' })[status] || ''
+const statusType = status => ({ DRAFT: 'warning', CONFIRMED: 'primary', APPLIED: 'success', REJECTED: 'info' })[status] || ''
+const displayStatus = row => row.appliedConstraintId ? '已应用' : ({ DRAFT: '草稿', CONFIRMED: '已确认待应用', APPLIED: '已应用', REJECTED: '已驳回' })[row.status] || row.status
 const changeSemester = () => { page.value = 1; loadProposals() }
 
 onMounted(load)
@@ -107,7 +116,7 @@ onMounted(load)
     <el-tabs>
       <el-tab-pane label="Scheduling Agent">
         <el-alert
-          title="Agent 只能生成草稿。确认前不会写入教师禁排或偏好配置。"
+          title="Agent 生成草稿；确认规则解释后，还需显式应用才写入正式教师约束。"
           type="warning"
           show-icon
           :closable="false"
@@ -127,15 +136,17 @@ onMounted(load)
           <el-table-column prop="periodNo" label="节次" width="80" />
           <el-table-column prop="constraintType" label="类型" width="110" />
           <el-table-column prop="requestText" label="原始指令" min-width="260" />
+          <el-table-column prop="ruleCatalogVersion" label="规则目录" width="180" />
           <el-table-column label="状态" width="100">
-            <template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ scope.row.status }}</el-tag></template>
+            <template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ displayStatus(scope.row) }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="人工决策" width="150">
+          <el-table-column label="人工决策" width="180">
             <template #default="scope">
               <template v-if="scope.row.status === 'DRAFT'">
                 <el-button link type="success" @click="confirm(scope.row)">确认</el-button>
                 <el-button link type="danger" @click="reject(scope.row)">驳回</el-button>
               </template>
+              <el-button v-else-if="scope.row.status === 'CONFIRMED' && !scope.row.appliedConstraintId" link type="primary" @click="apply(scope.row)">应用正式规则</el-button>
               <span v-else>{{ scope.row.confirmedBy || '-' }}</span>
             </template>
           </el-table-column>

@@ -8,7 +8,7 @@ import {
   getExamPaperAnalysis,
   listAvailableExamPaperQuestions,
   listAcademicTerms,
-  listEducationStudents,
+  lookupEducationStudents,
   listEducationSubjects,
   listExamCandidates,
   listExamItemScores,
@@ -17,6 +17,7 @@ import {
   listExamRooms,
   listExamSessions,
   saveExamItemScore,
+  saveExamItemScoresBatch,
   publishExamScores,
 } from '../../../api/admin'
 
@@ -33,6 +34,8 @@ const selectedPlan = ref(null)
 const selectedSession = ref(null)
 const selectedItem = ref(null)
 const itemDialog = ref(false)
+const batchDialog = ref(false)
+const batchText = ref('')
 const availableQuestions = ref([])
 const itemForm = reactive({ questionNo: '', questionId: '', title: '', maxScore: 10 })
 const scoreByCandidate = reactive({})
@@ -82,6 +85,11 @@ async function selectSession(session) {
   analysis.value = unwrap(analysisResult)
   const candidateResults = await Promise.all(unwrap(roomResult).map((room) => listExamCandidates(room.id)))
   candidates.value = candidateResults.flatMap(unwrap)
+  const studentIds = [...new Set(candidates.value.map((candidate) => candidate.studentId))]
+  const batches = []
+  for (let index = 0; index < studentIds.length; index += 100) batches.push(studentIds.slice(index, index + 100))
+  students.value = (await Promise.all(batches.map((batch) => lookupEducationStudents(batch))))
+    .flatMap(unwrap)
 }
 
 async function selectItem(item) {
@@ -93,7 +101,7 @@ async function selectItem(item) {
 }
 
 async function openItem() {
-  const response = await listAvailableExamPaperQuestions()
+  const response = await listAvailableExamPaperQuestions(selectedSession.value.id)
   availableQuestions.value = unwrap(response)
   Object.assign(itemForm, { questionNo: '', questionId: '', title: '', maxScore: 10 })
   itemDialog.value = true
@@ -169,6 +177,39 @@ async function saveScore(candidate) {
   }, '得分已保存')
 }
 
+function openBatchScores() {
+  batchText.value = ['学号,得分', ...candidates.value.map((candidate) =>
+    `${students.value.find((student) => student.id === candidate.studentId)?.studentNo || candidate.studentId},`)].join('\n')
+  batchDialog.value = true
+}
+
+async function saveBatchScores() {
+  const lines = batchText.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  if (lines[0]?.replaceAll('，', ',') === '学号,得分') lines.shift()
+  if (!lines.length) return ElMessage.warning('请填写学号和得分')
+  const rows = []
+  const seen = new Set()
+  for (const line of lines) {
+    const parts = line.replaceAll('，', ',').split(/[,\t]/).map((part) => part.trim())
+    if (parts.length !== 2 || !parts[0] || !/^\d+(\.\d{1,2})?$/.test(parts[1])) {
+      return ElMessage.warning(`成绩行格式错误：${line}`)
+    }
+    const student = students.value.find((item) => item.studentNo === parts[0])
+    const candidate = candidates.value.find((item) => item.studentId === student?.id)
+    if (!candidate || seen.has(candidate.id) || Number(parts[1]) > Number(selectedItem.value.maxScore)) {
+      return ElMessage.warning(`考生重复、未在本场考试或分数越界：${parts[0]}`)
+    }
+    seen.add(candidate.id)
+    rows.push({ candidateId: candidate.id, score: Number(parts[1]) })
+  }
+  await run(async () => {
+    await saveExamItemScoresBatch(selectedSession.value.id, selectedItem.value.id, rows)
+    batchDialog.value = false
+    await selectItem(selectedItem.value)
+    analysis.value = unwrap(await getExamPaperAnalysis(selectedSession.value.id))
+  }, `已批量保存 ${rows.length} 名考生得分`)
+}
+
 async function transitionScores(action) {
   const publishing = action === 'publish'
   try {
@@ -191,14 +232,12 @@ async function transitionScores(action) {
 }
 
 onMounted(() => run(async () => {
-  const [termResult, subjectResult, studentResult] = await Promise.all([
+  const [termResult, subjectResult] = await Promise.all([
     listAcademicTerms(),
     listEducationSubjects(),
-    listEducationStudents(),
   ])
   terms.value = unwrap(termResult)
   subjects.value = unwrap(subjectResult)
-  students.value = unwrap(studentResult)
   semesterCode.value = terms.value.find((item) => item.currentTerm)?.termCode
     || terms.value[0]?.termCode || ''
   await loadPlans()
@@ -238,7 +277,7 @@ onMounted(() => run(async () => {
           v-permission="['education:exam:paper-analysis:export']"
           @click="exportAnalysis">导出统计</el-button>
         <el-button
-          v-if="selectedSession"
+          v-if="selectedSession && (!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT')"
           v-permission="['education:exam:paper-analysis:manage']"
           type="primary" @click="openItem">新增试卷题目</el-button>
       </div>
@@ -246,6 +285,15 @@ onMounted(() => run(async () => {
     <el-table :data="analysis" border highlight-current-row empty-text="请选择场次；未录入题目时暂无分析数据" @current-change="(row) => selectItem(items.find((item) => item.id === row?.itemId) || null)">
       <el-table-column prop="questionNo" label="题号" width="90" />
       <el-table-column prop="title" label="题目" min-width="200" />
+      <el-table-column label="题库版本" min-width="150">
+        <template #default="scope">
+          <el-tooltip v-if="items.find((item) => item.id === scope.row.itemId)?.questionVersionId"
+            :content="`版本 ${items.find((item) => item.id === scope.row.itemId).questionVersionId}；快照哈希 ${items.find((item) => item.id === scope.row.itemId).questionSnapshotHash}`">
+            <span>{{ items.find((item) => item.id === scope.row.itemId).questionVersionId.slice(0, 8) }}… 已锁定</span>
+          </el-tooltip>
+          <span v-else>历史题目待核验</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="maxScore" label="满分" width="90" />
       <el-table-column label="评分覆盖" width="120"><template #default="scope">{{ scope.row.gradedCount }}/{{ scope.row.candidateCount }}</template></el-table-column>
       <el-table-column label="平均分" width="100"><template #default="scope">{{ scope.row.averageScore ?? '—' }}</template></el-table-column>
@@ -260,7 +308,10 @@ onMounted(() => run(async () => {
     </el-table>
 
     <template v-if="selectedItem">
-      <div class="section-heading"><h3>第 {{ selectedItem.questionNo }} 题 · 考生得分</h3></div>
+      <div class="section-heading"><h3>第 {{ selectedItem.questionNo }} 题 · 考生得分</h3>
+        <el-button v-if="selectedSession.status === 'PUBLISHED' && (!selectedSession.scoreStatus || selectedSession.scoreStatus === 'DRAFT')"
+          v-permission="['education:exam:paper-analysis:manage']" @click="openBatchScores">批量录入</el-button>
+      </div>
       <el-table :data="candidates" border>
         <el-table-column prop="seatNo" label="座位号" width="100" />
         <el-table-column label="考生" min-width="160"><template #default="scope">{{ studentName(scope.row.studentId) }}</template></el-table-column>
@@ -277,6 +328,12 @@ onMounted(() => run(async () => {
       </el-table>
     </template>
 
+    <el-dialog v-model="batchDialog" title="批量录入逐题得分" width="640px">
+      <p>按“学号,得分”逐行填写；可从电子表格复制两列。空得分行请先填写，提交时整批校验。</p>
+      <el-input v-model="batchText" type="textarea" :rows="16" placeholder="学号,得分" />
+      <template #footer><el-button @click="batchDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="saveBatchScores">保存本批成绩</el-button></template>
+    </el-dialog>
+
     <el-dialog v-model="itemDialog" title="新增试卷题目" width="500px">
       <el-form label-width="80px">
         <el-form-item label="题号"><el-input v-model="itemForm.questionNo" maxlength="32" /></el-form-item>
@@ -285,7 +342,7 @@ onMounted(() => run(async () => {
             <el-option v-for="question in availableQuestions" :key="question.id" :label="question.stem" :value="question.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="题目快照"><el-input v-model="itemForm.title" maxlength="200" /></el-form-item>
+        <el-form-item label="发布题干"><el-input v-model="itemForm.title" maxlength="200" readonly /></el-form-item>
         <el-form-item label="满分"><el-input-number v-model="itemForm.maxScore" :min="0.01" :precision="2" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="itemDialog = false">取消</el-button><el-button type="primary" @click="saveItem">保存</el-button></template>

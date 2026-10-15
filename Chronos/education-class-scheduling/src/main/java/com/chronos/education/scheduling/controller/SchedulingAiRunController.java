@@ -8,8 +8,11 @@ import com.chronos.education.scheduling.model.SchedulingAiRunView;
 import com.chronos.education.scheduling.model.ScheduleCandidateView;
 import com.chronos.education.scheduling.model.ScheduleDiffView;
 import com.chronos.education.scheduling.model.SchedulingCandidateExplanation;
+import com.chronos.education.scheduling.model.SchedulingAiRuleEvidence;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.SchedulingAiRunService;
+import com.chronos.education.scheduling.service.SchedulingAiRuleCatalog;
+import com.chronos.education.scheduling.service.SchedulingAiRuleEvidenceService;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -24,12 +27,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class SchedulingAiRunController {
 	private final SchedulingAiRunService runs;
 	private final EducationDataScopeService dataScopes;
+	private final SchedulingAiRuleEvidenceService ruleEvidence;
 
 	public SchedulingAiRunController(
 			SchedulingAiRunService runs,
-			EducationDataScopeService dataScopes) {
+			EducationDataScopeService dataScopes,
+			SchedulingAiRuleEvidenceService ruleEvidence) {
 		this.runs = runs;
 		this.dataScopes = dataScopes;
+		this.ruleEvidence = ruleEvidence;
+	}
+
+	@GetMapping("/admin/education/scheduling/ai/rule-catalog")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:agent:use') && @iamAuthorization.has(authentication,'education:scheduling:manage')")
+	public ResultData<?> ruleCatalog(Authentication authentication) {
+		requireFullDataAccess(authentication);
+		return ok(java.util.Map.of("version", SchedulingAiRuleCatalog.VERSION,
+				"definitions", SchedulingAiRuleCatalog.definitions()));
 	}
 
 	@PostMapping("/admin/education/scheduling/ai/runs")
@@ -112,6 +126,19 @@ public class SchedulingAiRunController {
 			@PathVariable String id, @PathVariable String candidateId, Authentication authentication) {
 		requireFullDataAccess(authentication);
 		return ok(runs.explain(id, authentication.getName(), candidateId));
+	}
+
+	@GetMapping("/admin/education/scheduling/ai/runs/{id}/candidates/{candidateId}/rule-evidence")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:agent:use') && @iamAuthorization.has(authentication,'education:scheduling:manage') && @iamAuthorization.has(authentication,'education:scheduling:ai:use')")
+	public ResultData<SchedulingAiRuleEvidence> ruleEvidence(
+			@PathVariable String id, @PathVariable String candidateId,
+			Authentication authentication) {
+		requireFullDataAccess(authentication);
+		var run = runs.get(id, authentication.getName(), false);
+		var candidate = runs.candidates(id, authentication.getName(), false).stream()
+				.filter(item -> candidateId.equals(item.id())).findFirst()
+				.orElseThrow(() -> new IllegalArgumentException("候选不属于当前 AI Run"));
+		return ok(ruleEvidence.evaluate(run.plan(), candidate));
 	}
 
 	@PostMapping("/admin/education/scheduling/ai/runs/{id}/cancel")

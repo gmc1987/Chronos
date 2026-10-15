@@ -54,7 +54,16 @@
         <el-form-item label="已发布题目版本"><el-input v-model="form.questionVersionRefsJson" type="textarea" :rows="3" placeholder='必须填写 [{"questionId":"...","versionId":"...","maxScore":10}]' /></el-form-item>
         <el-form-item label="允许迟交"><el-switch v-model="form.allowLate" /></el-form-item>
         <el-form-item label="发布对象"><el-select v-model="form.publishAudience" style="width:100%"><el-option label="有效选课学生" value="ENROLLED_STUDENTS" /><el-option label="全体学生" value="ALL_STUDENTS" /></el-select></el-form-item>
-        <el-form-item label="附件快照"><el-input v-model="form.attachmentSnapshotJson" type="textarea" :rows="2" placeholder="附件引用 JSON" /></el-form-item>
+        <el-form-item label="作业附件">
+          <div class="attachment-editor">
+            <p v-if="!editing">先保存作业草稿，即可上传附件。</p>
+            <template v-else>
+              <input type="file" :disabled="uploadingAttachment" @change="uploadAssignmentAttachment" />
+              <el-button v-for="attachment in attachmentRefs(form.attachmentSnapshotJson)" :key="attachment.fileId"
+                link type="primary" @click="downloadAttachment(attachment)">{{ attachment.name || attachment.fileId }}</el-button>
+            </template>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="save">保存草稿</el-button></template>
     </el-dialog>
@@ -66,6 +75,11 @@
         <el-table-column prop="submittedAt" label="提交时间" width="180" />
         <el-table-column prop="score" label="得分" width="90" />
         <el-table-column prop="teacherFeedback" label="评语" min-width="220" show-overflow-tooltip />
+        <el-table-column label="答案附件" min-width="180"><template #default="{row}">
+          <el-button v-for="attachment in attachmentRefs(row.attachmentSnapshotJson)" :key="attachment.fileId"
+            link type="primary" @click="downloadAttachment(attachment)">{{ attachment.name || attachment.fileId }}</el-button>
+          <span v-if="!attachmentRefs(row.attachmentSnapshotJson).length">—</span>
+        </template></el-table-column>
         <AdaptiveActionColumn label="操作" width="100"><template #default="{ row }"><el-button link type="primary" :disabled="!['SUBMITTED','RETURNED_FOR_REVISION'].includes(row.status)" @click="openGrade(row)">批改</el-button></template></AdaptiveActionColumn>
       </el-table>
       <el-empty v-if="!submissionLoading && !submissions.length" description="暂无学生提交" />
@@ -89,6 +103,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, publishHomeworkGrades, closeHomework, archiveHomework, teachingCenterOfferings, teachingProduction, teachingPlanDetail, updateHomework } from '../api/teachingCenter'
+import { uploadManagedFile, downloadManagedFile } from '../../../api/admin'
 
 const offerings = ref([])
 const rows = ref([])
@@ -99,6 +114,7 @@ const loadError = ref('')
 const dialog = ref(false)
 const submissionDialog = ref(false)
 const gradeDialog = ref(false)
+const uploadingAttachment = ref(false)
 const editing = ref('')
 const selectedHomework = ref(null)
 const grading = ref(null)
@@ -115,6 +131,34 @@ const assignmentStatusLabel = value => ({DRAFT:'草稿',PUBLISHED:'已发布',CL
 const submissionStatusLabel = value => ({NOT_STARTED:'未开始',DRAFT:'草稿',SUBMITTED:'待批改',GRADED:'已评分',RETURNED_FOR_REVISION:'退回重做'})[value] || value
 const offeringLabel = item => item ? [item.semesterCode, item.courseName, item.teachingClassName].filter(Boolean).join(' · ') : '-'
 const selectedOffering = computed(() => offerings.value.find(item => item.id === filters.offeringId))
+const attachmentRefs = raw => { try { const refs = JSON.parse(raw || '[]'); return Array.isArray(refs) ? refs.filter(ref => ref?.fileId) : [] } catch { return [] } }
+const downloadAttachment = async attachment => {
+  try {
+    const blob = await downloadManagedFile(attachment.fileId)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url; link.download = attachment.name || '作业附件'; link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) { ElMessage.error(error.message || '附件下载失败') }
+}
+const uploadAssignmentAttachment = async event => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !editing.value) return
+  uploadingAttachment.value = true
+  try {
+    const uploaded = await uploadManagedFile(file)
+    const fileId = uploaded?.data?.id
+    if (!fileId) throw new Error('文件上传未返回文件编号')
+    const refs = [...attachmentRefs(form.attachmentSnapshotJson), { fileId, name: file.name }]
+    const next = JSON.stringify(refs)
+    await updateHomework(editing.value, { ...form, offeringId: filters.offeringId, attachmentSnapshotJson: next })
+    form.attachmentSnapshotJson = next
+    ElMessage.success('作业附件已上传')
+    await load()
+  } catch (error) { ElMessage.error(error.message || '作业附件上传失败') }
+  finally { uploadingAttachment.value = false }
+}
 
 const load = async () => {
   if (!filters.offeringId) { rows.value = []; return }
@@ -189,4 +233,5 @@ onMounted(async () => {
 
 <style scoped>
 .homework-page{padding:24px}.head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head h1{margin:0 0 6px}.head p{margin:0;color:#667085}.filters{margin:18px 0}.filters .el-select{width:360px}.el-pagination{margin-top:18px;justify-content:flex-end}.el-alert{margin-bottom:16px}
+.attachment-editor{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.attachment-editor p{margin:0;color:#667085}
 </style>

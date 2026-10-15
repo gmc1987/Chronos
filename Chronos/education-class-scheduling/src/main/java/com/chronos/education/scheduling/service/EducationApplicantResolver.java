@@ -1,11 +1,8 @@
 package com.chronos.education.scheduling.service;
 
-import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
-import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.model.EducationUserBinding;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -13,27 +10,13 @@ import org.springframework.security.access.AccessDeniedException;
 @Service
 public class EducationApplicantResolver {
 	private final EducationUserBindingRepository bindings;
-	private final IAdminUserRepository users;
-	private final TeacherAcademicProfileRepository teachers;
 	private final StudentGuardianRepository guardians;
 
-	@Autowired
 	public EducationApplicantResolver(
 			EducationUserBindingRepository bindings,
-			IAdminUserRepository users,
-			TeacherAcademicProfileRepository teachers,
 			StudentGuardianRepository guardians) {
 		this.bindings = bindings;
-		this.users = users;
-		this.teachers = teachers;
 		this.guardians = guardians;
-	}
-
-	public EducationApplicantResolver(
-			EducationUserBindingRepository bindings,
-			IAdminUserRepository users,
-			TeacherAcademicProfileRepository teachers) {
-		this(bindings, users, teachers, null);
 	}
 
 	public String resolve(String username, String applicantType) {
@@ -61,21 +44,7 @@ public class EducationApplicantResolver {
 			}
 			throw new AccessDeniedException("家长只能为已绑定的学生发起请假");
 		}
-		if ("TEACHER".equals(normalizedType)) {
-			return resolveTeacherFromEmployee(username);
-		}
 		throw missingBinding(username, normalizedType);
-	}
-
-	private String resolveTeacherFromEmployee(String username) {
-		var account = users.findByUsername(username);
-		if (account == null || account.getEmployeeId() == null || account.getEmployeeId().isBlank()) {
-			throw missingBinding(username, "TEACHER");
-		}
-		return teachers
-				.findByEmployeeId(account.getEmployeeId())
-				.map(teacher -> teacher.getId())
-				.orElseThrow(() -> missingBinding(username, "TEACHER"));
 	}
 
 	private IllegalStateException missingBinding(String username, String applicantType) {

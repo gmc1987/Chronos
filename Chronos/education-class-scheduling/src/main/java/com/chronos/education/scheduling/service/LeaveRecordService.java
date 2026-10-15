@@ -4,6 +4,7 @@ import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.LeaveRequestRecordRepository;
+import com.chronos.education.scheduling.dao.ScheduleDateExceptionRepository;
 import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.education.scheduling.model.LeaveBalanceAdjustment;
 import com.chronos.education.scheduling.model.LeaveRequestRecord;
@@ -36,6 +37,7 @@ public class LeaveRecordService {
 	private final IAdminUserRepository users;
 	private final IEmployeeRepository employees;
 	private final StaffLeaveBalanceService leaveBalances;
+	private final ScheduleDateExceptionRepository dateExceptions;
 
 	public LeaveRecordService(
 			LeaveRequestRecordRepository records,
@@ -45,7 +47,8 @@ public class LeaveRecordService {
 			IAuditLogService audit,
 			IAdminUserRepository users,
 			IEmployeeRepository employees,
-			StaffLeaveBalanceService leaveBalances) {
+			StaffLeaveBalanceService leaveBalances,
+			ScheduleDateExceptionRepository dateExceptions) {
 		this.records = records;
 		this.bindings = bindings;
 		this.applicants = applicants;
@@ -54,6 +57,7 @@ public class LeaveRecordService {
 		this.users = users;
 		this.employees = employees;
 		this.leaveBalances = leaveBalances;
+		this.dateExceptions = dateExceptions;
 	}
 
 	@Transactional
@@ -168,6 +172,12 @@ public class LeaveRecordService {
 			leaveBalances.refund(
 					record, record.getRequestedDays().subtract(actualDays), username, "销假审批通过返还");
 			record.setStatus(actualDays.signum() == 0 ? "CANCELLED" : "PARTIALLY_CANCELLED");
+			// 只撤销与本次请假明确关联、且落在实际返岗日之后的代课；其他手工调课不受影响。
+			var obsoleteSubstitutions = dateExceptions
+					.findByLeaveRecordIdAndExceptionTypeAndStatusAndSourceDateAfter(
+							record.getId(), "SUBSTITUTE", "ACTIVE", record.getActualEndDate());
+			obsoleteSubstitutions.forEach(value -> value.setStatus("CANCELLED"));
+			dateExceptions.saveAll(obsoleteSubstitutions);
 		}
 		audit.log(username, "EDUCATION_LEAVE_CANCELLATION_DECIDE",
 				"leaveId=" + id + ",approved=" + approved);

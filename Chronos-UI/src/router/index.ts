@@ -66,6 +66,7 @@ const AdminCommunicationRecords = () => import('../modules/education/pages/Admin
 const AdminSupervision = () => import('../modules/education/pages/AdminSupervision.vue')
 const AdminDataCenter = () => import('../modules/education/pages/AdminDataCenter.vue')
 const PortalSupervision = () => import('../modules/education/pages/PortalSupervision.vue')
+const PortalSupervisionTeaching = () => import('../modules/education/pages/PortalSupervisionTeaching.vue')
 const AdminTeachingPlan = () => import('../modules/education/pages/AdminTeachingPlan.vue')
 const AdminLessonPlans = () => import('../modules/education/pages/AdminLessonPlans.vue')
 const AdminPreparation = () => import('../modules/education/pages/AdminPreparation.vue')
@@ -125,6 +126,7 @@ const router = createRouter({
         { path: 'education/family/communications', name: 'portal-education-family-communications', component: PortalCommunicationRecords },
         { path: 'education/family/meetings', name: 'portal-education-family-meetings', component: PortalParentMeetings },
         { path: 'education/supervision', name: 'portal-education-supervision', component: PortalSupervision },
+        { path: 'education/supervision/teaching', name: 'portal-education-supervision-teaching', component: PortalSupervisionTeaching },
         { path: 'education/homework', name: 'portal-education-homework', component: PortalHomework },
         { path: 'education/teaching-center', name: 'portal-education-teaching-center', component: PortalTeachingCenter },
         { path: 'education/teaching/plans', name: 'portal-education-teaching-plans', component: AdminTeachingPlan },
@@ -158,7 +160,8 @@ const router = createRouter({
         { path: 'roles', name: 'admin-roles', component: AdminRoles },
         { path: 'permissions', name: 'admin-permissions', component: AdminPermissions },
         { path: 'permission-definitions', name: 'admin-permission-definitions', component: AdminPermissionDefinitions },
-        { path: 'organizations', name: 'admin-organizations', component: AdminOrganizations },
+        { path: 'organizations', name: 'admin-organizations', component: AdminOrganizations,
+          meta: { requiredPermissions: ['iam:organization:view', 'iam:organization:manage', 'iam:role:authorize'] } },
         { path: 'directory', name: 'admin-directory', component: AdminDirectory },
         { path: 'customers', name: 'admin-customers', component: AdminCustomers },
         { path: 'dicts', name: 'admin-dicts', component: AdminDicts },
@@ -210,8 +213,10 @@ const router = createRouter({
         { path: 'education/data-center', name: 'admin-education-data-center', component: AdminDataCenter },
         { path: 'education/materials', redirect: { name: 'admin-education-material' } },
         { path: 'teaching/resources', name: 'teaching-resources', component: TeachingResourceWorkbench },
-        { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminHomework },
-        { path: 'education/teaching-center/homework-analysis', name: 'admin-education-homework-analysis', component: AdminHomeworkAnalysis },
+        { path: 'education/teaching-center/homework', name: 'admin-education-homework', component: AdminHomework,
+          meta: { requiredPermissions: ['education:homework:manage', 'education:homework:create', 'education:homework:update', 'education:homework:publish'] } },
+        { path: 'education/teaching-center/homework-analysis', name: 'admin-education-homework-analysis', component: AdminHomeworkAnalysis,
+          meta: { requiredPermissions: ['education:homework:manage', 'education:homework:analysis:view'] } },
         { path: 'education/teaching-center/question-bank', name: 'admin-education-question-bank', component: AdminQuestionBank },
         { path: 'education/question-bank', redirect: { name: 'admin-education-question-bank' } },
         { path: 'teaching/question-banks', name: 'teaching-question-banks', component: AdminQuestionBank },

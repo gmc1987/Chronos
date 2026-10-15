@@ -262,6 +262,7 @@ public class AcademicDataController {
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String classId,
+			@RequestParam(required = false) String keyword,
 			Authentication authentication) {
 		boolean privacyVisible = authorization.any(
 				authentication,
@@ -275,6 +276,12 @@ public class AcademicDataController {
 					.map(student -> StudentProfileView.from(student, privacyVisible))
 					.toList());
 		}
+		if (keyword != null && !keyword.isBlank()) {
+			return ok(PageView.from(service.scheduleStudentOptions(
+				scope, keyword, page == null ? 0 : page,
+				size == null ? 10 : size)
+				.map(student -> StudentProfileView.from(student, privacyVisible))));
+		}
 		if (page == null && size == null) {
 			return ok(service.students(scope).stream()
 					.map(student -> StudentProfileView.from(student, privacyVisible))
@@ -285,6 +292,28 @@ public class AcademicDataController {
 				page == null ? 0 : page,
 				size == null ? 10 : size)
 				.map(student -> StudentProfileView.from(student, privacyVisible))));
+	}
+
+	@GetMapping("/admin/education/students/lookup")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:view','education:student:manage')")
+	public ResultData<?> studentLookup(
+			@RequestParam String ids,
+			Authentication authentication) {
+		var requested = java.util.Arrays.stream(ids.split(","))
+				.map(String::trim).filter(id -> !id.isEmpty()).distinct().toList();
+		if (requested.size() > 100) {
+			throw new IllegalArgumentException("每次最多查询100名学生");
+		}
+		var scope = dataScopes.resolve(authentication.getName());
+		requested.forEach(id -> dataScopes.assertStudentAccess(scope, id));
+		boolean privacyVisible = authorization.any(
+				authentication,
+				"education:student:privacy:view",
+				"education:student:update",
+				"education:student:manage");
+		return ok(service.studentsByIds(requested).stream()
+				.map(student -> StudentProfileView.from(student, privacyVisible))
+				.toList());
 	}
 
 	@PostMapping("/admin/education/students")

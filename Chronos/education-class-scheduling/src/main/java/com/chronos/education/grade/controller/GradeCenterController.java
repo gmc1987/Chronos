@@ -11,6 +11,7 @@ import com.chronos.education.grade.model.AssessmentScheme;
 import com.chronos.education.grade.model.GradePublishSnapshot;
 import com.chronos.education.grade.model.Gradebook;
 import com.chronos.education.grade.service.GradeCenterService;
+import com.chronos.education.grade.service.ExamGradebookSourceService.ExamSourceOption;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -39,6 +40,14 @@ public class GradeCenterController {
 			+ "'education:score:gradebook:create')")
 	public ResultData<List<OfferingOption>> offerings(Authentication authentication) {
 		return ok(service.availableOfferings(authentication.getName()));
+	}
+
+	@GetMapping("/offerings/{offeringId}/exam-sessions")
+	@PreAuthorize("@iamAuthorization.any(authentication, 'education:score:scheme:view', "
+			+ "'education:score:scheme:create', 'education:score:gradebook:view')")
+	public ResultData<List<ExamSourceOption>> examSessions(
+			@PathVariable String offeringId, Authentication authentication) {
+		return ok(service.availableExamSessions(offeringId, authentication.getName()));
 	}
 
 	@GetMapping("/schemes/{id}")
@@ -105,6 +114,13 @@ public class GradeCenterController {
 			@RequestBody ItemsCommand command,
 			Authentication authentication) {
 		return ok(service.saveItems(id, command, authentication.getName()));
+	}
+
+	@PostMapping("/gradebooks/{id}/sync-exam-scores")
+	@PreAuthorize("hasAuthority('education:score:gradebook:update')")
+	public ResultData<Integer> syncExamScores(
+			@PathVariable String id, Authentication authentication) {
+		return ok(service.syncExamScores(id, authentication.getName()));
 	}
 
 	@PostMapping("/gradebooks/{id}/submit")

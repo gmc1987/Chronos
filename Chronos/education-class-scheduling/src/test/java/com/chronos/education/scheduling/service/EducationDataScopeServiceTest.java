@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.StudentGuardianRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
@@ -19,19 +20,25 @@ import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
+import com.chronos.education.scheduling.model.EducationUserBinding;
+import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.Idao.IEmployeeAssignmentRepository;
 import com.chronos.service.iService.IDataScopeService;
 import com.chronos.model.vo.DataScopeContext;
 import com.chronos.model.pojo.Organization;
+import com.chronos.model.pojo.EmployeeAssignment;
 import java.util.List;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class EducationDataScopeServiceTest {
 	private AdministrativeClassRepository classes;
@@ -65,6 +72,69 @@ class EducationDataScopeServiceTest {
 				classrooms,
 				mock(ScheduleEntryRepository.class),
 				organizations);
+	}
+
+	@Test
+	void revokedTeacherBindingDoesNotInheritEmployeeTeachingScope() {
+		TeacherAcademicProfileRepository teacherRepository = mock(TeacherAcademicProfileRepository.class);
+		EducationUserBindingRepository bindingRepository = mock(EducationUserBindingRepository.class);
+		TeacherAcademicProfile teacher = new TeacherAcademicProfile();
+		ReflectionTestUtils.setField(teacher, "id", "teacher-1");
+		when(platformScopes.resolve("teacher")).thenReturn(new DataScopeContext(
+				false, "employee-1", Set.of(), Set.of(), Set.of(), Set.of("SELF"), Map.of()));
+		when(teacherRepository.findByEmployeeId("employee-1")).thenReturn(Optional.of(teacher));
+		when(bindingRepository.findByUsernameAndProfileTypeAndStatus("teacher", "TEACHER", "ACTIVE"))
+				.thenReturn(Optional.empty());
+		EducationDataScopeService boundService = new EducationDataScopeService(
+				platformScopes, teacherRepository, mock(TeacherTeachingAssignmentRepository.class),
+				classes, students, mock(StudentGuardianRepository.class), bindingRepository,
+				offerings, members, classrooms, mock(ScheduleEntryRepository.class), organizations);
+
+		EducationDataScope scope = boundService.resolve("teacher");
+
+		assertThat(scope.teacherIds()).isEmpty();
+		assertThat(scope.administrativeClassIds()).isEmpty();
+	}
+
+	@Test
+	void teacherMayReserveOnlyAtCurrentSchoolWithoutExpandingTeachingScope() {
+		TeacherAcademicProfileRepository teacherRepository = mock(TeacherAcademicProfileRepository.class);
+		EducationUserBindingRepository bindingRepository = mock(EducationUserBindingRepository.class);
+		IEmployeeAssignmentRepository employeeAssignments = mock(IEmployeeAssignmentRepository.class);
+		EducationDataScopeService reservationScopes = new EducationDataScopeService(
+				platformScopes, teacherRepository, mock(TeacherTeachingAssignmentRepository.class),
+				classes, students, mock(StudentGuardianRepository.class), bindingRepository,
+				offerings, members, classrooms, mock(ScheduleEntryRepository.class),
+				organizations, employeeAssignments);
+		when(platformScopes.resolve("teacher")).thenReturn(new DataScopeContext(
+				false, "employee-1", Set.of(), Set.of(), Set.of(), Set.of("SELF"), Map.of()));
+		EducationUserBinding binding = new EducationUserBinding();
+		binding.setProfileId("teacher-1");
+		when(bindingRepository.findByUsernameAndProfileTypeAndStatus("teacher", "TEACHER", "ACTIVE"))
+				.thenReturn(Optional.of(binding));
+		TeacherAcademicProfile teacher = new TeacherAcademicProfile();
+		teacher.setId("teacher-1");
+		teacher.setEmployeeId("employee-1");
+		teacher.setEnabled(true);
+		when(teacherRepository.findById("teacher-1")).thenReturn(Optional.of(teacher));
+		when(teacherRepository.findByEmployeeId("employee-1")).thenReturn(Optional.of(teacher));
+		EmployeeAssignment assignment = new EmployeeAssignment();
+		assignment.setOrganizationId("school-1");
+		when(employeeAssignments.findCurrentPrimaryAssignment("employee-1", LocalDate.now()))
+				.thenReturn(Optional.of(assignment));
+		Organization school = new Organization();
+		school.setId("school-1");
+		school.setStatus(1);
+		when(organizations.findById("school-1")).thenReturn(Optional.of(school));
+		when(organizations.findByParentOrgId_Id("school-1")).thenReturn(List.of());
+		Classroom own = new Classroom();
+		own.setCampusId("school-1");
+		Classroom other = new Classroom();
+		other.setCampusId("school-2");
+
+		assertThat(reservationScopes.canReserveClassroom("teacher", own)).isTrue();
+		assertThat(reservationScopes.canReserveClassroom("teacher", other)).isFalse();
+		assertThat(reservationScopes.resolve("teacher").campusIds()).isEmpty();
 	}
 
 	@Test

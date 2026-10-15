@@ -84,7 +84,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService,
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 
 		solver.generate(new AutoScheduleCommand("2026-2027-1", "全量", "FULL",
 				Set.of(), 1, null, null, null, null), "admin");
@@ -134,7 +134,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 
 		solver.generate(new AutoScheduleCommand("2026-2027-1", "校区隔离", "FULL",
 				Set.of(), 1, 1, 1, 1, 20), "admin");
@@ -177,7 +177,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 		var command = new AutoScheduleCommand("2026-2027-1", "集中偏好", "FULL",
 				Set.of(), 1, 2, 2, 1, 20);
 		var priority = new ScheduleRunConstraints(List.of(), List.of(), List.of(), List.of(),
@@ -230,7 +230,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 		var command = new AutoScheduleCommand("2026-2027-1", "周次", "FULL",
 				Set.of(), 1, 1, 1, 1, 20);
 		var run = new ScheduleRunConstraints(List.of(), List.of(), List.of(
@@ -290,7 +290,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 		var command = new AutoScheduleCommand("2026-2027-1", "临时锁课", "FULL",
 				Set.of(), 1, 1, 2, 1, 20);
 		var lock = new ScheduleRunConstraints(List.of(), List.of(), List.of(),
@@ -343,7 +343,7 @@ class AutoSchedulingServiceTest {
 				mock(ClassroomUnavailableSlotRepository.class), constraints,
 				mock(TeacherAcademicProfileRepository.class), members, terms, calendar,
 				policyService(), mock(com.chronos.Idao.IAdminUserRepository.class),
-				mock(IAuditLogService.class), mock(EntityManager.class));
+				mock(IAuditLogService.class), mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				"2026-2027-1", "隔离验证", "FULL", Set.of(), 1, 1, 2, 1, 20);
 
@@ -422,7 +422,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 		var command = new AutoScheduleCommand("2026-2027-1", "连堂", "FULL",
 				Set.of(), 1, 1, 2, 1, 20);
 		var blockRule = new ScheduleRunConstraints(List.of(),
@@ -492,7 +492,7 @@ class AutoSchedulingServiceTest {
 				policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				"2026-2027-1",
 				"容量回归",
@@ -572,7 +572,7 @@ class AutoSchedulingServiceTest {
 				policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				"2026-2027-1",
 				"硬冲突回归",
@@ -620,7 +620,7 @@ class AutoSchedulingServiceTest {
 				policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
-				mock(EntityManager.class));
+				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
 
 		var result = service.list("2026-2027-1");
 

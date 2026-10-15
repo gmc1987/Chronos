@@ -41,6 +41,14 @@ public class MeetingRecurrenceService {
 		return toPreview(rule, occurrences(rule));
 	}
 
+	@Transactional(readOnly = true)
+	public List<MeetingView> roots(String username) {
+		return meetings.findSeriesRoots().stream()
+				.filter(meeting -> username.equals(meeting.getOrganizerUsername()))
+				.map(meetingCenter::viewForRecurrence)
+				.toList();
+	}
+
 	@Transactional
 	public MeetingView create(
 			MeetingCommands.RecurringSave command,
@@ -73,7 +81,6 @@ public class MeetingRecurrenceService {
 			meeting.setRecurrenceUntil(rule.until());
 			meeting.setRecurrenceCount(rule.count());
 			meetings.save(meeting);
-			calendar.enqueue(meeting, "UPSERT");
 		}
 		MeetingSeries metadata = new MeetingSeries();
 		metadata.setId(root.getId());
@@ -151,7 +158,6 @@ public class MeetingRecurrenceService {
 			target.setExceptionType("MODIFIED".equals(target.getExceptionType())
 					? "MODIFIED" : ("THIS_ONLY".equals(mode) ? "MODIFIED" : "NONE"));
 			meetings.save(target);
-			calendar.enqueue(target, "UPSERT");
 		}
 		return result;
 	}
@@ -170,11 +176,12 @@ public class MeetingRecurrenceService {
 					|| "CANCELLED".equals(meeting.getStatus())) {
 				continue;
 			}
+			boolean wasPublished = "PUBLISHED".equals(meeting.getStatus());
 			meeting.setStatus("CANCELLED");
 			meeting.setCancelledAt(now);
 			meeting.setCancelReason("周期会议系列取消");
 			meetings.save(meeting);
-			calendar.enqueue(meeting, "CANCEL");
+			if (wasPublished) calendar.enqueue(meeting, "CANCEL");
 		}
 		if (seriesId != null) {
 			series.findById(seriesId).ifPresent(value -> {

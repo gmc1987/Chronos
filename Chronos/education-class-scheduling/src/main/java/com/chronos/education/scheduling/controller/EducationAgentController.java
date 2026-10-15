@@ -59,6 +59,13 @@ public class EducationAgentController {
 		return ok(service.confirm(id, authentication));
 	}
 
+	@PostMapping("/education/agents/scheduling/proposals/{id}/apply")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:agent:confirm')")
+	public ResultData<SchedulingAgentProposal> apply(
+			@PathVariable String id, Authentication authentication) {
+		return ok(service.apply(id, authentication));
+	}
+
 	@PostMapping("/education/agents/scheduling/proposals/{id}/reject")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:agent:confirm')")
 	public ResultData<SchedulingAgentProposal> reject(

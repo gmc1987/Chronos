@@ -6,15 +6,19 @@ import com.chronos.education.supervision.model.*;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.education.scheduling.service.EducationIdentityService;
 import com.chronos.education.scheduling.service.SchedulePlanVersionService;
 import com.chronos.form.FormService;
 import com.chronos.model.form.FormInstance;
+import com.chronos.model.form.FormDefinition;
+import com.chronos.model.form.FormField;
 import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.time.Instant;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Set;
@@ -37,6 +41,7 @@ public class SupervisionCenterService {
 	private final SupervisionRectificationRepository rectifications;
 	private final SupervisionReviewRepository reviews;
 	private final EducationDataScopeService dataScopes;
+	private final EducationIdentityService identities;
 	private final DomainEventOutboxService events;
 	private final IAuditLogService audit;
 	private final FormService forms;
@@ -54,6 +59,7 @@ public class SupervisionCenterService {
 			SupervisionRectificationRepository rectifications,
 			SupervisionReviewRepository reviews,
 			EducationDataScopeService dataScopes,
+			EducationIdentityService identities,
 			DomainEventOutboxService events,
 			IAuditLogService audit,
 			FormService forms,
@@ -66,6 +72,7 @@ public class SupervisionCenterService {
 		this.rectifications = rectifications;
 		this.reviews = reviews;
 		this.dataScopes = dataScopes;
+		this.identities = identities;
 		this.events = events;
 		this.audit = audit;
 		this.forms = forms;
@@ -82,13 +89,14 @@ public class SupervisionCenterService {
 			DomainEventOutboxService events,
 			IAuditLogService audit,
 			EducationDataScopeService dataScopes) {
-		this(plans, assignments, records, issues, rectifications, null, dataScopes, events, audit,
+		this(plans, assignments, records, issues, rectifications, null, dataScopes, null, events, audit,
 				null, null, null);
 	}
 
 	@Transactional
 	public SupervisionPlan publishPlan(String id, String actor) {
 		SupervisionPlan plan = plans.findById(id).orElseThrow();
+		assertPlanAccess(plan, actor);
 		requireState(plan.getStatus(), "DRAFT");
 		plan.setStatus("PUBLISHED");
 		audit.log(actor, "EDU_SUPERVISION_PLAN_PUBLISH", "planId=" + id);
@@ -98,7 +106,19 @@ public class SupervisionCenterService {
 	@Transactional
 	public SupervisionPlan completePlan(String id, String actor) {
 		SupervisionPlan plan = plans.findById(id).orElseThrow();
+		assertPlanAccess(plan, actor);
 		requireState(plan.getStatus(), "IN_PROGRESS");
+		List<SupervisionAssignment> planAssignments = assignments.findByPlanId(id);
+		if (planAssignments.isEmpty() || planAssignments.stream().anyMatch(item -> !"COMPLETED".equals(item.getStatus()))) {
+			throw new IllegalStateException("督导计划仍有未完成任务");
+		}
+		for (SupervisionAssignment item : planAssignments) {
+			records.findByAssignmentId(item.getId()).ifPresent(record -> {
+				if (issues.findByRecordId(record.getId()).stream().anyMatch(issue -> !"CLOSED".equals(issue.getStatus()))) {
+					throw new IllegalStateException("督导计划仍有未关闭的整改问题");
+				}
+			});
+		}
 		plan.setStatus("COMPLETED");
 		audit.log(actor, "EDU_SUPERVISION_PLAN_COMPLETE", "planId=" + id);
 		return plans.save(plan);
@@ -107,6 +127,7 @@ public class SupervisionCenterService {
 	@Transactional
 	public SupervisionPlan archivePlan(String id, String actor) {
 		SupervisionPlan plan = plans.findById(id).orElseThrow();
+		assertPlanAccess(plan, actor);
 		requireState(plan.getStatus(), "COMPLETED");
 		plan.setStatus("ARCHIVED");
 		audit.log(actor, "EDU_SUPERVISION_PLAN_ARCHIVE", "planId=" + id);
@@ -141,15 +162,28 @@ public class SupervisionCenterService {
 	@Transactional
 	public SupervisionAssignment createAssignment(String actor, String planId,
 			String supervisorId, String teacherId, String scheduleEntryId, String campusId) {
-		SupervisionPlan plan = plans.findById(planId).orElseThrow();
+		SupervisionPlan plan = plans.findById(planId)
+				.orElseThrow(() -> new IllegalArgumentException("督导计划不存在"));
 		EducationDataScope scope = dataScopes.resolve(actor);
-		if (plan.getCampusId() != null && !scope.fullAccess() && !scope.campusIds().contains(plan.getCampusId())) {
-			throw new AccessDeniedException("无权访问该督导计划");
+		assertPlanAccess(plan, scope);
+		if (plan.getCampusId() != null && campusId != null && !plan.getCampusId().equals(campusId)) {
+			throw new IllegalArgumentException("任务校区与督导计划不一致");
 		}
 		if (!"PUBLISHED".equals(plan.getStatus())) {
 			throw new IllegalStateException("仅可向本校已发布计划分配任务");
 		}
-		dataScopes.assertTeacherAccess(scope, supervisorId);
+		// 任务执行人以登录账号存储；先通过有效教育绑定解析教师档案，再校验本校范围。
+		if (identities != null) {
+			Set<String> supervisorTeacherIds = identities.teacherIds(supervisorId);
+			if (supervisorTeacherIds.isEmpty()) {
+				throw new IllegalArgumentException("督导账号没有有效教师档案绑定");
+			}
+			if (supervisorTeacherIds.stream().noneMatch(id -> dataScopes.canAccessTeacher(scope, id))) {
+				throw new AccessDeniedException("无权向该教师分配督导任务");
+			}
+		} else {
+			dataScopes.assertTeacherAccess(scope, supervisorId);
+		}
 		dataScopes.assertTeacherAccess(scope, teacherId);
 		dataScopes.assertScheduleEntryAccess(scope, scheduleEntryId);
 		if (campusId != null) {
@@ -174,7 +208,34 @@ public class SupervisionCenterService {
 
 	@Transactional(readOnly = true)
 	public List<SupervisionAssignment> myAssignments(String supervisorId) {
+		assertActiveSupervisor(supervisorId);
 		return assignments.findBySupervisorIdOrderByCreateTimeDesc(supervisorId);
+	}
+
+	@Transactional(readOnly = true)
+	public List<SupervisionAssignment> teachingAssignments(String teacherUsername) {
+		Set<String> teacherIds = identities.teacherIds(teacherUsername);
+		if (teacherIds.isEmpty()) {
+			throw new AccessDeniedException("当前账号没有有效教师档案绑定");
+		}
+		return assignments.findByTeacherIdInOrderByCreateTimeDesc(teacherIds.stream().toList());
+	}
+
+	@Transactional(readOnly = true)
+	public SupervisionCheckInProofProvider.Proof issueTeacherProof(String assignmentId, String teacherUsername) {
+		SupervisionAssignment assignment = assignments.findById(assignmentId)
+				.orElseThrow(() -> new IllegalArgumentException("督导任务不存在"));
+		if (identities == null || !identities.isTeacher(teacherUsername, assignment.getTeacherId())) {
+			throw new AccessDeniedException("仅该课授课教师可签发现场签到凭证");
+		}
+		requireState(assignment.getStatus(), "ACCEPTED");
+		SupervisionPlan plan = plans.findById(assignment.getPlanId())
+				.orElseThrow(() -> new IllegalArgumentException("督导计划不存在"));
+		requireState(plan.getStatus(), "IN_PROGRESS");
+		if (!(checkInProofs instanceof TeacherIssuedSupervisionQrProofProvider provider)) {
+			throw new IllegalStateException("督导现场签到服务尚未配置");
+		}
+		return provider.issue(assignment, Instant.now());
 	}
 
 	@Transactional(readOnly = true)
@@ -183,9 +244,38 @@ public class SupervisionCenterService {
 		return records.findByAssignmentId(assignmentId).orElseThrow();
 	}
 
+	@Transactional(readOnly = true)
+	public List<FormDefinition> evaluationForms(String supervisorId) {
+		assertActiveSupervisor(supervisorId);
+		if (forms == null) throw new IllegalStateException("SUPERVISION_FORM_ENGINE_UNAVAILABLE");
+		return forms.publishedByKeyPrefix("EDU_SUPERVISION_");
+	}
+
+	@Transactional(readOnly = true)
+	public List<FormField> evaluationFields(String supervisorId, String formId) {
+		assertActiveSupervisor(supervisorId);
+		requireEvaluationDefinition(formId);
+		return forms.fields(formId);
+	}
+
+	@Transactional
+	public FormInstance saveEvaluationForm(String assignmentId, String supervisorId,
+			String formId, Map<String, Object> values, boolean draft) {
+		SupervisionAssignment assignment = assigned(assignmentId, supervisorId);
+		requireState(assignment.getStatus(), "CHECKED_IN");
+		requireEvaluationDefinition(formId);
+		Map<String, String> permissions = new HashMap<>();
+		for (FormField field : forms.fields(formId)) {
+			permissions.put(formId + "." + field.getFieldKey(), "EDIT");
+		}
+		return forms.saveRuntime(assignmentId, formId, "SUPERVISION", "INSPECTOR", supervisorId,
+				values == null ? Map.of() : values, permissions, Set.of(), draft);
+	}
+
 	@Transactional
 	public SupervisionPlan startPlan(String id, String actor) {
 		SupervisionPlan plan = plans.findById(id).orElseThrow();
+		assertPlanAccess(plan, actor);
 		requireState(plan.getStatus(), "PUBLISHED");
 		plan.setStatus("IN_PROGRESS");
 		audit.log(actor, "EDU_SUPERVISION_PLAN_START", "planId=" + id);
@@ -281,10 +371,7 @@ public class SupervisionCenterService {
 		if (forms == null) {
 			throw new IllegalStateException("SUPERVISION_FORM_ENGINE_UNAVAILABLE");
 		}
-		var definition = forms.definition(formTemplateId);
-		if (!"PUBLISHED".equals(definition.getStatus())) {
-			throw new IllegalStateException("SUPERVISION_FORM_TEMPLATE_NOT_PUBLISHED");
-		}
+		requireEvaluationDefinition(formTemplateId);
 		FormInstance instance = forms.instance(assignmentId, formTemplateId, "SUPERVISION")
 				.orElseThrow(() -> new IllegalArgumentException("SUPERVISION_FORM_INSTANCE_REQUIRED"));
 		if (!"SUBMITTED".equals(instance.getStatus())) {
@@ -312,13 +399,21 @@ public class SupervisionCenterService {
 	@Transactional
 	public SupervisionIssue createIssue(String recordId, String actor, String severity,
 			String title, String description, String ownerId, LocalDateTime dueAt) {
-		if ("CRITICAL".equals(severity) && (ownerId == null || ownerId.isBlank() || dueAt == null)) {
-			throw new IllegalArgumentException("严重问题必须指定负责人和截止日期");
+		if (ownerId == null || ownerId.isBlank()) {
+			throw new IllegalArgumentException("督导问题必须指定整改负责人账号");
+		}
+		if ("CRITICAL".equals(severity) && dueAt == null) {
+			throw new IllegalArgumentException("严重问题必须指定截止日期");
 		}
 		SupervisionRecord record = records.findById(recordId).orElseThrow();
 		EducationDataScope scope = dataScopes.resolve(actor);
+		assertSchoolAccess(scope, record.getSchoolId());
 		dataScopes.assertTeacherAccess(scope, record.getTeacherId());
-		if (ownerId != null) dataScopes.assertTeacherAccess(scope, ownerId);
+		Set<String> ownerTeacherIds = identities == null ? Set.of(ownerId) : identities.teacherIds(ownerId);
+		if (ownerTeacherIds.isEmpty()) throw new IllegalArgumentException("整改负责人没有有效教师档案绑定");
+		if (ownerTeacherIds.stream().noneMatch(id -> dataScopes.canAccessTeacher(scope, id))) {
+			throw new AccessDeniedException("无权指定该整改负责人");
+		}
 		SupervisionIssue issue = new SupervisionIssue();
 		issue.setRecordId(recordId);
 		issue.setSchoolId(record.getSchoolId());
@@ -336,7 +431,8 @@ public class SupervisionCenterService {
 	public SupervisionRectification rectify(String issueId, String actor, String content) {
 		SupervisionIssue issue = issues.findById(issueId).orElseThrow();
 		requireState(issue.getStatus(), "OPEN", "RECTIFYING");
-		if (issue.getOwnerId() != null && !issue.getOwnerId().equals(actor)) {
+		if (issue.getOwnerId() == null || !issue.getOwnerId().equals(actor)
+				|| identities != null && identities.teacherIds(actor).isEmpty()) {
 			throw new AccessDeniedException("仅问题负责人可以提交整改");
 		}
 		SupervisionRectification rectification = rectifications.findByIssueId(issueId)
@@ -355,6 +451,7 @@ public class SupervisionCenterService {
 	@Transactional
 	public SupervisionIssue review(String issueId, String reviewerId, boolean approved, String comment) {
 		SupervisionIssue issue = issues.findById(issueId).orElseThrow();
+		assertSchoolAccess(dataScopes.resolve(reviewerId), issue.getSchoolId());
 		requireState(issue.getStatus(), "REVIEWING");
 		SupervisionRectification rectification = rectifications.findByIssueId(issueId).orElseThrow();
 		if (reviewerId.equals(rectification.getRectifierId())) {
@@ -378,6 +475,22 @@ public class SupervisionCenterService {
 		return issues.findById(issueId).orElseThrow();
 	}
 
+	@Transactional(readOnly = true)
+	public List<SupervisionRecord> listRecords(String actor) {
+		return records.findBySchoolIdOrderBySubmittedAtDesc(scopeSchool(dataScopes.resolve(actor)));
+	}
+
+	@Transactional(readOnly = true)
+	public List<SupervisionIssue> listIssues(String actor) {
+		return issues.findBySchoolIdOrderByCreateTimeDesc(scopeSchool(dataScopes.resolve(actor)));
+	}
+
+	@Transactional(readOnly = true)
+	public List<SupervisionIssue> myIssues(String actor) {
+		assertActiveSupervisor(actor);
+		return issues.findByOwnerIdOrderByCreateTimeDesc(actor);
+	}
+
 	@Transactional
 	public int enqueueOverdueReminders(LocalDateTime now) {
 		List<SupervisionIssue> overdue = issues.findByStatusAndDueAtBefore("RECTIFYING", now);
@@ -390,8 +503,15 @@ public class SupervisionCenterService {
 	}
 
 	private SupervisionAssignment assigned(String id, String supervisorId) {
+		assertActiveSupervisor(supervisorId);
 		return assignments.findByIdAndSupervisorId(id, supervisorId)
 				.orElseThrow(() -> new AccessDeniedException("任务未分配给当前督导"));
+	}
+
+	private void assertActiveSupervisor(String supervisorId) {
+		if (identities != null && identities.teacherIds(supervisorId).isEmpty()) {
+			throw new AccessDeniedException("督导账号没有有效教师档案绑定");
+		}
 	}
 
 	private void requireState(String actual, String... allowed) {
@@ -405,6 +525,42 @@ public class SupervisionCenterService {
 
 	private String scopeSchool(EducationDataScope scope) {
 		return scope.fullAccess() ? "ALL" : dataScopes.requireSingleSchool(scope);
+	}
+
+	private void assertSchoolAccess(EducationDataScope scope, String schoolId) {
+		if (scope.fullAccess()) return;
+		if ("ALL".equals(schoolId)) throw new AccessDeniedException("无权访问该督导数据");
+		dataScopes.assertSchoolAccess(scope, schoolId);
+	}
+
+	private FormDefinition requireEvaluationDefinition(String formId) {
+		if (forms == null) throw new IllegalStateException("SUPERVISION_FORM_ENGINE_UNAVAILABLE");
+		FormDefinition definition = forms.definition(formId);
+		if (!"PUBLISHED".equals(definition.getStatus())) {
+			throw new IllegalStateException("SUPERVISION_FORM_TEMPLATE_NOT_PUBLISHED");
+		}
+		if (definition.getFormKey() == null
+				|| !definition.getFormKey().startsWith("EDU_SUPERVISION_")) {
+			throw new IllegalArgumentException("该表单不是督导评价模板");
+		}
+		return definition;
+	}
+
+	private void assertPlanAccess(SupervisionPlan plan, String actor) {
+		assertPlanAccess(plan, dataScopes.resolve(actor));
+	}
+
+	private void assertPlanAccess(SupervisionPlan plan, EducationDataScope scope) {
+		if (scope.fullAccess()) {
+			return;
+		}
+		if ("ALL".equals(plan.getSchoolId())) {
+			throw new AccessDeniedException("无权访问该督导计划");
+		}
+		dataScopes.assertSchoolAccess(scope, plan.getSchoolId());
+		if (plan.getCampusId() != null) {
+			dataScopes.assertCampusAccess(scope, plan.getCampusId());
+		}
 	}
 
 	private String snapshot(FormInstance instance) {

@@ -25,6 +25,11 @@ public final class SupervisionDtos {
 	public record EvaluationCommand(
 			@NotBlank String formTemplateId) {}
 
+	public record EvaluationFormCommand(
+			@NotBlank String formTemplateId,
+			Map<String, Object> values,
+			boolean draft) {}
+
 	public record CheckInCommand(@NotNull @Valid Proof proof) {}
 
 	public record IssueCommand(

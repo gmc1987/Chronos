@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.*;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
@@ -55,6 +56,7 @@ public class WorkflowService {
 	private final IAuditLogService audit;
 	private final ApplicationEventPublisher eventPublisher;
 	private final List<WorkflowStartValidator> startValidators;
+	private List<WorkflowTaskAccessGuard> taskAccessGuards = List.of();
 	private final ObjectMapper json = new ObjectMapper();
 
 	public WorkflowService(IWorkflowDefinitionRepository definitions, IWorkflowNodeRepository nodes,
@@ -96,6 +98,11 @@ public class WorkflowService {
 		this.sla = sla;
 		this.eventPublisher = eventPublisher;
 		this.startValidators = startValidators;
+	}
+
+	@Autowired(required = false)
+	public void setTaskAccessGuards(List<WorkflowTaskAccessGuard> taskAccessGuards) {
+		this.taskAccessGuards = List.copyOf(taskAccessGuards);
 	}
 
 	@Transactional(readOnly = true)
@@ -834,6 +841,7 @@ public class WorkflowService {
 		}
 		security.requireInstanceView(actor, instanceId);
 		WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+		requireTaskAccess(instance, definition, actor);
 		List<WorkflowTask> history = tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId);
 		boolean finished = Set.of("COMPLETED", "REJECTED", "WITHDRAWN", "CANCELLED")
 				.contains(instance.getStatus());
@@ -928,6 +936,7 @@ public class WorkflowService {
 			}
 		}
 		return visible.values().stream()
+				.filter(task -> canAccessTask(task, actor))
 				.sorted(Comparator.comparing(WorkflowTask::getCreateTime,
 						Comparator.nullsLast(Comparator.reverseOrder())))
 				.map(this::taskView)
@@ -1026,6 +1035,7 @@ public class WorkflowService {
 		if (!flowableRuntime.isFlowable(instance)) {
 			throw new IllegalArgumentException("Legacy 任务不支持候选认领");
 		}
+		requireTaskAccess(instance, requireDefinition(instance.getDefinitionId()), actor);
 		WorkflowTask result = flowableRuntime.claim(snapshot, actor);
 		addParticipant(instance.getId(), actor, "ASSIGNEE", result.getId());
 		audit.log(actor, "WORKFLOW_TASK_CLAIM", "taskId=" + taskId);
@@ -1540,7 +1550,33 @@ public class WorkflowService {
 			throw new IllegalStateException("任务已处理，请勿重复提交");
 		if (!actor.equals(task.getAssignee()))
 			throw new AccessDeniedException("不是当前任务处理人");
+		WorkflowInstance instance = requireInstance(task.getInstanceId());
+		requireTaskAccess(instance, requireDefinition(instance.getDefinitionId()), actor);
 		return task;
+	}
+
+	private boolean canAccessTask(WorkflowTask task, String actor) {
+		try {
+			WorkflowInstance instance = requireInstance(task.getInstanceId());
+			WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+			for (WorkflowTaskAccessGuard guard : taskAccessGuards) {
+				if (guard.supports(definition.getFlowCode())
+						&& !guard.canAccess(instance.getBusinessKey(), actor)) {
+					return false;
+				}
+			}
+			return true;
+		} catch (AccessDeniedException | IllegalArgumentException exception) {
+			return false;
+		}
+	}
+
+	private void requireTaskAccess(WorkflowInstance instance, WorkflowDefinition definition, String actor) {
+		for (WorkflowTaskAccessGuard guard : taskAccessGuards) {
+			if (guard.supports(definition.getFlowCode())) {
+				guard.requireAccess(instance.getBusinessKey(), actor);
+			}
+		}
 	}
 
 	private void cancelPending(String instanceId, String comment) {

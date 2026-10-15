@@ -11,7 +11,7 @@
       <el-select v-model="offeringId" filterable placeholder="选择教学班" @change="loadMembers">
         <el-option v-for="item in offerings" :key="item.id" :label="`${item.teachingClassName} / ${item.courseName} / ${item.teacherName}`" :value="item.id" />
       </el-select>
-      <el-button type="primary" :disabled="!offeringId || isCombined" @click="enrollDialog = true">添加学生</el-button>
+      <el-button type="primary" :disabled="!offeringId || isCombined" @click="openEnroll">添加学生</el-button>
     </div>
     <el-alert v-if="isCombined" type="info" :closable="false" title="此教学班是合班公共课，学生由走班排课中的“合班设置”同步，不能逐人增删。" />
     <el-descriptions v-if="currentOffering" :column="4" border class="summary">
@@ -30,7 +30,8 @@
       <AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button v-if="!isCombined && s.row.enrollmentStatus === 'ENROLLED'" link type="danger" @click="withdraw(s.row)">退课</el-button><el-button v-else-if="!isCombined" link type="primary" @click="reenroll(s.row)">重新选课</el-button></template></AdaptiveActionColumn>
     </el-table>
     <el-dialog v-model="enrollDialog" title="添加教学班学生" width="560px">
-      <el-form label-width="90px"><el-form-item label="学生"><el-select v-model="selectedStudentId" filterable class="full-width"><el-option v-for="item in selectableStudents" :key="item.id" :label="`${item.studentName}（${item.studentNo}）`" :value="item.id" /></el-select></el-form-item></el-form>
+      <el-form label-width="90px"><el-form-item label="学生"><el-select v-model="selectedStudentId" filterable remote :remote-method="searchStudents" :loading="studentLoading" class="full-width" placeholder="输入姓名或学号查询"><el-option v-for="item in selectableStudents" :key="item.id" :label="`${item.studentName}（${item.studentNo}）`" :value="item.id" /></el-select></el-form-item></el-form>
+      <el-pagination v-if="studentTotal > 10" :total="studentTotal" :page-size="10" :current-page="studentPage + 1" layout="prev, pager, next" @current-change="page => loadStudentOptions(page - 1)" />
       <el-alert type="info" :closable="false" title="提交时会检查该学生现有选课与本教学班课表是否冲突。" />
       <template #footer><el-button @click="enrollDialog = false">取消</el-button><el-button type="primary" @click="enroll">确认选课</el-button></template>
     </el-dialog>
@@ -41,23 +42,71 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { enrollTeachingClassStudent, listAcademicTerms, listAdministrativeClasses, listCourseOfferings, listEducationStudents, listTeachingClassMembers, withdrawTeachingClassStudent } from '../../../api/admin'
+import { enrollTeachingClassStudent, listAcademicTerms, listAdministrativeClasses, listCourseOfferings, listEducationStudents, lookupEducationStudents, listTeachingClassMembers, withdrawTeachingClassStudent } from '../../../api/admin'
 
-const router = useRouter(); const terms = ref([]); const offerings = ref([]); const students = ref([]); const classes = ref([]); const members = ref([])
+const router = useRouter(); const terms = ref([]); const offerings = ref([]); const memberStudents = ref([]); const studentOptions = ref([]); const classes = ref([]); const members = ref([])
 const semesterCode = ref(''); const offeringId = ref(''); const enrollDialog = ref(false); const selectedStudentId = ref('')
+const studentKeyword = ref(''); const studentPage = ref(0); const studentTotal = ref(0); const studentLoading = ref(false)
+let studentRequest = 0
 const currentOffering = computed(() => offerings.value.find(item => item.id === offeringId.value))
 const isCombined = computed(() => currentOffering.value?.offeringMode === 'COMBINED')
 const enrolledCount = computed(() => members.value.filter(item => item.enrollmentStatus === 'ENROLLED').length)
 const enrolledIds = computed(() => new Set(members.value.filter(item => item.enrollmentStatus === 'ENROLLED').map(item => item.studentId)))
-const selectableStudents = computed(() => students.value.filter(item => !enrolledIds.value.has(item.id) && item.enrollmentStatus === 'ACTIVE'))
-const student = id => students.value.find(item => item.id === id)
+const selectableStudents = computed(() => studentOptions.value.filter(item => !enrolledIds.value.has(item.id) && item.enrollmentStatus === 'ACTIVE'))
+const student = id => memberStudents.value.find(item => item.id === id) || studentOptions.value.find(item => item.id === id)
+const showError = error => ElMessage.error(error?.response?.data?.msg || error?.message || '操作失败')
 const className = id => classes.value.find(item => item.id === id)?.className || '-'
 const loadOfferings = async () => { offerings.value = (await listCourseOfferings(semesterCode.value)).data || []; offeringId.value = ''; members.value = [] }
-const loadMembers = async () => { members.value = offeringId.value ? (await listTeachingClassMembers(offeringId.value)).data || [] : [] }
-const enroll = async () => { if (!selectedStudentId.value) return ElMessage.warning('请选择学生'); await enrollTeachingClassStudent(offeringId.value, selectedStudentId.value); enrollDialog.value = false; selectedStudentId.value = ''; ElMessage.success('选课成功'); await loadMembers() }
-const reenroll = async row => { await enrollTeachingClassStudent(offeringId.value, row.studentId); ElMessage.success('重新选课成功'); await loadMembers() }
-const withdraw = async row => { await ElMessageBox.confirm(`确认将“${student(row.studentId)?.studentName || row.studentId}”退出该教学班？`, '退课确认', { type: 'warning' }); await withdrawTeachingClassStudent(offeringId.value, row.studentId); ElMessage.success('退课成功'); await loadMembers() }
-onMounted(async () => { const [termResult, studentResult, classResult] = await Promise.all([listAcademicTerms(), listEducationStudents(), listAdministrativeClasses()]); terms.value = termResult.data || []; students.value = studentResult.data || []; classes.value = classResult.data || []; const current = terms.value.find(item => item.currentTerm) || terms.value[0]; if (current) { semesterCode.value = current.termCode; await loadOfferings() } })
+const loadMembers = async () => {
+  members.value = offeringId.value ? (await listTeachingClassMembers(offeringId.value)).data || [] : []
+  const ids = [...new Set(members.value.map(item => item.studentId))]
+  const batches = []
+  for (let index = 0; index < ids.length; index += 100) batches.push(ids.slice(index, index + 100))
+  memberStudents.value = (await Promise.all(batches.map(batch => lookupEducationStudents(batch))))
+    .flatMap(result => result.data || [])
+}
+const loadStudentOptions = async (page = 0) => {
+  const request = ++studentRequest
+  studentLoading.value = true
+  try {
+    const result = await listEducationStudents({ page, size: 10, keyword: studentKeyword.value })
+    if (request !== studentRequest) return
+    studentOptions.value = result.data?.content || []
+    studentTotal.value = result.data?.totalElements || 0
+    studentPage.value = page
+  } catch (error) { showError(error) }
+  finally { if (request === studentRequest) studentLoading.value = false }
+}
+const searchStudents = keyword => { studentKeyword.value = keyword.trim(); loadStudentOptions(0) }
+const openEnroll = async () => { selectedStudentId.value = ''; studentKeyword.value = ''; enrollDialog.value = true; await loadStudentOptions(0) }
+const enroll = async () => {
+  if (!selectedStudentId.value) return ElMessage.warning('请选择学生')
+  try {
+    await enrollTeachingClassStudent(offeringId.value, selectedStudentId.value)
+    enrollDialog.value = false
+    selectedStudentId.value = ''
+    ElMessage.success('选课成功')
+    await loadMembers()
+  } catch (error) { showError(error) }
+}
+const reenroll = async row => {
+  try {
+    await enrollTeachingClassStudent(offeringId.value, row.studentId)
+    ElMessage.success('重新选课成功')
+    await loadMembers()
+  } catch (error) { showError(error) }
+}
+const withdraw = async row => {
+  try {
+    await ElMessageBox.confirm(`确认将“${student(row.studentId)?.studentName || row.studentId}”退出该教学班？`, '退课确认', { type: 'warning' })
+  } catch { return }
+  try {
+    await withdrawTeachingClassStudent(offeringId.value, row.studentId)
+    ElMessage.success('退课成功')
+    await loadMembers()
+  } catch (error) { showError(error) }
+}
+onMounted(async () => { const [termResult, classResult] = await Promise.all([listAcademicTerms(), listAdministrativeClasses()]); terms.value = termResult.data || []; classes.value = classResult.data || []; const current = terms.value.find(item => item.currentTerm) || terms.value[0]; if (current) { semesterCode.value = current.termCode; await loadOfferings() } })
 </script>
 
 <style scoped>

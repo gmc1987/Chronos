@@ -33,6 +33,11 @@ public class FormService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<FormDefinition> publishedByKeyPrefix(String prefix) {
+		return definitions.findByFormKeyStartingWithAndStatusOrderByFormNameAsc(prefix, "PUBLISHED");
+	}
+
+	@Transactional(readOnly = true)
 	public List<FormField> fields(String formId) {
 		require(formId);
 		return fields.findByFormIdOrderBySortOrderAscCreateTimeAsc(formId);

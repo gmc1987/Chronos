@@ -94,7 +94,9 @@
       </div>
       <el-empty v-if="!occurrences.length" description="当天没有课程" />
       <el-table v-else :data="occurrences">
-        <el-table-column prop="effectivePeriodNo" label="节次" width="80" />
+        <el-table-column label="节次" width="80">
+          <template #default="scope">{{ periodRange(scope.row) }}</template>
+        </el-table-column>
         <el-table-column prop="entry.courseName" label="课程" min-width="130" />
         <el-table-column prop="entry.teachingClassName" label="教学班" min-width="150" />
         <el-table-column prop="effectiveTeacherName" label="实际教师" width="110" />
@@ -197,6 +199,11 @@ const studentContexts = computed(() => scheduleData.value?.studentContexts || []
 const selectedStudent = computed(() => studentContexts.value.find(
   student => student.studentId === selectedStudentId.value,
 ))
+const periodRange = occurrence => {
+  const start = occurrence.effectivePeriodNo
+  const end = start + (occurrence.entry?.durationPeriods || 1) - 1
+  return end > start ? `${start}–${end}` : String(start)
+}
 const loadSchedule = async (studentId, date = selectedDate.value) => {
   loading.value = true
   try {

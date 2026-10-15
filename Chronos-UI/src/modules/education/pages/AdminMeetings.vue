@@ -264,7 +264,7 @@ onMounted(load)
   <div class="page">
     <header>
       <div><h2>会议管理</h2><p>编排线下、线上或混合会议，统一完成场地预约与参会邀请。</p></div>
-      <el-button v-permission="['education:meeting:create', 'education:meeting:manage']" type="primary" @click="openDialog()">新建会议</el-button>
+      <div class="header-actions"><router-link to="/admin/education/meeting/recurring"><el-button>周期会议与日历</el-button></router-link><el-button v-permission="['education:meeting:create', 'education:meeting:manage']" type="primary" @click="openDialog()">新建会议</el-button></div>
     </header>
 
     <el-alert
@@ -419,6 +419,7 @@ onMounted(load)
 <style scoped>
 .page { padding: 24px; }
 header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
 h2 { margin: 0 0 6px; }
 p, .muted { margin: 0; color: #84909a; }
 .el-alert { margin-bottom: 14px; }

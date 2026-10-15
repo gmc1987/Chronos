@@ -62,8 +62,7 @@ public class StudentStatusChangeController {
 			@PathVariable String id,
 			@RequestBody(required = false) StudentStatusDecisionCommand command,
 			Authentication authentication) {
-		// 学籍审批会改变跨班级关系，当前阶段只允许全校数据范围管理员执行。
-		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		assertDecisionScope(id, authentication);
 		return ok(changes.approve(
 				id,
 				command == null ? null : command.comment(),
@@ -76,7 +75,7 @@ public class StudentStatusChangeController {
 			@PathVariable String id,
 			@RequestBody StudentStatusDecisionCommand command,
 			Authentication authentication) {
-		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		assertDecisionScope(id, authentication);
 		return ok(changes.reject(id, command.comment(), authentication.getName()));
 	}
 
@@ -85,8 +84,19 @@ public class StudentStatusChangeController {
 	public ResultData<StudentStatusChange> cancel(
 			@PathVariable String id,
 			Authentication authentication) {
-		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		assertDecisionScope(id, authentication);
 		return ok(changes.cancel(id, authentication.getName()));
+	}
+
+	private void assertDecisionScope(String id, Authentication authentication) {
+		StudentStatusChange change = changes.find(id);
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertStudentAccess(scope, change.getStudentId());
+		// 跨班级异动必须同时位于审批人的目标班级数据范围内。
+		if (change.getToClassId() != null
+				&& !change.getToClassId().equals(change.getFromClassId())) {
+			dataScopes.assertClassAccess(scope, change.getToClassId());
+		}
 	}
 
 	private <T> ResultData<T> ok(T data) {

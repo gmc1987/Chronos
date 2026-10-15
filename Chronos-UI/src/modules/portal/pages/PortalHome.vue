@@ -153,7 +153,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { portalBootstrap, resetPortalPreference, savePortalPreference, visitApplication } from '../../../api/portal'
+import { portalBootstrap, portalHeadTeacherClasses, resetPortalPreference, savePortalPreference, visitApplication } from '../../../api/portal'
 import { remindWorkflowInstance } from '../../../api/admin'
 import PortalWeeklySchedule from '../components/PortalWeeklySchedule.vue'
 
@@ -161,6 +161,7 @@ const emit = defineEmits(['context'])
 const router = useRouter()
 const bootstrap = ref({ widgets: [], applications: [], favorites: [], preference: {}, contributions: {} })
 const loading = ref(true); const error = ref(''); const editing = ref(false); const draftLayout = ref([])
+const hasHeadTeacherClasses = ref(false)
 const greeting = computed(() => new Date().getHours() < 12 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好')
 const quickApps = computed(() => bootstrap.value.favorites?.length ? bootstrap.value.favorites : bootstrap.value.applications?.filter(a => a.recommended).slice(0, 6))
 const educationProfileTypes = computed(() => bootstrap.value.contributions?.DATA?.data?.profileTypes || [])
@@ -175,7 +176,9 @@ const personaCards = computed(() => {
   const hasRole = (...names) => names.some(name => roles.some(role => role.includes(name)))
   const hasProfile = type => educationProfileTypes.value.includes(type)
   return [
-    (hasProfile('TEACHER') || hasRole('TEACHER', '教师')) && { code: 'teacher', title: '教师工作台', description: '查看课表与教学安排', route: '/portal/education/schedule', icon: '师', tone: 'teal' },
+    hasProfile('TEACHER') && { code: 'teacher', title: '教师工作台', description: '查看课表与教学安排', route: '/portal/education/schedule', icon: '师', tone: 'teal' },
+    hasProfile('TEACHER') && { code: 'supervision-teaching', title: '督导签到凭证', description: '为本人授课的督导任务签发现场凭证', route: '/portal/education/supervision/teaching', icon: '签', tone: 'purple' },
+    hasHeadTeacherClasses.value && { code: 'head-teacher', title: '班主任工作台', description: '查看本人所带班级与学生', route: '/portal/education/head-teacher', icon: '班', tone: 'teal' },
     (hasProfile('STUDENT') || hasRole('STUDENT', '学生')) && { code: 'student', title: '学生学习台', description: '查看成绩与学习安排', route: '/portal/education/grades', icon: '学', tone: 'blue' },
     (hasProfile('PARENT') || hasRole('PARENT', '家长', 'GUARDIAN', '监护')) && { code: 'parent', title: '家校沟通', description: '查看孩子通知与回执', route: '/portal/education/family', icon: '家', tone: 'orange' },
     hasRole('SUPERVISOR', '督导', 'SUPERVISION') && { code: 'supervisor', title: '督导工作台', description: '处理已分配的督导任务', route: '/portal/education/supervision', icon: '督', tone: 'purple' },
@@ -189,6 +192,15 @@ const load = async () => {
     const res = await portalBootstrap()
     bootstrap.value = res.data
     draftLayout.value = [...(res.data.preference?.layout || [])]
+    hasHeadTeacherClasses.value = false
+    if (educationProfileTypes.value.includes('TEACHER')) {
+      try {
+        const classResponse = await portalHeadTeacherClasses()
+        hasHeadTeacherClasses.value = Array.isArray(classResponse?.data) && classResponse.data.length > 0
+      } catch {
+        // The class shortcut is optional; a failed secondary request must not hide the portal.
+      }
+    }
     emit('context', {
       ...res.data.user,
       profileTypes: res.data.contributions?.DATA?.data?.profileTypes || [],

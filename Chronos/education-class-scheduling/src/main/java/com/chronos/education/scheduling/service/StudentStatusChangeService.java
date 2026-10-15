@@ -75,6 +75,12 @@ public class StudentStatusChangeService {
 				PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100)));
 	}
 
+	@Transactional(readOnly = true)
+	public StudentStatusChange find(String id) {
+		return changes.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("学籍异动不存在"));
+	}
+
 	@Transactional
 	public StudentStatusChange request(
 			String studentId,
