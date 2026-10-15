@@ -5,5 +5,12 @@ let package = Package(
     name: "ChronosMobile",
     platforms: [.iOS(.v16)],
     products: [.library(name: "ChronosMobileCore", targets: ["ChronosMobileCore"])],
-    targets: [.target(name: "ChronosMobileCore", path: "Sources/ChronosMobileCore")]
+    targets: [
+        .target(name: "ChronosMobileCore", path: "Sources/ChronosMobileCore"),
+        .testTarget(
+            name: "ChronosMobileCoreTests",
+            dependencies: ["ChronosMobileCore"],
+            path: "Tests/ChronosMobileCoreTests"
+        )
+    ]
 )
