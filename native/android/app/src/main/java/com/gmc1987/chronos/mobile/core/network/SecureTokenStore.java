@@ -1,4 +1,4 @@
-package com.gmc1987.chronos.mobile;
+package com.gmc1987.chronos.mobile.core.network;
 
 import android.content.SharedPreferences;
 import android.security.keystore.KeyGenParameterSpec;

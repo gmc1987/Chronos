@@ -1,4 +1,4 @@
-package com.gmc1987.chronos.mobile;
+package com.gmc1987.chronos.mobile.core.model;
 
 import static org.junit.Assert.assertEquals;
 
@@ -14,8 +14,7 @@ public final class PortalStateTest {
                 new JSONArray().put("education:grade:view"),
                 new JSONArray().put("STUDENT"),
                 new JSONArray());
-
-        assertEquals(PortalState.Workspace.STUDENT, state.workspace);
+        assertEquals(PortalState.Workspace.STUDENT, state.workspace());
     }
 
     @Test
@@ -25,8 +24,7 @@ public final class PortalStateTest {
                 new JSONArray().put("education:schedule:view"),
                 new JSONArray().put("TEACHER"),
                 new JSONArray());
-
-        assertEquals(PortalState.Workspace.TEACHER, state.workspace);
+        assertEquals(PortalState.Workspace.TEACHER, state.workspace());
     }
 
     @Test
@@ -40,8 +38,7 @@ public final class PortalStateTest {
                 new JSONArray().put("education:supervision:view"),
                 new JSONArray().put("TEACHER"),
                 applications);
-
-        assertEquals(PortalState.Workspace.MANAGEMENT, state.workspace);
+        assertEquals(PortalState.Workspace.MANAGEMENT, state.workspace());
     }
 
     @Test
@@ -51,8 +48,7 @@ public final class PortalStateTest {
                 new JSONArray().put("portal:view"),
                 new JSONArray(),
                 new JSONArray());
-
-        assertEquals(PortalState.Workspace.STAFF, state.workspace);
+        assertEquals(PortalState.Workspace.STAFF, state.workspace());
     }
 
     private static PortalState state(
@@ -60,7 +56,7 @@ public final class PortalStateTest {
             JSONArray permissions,
             JSONArray profileTypes,
             JSONArray applications) throws Exception {
-        JSONObject dataContribution = new JSONObject()
+        JSONObject contribution = new JSONObject()
                 .put("available", true)
                 .put("data", new JSONObject().put("profileTypes", profileTypes));
         JSONObject data = new JSONObject()
@@ -69,7 +65,7 @@ public final class PortalStateTest {
                         .put("roles", roles)
                         .put("permissions", permissions))
                 .put("applications", applications)
-                .put("contributions", new JSONObject().put("DATA", dataContribution));
+                .put("contributions", new JSONObject().put("DATA", contribution));
         return PortalState.from(new JSONObject().put("data", data));
     }
 }
