@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import com.gmc1987.chronos.mobile.R;
 import com.gmc1987.chronos.mobile.core.common.AsyncRunner;
 import com.gmc1987.chronos.mobile.core.common.RemoteListScreen;
 import com.gmc1987.chronos.mobile.core.common.RowFormatters;
@@ -95,26 +96,28 @@ public final class AppNavigator implements ScreenHost {
 
     private void renderTabs() {
         tabs.removeAllViews();
-        addTab("工作台", this::showWorkbench);
+        addTab("工作台", R.drawable.ic_tab_workbench, this::showWorkbench);
         if (portal.workspace() == PortalState.Workspace.STUDENT) {
-            addTab("成绩", this::showGrades);
-            addTab("考试", this::showExams);
-            addTab("通知", () -> showAnnouncements("通知", "当前没有可见通知"));
+            addTab("成绩", R.drawable.ic_tab_grades, this::showGrades);
+            addTab("考试", R.drawable.ic_tab_exams, this::showExams);
+            addTab("通知", R.drawable.ic_tab_notifications,
+                    () -> showAnnouncements("通知", "当前没有可见通知"));
         } else {
-            addTab("应用", this::showApplications);
-            addTab("公告", () -> showAnnouncements("公告", "当前没有可见公告"));
+            addTab("应用", R.drawable.ic_tab_applications, this::showApplications);
+            addTab("公告", R.drawable.ic_tab_announcements,
+                    () -> showAnnouncements("公告", "当前没有可见公告"));
         }
-        addTab("我的", this::showProfile);
+        addTab("我的", R.drawable.ic_tab_profile, this::showProfile);
     }
 
-    private void addTab(String title, Runnable action) {
-        Button button = ui.tabButton(title, title.equals(selectedTab));
+    private void addTab(String title, int iconResource, Runnable action) {
+        Button button = ui.tabButton(title, iconResource, title.equals(selectedTab));
         button.setOnClickListener(view -> {
             selectedTab = title;
             renderTabs();
             action.run();
         });
-        tabs.addView(button, new LinearLayout.LayoutParams(0, ui.dp(52), 1));
+        tabs.addView(button, new LinearLayout.LayoutParams(0, ui.dp(60), 1));
     }
 
     private void showWorkbench() {

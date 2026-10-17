@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -114,13 +115,28 @@ public final class UiKit {
     }
 
     public Button tabButton(String title, boolean selected) {
+        return tabButton(title, 0, selected);
+    }
+
+    public Button tabButton(String title, int iconResource, boolean selected) {
         Button button = button(
                 title,
                 selected ? BRAND : MUTED,
                 selected ? BRAND_SOFT : Color.TRANSPARENT,
-                12);
+                11);
         button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
-        button.setMinHeight(dp(46));
+        button.setMinHeight(dp(56));
+        button.setPadding(dp(6), dp(5), dp(6), dp(4));
+        button.setCompoundDrawablePadding(dp(2));
+        if (iconResource != 0) {
+            Drawable icon = context.getDrawable(iconResource);
+            if (icon != null) {
+                icon = icon.mutate();
+                icon.setTint(selected ? BRAND : MUTED);
+                icon.setBounds(0, 0, dp(22), dp(22));
+                button.setCompoundDrawables(null, icon, null, null);
+            }
+        }
         button.setElevation(0);
         return button;
     }
