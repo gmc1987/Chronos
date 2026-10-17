@@ -8,10 +8,14 @@ import {
   deleteKnowledgeBase,
   deleteKnowledgeDocument,
   getAiModelStatus,
+  getKnowledgeIndexConsistency,
   importKnowledgeDocument,
   listKnowledgeBases,
   listKnowledgeDocuments,
+  listKnowledgeIndexTasks,
+  rebuildKnowledgeBaseIndex,
   rebuildKnowledgeDocument,
+  retryKnowledgeIndexTask,
   searchKnowledge,
   updateKnowledgeBase,
 } from '../../../api/admin'
@@ -41,6 +45,11 @@ const baseTotal = ref(0)
 const documentPage = ref(1)
 const documentPageSize = ref(10)
 const documentTotal = ref(0)
+const indexConsistency = ref(null)
+const indexTasks = ref([])
+const indexTaskPage = ref(1)
+const indexTaskPageSize = ref(10)
+const indexTaskTotal = ref(0)
 const activeBase = computed(() => bases.value.find(item => item.id === activeBaseId.value))
 const modelConfigured = computed(() => Boolean(
   activeBase.value?.answerModelId
@@ -74,6 +83,7 @@ const loadBases = async () => {
     activeBaseId.value = bases.value[0]?.id || ''
   }
   await loadDocuments()
+  await loadIndexState()
 }
 
 const loadDocuments = async () => {
@@ -90,6 +100,27 @@ const loadDocuments = async () => {
   documentTotal.value = response.data?.totalElements ?? documents.value.length
 }
 const changeDocumentPageSize = () => { documentPage.value = 1; loadDocuments() }
+
+const loadIndexState = async () => {
+  if (!activeBaseId.value) {
+    indexConsistency.value = null
+    indexTasks.value = []
+    indexTaskTotal.value = 0
+    return
+  }
+  const [consistencyResponse, taskResponse] = await Promise.all([
+    getKnowledgeIndexConsistency(activeBaseId.value),
+    listKnowledgeIndexTasks({
+      knowledgeBaseId: activeBaseId.value,
+      page: indexTaskPage.value - 1,
+      size: indexTaskPageSize.value,
+    }),
+  ])
+  indexConsistency.value = consistencyResponse.data
+  indexTasks.value = taskResponse.data?.content || []
+  indexTaskTotal.value = taskResponse.data?.totalElements || 0
+}
+const changeIndexTaskPageSize = () => { indexTaskPage.value = 1; loadIndexState() }
 
 const openCreateBase = () => {
   resetObject(baseForm, { enabled: true, retrievalMode: 'KEYWORD', allowKeywordFallback: true })
@@ -132,7 +163,7 @@ const saveTextDocument = async () => {
   })
   textDialog.value = false
   ElMessage.success('文本已入库并完成分段')
-  await loadDocuments()
+  await Promise.all([loadDocuments(), loadIndexState()])
 }
 
 const chooseFile = file => {
@@ -152,20 +183,33 @@ const upload = async () => {
   uploadFile.value = null
   importTitle.value = ''
   ElMessage.success('文档已导入并完成分段')
-  await loadDocuments()
+  await Promise.all([loadDocuments(), loadIndexState()])
 }
 
 const removeDocument = async row => {
   await ElMessageBox.confirm(`确认删除“${row.title}”及全部检索分段？`, '删除文档', { type: 'warning' })
   await deleteKnowledgeDocument(row.id)
   ElMessage.success('文档已删除')
-  await loadDocuments()
+  await Promise.all([loadDocuments(), loadIndexState()])
 }
 
 const rebuildDocument = async row => {
   await rebuildKnowledgeDocument(row.id)
-  ElMessage.success('文档分段索引已重建')
+  ElMessage.success('文档分段已重建，向量索引任务已提交')
   await loadDocuments()
+  await loadIndexState()
+}
+
+const rebuildAll = async () => {
+  await rebuildKnowledgeBaseIndex(activeBaseId.value)
+  ElMessage.success('知识库异步重建任务已提交')
+  await Promise.all([loadDocuments(), loadIndexState()])
+}
+
+const retryIndexTask = async row => {
+  await retryKnowledgeIndexTask(row.id)
+  ElMessage.success('索引任务已重新进入队列')
+  await loadIndexState()
 }
 
 const search = async () => {
@@ -225,7 +269,7 @@ onMounted(async () => {
             :key="item.id"
             class="base-item"
             :class="{ active: activeBaseId === item.id }"
-            @click="activeBaseId = item.id; documentPage = 1; loadDocuments()"
+            @click="activeBaseId = item.id; documentPage = 1; indexTaskPage = 1; loadDocuments(); loadIndexState()"
           >
             <strong>{{ item.baseName }}</strong>
             <small>{{ item.baseCode }}</small>
@@ -247,6 +291,10 @@ onMounted(async () => {
             <div class="card-header">
               <span>{{ activeBase.baseName }}</span>
               <div>
+                <el-tag :type="indexConsistency?.consistent ? 'success' : 'warning'">
+                  {{ indexConsistency?.indexStatus || activeBase.indexStatus || 'NOT_INDEXED' }}
+                </el-tag>
+                <el-button @click="rebuildAll">重建全部索引</el-button>
                 <el-button @click="openEditBase">编辑</el-button>
                 <el-button type="danger" plain @click="removeBase">删除</el-button>
               </div>
@@ -281,6 +329,44 @@ onMounted(async () => {
                 :total="documentTotal"
                 @size-change="changeDocumentPageSize"
                 @current-change="loadDocuments"
+              />
+            </el-tab-pane>
+
+            <el-tab-pane label="索引治理">
+              <el-descriptions v-if="indexConsistency" :column="3" border class="index-summary">
+                <el-descriptions-item label="关系库分段">{{ indexConsistency.chunkCount }}</el-descriptions-item>
+                <el-descriptions-item label="已向量化">{{ indexConsistency.indexedCount }}</el-descriptions-item>
+                <el-descriptions-item label="一致性">{{ indexConsistency.consistent ? '一致' : '待处理' }}</el-descriptions-item>
+                <el-descriptions-item label="处理中">{{ indexConsistency.pendingCount }}</el-descriptions-item>
+                <el-descriptions-item label="死信">{{ indexConsistency.deadCount }}</el-descriptions-item>
+                <el-descriptions-item label="最近错误">{{ indexConsistency.lastError || '-' }}</el-descriptions-item>
+              </el-descriptions>
+              <el-table :data="indexTasks" border>
+                <el-table-column prop="operation" label="操作" width="90" />
+                <el-table-column prop="documentId" label="文档 ID" min-width="190" show-overflow-tooltip />
+                <el-table-column prop="chunkId" label="分段 ID" min-width="190" show-overflow-tooltip />
+                <el-table-column prop="status" label="状态" width="110" />
+                <el-table-column prop="attemptCount" label="尝试" width="80" />
+                <el-table-column prop="lastError" label="错误" min-width="200" show-overflow-tooltip />
+                <AdaptiveActionColumn label="操作" width="100">
+                  <template #default="scope">
+                    <el-button
+                      v-if="['DEAD', 'RETRY'].includes(scope.row.status)"
+                      link
+                      type="primary"
+                      @click="retryIndexTask(scope.row)"
+                    >重试</el-button>
+                  </template>
+                </AdaptiveActionColumn>
+              </el-table>
+              <el-pagination
+                v-model:current-page="indexTaskPage"
+                v-model:page-size="indexTaskPageSize"
+                :page-sizes="[10, 20, 50]"
+                layout="total, sizes, prev, pager, next"
+                :total="indexTaskTotal"
+                @size-change="changeIndexTaskPageSize"
+                @current-change="loadIndexState"
               />
             </el-tab-pane>
 
@@ -433,6 +519,7 @@ header p, .result p { margin: 0; }
 .answer { white-space: pre-wrap; line-height: 1.8; }
 .citation { margin-bottom: 8px; color: #606266; }
 .result { margin-bottom: 12px; }
+.index-summary { margin-bottom: 14px; }
 .result p { margin: 10px 0; white-space: pre-wrap; line-height: 1.7; }
 .upload-tip { margin-top: 8px; color: #909399; font-size: 12px; line-height: 1.5; }
 .model-tip { margin-top: 4px; color: #909399; font-size: 12px; line-height: 1.5; }

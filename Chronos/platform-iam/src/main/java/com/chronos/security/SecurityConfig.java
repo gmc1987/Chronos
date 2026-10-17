@@ -45,7 +45,11 @@ public class SecurityConfig {
 				.csrf(csrf -> csrf.disable())
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-						.requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+						// Refresh and revoke are authenticated by possession of the refresh token.
+						// Requiring an access token here makes an expired session impossible to renew
+						// and prevents clients from revoking the refresh token during logout.
+						.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/revoke")
+						.permitAll()
 						.requestMatchers(HttpMethod.POST, "/consumer/users/register").permitAll()
 						.requestMatchers(HttpMethod.POST, "/consumer/users/register/sms").permitAll()
 						.requestMatchers(HttpMethod.POST, "/consumer/users/register/oauth").permitAll()

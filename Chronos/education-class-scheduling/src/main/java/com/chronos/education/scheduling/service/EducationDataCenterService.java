@@ -7,8 +7,9 @@ import com.chronos.file.service.ManagedFileService;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,9 @@ public class EducationDataCenterService {
  private final StudentProfileRepository students;
  private final AdministrativeClassRepository classes;
  private final ExamSessionRepository exams;
+ private final TeacherAcademicProfileRepository teachers;
+ private final CourseOfferingRepository offerings;
+ private final ApplicationEventPublisher events;
  private final SchedulingUtilizationProvider schedulingUtilization;
  private final SchedulingConflictProvider schedulingConflicts;
  private final CourseAdjustmentCountProvider courseAdjustments;
@@ -40,11 +44,15 @@ public class EducationDataCenterService {
    ManagedFileService files, StudentProfileRepository students, AdministrativeClassRepository classes,
    ExamSessionRepository exams, DataQualityRuleRepository rules,
    SchedulingUtilizationProvider schedulingUtilization, SchedulingConflictProvider schedulingConflicts,
-   CourseAdjustmentCountProvider courseAdjustments, InvigilationWorkloadProvider invigilationWorkload) {
+   CourseAdjustmentCountProvider courseAdjustments, InvigilationWorkloadProvider invigilationWorkload,
+   TeacherAcademicProfileRepository teachers, CourseOfferingRepository offerings,
+   ApplicationEventPublisher events) {
   this.definitions=definitions; this.snapshots=snapshots; this.reports=reports; this.issues=issues;
   this.rules=rules; this.scopes=scopes; this.files=files; this.students=students; this.classes=classes; this.exams=exams;
   this.schedulingUtilization=schedulingUtilization; this.schedulingConflicts=schedulingConflicts;
   this.courseAdjustments=courseAdjustments; this.invigilationWorkload=invigilationWorkload;
+  this.teachers=teachers; this.offerings=offerings;
+  this.events=events;
  }
  public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
    DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
@@ -52,7 +60,7 @@ public class EducationDataCenterService {
    ExamSessionRepository exams, DataQualityRuleRepository rules) {
   this(definitions,snapshots,reports,issues,scopes,files,students,classes,exams,rules,
     (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty(),
-    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty());
+    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty(), null, null, null);
  }
  public EducationDataCenterService(DataMetricDefinitionRepository definitions, DataDailySnapshotRepository snapshots,
    DataReportTaskRepository reports, DataQualityIssueRepository issues, EducationDataScopeService scopes,
@@ -60,19 +68,14 @@ public class EducationDataCenterService {
    ExamSessionRepository exams) {
   this(definitions, snapshots, reports, issues, scopes, files, students, classes, exams, null,
     (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty(),
-    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty());
+    (date,campus,scope) -> Optional.empty(), (date,campus,scope) -> Optional.empty(), null, null, null);
  }
  public List<DataMetricDefinition> metricDefinitions() { return definitions.findByEnabledTrueOrderByCategoryAscMetricCodeAsc(); }
  public List<DataDailySnapshot> dashboard(String dashboard, LocalDate date, String campusId, Authentication user) {
   assertCampus(campusId,user);
   campusId = normalizedCampus(campusId);
   final String requestedCampus = campusId;
-  Set<String> categories = switch (dashboard) {
-   case "academic" -> Set.of("ACADEMIC");
-   case "scheduling" -> Set.of("SCHEDULING");
-   case "exams" -> Set.of("EXAM");
-   default -> throw new IllegalArgumentException("未知仪表板");
-  };
+  Set<String> categories = categoriesForDashboard(dashboard);
   List<DataDailySnapshot> existing = snapshots.findBySnapshotDateAndCampusIdOrderByMetricCode(date,campusId).stream()
     .filter(s -> definitions.findByMetricCode(s.getMetricCode()).map(d -> categories.contains(d.getCategory())).orElse(false)).toList();
   return existing;
@@ -113,6 +116,32 @@ public class EducationDataCenterService {
       .map(classes::findById)
       .flatMap(Optional::stream)
       .filter(value -> "ACTIVE".equals(value.getStatus()))
+      .count()));
+   }
+   if ("TEACHER_COUNT".equals(code) && teachers != null) {
+    Set<String> visibleTeacherIds = offerings == null ? Set.of() : offerings.findAll().stream()
+      .filter(value -> "ACTIVE".equals(value.getStatus()))
+      .filter(value -> campusId.isBlank() || campusId.equals(value.getCampusId()))
+      .filter(value -> scope.fullAccess()
+        || visibleClassIds(campusId, scope).contains(value.getAdministrativeClassId()))
+      .map(CourseOffering::getTeacherId)
+      .filter(Objects::nonNull)
+      .collect(java.util.stream.Collectors.toSet());
+    return Optional.of(java.math.BigDecimal.valueOf(teachers.findAll().stream()
+      .filter(value -> Boolean.TRUE.equals(value.getEnabled()))
+      .filter(value -> "ACTIVE".equals(value.getEmploymentStatus()))
+      .filter(value -> scope.fullAccess() && campusId.isBlank()
+        || visibleTeacherIds.contains(value.getId())
+        || visibleTeacherIds.contains(value.getEmployeeId()))
+      .count()));
+   }
+   if ("OFFERING_COUNT".equals(code) && offerings != null) {
+    List<String> classIds = visibleClassIds(campusId, scope);
+    return Optional.of(java.math.BigDecimal.valueOf(offerings.findAll().stream()
+      .filter(value -> "ACTIVE".equals(value.getStatus()))
+      .filter(value -> campusId.isBlank() || campusId.equals(value.getCampusId()))
+      .filter(value -> scope.fullAccess()
+        || classIds.contains(value.getAdministrativeClassId()))
       .count()));
    }
    if ("EXAM_SESSION_COUNT".equals(code) && scope.fullAccess() && campusId.isBlank()) {
@@ -161,7 +190,9 @@ public class EducationDataCenterService {
   }
   task.setReportType(type); task.setRequestedDate(date); task.setCampusId(campusId); task.setStatus("PENDING");
   task.setRequestedBy(user.getName()); task.setProgress(0); task.setExpiresAt(LocalDateTime.now().plusDays(7));
-  task = reports.save(task); generateReport(task.getId(), user.getName()); return task;
+  task = reports.save(task);
+  requestReportGeneration(task.getId(), user.getName());
+  return task;
  }
  @Scheduled(cron = "${chronos.education.data-center.snapshot-cron:0 15 1 * * *}")
  public void scheduledDailySnapshot() { takeSnapshot(LocalDate.now().minusDays(1), "", systemAuthentication()); }
@@ -171,23 +202,48 @@ public class EducationDataCenterService {
     || (!task.getRequestedBy().equals(user.getName()) && !isPrivileged(user)))
    throw new org.springframework.security.access.AccessDeniedException("报告不可重试");
   task.setStatus("PENDING"); task.setRetryCount(task.getRetryCount()+1); task.setProgress(0); task.setErrorMessage(null);
-  task=reports.save(task); generateReport(task.getId(),user.getName()); return task;
+  task=reports.save(task);
+  requestReportGeneration(task.getId(),user.getName());
+  return task;
  }
- @Async("scheduleGenerationExecutor")
+
+ private void requestReportGeneration(String taskId, String actor) {
+  if (events == null) {
+   generateReport(taskId, actor);
+   return;
+  }
+  events.publishEvent(new EducationDataReportRequestedEvent(taskId, actor));
+ }
+
+ @Transactional(propagation = Propagation.REQUIRES_NEW)
  public void generateReport(String taskId, String actor) {
   reports.findById(taskId).ifPresent(task -> {
-   try {
-    if (!"PENDING".equals(task.getStatus())) return;
-    task.setStatus("RUNNING"); task.setProgress(10); reports.save(task);
-    List<DataDailySnapshot> rows = snapshots.findBySnapshotDateAndCampusIdOrderByMetricCode(task.getRequestedDate(),task.getCampusId());
-    StringBuilder csv = new StringBuilder("metricCode,value,date,campusId\n");
-    rows.forEach(row -> csv.append(row.getMetricCode()).append(',').append(row.getMetricValue()).append(',')
-      .append(row.getSnapshotDate()).append(',').append(Optional.ofNullable(row.getCampusId()).orElse("")).append('\n'));
-    MultipartFile upload = new BytesFile("data-center-"+task.getReportType()+".csv",csv.toString().getBytes(StandardCharsets.UTF_8));
-    ManagedFileView file = files.upload(upload,"EDUCATION_DATA_REPORT",task.getId(),
-      new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,List.of()));
-    task.setFileId(file.id()); task.setProgress(100); task.setStatus("COMPLETED"); reports.save(task);
-   } catch (Exception e) { task.setStatus("FAILED"); task.setProgress(0); task.setErrorMessage(e.getMessage()); reports.save(task); }
+   if (!"PENDING".equals(task.getStatus())) return;
+   task.setStatus("RUNNING"); task.setProgress(10); reports.save(task);
+   List<DataDailySnapshot> rows = snapshots.findBySnapshotDateAndCampusIdOrderByMetricCode(task.getRequestedDate(),task.getCampusId());
+   Set<String> categories = categoriesForDashboard(task.getReportType());
+   rows = rows.stream()
+     .filter(row -> definitions.findByMetricCode(row.getMetricCode())
+       .map(definition -> categories.contains(definition.getCategory()))
+       .orElse(false))
+     .toList();
+   StringBuilder csv = new StringBuilder("metricCode,value,date,campusId\n");
+   rows.forEach(row -> csv.append(row.getMetricCode()).append(',').append(row.getMetricValue()).append(',')
+     .append(row.getSnapshotDate()).append(',').append(Optional.ofNullable(row.getCampusId()).orElse("")).append('\n'));
+   MultipartFile upload = new BytesFile("data-center-"+task.getReportType()+".csv",csv.toString().getBytes(StandardCharsets.UTF_8));
+   ManagedFileView file = files.upload(upload,"EDUCATION_DATA_REPORT",task.getId(),
+     new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,List.of()));
+   task.setFileId(file.id()); task.setProgress(100); task.setStatus("COMPLETED"); reports.save(task);
+  });
+ }
+
+ @Transactional(propagation = Propagation.REQUIRES_NEW)
+ public void failReport(String taskId, String message) {
+  reports.findById(taskId).ifPresent(task -> {
+   task.setStatus("FAILED");
+   task.setProgress(0);
+   task.setErrorMessage(message == null || message.isBlank() ? "报告生成失败" : message);
+   reports.save(task);
   });
  }
  public List<DataReportTask> reports(Authentication user) {
@@ -287,6 +343,14 @@ public class EducationDataCenterService {
   }
  }
  private static String normalizedCampus(String campusId) { return campusId == null ? "" : campusId.trim(); }
+ private Set<String> categoriesForDashboard(String dashboard) {
+  return switch (dashboard) {
+   case "academic" -> Set.of("ACADEMIC");
+   case "scheduling" -> Set.of("SCHEDULING");
+   case "exams" -> Set.of("EXAM");
+   default -> throw new IllegalArgumentException("未知仪表板");
+  };
+ }
  private boolean isPrivileged(Authentication user) {
   return user.getAuthorities().stream().anyMatch(a -> Set.of("education:data-center:report","education:data-center:quality","ROLE_PLATFORM_ADMIN").contains(a.getAuthority()));
  }

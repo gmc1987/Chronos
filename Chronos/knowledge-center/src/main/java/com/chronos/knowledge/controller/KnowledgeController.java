@@ -21,6 +21,7 @@ import com.chronos.commons.model.PageView;
 import com.chronos.knowledge.model.KnowledgeBase;
 import com.chronos.knowledge.model.KnowledgeDocument;
 import com.chronos.knowledge.service.KnowledgeService;
+import com.chronos.knowledge.service.KnowledgeIndexCoordinator;
 import com.chronos.knowledge.service.KnowledgeService.DocumentCommand;
 import com.chronos.knowledge.service.KnowledgeService.AssistantAnswer;
 import com.chronos.knowledge.service.KnowledgeService.SearchResult;
@@ -29,9 +30,11 @@ import com.chronos.knowledge.service.KnowledgeService.SearchResult;
 @PreAuthorize("@iamAuthorization.any(authentication,'education:ai:knowledge:view','education:ai:knowledge:manage')")
 public class KnowledgeController {
 	private final KnowledgeService service;
+	private final KnowledgeIndexCoordinator indexes;
 
-	public KnowledgeController(KnowledgeService service) {
+	public KnowledgeController(KnowledgeService service, KnowledgeIndexCoordinator indexes) {
 		this.service = service;
+		this.indexes = indexes;
 	}
 
 	@GetMapping("/admin/knowledge-bases")
@@ -119,11 +122,27 @@ public class KnowledgeController {
 
 	@PostMapping("/admin/knowledge-bases/{id}/rebuild-index")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
-	public ResultData<KnowledgeBase> rebuildIndex(@PathVariable String id) {
-		KnowledgeBase base = service.knowledgeBases().stream().filter(item -> id.equals(item.getId())).findFirst()
-				.orElseThrow(() -> new IllegalArgumentException("知识库不存在"));
-		service.documents(id).forEach(document -> service.rebuildDocument(document.getId(), "INDEX_REBUILD"));
-		return ok(base);
+	public ResultData<KnowledgeBase> rebuildIndex(@PathVariable String id, Authentication authentication) {
+		return ok(service.rebuildBaseIndex(id, authentication.getName()));
+	}
+
+	@GetMapping("/admin/knowledge-bases/{id}/index-consistency")
+	public ResultData<KnowledgeIndexCoordinator.IndexConsistency> indexConsistency(@PathVariable String id) {
+		return ok(indexes.consistency(id));
+	}
+
+	@GetMapping("/admin/knowledge-index-tasks")
+	public ResultData<PageView<com.chronos.knowledge.model.KnowledgeIndexTask>> indexTasks(
+			@RequestParam String knowledgeBaseId,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size) {
+		return ok(PageView.from(indexes.tasks(knowledgeBaseId, page, size)));
+	}
+
+	@PostMapping("/admin/knowledge-index-tasks/{id}/retry")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
+	public ResultData<com.chronos.knowledge.model.KnowledgeIndexTask> retryIndexTask(@PathVariable String id) {
+		return ok(indexes.retry(id));
 	}
 
 	@PostMapping("/education/ai/assistant/ask")

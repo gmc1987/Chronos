@@ -18,6 +18,7 @@ import com.chronos.integration.dao.ConnectorRepository;
 import com.chronos.integration.dao.DeadLetterRepository;
 import com.chronos.integration.dao.FieldMappingRepository;
 import com.chronos.integration.dao.SyncItemErrorRepository;
+import com.chronos.integration.dao.SyncCursorRepository;
 import com.chronos.integration.dao.SyncJobRepository;
 import com.chronos.integration.dao.SyncRunRepository;
 import com.chronos.integration.model.Connector;
@@ -42,10 +43,12 @@ public class IntegrationController {
 	private final SyncRunRepository runs;
 	private final SyncItemErrorRepository errors;
 	private final DeadLetterRepository deadLetters;
+	private final SyncCursorRepository cursors;
 
 	public IntegrationController(IntegrationService service, IntegrationExtensionService extension,
 			FieldMappingRepository mappings, ConnectorRepository connectors, SyncJobRepository jobs,
-			SyncRunRepository runs, SyncItemErrorRepository errors, DeadLetterRepository deadLetters) {
+			SyncRunRepository runs, SyncItemErrorRepository errors, DeadLetterRepository deadLetters,
+			SyncCursorRepository cursors) {
 		this.service = service;
 		this.extension = extension;
 		this.mappings = mappings;
@@ -54,6 +57,7 @@ public class IntegrationController {
 		this.runs = runs;
 		this.errors = errors;
 		this.deadLetters = deadLetters;
+		this.cursors = cursors;
 	}
 
 	@GetMapping("/connectors")
@@ -90,8 +94,10 @@ public class IntegrationController {
 
 	@GetMapping("/jobs")
 	@PreAuthorize("@iamAuthorization.has(authentication,'integration:job:view')")
-	public ResultData<List<SyncJob>> jobs() {
-		return ok(jobs.findAll());
+	public ResultData<List<JobView>> jobs() {
+		return ok(jobs.findAll().stream().map(job -> new JobView(job,
+				cursors.findByJobId(job.getId()).map(value -> value.getCursorValue()).orElse(job.getCursorValue())))
+				.toList());
 	}
 
 	@PostMapping("/jobs")
@@ -120,8 +126,9 @@ public class IntegrationController {
 
 	@GetMapping("/runs")
 	@PreAuthorize("@iamAuthorization.has(authentication,'integration:run:view')")
-	public ResultData<List<SyncRun>> allRuns() {
-		return ok(runs.findAll());
+	public ResultData<List<RunView>> allRuns() {
+		return ok(runs.findAll().stream().map(run -> new RunView(run,
+				jobs.findById(run.getJobId()).map(SyncJob::getName).orElse(run.getJobId()))).toList());
 	}
 
 	@GetMapping("/runs/{id}/errors")
@@ -131,7 +138,7 @@ public class IntegrationController {
 	}
 
 	@GetMapping("/runs/{id}/reconciliations")
-	@PreAuthorize("@iamAuthorization.has(authentication,'integration:reconcile:view')")
+	@PreAuthorize("@iamAuthorization.has(authentication,'integration:reconcile')")
 	public ResultData<List<SyncReconciliation>> reconciliations(@PathVariable String id) {
 		return ok(extension.reconciliations(id));
 	}
@@ -146,14 +153,17 @@ public class IntegrationController {
 
 	@GetMapping("/dead-letters")
 	@PreAuthorize("@iamAuthorization.has(authentication,'integration:dead-letter:view')")
-	public ResultData<List<DeadLetter>> deadLetters() {
-		return ok(deadLetters.findByStatus("PENDING"));
+	public ResultData<List<DeadLetterView>> deadLetters() {
+		return ok(deadLetters.findAllByOrderByCreateTimeDesc().stream().map(deadLetter -> {
+			SyncItemError item = errors.findById(deadLetter.getItemErrorId()).orElse(null);
+			return new DeadLetterView(deadLetter, item);
+		}).toList());
 	}
 
 	@PostMapping("/dead-letters/{id}/replay")
 	@PreAuthorize("@iamAuthorization.has(authentication,'integration:dead-letter:replay')")
 	public ResultData<DeadLetter> replay(@PathVariable String id, Principal principal) {
-		return ok(service.replay(id, actor(principal)));
+		return ok(extension.replay(id, actor(principal)));
 	}
 
 	@GetMapping("/connectors/{id}/mappings")
@@ -201,5 +211,37 @@ public class IntegrationController {
 
 	public record ReconcileCommand(String objectType, long sourceCount, long acceptedCount,
 			long rejectedCount, long missingCount) {
+	}
+
+	public record JobView(String id, String name, String connectorId, String cronExpression,
+			String status, String direction, Integer batchSize, String objectType,
+			Integer mappingVersionNo, String requestPath, String cursorValue) {
+		JobView(SyncJob job, String cursorValue) {
+			this(job.getId(), job.getName(), job.getConnectorId(), job.getCronExpression(),
+					job.getStatus(), job.getDirection(), job.getBatchSize(), job.getObjectType(),
+					job.getMappingVersionNo(), job.getRequestPath(), cursorValue);
+		}
+	}
+
+	public record RunView(String id, String jobId, String jobName, String status,
+			int successCount, int failureCount, int attemptCount, String errorMessage,
+			java.time.LocalDateTime startedAt, java.time.LocalDateTime finishedAt) {
+		RunView(SyncRun run, String jobName) {
+			this(run.getId(), run.getJobId(), jobName, run.getStatus(), run.getSuccessCount(),
+					run.getFailureCount(), run.getAttemptCount(), run.getErrorMessage(),
+					run.getStartedAt(), run.getFinishedAt());
+		}
+	}
+
+	public record DeadLetterView(String id, String runId, String itemErrorId, String itemKey,
+			String errorMessage, int attempts, int replayCount, String status, String lastResult,
+			java.time.LocalDateTime createTime) {
+		DeadLetterView(DeadLetter deadLetter, SyncItemError item) {
+			this(deadLetter.getId(), deadLetter.getRunId(), deadLetter.getItemErrorId(),
+					item == null ? null : item.getItemKey(),
+					item == null ? deadLetter.getLastResult() : item.getErrorMessage(),
+					item == null ? 0 : item.getAttemptCount(), deadLetter.getReplayCount(),
+					deadLetter.getStatus(), deadLetter.getLastResult(), deadLetter.getCreateTime());
+		}
 	}
 }

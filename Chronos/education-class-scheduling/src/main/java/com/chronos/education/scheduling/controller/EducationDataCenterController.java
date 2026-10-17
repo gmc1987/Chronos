@@ -3,6 +3,8 @@ package com.chronos.education.scheduling.controller;
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.service.EducationDataCenterService;
+import com.chronos.education.scheduling.service.EducationDataEventOperationsService;
+import com.chronos.service.iService.IAuditLogService;
 import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.Authentication;
@@ -13,7 +15,12 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/admin/education/data-center")
 public class EducationDataCenterController {
  private final EducationDataCenterService service;
- public EducationDataCenterController(EducationDataCenterService service){this.service=service;}
+ private final EducationDataEventOperationsService eventOperations;
+ private final IAuditLogService audit;
+ public EducationDataCenterController(EducationDataCenterService service,
+   EducationDataEventOperationsService eventOperations, IAuditLogService audit){
+  this.service=service; this.eventOperations=eventOperations; this.audit=audit;
+ }
  @GetMapping("/metrics") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:view','education:data-center:report')") public ResultData<?> metrics(){return ok(service.metricDefinitions());}
  @GetMapping("/dashboards/{dashboard}") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:view')") public ResultData<?> dashboard(@PathVariable String dashboard,@RequestParam LocalDate date,@RequestParam(required=false) String campusId,Authentication user){return ok(service.dashboard(dashboard,date,campusId,user));}
  @PostMapping("/snapshots") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:snapshot')") public ResultData<?> snapshot(@RequestParam LocalDate date,@RequestParam(required=false) String campusId,Authentication user){return ok(service.takeSnapshot(date,campusId,user));}
@@ -27,6 +34,11 @@ public class EducationDataCenterController {
     .contentType(org.springframework.http.MediaType.parseMediaType(content.contentType())).body(content.content());
  }
  @PostMapping("/reports/{id}/retry") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:report')") public ResultData<?> retry(@PathVariable String id,Authentication user){return ok(service.retryReport(id,user));}
+ @GetMapping("/events/reconciliation") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:view')") public ResultData<?> reconciliation(){return ok(eventOperations.reconciliation());}
+ @GetMapping("/events/failures") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:view')") public ResultData<?> eventFailures(){return ok(eventOperations.failures());}
+ @PostMapping("/events/{channel}/{id}/retry") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:quality','education:domain-event:manage')") public ResultData<?> retryEvent(@PathVariable String channel,@PathVariable String id,Authentication user){
+  eventOperations.retry(channel,id); audit.log(user.getName(),"EDU_DATA_EVENT_RETRY","channel="+channel+",id="+id); return ok(null);
+ }
  @GetMapping("/quality-issues") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:view','education:data-center:quality')") public ResultData<?> issues(@RequestParam(required=false) String status,Authentication user){return ok(service.issues(status,user));}
  @PostMapping("/quality-issues/scan") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:quality')") public ResultData<?> scan(@RequestParam LocalDate date,@RequestParam(required=false) String campusId,Authentication user){return ok(service.scanQuality(date,campusId,user));}
  @PostMapping("/quality-issues") @PreAuthorize("@iamAuthorization.any(authentication,'education:data-center:quality')") public ResultData<?> createIssue(@RequestBody DataQualityIssue issue,Authentication user){return ok(service.createIssue(issue,user));}

@@ -110,6 +110,26 @@ class EducationDomainEventConsumerTest {
 		verify(consumptions).save(any(DataEventConsumption.class));
 	}
 
+	@Test
+	void deadConsumptionCanBeRequeuedForContractValidation() {
+		DataEventConsumptionRepository consumptions = mock(DataEventConsumptionRepository.class);
+		DataEventConsumption dead = new DataEventConsumption();
+		dead.setId("consumption-1");
+		dead.setStatus("DEAD");
+		dead.setAttempts(3);
+		dead.setLastError("contract mismatch");
+		when(consumptions.findByIdForUpdate("consumption-1")).thenReturn(Optional.of(dead));
+		when(consumptions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		DataEventConsumption retried = processor(consumptions, 3).retry("consumption-1");
+
+		assertThat(retried.getStatus()).isEqualTo("PENDING");
+		assertThat(retried.getAttempts()).isZero();
+		assertThat(retried.getLastError()).isNull();
+		assertThat(retried.getNextAttemptAt()).isNotNull();
+		verify(consumptions).save(dead);
+	}
+
 	private EducationDomainEventConsumptionProcessor processor(
 			DataEventConsumptionRepository consumptions, int maxAttempts) {
 		return new EducationDomainEventConsumptionProcessor(consumptions, mapper(), maxAttempts);

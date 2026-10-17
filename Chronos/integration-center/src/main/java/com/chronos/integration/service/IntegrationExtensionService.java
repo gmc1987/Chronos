@@ -8,20 +8,25 @@ import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chronos.integration.dao.ConnectorRepository;
 import com.chronos.integration.dao.CredentialRepository;
+import com.chronos.integration.dao.DeadLetterRepository;
 import com.chronos.integration.dao.FieldMappingRepository;
+import com.chronos.integration.dao.SyncItemErrorRepository;
 import com.chronos.integration.dao.SyncCursorRepository;
 import com.chronos.integration.dao.SyncJobRepository;
 import com.chronos.integration.dao.SyncReconciliationRepository;
 import com.chronos.integration.dao.SyncRunRepository;
 import com.chronos.integration.model.Connector;
+import com.chronos.integration.model.DeadLetter;
 import com.chronos.integration.model.FieldMapping;
 import com.chronos.integration.model.SyncCursor;
 import com.chronos.integration.model.SyncJob;
+import com.chronos.integration.model.SyncItemError;
 import com.chronos.integration.model.SyncReconciliation;
 import com.chronos.integration.model.SyncRun;
 import com.chronos.integration.security.PlatformSecretCipher;
@@ -45,12 +50,17 @@ public class IntegrationExtensionService {
 	private final HttpJsonProvider provider;
 	private final ObjectMapper objectMapper;
 	private final IAuditLogService audit;
+	private final SyncItemErrorRepository errors;
+	private final DeadLetterRepository deadLetters;
+	private final TrustedSimulationProvider simulation;
 
+	@Autowired
 	public IntegrationExtensionService(ConnectorRepository connectors, SyncJobRepository jobs,
 			SyncRunRepository runs, FieldMappingRepository mappings, SyncCursorRepository cursors,
 			SyncReconciliationRepository reconciliations, CredentialRepository credentials,
 			PlatformSecretCipher cipher, HttpJsonProvider provider, ObjectMapper objectMapper,
-			IAuditLogService audit) {
+			IAuditLogService audit, SyncItemErrorRepository errors,
+			DeadLetterRepository deadLetters, TrustedSimulationProvider simulation) {
 		this.connectors = connectors;
 		this.jobs = jobs;
 		this.runs = runs;
@@ -62,6 +72,19 @@ public class IntegrationExtensionService {
 		this.provider = provider;
 		this.objectMapper = objectMapper;
 		this.audit = audit;
+		this.errors = errors;
+		this.deadLetters = deadLetters;
+		this.simulation = simulation;
+	}
+
+	/** Compatibility constructor for focused unit tests. */
+	public IntegrationExtensionService(ConnectorRepository connectors, SyncJobRepository jobs,
+			SyncRunRepository runs, FieldMappingRepository mappings, SyncCursorRepository cursors,
+			SyncReconciliationRepository reconciliations, CredentialRepository credentials,
+			PlatformSecretCipher cipher, HttpJsonProvider provider, ObjectMapper objectMapper,
+			IAuditLogService audit) {
+		this(connectors, jobs, runs, mappings, cursors, reconciliations, credentials,
+				cipher, provider, objectMapper, audit, null, null, null);
 	}
 
 	@Transactional
@@ -93,12 +116,10 @@ public class IntegrationExtensionService {
 		SyncJob job = findJob(jobId);
 		Connector connector = findConnector(job.getConnectorId());
 		MappingSet mappingSet = mappingSet(connector, job);
-		provider.validateConfig(requiredConfig(connector));
-		provider.validateEndpoint(connector.getBaseUrl(), connector.getAllowedHost());
+		validateProvider(connector);
 
 		String cursorBefore = currentCursor(job);
-		HttpJsonProvider.ProviderPage page = provider.fetchPagePage(connector.getBaseUrl(), job.getRequestPath(),
-				cursorBefore, batchSize(job), idempotencyKey(job, "dry-run"), credentials(connector.getId()));
+		HttpJsonProvider.ProviderPage page = fetchPage(connector, job, cursorBefore, "dry-run");
 		MappedBatch mapped = mapBatch(page.records(), mappingSet.mappings());
 		return new DryRunResult(job.getId(), connector.getId(), mappingSet.objectType(),
 				mappingSet.versionNo(), cursorBefore, page.nextCursor(), mapped.fetched(),
@@ -111,24 +132,26 @@ public class IntegrationExtensionService {
 	 * item maps successfully and the run has been marked successful.
 	 */
 	public SyncRun executeBatch(String jobId, String actor) {
+		return executeBatch(jobId, actor, true);
+	}
+
+	private SyncRun executeBatch(String jobId, String actor, boolean createFailureRecords) {
 		SyncJob job = findJob(jobId);
 		Connector connector = findConnector(job.getConnectorId());
 		MappingSet mappingSet = mappingSet(connector, job);
-		provider.validateConfig(requiredConfig(connector));
-		provider.validateEndpoint(connector.getBaseUrl(), connector.getAllowedHost());
+		validateProvider(connector);
 
 		SyncRun run = new SyncRun();
 		run.setJobId(jobId);
 		run.setStartedAt(LocalDateTime.now());
 		try {
 			String cursorBefore = currentCursor(job);
-			HttpJsonProvider.ProviderPage page = provider.fetchPagePage(connector.getBaseUrl(), job.getRequestPath(),
-					cursorBefore, batchSize(job), idempotencyKey(job, "run"), credentials(connector.getId()));
+			HttpJsonProvider.ProviderPage page = fetchPage(connector, job, cursorBefore, "run");
 			MappedBatch mapped = mapBatch(page.records(), mappingSet.mappings());
 			run.setAttemptCount(1);
 			run.setSuccessCount(mapped.mapped().size());
 			run.setFailureCount(mapped.requiredFailures().size());
-			if (!mapped.requiredFailures().isEmpty()) {
+			if (createFailureRecords && !mapped.requiredFailures().isEmpty()) {
 				run.setStatus("FAILED");
 				run.setErrorMessage("required mapping validation failed");
 			} else {
@@ -142,12 +165,22 @@ public class IntegrationExtensionService {
 			if ("SUCCEEDED".equals(saved.getStatus()) && !blank(page.nextCursor())) {
 				advanceCursor(jobId, page.nextCursor(), actor);
 			}
+			if (!mapped.requiredFailures().isEmpty()) {
+				for (RequiredFailure failure : mapped.requiredFailures()) {
+					createDeadLetter(saved, failure.sourceKey(), failure.message());
+				}
+			}
 			return saved;
 		} catch (RuntimeException failure) {
+			run.setAttemptCount(1);
+			run.setFailureCount(1);
 			run.setStatus("FAILED");
 			run.setErrorMessage(IntegrationService.safeMessage(failure));
 			run.setFinishedAt(LocalDateTime.now());
 			SyncRun saved = runs.save(run);
+			if (createFailureRecords) {
+				createDeadLetter(saved, job.getRequestPath(), IntegrationService.safeMessage(failure));
+			}
 			return saved == null ? run : saved;
 		}
 	}
@@ -169,7 +202,7 @@ public class IntegrationExtensionService {
 		reconciliation.setAcceptedCount(acceptedCount);
 		reconciliation.setRejectedCount(rejectedCount);
 		reconciliation.setMissingCount(missingCount);
-		reconciliation.setStatus(missingCount == 0 ? "COMPLETED" : "MISMATCH");
+		reconciliation.setStatus(missingCount == 0 ? "COMPLETED" : "FAILED");
 		SyncReconciliation saved = reconciliations.save(reconciliation);
 		audit.log(actor, "INTEGRATION_RECONCILIATION", runId);
 		return saved;
@@ -177,6 +210,41 @@ public class IntegrationExtensionService {
 
 	public List<SyncReconciliation> reconciliations(String runId) {
 		return reconciliations.findByRunIdOrderByCreateTimeDesc(runId);
+	}
+
+	@Transactional
+	public DeadLetter replay(String id, String actor) {
+		if (deadLetters == null || errors == null) {
+			throw new IllegalStateException("死信存储未配置");
+		}
+		DeadLetter deadLetter = deadLetters.findById(id)
+				.orElseThrow(() -> new IntegrationBoundaryException("DEAD_LETTER_NOT_FOUND", "死信不存在"));
+		if (!"PENDING".equals(deadLetter.getStatus())) {
+			throw new IntegrationBoundaryException("DEAD_LETTER_NOT_PENDING", "只有待处理死信可以重放");
+		}
+		SyncRun original = runs.findById(deadLetter.getRunId())
+				.orElseThrow(() -> new IntegrationBoundaryException("RUN_NOT_FOUND", "原运行记录不存在"));
+		deadLetter.setReplayCount(deadLetter.getReplayCount() + 1);
+		deadLetter.setStatus("REPLAYING");
+		deadLetter.setLastResult("manual replay started");
+		deadLetters.save(deadLetter);
+		audit.log(actor, "INTEGRATION_DEAD_LETTER_REPLAY_STARTED", id);
+		SyncRun replay = executeBatch(original.getJobId(), actor, false);
+		if ("SUCCEEDED".equals(replay.getStatus())) {
+			deadLetter.setStatus("REPLAYED");
+			deadLetter.setReplayedAt(LocalDateTime.now());
+			deadLetter.setLastResult("SUCCEEDED");
+			errors.findById(deadLetter.getItemErrorId()).ifPresent(item -> {
+				item.setStatus("RESOLVED");
+				errors.save(item);
+			});
+		} else {
+			deadLetter.setStatus("PENDING");
+			deadLetter.setLastResult(Objects.toString(replay.getErrorMessage(), "FAILED"));
+		}
+		DeadLetter saved = deadLetters.save(deadLetter);
+		audit.log(actor, "INTEGRATION_DEAD_LETTER_REPLAY", id);
+		return saved;
 	}
 
 	@Transactional
@@ -249,6 +317,46 @@ public class IntegrationExtensionService {
 	private Connector findConnector(String connectorId) {
 		return connectors.findById(connectorId)
 				.orElseThrow(() -> new IntegrationBoundaryException("CONNECTOR_NOT_FOUND", "连接器不存在"));
+	}
+
+	private void validateProvider(Connector connector) {
+		if (TrustedSimulationProvider.PROVIDER_CODE.equalsIgnoreCase(connector.getProviderCode())) {
+			if (simulation == null) {
+				throw new IntegrationBoundaryException("UNSUPPORTED_PROVIDER",
+						"可信仿真 provider 未安装");
+			}
+			simulation.validateConfig(Objects.requireNonNullElse(connector.getConfigJson(), "{}"));
+			return;
+		}
+		provider.validateConfig(requiredConfig(connector));
+		provider.validateEndpoint(connector.getBaseUrl(), connector.getAllowedHost());
+	}
+
+	private HttpJsonProvider.ProviderPage fetchPage(Connector connector, SyncJob job,
+			String cursor, String suffix) {
+		if (TrustedSimulationProvider.PROVIDER_CODE.equalsIgnoreCase(connector.getProviderCode())) {
+			return simulation.fetchPage(connector.getConfigJson(), cursor, batchSize(job));
+		}
+		return provider.fetchPagePage(connector.getBaseUrl(), job.getRequestPath(), cursor,
+				batchSize(job), idempotencyKey(job, suffix), credentials(connector.getId()));
+	}
+
+	private void createDeadLetter(SyncRun run, String itemKey, String message) {
+		if (run == null || errors == null || deadLetters == null) {
+			return;
+		}
+		SyncItemError error = new SyncItemError();
+		error.setRunId(run.getId());
+		error.setItemKey(itemKey);
+		error.setErrorMessage(message);
+		error.setAttemptCount(Math.max(1, run.getAttemptCount()));
+		error.setStatus("DEAD_LETTER");
+		SyncItemError savedError = errors.save(error);
+		DeadLetter deadLetter = new DeadLetter();
+		deadLetter.setRunId(run.getId());
+		deadLetter.setItemErrorId(savedError.getId());
+		deadLetter.setLastResult(message);
+		deadLetters.save(deadLetter);
 	}
 
 	private String currentCursor(SyncJob job) {

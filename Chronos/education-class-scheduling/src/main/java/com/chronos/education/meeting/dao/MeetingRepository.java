@@ -21,8 +21,6 @@ public interface MeetingRepository extends JpaRepository<Meeting, String> {
 			String status, LocalDateTime start, LocalDateTime end);
 
 	List<Meeting> findBySeriesIdOrderByStartTimeAsc(String seriesId);
-	@Query("select meeting from Meeting meeting where meeting.seriesId = meeting.id order by meeting.startTime desc")
-	List<Meeting> findSeriesRoots();
 
 	List<Meeting> findBySeriesIdAndStartTimeGreaterThanEqualOrderByStartTimeAsc(
 			String seriesId, LocalDateTime startTime);

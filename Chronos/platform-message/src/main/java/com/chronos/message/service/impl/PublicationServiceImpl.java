@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -433,6 +434,16 @@ public class PublicationServiceImpl implements IPublicationService {
 			fileScanners.forEach(scanner -> scanner.scan(bytes, originalName, contentType));
 			fileStorage.store(storageKey, bytes, contentType);
 
+			if (primaryContent) {
+				// 先撤销旧主正文标记，再保存新附件，避免查询结果包含新附件后把它自身清零。
+				attachments.findByPublicationIdOrderByCreateTimeAsc(publicationId).stream()
+						.filter(item -> Boolean.TRUE.equals(item.getPrimaryContent()))
+						.forEach(item -> {
+							item.setPrimaryContent(false);
+							attachments.save(item);
+						});
+			}
+
 			PublicationAttachment attachment = new PublicationAttachment();
 			attachment.setPublicationId(publicationId);
 			attachment.setOriginalName(originalName);
@@ -444,12 +455,6 @@ public class PublicationServiceImpl implements IPublicationService {
 			attachments.save(attachment);
 
 			if (primaryContent) {
-				attachments.findByPublicationIdOrderByCreateTimeAsc(publicationId).stream()
-						.filter(item -> Boolean.TRUE.equals(item.getPrimaryContent()))
-						.forEach(item -> {
-							item.setPrimaryContent(false);
-							attachments.save(item);
-						});
 				String extracted = extractText(bytes, originalName);
 				publication.setContent(htmlSanitizer.textAsHtml(extracted));
 				publication.setContentType("pdf".equals(extension) ? "PDF" : "WORD");
@@ -485,19 +490,7 @@ public class PublicationServiceImpl implements IPublicationService {
 		Set<String> readUsers = reads.findByPublicationId(id).stream()
 				.map(PublicationRead::getUsername)
 				.collect(java.util.stream.Collectors.toSet());
-		List<String> recipientUsers;
-		if ("SNAPSHOT".equals(value.getAudienceMode())) {
-			recipientUsers = recipients.findByPublicationId(id).stream()
-					.map(PublicationRecipient::getUsername)
-					.toList();
-		} else {
-			List<PublicationAudience> configured = audiences.findByPublicationId(id);
-			recipientUsers = users.findAll().stream()
-					.filter(user -> Integer.valueOf(1).equals(user.getStatus()))
-					.filter(user -> audienceMatches(configured, user))
-					.map(AdminUser::getUsername)
-					.toList();
-		}
+		List<String> recipientUsers = resolveRecipientUsers(value);
 		List<String> unread = recipientUsers.stream()
 				.filter(recipient -> !readUsers.contains(recipient))
 				.sorted()
@@ -513,7 +506,26 @@ public class PublicationServiceImpl implements IPublicationService {
 				Math.round(rate * 100D) / 100D,
 				value.getReadDeadline(),
 				value.getReadDeadline() != null && value.getReadDeadline().isBefore(LocalDateTime.now()),
-				unread);
+				List.of());
+	}
+
+	@Transactional(readOnly = true)
+	public Page<String> unreadUsers(String id, String username, Pageable pageable) {
+		Publication value = required(id);
+		assertManage(username, value);
+		if ("SNAPSHOT".equals(value.getAudienceMode())) {
+			return recipients.findUnreadUsernames(id, pageable);
+		}
+		Set<String> readUsers = reads.findByPublicationId(id).stream()
+				.map(PublicationRead::getUsername)
+				.collect(java.util.stream.Collectors.toSet());
+		List<String> unread = resolveRecipientUsers(value).stream()
+				.filter(recipient -> !readUsers.contains(recipient))
+				.sorted()
+				.toList();
+		int start = Math.min((int) pageable.getOffset(), unread.size());
+		int end = Math.min(start + pageable.getPageSize(), unread.size());
+		return new PageImpl<>(unread.subList(start, end), pageable, unread.size());
 	}
 
 	@Transactional(readOnly = true)
@@ -606,9 +618,16 @@ public class PublicationServiceImpl implements IPublicationService {
 
 	@Transactional
 	public long remindUnread(String id, String username) {
-		PublicationStatistics statistics = statistics(id, username);
+		Publication value = required(id);
+		assertManage(username, value);
+		Set<String> readUsers = reads.findByPublicationId(id).stream()
+				.map(PublicationRead::getUsername)
+				.collect(java.util.stream.Collectors.toSet());
+		List<String> unreadUsers = resolveRecipientUsers(value).stream()
+				.filter(recipient -> !readUsers.contains(recipient))
+				.toList();
 		LocalDateTime now = LocalDateTime.now();
-		statistics.unreadUsers().forEach(recipient -> {
+		unreadUsers.forEach(recipient -> {
 			PublicationDelivery delivery = deliveries
 					.findByPublicationIdAndUsernameAndChannel(id, recipient, "IN_APP")
 					.orElseGet(() -> {
@@ -626,7 +645,21 @@ public class PublicationServiceImpl implements IPublicationService {
 			deliveries.save(delivery);
 		});
 		audit(username, "MESSAGE_PUBLICATION_REMIND_UNREAD", id);
-		return statistics.unreadCount();
+		return unreadUsers.size();
+	}
+
+	private List<String> resolveRecipientUsers(Publication value) {
+		if ("SNAPSHOT".equals(value.getAudienceMode())) {
+			return recipients.findByPublicationId(value.getId()).stream()
+					.map(PublicationRecipient::getUsername)
+					.toList();
+		}
+		List<PublicationAudience> configured = audiences.findByPublicationId(value.getId());
+		return users.findAll().stream()
+				.filter(user -> Integer.valueOf(1).equals(user.getStatus()))
+				.filter(user -> audienceMatches(configured, user))
+				.map(AdminUser::getUsername)
+				.toList();
 	}
 
 	@Transactional(readOnly = true)

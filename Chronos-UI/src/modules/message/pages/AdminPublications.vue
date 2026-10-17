@@ -259,9 +259,18 @@
         <el-descriptions-item label="截止时间">{{ statistics.readDeadline || '未设置' }}</el-descriptions-item>
         <el-descriptions-item label="是否逾期">{{ statistics.deadlinePassed ? '是' : '否' }}</el-descriptions-item>
       </el-descriptions>
-      <el-table :data="statistics?.unreadUsers || []" max-height="320">
+      <el-table :data="unreadRows" max-height="320">
         <el-table-column label="未读用户"><template #default="scope">{{ scope.row }}</template></el-table-column>
       </el-table>
+      <el-pagination
+        v-model:current-page="unreadPage"
+        v-model:page-size="unreadPageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        :total="unreadTotal"
+        @current-change="loadUnreadUsers"
+        @size-change="changeUnreadPageSize"
+      />
       <template #footer>
         <el-button @click="statisticsDialog = false">关闭</el-button>
         <el-button
@@ -306,6 +315,7 @@ import {
   positions,
   publicationDetail,
   publicationStatistics,
+  publicationUnreadUsers,
   publicationVersions,
   publishPublication,
   rejectPublication,
@@ -335,6 +345,11 @@ const saving = ref(false)
 const dialog = ref(false)
 const statisticsDialog = ref(false)
 const statistics = ref(null)
+const statisticsPublicationId = ref('')
+const unreadRows = ref([])
+const unreadPage = ref(1)
+const unreadPageSize = ref(20)
+const unreadTotal = ref(0)
 const versionDialog = ref(false)
 const versionRows = ref([])
 const versionPublicationId = ref('')
@@ -485,7 +500,23 @@ const review = async (row, approved) => {
 const showStatistics = async row => {
   const response = await publicationStatistics(row.id)
   statistics.value = response.data
+  statisticsPublicationId.value = row.id
+  unreadPage.value = 1
+  await loadUnreadUsers()
   statisticsDialog.value = true
+}
+const loadUnreadUsers = async () => {
+  if (!statisticsPublicationId.value) return
+  const response = await publicationUnreadUsers(statisticsPublicationId.value, {
+    page: unreadPage.value - 1,
+    size: unreadPageSize.value,
+  })
+  unreadRows.value = response.data?.content || []
+  unreadTotal.value = response.data?.totalElements || 0
+}
+const changeUnreadPageSize = () => {
+  unreadPage.value = 1
+  loadUnreadUsers()
 }
 const showVersions = async row => {
   const response = await publicationVersions(row.id)

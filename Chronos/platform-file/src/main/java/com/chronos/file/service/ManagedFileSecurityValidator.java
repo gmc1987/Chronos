@@ -27,6 +27,7 @@ public class ManagedFileSecurityValidator {
 			Map.entry("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
 			Map.entry("xls", "application/vnd.ms-excel"),
 			Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+			Map.entry("csv", "text/csv"),
 			Map.entry("txt", "text/plain"),
 			Map.entry("md", "text/markdown"),
 			Map.entry("png", "image/png"),
@@ -49,7 +50,7 @@ public class ManagedFileSecurityValidator {
 		case "jpg", "jpeg" -> requireMagic(content, new byte[] {
 				(byte) 0xFF, (byte) 0xD8, (byte) 0xFF
 		});
-		case "txt", "md" -> validateText(content);
+		case "csv", "txt", "md" -> validateText(content);
 		default -> throw new IllegalArgumentException("不支持的文件类型");
 		}
 		return CONTENT_TYPES.get(extension);

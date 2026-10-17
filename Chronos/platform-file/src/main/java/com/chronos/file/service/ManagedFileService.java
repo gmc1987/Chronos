@@ -26,7 +26,7 @@ public class ManagedFileService {
 	private static final Logger log = LoggerFactory.getLogger(ManagedFileService.class);
 	private static final long MAX_SIZE = 20L * 1024 * 1024;
 	private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-			"pdf", "doc", "docx", "xls", "xlsx", "txt", "md", "png", "jpg", "jpeg");
+			"pdf", "doc", "docx", "xls", "xlsx", "csv", "txt", "md", "png", "jpg", "jpeg");
 
 	private final ManagedFileRepository files;
 	private final ManagedFileStorage storage;

@@ -56,6 +56,25 @@ public class EducationDomainEventConsumptionProcessor {
 		consumptions.save(consumption);
 	}
 
+	/**
+	 * Requeues a terminal consumption while keeping its original payload and audit row.
+	 * The scheduled consumer will revalidate the contract before marking it processed.
+	 */
+	@Transactional
+	public DataEventConsumption retry(String id) {
+		DataEventConsumption consumption = consumptions.findByIdForUpdate(id)
+				.orElseThrow(() -> new IllegalArgumentException("事件消费记录不存在"));
+		if (!"DEAD".equals(consumption.getStatus())) {
+			throw new IllegalStateException("只有消费死信可以重试");
+		}
+		consumption.setStatus("PENDING");
+		consumption.setAttempts(0);
+		consumption.setNextAttemptAt(LocalDateTime.now());
+		consumption.setProcessedAt(null);
+		consumption.setLastError(null);
+		return consumptions.save(consumption);
+	}
+
 	private void validate(DomainEventOutbox source) throws Exception {
 		HomeNoticePublishedV1 event = json.readValue(source.getPayloadJson(), HomeNoticePublishedV1.class);
 		if (!HOME_NOTICE_PUBLISHED.equals(event.eventType())

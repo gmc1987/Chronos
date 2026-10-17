@@ -5,7 +5,14 @@ android {
     namespace 'com.gmc1987.chronos.mobile'
     compileSdk 35
     buildFeatures { buildConfig true }
-    defaultConfig { applicationId 'com.gmc1987.chronos.mobile'; minSdk 26; targetSdk 35; versionCode 1; versionName '0.1.0'; buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl}\"" }
+    defaultConfig {
+        applicationId 'com.gmc1987.chronos.mobile';
+        minSdk 26;
+        targetSdk 35;
+        versionCode 1;
+        versionName '0.1.0';
+        buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl}\""
+    }
 }
 
 dependencies {

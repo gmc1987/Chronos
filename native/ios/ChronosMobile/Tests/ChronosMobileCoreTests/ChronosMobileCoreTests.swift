@@ -64,6 +64,43 @@ final class ChronosMobileCoreTests: XCTestCase {
         XCTAssertEqual(calendar.occurrences.first?.effectivePeriodNo, 1)
     }
 
+    func testBootstrapScheduleSummaryAllowsMissingOfferingId() throws {
+        let payload = """
+        {
+          "user": {
+            "username": "student",
+            "roles": ["PORTAL_USER"],
+            "permissions": []
+          },
+          "applications": [],
+          "widgets": [],
+          "contributions": {
+            "DATA": {
+              "available": true,
+              "data": {
+                "profileTypes": ["STUDENT"],
+                "mySchedule": [{
+                  "id": "entry-1",
+                  "courseName": "高一数学",
+                  "teachingClassName": "高一一班",
+                  "classroomName": "教学楼 A-101",
+                  "dayOfWeek": 2,
+                  "periodNo": 1,
+                  "durationPeriods": 1,
+                  "status": "SCHEDULED"
+                }]
+              }
+            }
+          }
+        }
+        """
+
+        let bootstrap = try JSONDecoder().decode(PortalBootstrap.self, from: Data(payload.utf8))
+
+        XCTAssertEqual(bootstrap.contributions["DATA"]?.data?.mySchedule?.first?.courseName, "高一数学")
+        XCTAssertNil(bootstrap.contributions["DATA"]?.data?.mySchedule?.first?.offeringId)
+    }
+
     private func decodeBootstrap(
         roles: [String],
         permissions: [String],

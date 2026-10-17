@@ -13,15 +13,17 @@ import org.json.JSONObject;
 final class ApiClient {
     private final String base;
     private final SharedPreferences preferences;
+    private final SecureTokenStore tokenStore;
     private String accessToken;
     private String refreshToken;
 
     ApiClient(String base, SharedPreferences preferences) {
         this.base = base.replaceAll("/$", "");
         this.preferences = preferences;
+        this.tokenStore = new SecureTokenStore(preferences);
         if (preferences.getBoolean("remember", false)) {
-            accessToken = preferences.getString("access_token", null);
-            refreshToken = preferences.getString("refresh_token", null);
+            accessToken = tokenStore.get("access_token");
+            refreshToken = tokenStore.get("refresh_token");
         }
     }
 
@@ -35,14 +37,13 @@ final class ApiClient {
         accessToken = token(response, "accessToken");
         refreshToken = token(response, "refreshToken");
         if (!hasSession()) throw new IOException("服务端未返回访问令牌");
-        SharedPreferences.Editor editor = preferences.edit().putBoolean("remember", remember);
+        preferences.edit().putBoolean("remember", remember).apply();
         if (remember) {
-            editor.putString("access_token", accessToken);
-            if (refreshToken != null) editor.putString("refresh_token", refreshToken);
+            tokenStore.put("access_token", accessToken);
+            tokenStore.put("refresh_token", refreshToken);
         } else {
-            editor.remove("access_token").remove("refresh_token");
+            tokenStore.clear();
         }
-        editor.apply();
         return response;
     }
 
@@ -54,7 +55,7 @@ final class ApiClient {
         try {
             if (refreshToken != null) {
                 request("/auth/revoke", "POST",
-                        new JSONObject().put("refreshToken", refreshToken), true, false);
+                        new JSONObject().put("refreshToken", refreshToken), false, false);
             }
         } catch (Exception ignored) {
             // Local credentials must still be removed when the revoke endpoint is unreachable.
@@ -66,7 +67,8 @@ final class ApiClient {
     void clear() {
         accessToken = null;
         refreshToken = null;
-        preferences.edit().clear().apply();
+        tokenStore.clear();
+        preferences.edit().remove("remember").apply();
     }
 
     private JSONObject request(
@@ -127,10 +129,8 @@ final class ApiClient {
         accessToken = nextAccess;
         if (nextRefresh != null) refreshToken = nextRefresh;
         if (preferences.getBoolean("remember", false)) {
-            preferences.edit()
-                    .putString("access_token", accessToken)
-                    .putString("refresh_token", refreshToken)
-                    .apply();
+            tokenStore.put("access_token", accessToken);
+            tokenStore.put("refresh_token", refreshToken);
         }
     }
 

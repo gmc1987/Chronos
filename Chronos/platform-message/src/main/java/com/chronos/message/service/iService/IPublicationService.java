@@ -58,6 +58,8 @@ public interface IPublicationService {
 
 	PublicationStatistics statistics(String id, String username);
 
+	Page<String> unreadUsers(String id, String username, Pageable pageable);
+
 	List<PublicationVersion> versions(String id, String username);
 
 	PublicationView restoreVersion(String id, Integer versionNo, String username);

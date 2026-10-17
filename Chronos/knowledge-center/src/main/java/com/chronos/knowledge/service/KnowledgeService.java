@@ -45,6 +45,7 @@ public class KnowledgeService {
 	private final IAuditLogService auditLogService;
 	private final EmbeddingService embeddingService;
 	private final MilvusVectorStore vectorStore;
+	private final KnowledgeIndexCoordinator indexCoordinator;
 
 	@Autowired
 	public KnowledgeService(
@@ -55,7 +56,8 @@ public class KnowledgeService {
 			AiModelChatService aiModelChatService,
 			IAuditLogService auditLogService,
 			EmbeddingService embeddingService,
-			MilvusVectorStore vectorStore) {
+			MilvusVectorStore vectorStore,
+			KnowledgeIndexCoordinator indexCoordinator) {
 		this.knowledgeBases = knowledgeBases;
 		this.documents = documents;
 		this.chunks = chunks;
@@ -64,12 +66,13 @@ public class KnowledgeService {
 		this.auditLogService = auditLogService;
 		this.embeddingService = embeddingService;
 		this.vectorStore = vectorStore;
+		this.indexCoordinator = indexCoordinator;
 	}
 
 	public KnowledgeService(KnowledgeBaseRepository knowledgeBases, KnowledgeDocumentRepository documents,
 			KnowledgeChunkRepository chunks, KnowledgeDocumentTextExtractor textExtractor,
 			AiModelChatService aiModelChatService, IAuditLogService auditLogService) {
-		this(knowledgeBases, documents, chunks, textExtractor, aiModelChatService, auditLogService, null, null);
+		this(knowledgeBases, documents, chunks, textExtractor, aiModelChatService, auditLogService, null, null, null);
 	}
 
 	/**
@@ -89,7 +92,7 @@ public class KnowledgeService {
 				chunks,
 				textExtractor,
 				(modelId, message) -> llmService.chat(message),
-				auditLogService, null, null);
+				auditLogService, null, null, null);
 	}
 
 	public List<KnowledgeBase> knowledgeBases() {
@@ -189,8 +192,11 @@ public class KnowledgeService {
 
 	@Transactional
 	public void deleteDocument(String id) {
-		if (!documents.existsById(id)) {
-			throw new IllegalArgumentException("知识文档不存在");
+		KnowledgeDocument document = documents.findLockedById(id)
+				.orElseThrow(() -> new IllegalArgumentException("知识文档不存在"));
+		List<KnowledgeChunk> oldChunks = chunks.findByDocumentIdOrderByChunkIndexAsc(id);
+		if (indexCoordinator != null) {
+			indexCoordinator.enqueueDeletes(document.getKnowledgeBaseId(), id, oldChunks);
 		}
 		chunks.deleteByDocumentId(id);
 		documents.deleteById(id);
@@ -212,6 +218,10 @@ public class KnowledgeService {
 		requireText(document.getContent(), "知识文档没有可重建的文本内容");
 		List<String> segments = split(document.getContent());
 
+		List<KnowledgeChunk> oldChunks = chunks.findByDocumentIdOrderByChunkIndexAsc(id);
+		if (indexCoordinator != null) {
+			indexCoordinator.enqueueDeletes(document.getKnowledgeBaseId(), id, oldChunks);
+		}
 		chunks.deleteByDocumentId(id);
 		chunks.flush();
 		for (int index = 0; index < segments.size(); index++) {
@@ -219,17 +229,31 @@ public class KnowledgeService {
 			chunk.setDocumentId(id);
 			chunk.setChunkIndex(index + 1);
 			chunk.setContent(segments.get(index));
-			chunks.save(chunk);
-			indexChunk(document.getKnowledgeBaseId(), chunk);
+			chunk = chunks.save(chunk);
+			if (indexCoordinator != null) {
+				indexCoordinator.enqueueUpsert(document.getKnowledgeBaseId(), id, chunk);
+			}
 		}
 		document.setChunkCount(segments.size());
-		document.setStatus("READY");
+		document.setStatus(indexCoordinator != null
+				&& indexCoordinator.vectorEnabled(document.getKnowledgeBaseId()) ? "INDEXING" : "READY");
 		document = documents.save(document);
 		auditLogService.log(
 				actor,
 				"EDUCATION_KNOWLEDGE_DOCUMENT_REBUILD",
 				"documentId=" + id + ", chunkCount=" + segments.size());
 		return document;
+	}
+
+	@Transactional
+	public KnowledgeBase rebuildBaseIndex(String id, String actor) {
+		KnowledgeBase base = knowledgeBases.findById(id)
+				.filter(item -> Boolean.TRUE.equals(item.getEnabled()))
+				.orElseThrow(() -> new IllegalArgumentException("知识库不存在或已停用"));
+		for (KnowledgeDocument document : documents.findByKnowledgeBaseIdOrderByCreateTimeDesc(id)) {
+			rebuildDocument(document.getId(), actor);
+		}
+		return knowledgeBases.findById(base.getId()).orElse(base);
 	}
 
 	@Transactional(readOnly = true)
@@ -400,36 +424,20 @@ public class KnowledgeService {
 		document.setOriginalFilename(trimToNull(originalFilename));
 		document.setContent(content.trim());
 		document.setChunkCount(segments.size());
-		document.setStatus("READY");
+		document.setStatus(indexCoordinator != null
+				&& indexCoordinator.vectorEnabled(knowledgeBaseId) ? "INDEXING" : "READY");
 		document = documents.save(document);
 		for (int index = 0; index < segments.size(); index++) {
 			KnowledgeChunk chunk = new KnowledgeChunk();
 			chunk.setDocumentId(document.getId());
 			chunk.setChunkIndex(index + 1);
 			chunk.setContent(segments.get(index));
-			chunks.save(chunk);
-			indexChunk(knowledgeBaseId, chunk);
+			chunk = chunks.save(chunk);
+			if (indexCoordinator != null) {
+				indexCoordinator.enqueueUpsert(knowledgeBaseId, document.getId(), chunk);
+			}
 		}
 		return document;
-	}
-
-	private void indexChunk(String baseId, KnowledgeChunk chunk) {
-		KnowledgeBase base = knowledgeBases.findById(baseId).orElse(null);
-		if (base == null || !"VECTOR".equalsIgnoreCase(base.getRetrievalMode())) return;
-		try {
-			if (embeddingService == null || vectorStore == null || !vectorStore.available()) throw new IllegalStateException("Milvus/Embedding 未配置");
-			vectorStore.upsert(baseId, chunk.getId(), embeddingService.embed(chunk.getContent(), base.getEmbeddingModelId()));
-			chunk.setEmbeddingIndexed(true);
-			chunks.save(chunk);
-			base.setIndexStatus("READY");
-			base.setIndexError(null);
-			knowledgeBases.save(base);
-		} catch (RuntimeException ex) {
-			base.setIndexStatus(Boolean.TRUE.equals(base.getAllowKeywordFallback()) ? "FALLBACK" : "FAILED");
-			base.setIndexError(ex.getMessage());
-			knowledgeBases.save(base);
-			if (!Boolean.TRUE.equals(base.getAllowKeywordFallback())) throw ex;
-		}
 	}
 
 	private List<String> split(String source) {

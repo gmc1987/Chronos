@@ -56,7 +56,7 @@ public class HttpMilvusVectorStore implements MilvusVectorStore {
 		return ids;
 	}
 	@Override public void delete(String base, String chunk) {
-		if (!available()) return;
+		if (!available()) throw new IllegalStateException("Milvus endpoint 未配置");
 		client.post().uri("/v2/vectordb/entities/delete")
 				.body(java.util.Map.of("collectionName", collection(base), "filter", "id == '" + chunk + "'"))
 				.retrieve().toBodilessEntity();

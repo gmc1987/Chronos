@@ -162,6 +162,12 @@ public class AiModelService {
 		if (creating || source.getEmbeddingDefault() != null) {
 			target.setEmbeddingDefault(Boolean.TRUE.equals(source.getEmbeddingDefault()));
 		}
+		if (creating || source.getInputCostPerMillion() != null) {
+			target.setInputCostPerMillion(source.getInputCostPerMillion());
+		}
+		if (creating || source.getOutputCostPerMillion() != null) {
+			target.setOutputCostPerMillion(source.getOutputCostPerMillion());
+		}
 		validateOptions(target);
 		Integer status = source.getStatus() == null ? 1 : source.getStatus();
 		if (status != 0 && status != 1) {

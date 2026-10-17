@@ -1,5 +1,7 @@
 package com.chronos.ai.model;
 
+import java.math.BigDecimal;
+
 import com.chronos.model.pojo.BaseEntity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -130,6 +132,14 @@ public class AiModel extends BaseEntity {
 
 	@Column(name = "embedding_default", nullable = false)
 	private Boolean embeddingDefault = false;
+
+	@DecimalMin("0.0")
+	@Column(name = "input_cost_per_million", precision = 18, scale = 8)
+	private BigDecimal inputCostPerMillion;
+
+	@DecimalMin("0.0")
+	@Column(name = "output_cost_per_million", precision = 18, scale = 8)
+	private BigDecimal outputCostPerMillion;
 
 	@PrePersist
 	void applyRuntimeDefaults() {

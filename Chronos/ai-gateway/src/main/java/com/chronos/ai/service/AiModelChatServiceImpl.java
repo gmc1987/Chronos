@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 	private final DeepSeekChatModelFactory modelFactory;
 	private final SecretEncryptionProvider encryption;
 	private final AiModelTypes modelTypes;
+	private final AiUsageGovernanceService usageGovernance;
 	private final ObjectMapper structuredJson = new ObjectMapper()
 			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private final ConcurrentHashMap<String, CachedModel> cache = new ConcurrentHashMap<>();
@@ -45,11 +48,21 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 			AiModelRepository models,
 			DeepSeekChatModelFactory modelFactory,
 			SecretEncryptionProvider encryption,
-			AiModelTypes modelTypes) {
+			AiModelTypes modelTypes,
+			AiUsageGovernanceService usageGovernance) {
 		this.models = models;
 		this.modelFactory = modelFactory;
 		this.encryption = encryption;
 		this.modelTypes = modelTypes;
+		this.usageGovernance = usageGovernance;
+	}
+
+	public AiModelChatServiceImpl(
+			AiModelRepository models,
+			DeepSeekChatModelFactory modelFactory,
+			SecretEncryptionProvider encryption,
+			AiModelTypes modelTypes) {
+		this(models, modelFactory, encryption, modelTypes, null);
 	}
 
 	@Override
@@ -186,14 +199,37 @@ public class AiModelChatServiceImpl implements AiModelChatService {
 			throw new AiModelConfigurationException(label + "缺少模型 ID");
 		}
 		ChatModel chatModel = cachedModel(model).chatModel();
+		AiUsageGovernanceService.Reservation reservation = usageGovernance == null
+				? null
+				: usageGovernance.begin(model, "CHAT", message);
 		try {
-			return chatModel.call(message);
+			// Keep the plain ChatModel contract for callers that do not enable usage
+			// governance. The Prompt overload is used in production so provider token
+			// metadata can be persisted when it is available.
+			if (usageGovernance == null) {
+				return chatModel.call(message);
+			}
+			ChatResponse response = chatModel.call(new Prompt(message));
+			String output = response == null || response.getResult() == null
+					|| response.getResult().getOutput() == null
+					? ""
+					: response.getResult().getOutput().getText();
+			if (usageGovernance != null) {
+				usageGovernance.complete(reservation, model, response, output);
+			}
+			return output;
 		} catch (NonTransientAiException exception) {
+			if (usageGovernance != null) {
+				usageGovernance.fail(reservation, exception);
+			}
 			if (AiModelNameValidation.isUnsupportedModel(exception)) {
 				throw AiModelNameValidation.unsupportedModel();
 			}
 			throw exception;
 		} catch (RestClientException | WebClientException | IllegalStateException exception) {
+			if (usageGovernance != null) {
+				usageGovernance.fail(reservation, exception);
+			}
 			throw new AiModelInvocationException(label + "调用失败，请稍后重试", exception);
 		}
 	}

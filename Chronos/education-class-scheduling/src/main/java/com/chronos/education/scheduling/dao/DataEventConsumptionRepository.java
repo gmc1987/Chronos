@@ -2,6 +2,7 @@ package com.chronos.education.scheduling.dao;
 
 import com.chronos.education.scheduling.model.DataEventConsumption;
 import java.util.Optional;
+import java.util.List;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,12 @@ import org.springframework.data.repository.query.Param;
 
 public interface DataEventConsumptionRepository extends JpaRepository<DataEventConsumption, String> {
 	Optional<DataEventConsumption> findByEventId(String eventId);
+	long countByEventTypeAndStatus(String eventType, String status);
+	List<DataEventConsumption> findTop100ByLastErrorIsNotNullOrderByCreateTimeDesc();
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select consumption from DataEventConsumption consumption where consumption.id = :id")
+	Optional<DataEventConsumption> findByIdForUpdate(@Param("id") String id);
 
 	@Modifying
 	@Query(value = """

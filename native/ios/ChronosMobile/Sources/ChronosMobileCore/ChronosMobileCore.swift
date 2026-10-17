@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 public struct ChronosAPIConfiguration: Sendable {
     public let baseURL: URL
@@ -8,8 +9,8 @@ public struct ChronosAPIConfiguration: Sendable {
     }
 
     public static var fromEnvironment: Self {
-        let raw = ProcessInfo.processInfo.environment["CHRONOS_API_BASE_URL"] ?? "http://192.168.0.104:8080"
-        return Self(baseURL: URL(string: raw) ?? URL(string: "http://192.168.0.104:8080")!)
+        let raw = ProcessInfo.processInfo.environment["CHRONOS_API_BASE_URL"] ?? "http://localhost:8080"
+        return Self(baseURL: URL(string: raw) ?? URL(string: "http://localhost:8080")!)
     }
 }
 
@@ -261,7 +262,9 @@ public struct ScheduleOccurrence: Decodable, Identifiable, Sendable {
 public struct ScheduleEntry: Decodable, Identifiable, Sendable {
     public let id: String
     public let semesterCode: String?
-    public let offeringId: String
+    // Portal bootstrap summaries intentionally omit offeringId; detailed
+    // calendar occurrences include it. One model must decode both contracts.
+    public let offeringId: String?
     public let offeringCode: String?
     public let courseName: String
     public let teachingClassName: String?
@@ -377,16 +380,22 @@ public actor ChronosSession {
     }
 
     public func restorePersisted() -> SessionTokens? {
-        guard let data = UserDefaults.standard.data(forKey: tokenStoreKey),
-              let saved = try? decoder.decode(SessionTokens.self, from: data) else {
-            return nil
+        var data = KeychainTokenStore.load(account: tokenStoreKey)
+        // One-time migration from the earlier UserDefaults implementation.
+        if data == nil, let legacy = UserDefaults.standard.data(forKey: tokenStoreKey) {
+            if KeychainTokenStore.save(legacy, account: tokenStoreKey) {
+                UserDefaults.standard.removeObject(forKey: tokenStoreKey)
+                data = legacy
+            }
         }
+        guard let data, let saved = try? decoder.decode(SessionTokens.self, from: data) else { return nil }
         tokens = saved
         return saved
     }
 
     public func clear() {
         tokens = nil
+        KeychainTokenStore.delete(account: tokenStoreKey)
         UserDefaults.standard.removeObject(forKey: tokenStoreKey)
     }
 
@@ -440,7 +449,7 @@ public actor ChronosSession {
             path: "/auth/revoke",
             method: "POST",
             body: ["refreshToken": refreshToken],
-            authenticated: true,
+            authenticated: false,
             retry: false
         )
         clear()
@@ -520,7 +529,8 @@ public actor ChronosSession {
 
     private func persist(_ tokens: SessionTokens) {
         if let data = try? JSONEncoder().encode(tokens) {
-            UserDefaults.standard.set(data, forKey: tokenStoreKey)
+            _ = KeychainTokenStore.save(data, account: tokenStoreKey)
+            UserDefaults.standard.removeObject(forKey: tokenStoreKey)
         }
     }
 
@@ -534,3 +544,42 @@ public actor ChronosSession {
 }
 
 private struct Empty: Decodable {}
+
+private enum KeychainTokenStore {
+    private static let service = "com.gmc1987.chronos.mobile.session"
+
+    static func load(account: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
+    @discardableResult
+    static func save(_ data: Data, account: String) -> Bool {
+        delete(account: account)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecValueData as String: data,
+        ]
+        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+    }
+
+    static func delete(account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}

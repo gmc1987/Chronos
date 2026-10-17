@@ -43,8 +43,10 @@ public class MeetingRecurrenceService {
 
 	@Transactional(readOnly = true)
 	public List<MeetingView> roots(String username) {
-		return meetings.findSeriesRoots().stream()
-				.filter(meeting -> username.equals(meeting.getOrganizerUsername()))
+		return series.findByOrganizerUsernameOrderByStartAtDesc(username).stream()
+				.map(metadata -> meetings.findBySeriesIdOrderByStartTimeAsc(metadata.getId()))
+				.filter(values -> !values.isEmpty())
+				.map(List::getFirst)
 				.map(meetingCenter::viewForRecurrence)
 				.toList();
 	}
@@ -61,17 +63,13 @@ public class MeetingRecurrenceService {
 		if (occurrences.isEmpty()) {
 			throw new IllegalArgumentException("周期规则没有可创建的会议实例");
 		}
-		Meeting root = null;
+		List<Meeting> created = new ArrayList<>();
 		for (int i = 0; i < occurrences.size(); i++) {
 			MeetingRecurrenceView.Occurrence occurrence = occurrences.get(i);
 			MeetingCommands.Save save = withTimes(
 					command.meeting(), occurrence.startTime(), occurrence.endTime());
 			MeetingView view = meetingCenter.saveMeeting(null, save, username);
 			Meeting meeting = meetings.findById(view.meeting().getId()).orElseThrow();
-			if (root == null) {
-				root = meeting;
-			}
-			meeting.setSeriesId(root.getId());
 			meeting.setOccurrenceKey(occurrence.occurrenceKey());
 			meeting.setExceptionType("NONE");
 			meeting.setRecurrenceFrequency(rule.frequency());
@@ -80,10 +78,9 @@ public class MeetingRecurrenceService {
 			meeting.setRecurrenceDayOfMonth(rule.dayOfMonth());
 			meeting.setRecurrenceUntil(rule.until());
 			meeting.setRecurrenceCount(rule.count());
-			meetings.save(meeting);
+			created.add(meetings.save(meeting));
 		}
 		MeetingSeries metadata = new MeetingSeries();
-		metadata.setId(root.getId());
 		metadata.setOrganizerUsername(username);
 		metadata.setTitle(command.meeting().title().trim());
 		metadata.setRecurrenceRule(rule.frequency()
@@ -95,8 +92,11 @@ public class MeetingRecurrenceService {
 		metadata.setUntilAt(rule.until());
 		metadata.setOccurrenceLimit(rule.count());
 		metadata.setStatus("DRAFT");
-		series.save(metadata);
-		String rootId = root.getId();
+		metadata = series.saveAndFlush(metadata);
+		String seriesId = metadata.getId();
+		created.forEach(meeting -> meeting.setSeriesId(seriesId));
+		meetings.saveAll(created);
+		String rootId = created.getFirst().getId();
 		return meetings.findById(rootId)
 				.map(meetingCenter::viewForRecurrence)
 				.orElseThrow();

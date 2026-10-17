@@ -75,6 +75,52 @@
       />
     </div>
 
+    <el-divider content-position="left">AI 用量与预算治理</el-divider>
+    <div class="usage-summary">
+      <el-card shadow="never"><el-statistic title="今日请求" :value="usageSummary.requestsToday || 0" /></el-card>
+      <el-card shadow="never"><el-statistic title="今日拒绝" :value="usageSummary.rejectedToday || 0" /></el-card>
+      <el-card shadow="never"><el-statistic title="今日 Token" :value="usageSummary.tokensToday || 0" /></el-card>
+      <el-card shadow="never"><el-statistic title="本月费用" :value="Number(usageSummary.costThisMonth || 0)" :precision="4" prefix="¥" /></el-card>
+    </div>
+
+    <div class="section-header">
+      <span>限流与预算策略</span>
+      <el-button v-permission="['ai:model:manage']" type="primary" @click="openPolicy()">新增策略</el-button>
+    </div>
+    <el-table :data="usagePolicies" border>
+      <el-table-column prop="scopeType" label="范围" width="110" />
+      <el-table-column prop="scopeKey" label="范围值" min-width="180" />
+      <el-table-column prop="requestsPerMinute" label="每分钟请求" width="130" />
+      <el-table-column prop="dailyTokenLimit" label="每日 Token" width="140" />
+      <el-table-column prop="monthlyBudget" label="月度预算" width="120" />
+      <el-table-column label="状态" width="90">
+        <template #default="scope">{{ scope.row.enabled ? '启用' : '停用' }}</template>
+      </el-table-column>
+      <AdaptiveActionColumn label="操作" width="72">
+        <template #default="scope">
+          <el-button v-permission="['ai:model:manage']" size="small" @click="openPolicy(scope.row)">编辑</el-button>
+        </template>
+      </AdaptiveActionColumn>
+    </el-table>
+
+    <div class="section-header"><span>调用记录</span><el-button @click="loadUsage">刷新</el-button></div>
+    <el-table :data="usageRecords" border>
+      <el-table-column prop="createTime" label="时间" min-width="170" />
+      <el-table-column prop="username" label="用户" min-width="130" />
+      <el-table-column prop="modelId" label="模型 ID" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="operation" label="类型" width="100" />
+      <el-table-column prop="status" label="结果" width="110" />
+      <el-table-column prop="totalTokens" label="Token" width="100" />
+      <el-table-column label="计量" width="90">
+        <template #default="scope">{{ scope.row.tokenEstimated ? '估算' : '供应商' }}</template>
+      </el-table-column>
+      <el-table-column prop="costAmount" label="费用" width="110" />
+      <el-table-column prop="errorCode" label="错误码" min-width="150" />
+    </el-table>
+    <div class="pager">
+      <el-pagination background layout="total, prev, pager, next" :total="usageTotal" :current-page="usagePage" :page-size="10" @current-change="onUsagePage" />
+    </div>
+
     <el-dialog v-model="showDialog" :title="dialogMode === 'create' ? '新增模型' : '编辑模型'">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="模型名称" prop="modelName">
@@ -124,6 +170,14 @@
         <el-form-item label="Top P" prop="topP">
           <el-input-number v-model="form.topP" :min="0" :max="1" :step="0.1" :precision="2" controls-position="right" />
         </el-form-item>
+        <el-form-item label="输入单价">
+          <el-input-number v-model="form.inputCostPerMillion" :min="0" :precision="6" :step="0.1" controls-position="right" />
+          <span class="form-tip">每百万 Token 费用</span>
+        </el-form-item>
+        <el-form-item label="输出单价">
+          <el-input-number v-model="form.outputCostPerMillion" :min="0" :precision="6" :step="0.1" controls-position="right" />
+          <span class="form-tip">每百万 Token 费用</span>
+        </el-form-item>
         <el-form-item label="Embedding维度" prop="embeddingDimension">
           <el-input-number v-model="form.embeddingDimension" :min="1" :max="32768" :step="1" controls-position="right" />
           <span class="form-tip">仅 EMBEDDING 模型需要填写</span>
@@ -155,6 +209,38 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="showPolicyDialog" :title="policyForm.id ? '编辑用量策略' : '新增用量策略'" width="560px">
+      <el-form :model="policyForm" label-width="120px">
+        <el-form-item label="策略范围" required>
+          <el-select v-model="policyForm.scopeType" style="width: 100%">
+            <el-option label="全平台" value="GLOBAL" />
+            <el-option label="指定模型" value="MODEL" />
+            <el-option label="指定用户" value="USER" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="policyForm.scopeType !== 'GLOBAL'" label="范围值" required>
+          <el-select v-if="policyForm.scopeType === 'MODEL'" v-model="policyForm.scopeKey" filterable style="width: 100%">
+            <el-option v-for="item in models" :key="item.id" :label="item.modelName" :value="item.id" />
+          </el-select>
+          <el-input v-else v-model="policyForm.scopeKey" placeholder="登录用户名" />
+        </el-form-item>
+        <el-form-item label="每分钟请求">
+          <el-input-number v-model="policyForm.requestsPerMinute" :min="1" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="每日 Token">
+          <el-input-number v-model="policyForm.dailyTokenLimit" :min="1" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="月度预算">
+          <el-input-number v-model="policyForm.monthlyBudget" :min="0" :precision="2" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="启用"><el-switch v-model="policyForm.enabled" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showPolicyDialog = false">取消</el-button>
+        <el-button type="primary" @click="savePolicy">保存</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -167,6 +253,11 @@ import {
   createAiModel,
   updateAiModel,
   deleteAiModel,
+  aiUsageSummary,
+  aiUsageRecords,
+  aiUsagePolicies,
+  createAiUsagePolicy,
+  updateAiUsagePolicy,
   dictTree,
 } from '../api'
 
@@ -179,6 +270,13 @@ const provider = ref('')
 const providers = ref([])
 const modelTypes = ref([])
 const modelTypeMap = ref({})
+const usageSummary = ref({})
+const usagePolicies = ref([])
+const usageRecords = ref([])
+const usageTotal = ref(0)
+const usagePage = ref(1)
+const showPolicyDialog = ref(false)
+const policyForm = ref({})
 
 const showDialog = ref(false)
 const dialogMode = ref('create')
@@ -283,10 +381,47 @@ const openCreate = () => {
     topP: null,
     embeddingDimension: null,
     embeddingDefault: false,
+    inputCostPerMillion: null,
+    outputCostPerMillion: null,
     status: 1,
     isDefault: false,
   }
   showDialog.value = true
+}
+
+const loadUsage = async () => {
+  const [summaryRes, policiesRes, recordsRes] = await Promise.all([
+    aiUsageSummary(),
+    aiUsagePolicies(),
+    aiUsageRecords({ page: usagePage.value - 1, size: 10 }),
+  ])
+  usageSummary.value = summaryRes?.data || {}
+  usagePolicies.value = policiesRes?.data || []
+  usageRecords.value = recordsRes?.data?.content || []
+  usageTotal.value = recordsRes?.data?.totalElements || 0
+}
+
+const onUsagePage = (value) => {
+  usagePage.value = value
+  loadUsage()
+}
+
+const openPolicy = (row = null) => {
+  policyForm.value = row ? { ...row } : {
+    scopeType: 'GLOBAL', scopeKey: '*', requestsPerMinute: null,
+    dailyTokenLimit: null, monthlyBudget: null, enabled: true,
+  }
+  showPolicyDialog.value = true
+}
+
+const savePolicy = async () => {
+  const payload = { ...policyForm.value }
+  if (payload.scopeType === 'GLOBAL') payload.scopeKey = '*'
+  if (payload.id) await updateAiUsagePolicy(payload.id, payload)
+  else await createAiUsagePolicy(payload)
+  showPolicyDialog.value = false
+  ElMessage.success('用量策略已保存')
+  await loadUsage()
 }
 
 const openEdit = async (row) => {
@@ -382,6 +517,7 @@ const toggleDefault = async (row, isDefault) => {
 
 loadDicts().catch(() => {})
 load()
+loadUsage()
 </script>
 
 <style scoped>
@@ -402,6 +538,19 @@ load()
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+.usage-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 18px 0 10px;
+  font-weight: 600;
 }
 :deep(.dark-dialog .el-dialog__header),
 :deep(.dark-dialog .el-dialog__body),

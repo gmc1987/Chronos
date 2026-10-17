@@ -66,6 +66,19 @@ public class PublicationController {
 		return ok(service.statistics(id, principal.getName()));
 	}
 
+	@GetMapping("/admin/publications/{id}/statistics/unread-users")
+	@PreAuthorize("@iamAuthorization.any(authentication,'message:publication:statistics','message:publication:manage')")
+	public ResultData<PageView<String>> unreadUsers(
+			@PathVariable String id,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size,
+			Principal principal) {
+		return ok(PageView.from(service.unreadUsers(
+				id,
+				principal.getName(),
+				PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)))));
+	}
+
 	@GetMapping("/admin/publications/{id}/versions")
 	@PreAuthorize("@iamAuthorization.any(authentication,'message:publication:view','message:publication:manage')")
 	public ResultData<List<PublicationVersion>> versions(@PathVariable String id, Principal principal) {

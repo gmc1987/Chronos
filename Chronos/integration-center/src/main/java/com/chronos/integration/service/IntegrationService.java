@@ -27,14 +27,15 @@ public class IntegrationService {
  private final ConnectorRepository connectors; private final SyncJobRepository jobs; private final SyncRunRepository runs;
  private final SyncItemErrorRepository errors; private final DeadLetterRepository deadLetters; private final CredentialRepository credentials; private final PlatformSecretCipher cipher; private final IAuditLogService audit;
  private final WebClient client; private final ObjectMapper json; private final IntegrationNetworkPolicy networkPolicy;
+ private final TrustedSimulationProvider simulation;
  @org.springframework.beans.factory.annotation.Autowired
  public IntegrationService(ConnectorRepository connectors, SyncJobRepository jobs, SyncRunRepository runs,
    SyncItemErrorRepository errors, DeadLetterRepository deadLetters, CredentialRepository credentials,
    PlatformSecretCipher cipher, IAuditLogService audit, WebClient.Builder builder, ObjectMapper json,
-   IntegrationNetworkPolicy networkPolicy) {
+   IntegrationNetworkPolicy networkPolicy, TrustedSimulationProvider simulation) {
   this.connectors=connectors;this.jobs=jobs;this.runs=runs;this.errors=errors;this.deadLetters=deadLetters;
   this.credentials=credentials;this.cipher=cipher;this.audit=audit;this.client=builder.build();
-  this.json=json;this.networkPolicy=networkPolicy;
+  this.json=json;this.networkPolicy=networkPolicy;this.simulation=simulation;
  }
  private Map<String, String> credentialHeaders(String connectorId) {
   Map<String, String> headers = new java.util.LinkedHashMap<>();
@@ -54,7 +55,7 @@ public class IntegrationService {
    SyncItemErrorRepository errors, DeadLetterRepository deadLetters, CredentialRepository credentials,
    PlatformSecretCipher cipher, IAuditLogService audit, WebClient.Builder builder) {
   this(connectors,jobs,runs,errors,deadLetters,credentials,cipher,audit,builder,new ObjectMapper(),
-    new IntegrationNetworkPolicy(""));
+    new IntegrationNetworkPolicy(""),null);
  }
  @Transactional public Connector saveConnector(Connector connector, String actor) {
   validateConnector(connector);
@@ -82,12 +83,17 @@ public class IntegrationService {
  public Connector test(String id) {
   Connector c=connectors.findById(id).orElseThrow();
   validateConnector(c);
+  if (TrustedSimulationProvider.PROVIDER_CODE.equalsIgnoreCase(c.getProviderCode())) {
+   c.setHealthStatus("HEALTHY");
+   c.setLastCheckedAt(LocalDateTime.now());
+   return connectors.save(c);
+  }
   networkPolicy.validateBaseUrl(c.getBaseUrl(), c.getAllowedHost());
   Map<String, String> headers = credentialHeaders(id);
   client.get().uri(networkPolicy.validateBaseUrl(c.getBaseUrl(), c.getAllowedHost()))
     .headers(target -> headers.forEach(target::set)).retrieve()
     .toBodilessEntity().timeout(Duration.ofMillis(Math.max(1000,c.getTimeoutMs()))).block();
-  return c;
+  c.setHealthStatus("HEALTHY"); c.setLastCheckedAt(LocalDateTime.now()); return connectors.save(c);
  }
  @Transactional public SyncJob saveJob(SyncJob job, String actor) {
   if (!connectors.existsById(job.getConnectorId())) throw new IntegrationBoundaryException("CONNECTOR_NOT_FOUND","connector not found");
@@ -163,11 +169,17 @@ public class IntegrationService {
      "connector type is not supported by an installed provider: "+(type.isBlank()?"<blank>":type));
   }
   connector.setType(type);
-  if (connector.getProviderCode() != null && !"HTTP_JSON".equalsIgnoreCase(connector.getProviderCode().trim())) {
+  String providerCode=connector.getProviderCode()==null?"HTTP_JSON":connector.getProviderCode().trim().toUpperCase(Locale.ROOT);
+  if (!"HTTP_JSON".equals(providerCode) && !TrustedSimulationProvider.PROVIDER_CODE.equals(providerCode)) {
    throw new IntegrationBoundaryException("UNSUPPORTED_PROVIDER", "connector provider is not installed");
   }
-  networkPolicy.validateBaseUrl(connector.getBaseUrl(), connector.getAllowedHost());
-  validateConfig(connector.getConfigJson());
+  connector.setProviderCode(providerCode);
+  if (TrustedSimulationProvider.PROVIDER_CODE.equals(providerCode)) {
+   if (simulation == null) validateConfig(connector.getConfigJson()); else simulation.validateConfig(connector.getConfigJson());
+  } else {
+   networkPolicy.validateBaseUrl(connector.getBaseUrl(), connector.getAllowedHost());
+   validateConfig(connector.getConfigJson());
+  }
   if (connector.getTimeoutMs()==null || connector.getTimeoutMs()<1000 || connector.getTimeoutMs()>120000)
    throw new IntegrationBoundaryException("INVALID_CONNECTOR_CONFIG","timeoutMs must be between 1000 and 120000");
   if (connector.getMaxRetries()==null || connector.getMaxRetries()<0 || connector.getMaxRetries()>10)

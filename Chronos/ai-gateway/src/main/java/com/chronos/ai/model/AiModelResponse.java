@@ -1,6 +1,7 @@
 package com.chronos.ai.model;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
@@ -39,6 +40,8 @@ public class AiModelResponse {
 	private final boolean hasApiKey;
 	private final Integer embeddingDimension;
 	private final Boolean embeddingDefault;
+	private final BigDecimal inputCostPerMillion;
+	private final BigDecimal outputCostPerMillion;
 
 	private AiModelResponse(AiModel model) {
 		this.id = model.getId();
@@ -65,6 +68,8 @@ public class AiModelResponse {
 		this.hasApiKey = model.getApiKeyCiphertext() != null && !model.getApiKeyCiphertext().isBlank();
 		this.embeddingDimension = model.getEmbeddingDimension();
 		this.embeddingDefault = Boolean.TRUE.equals(model.getEmbeddingDefault());
+		this.inputCostPerMillion = model.getInputCostPerMillion();
+		this.outputCostPerMillion = model.getOutputCostPerMillion();
 	}
 
 	public static AiModelResponse from(AiModel model) {

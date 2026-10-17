@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface DataGradeEventFactRepository extends JpaRepository<DataGradeEventFact, String> {
 	boolean existsByEventId(String eventId);
+	long countByEventType(String eventType);
 	List<DataGradeEventFact> findByEventTypeAndAggregateIdAndOfferingId(
 			String eventType, String aggregateId, String offeringId);
 

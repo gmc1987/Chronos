@@ -72,4 +72,25 @@ class PublicationControllerTest {
 		assertThat(page.first()).isTrue();
 		assertThat(page.last()).isTrue();
 	}
+
+	@Test
+	void unreadUsersUsesBoundedPageViewContract() {
+		when(service.unreadUsers(eq("publication-1"), eq("teacher.demo"), any()))
+				.thenReturn(new PageImpl<>(
+						List.of("student-020", "student-021"),
+						PageRequest.of(1, 2),
+						5));
+
+		PageView<String> page = controller
+				.unreadUsers("publication-1", 1, 2, principal)
+				.getData();
+
+		assertThat(page.content()).containsExactly("student-020", "student-021");
+		assertThat(page.totalElements()).isEqualTo(5);
+		assertThat(page.totalPages()).isEqualTo(3);
+		assertThat(page.number()).isEqualTo(1);
+		assertThat(page.size()).isEqualTo(2);
+		assertThat(page.first()).isFalse();
+		assertThat(page.last()).isFalse();
+	}
 }
