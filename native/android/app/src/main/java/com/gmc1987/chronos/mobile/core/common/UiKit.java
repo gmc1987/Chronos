@@ -1,8 +1,12 @@
 package com.gmc1987.chronos.mobile.core.common;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -21,6 +25,9 @@ public final class UiKit {
     public static final int TEXT = Color.rgb(23, 32, 42);
     public static final int MUTED = Color.rgb(113, 128, 138);
     public static final int ERROR = Color.rgb(190, 62, 46);
+    public static final int BORDER = Color.rgb(225, 231, 235);
+    public static final int FIELD = Color.rgb(248, 250, 251);
+    public static final int BRAND_SOFT = Color.rgb(235, 247, 244);
 
     private final Context context;
 
@@ -30,19 +37,25 @@ public final class UiKit {
 
     public LinearLayout page(String title) {
         LinearLayout page = vertical();
-        page.setPadding(dp(16), dp(22), dp(16), dp(24));
-        page.addView(label(title, 24, BRAND_DARK, true));
+        page.setPadding(dp(20), dp(22), dp(20), dp(28));
+        TextView heading = label(title, 26, TEXT, true);
+        heading.setPadding(dp(2), dp(4), dp(2), dp(14));
+        page.addView(heading);
         return page;
     }
 
     public LinearLayout card() {
         LinearLayout card = vertical();
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackgroundResource(android.R.drawable.dialog_holo_light_frame);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.setMargins(0, dp(5), 0, dp(5));
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(surface(18, Color.WHITE, Color.argb(12, 0, 0, 0), 1));
+        int availableWidth = context.getResources().getDisplayMetrics().widthPixels - dp(40);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                Math.min(availableWidth, dp(760)), -2);
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.setMargins(0, dp(7), 0, dp(7));
         card.setLayoutParams(params);
-        card.setElevation(dp(1));
+        card.setElevation(dp(4));
+        card.setClipToOutline(true);
         return card;
     }
 
@@ -62,23 +75,73 @@ public final class UiKit {
         input.setHint(hint);
         input.setTextColor(TEXT);
         input.setHintTextColor(MUTED);
-        input.setMinHeight(dp(52));
+        input.setTextSize(16);
+        input.setSingleLine(true);
+        input.setMinHeight(dp(54));
+        input.setPadding(dp(16), 0, dp(16), 0);
+        StateListDrawable background = new StateListDrawable();
+        background.addState(
+                new int[]{android.R.attr.state_focused},
+                surface(13, FIELD, BRAND, 2));
+        background.addState(new int[]{}, surface(13, FIELD, BORDER, 1));
+        input.setBackground(background);
         if (password) {
             input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(54));
+        params.setMargins(0, dp(6), 0, dp(6));
+        input.setLayoutParams(params);
         return input;
     }
 
     public Button primaryButton(String title) {
         Button button = button(title, Color.WHITE, BRAND, 15);
-        button.setMinHeight(dp(48));
+        button.setMinHeight(dp(54));
+        button.setElevation(dp(4));
         return button;
     }
 
     public Button secondaryButton(String title) {
         Button button = button(title, BRAND, Color.rgb(235, 247, 244), 13);
-        button.setMinHeight(dp(44));
+        button.setMinHeight(dp(42));
         return button;
+    }
+
+    public Button destructiveButton(String title) {
+        Button button = button(title, ERROR, Color.rgb(253, 241, 239), 15);
+        button.setMinHeight(dp(52));
+        return button;
+    }
+
+    public Button tabButton(String title, boolean selected) {
+        Button button = button(
+                title,
+                selected ? BRAND : MUTED,
+                selected ? BRAND_SOFT : Color.TRANSPARENT,
+                12);
+        button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        button.setMinHeight(dp(46));
+        button.setElevation(0);
+        return button;
+    }
+
+    public TextView badge(String text, int size) {
+        TextView badge = label(text, Math.max(18, size / 2), Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setPadding(0, 0, 0, 0);
+        badge.setBackground(surface(Math.max(11, size / 4), BRAND, 0, 0));
+        badge.setElevation(dp(3));
+        badge.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+        return badge;
+    }
+
+    public View divider() {
+        View divider = new View(context);
+        divider.setBackgroundColor(Color.rgb(238, 242, 244));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(1));
+        params.setMargins(0, dp(8), 0, dp(8));
+        divider.setLayoutParams(params);
+        return divider;
     }
 
     public View empty(String text) {
@@ -139,13 +202,26 @@ public final class UiKit {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    public GradientDrawable surface(int radius, int fill, int strokeColor, int strokeWidth) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(radius));
+        if (strokeWidth > 0) drawable.setStroke(dp(strokeWidth), strokeColor);
+        return drawable;
+    }
+
     private Button button(String title, int textColor, int background, int size) {
         Button button = new Button(context);
         button.setText(title);
         button.setTextColor(textColor);
         button.setTextSize(size);
         button.setAllCaps(false);
-        button.setBackgroundColor(background);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(dp(14), 0, dp(14), 0);
+        GradientDrawable content = surface(13, background, 0, 0);
+        button.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(Color.argb(30, 8, 123, 104)), content, null));
         return button;
     }
 }

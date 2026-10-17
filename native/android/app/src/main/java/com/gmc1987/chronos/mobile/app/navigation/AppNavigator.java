@@ -41,6 +41,7 @@ public final class AppNavigator implements ScreenHost {
     private final Runnable loggedOut;
     private FrameLayout content;
     private LinearLayout tabs;
+    private String selectedTab = "工作台";
 
     public AppNavigator(
             Activity activity,
@@ -79,6 +80,7 @@ public final class AppNavigator implements ScreenHost {
         tabs = ui.horizontal();
         tabs.setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7));
         tabs.setBackgroundColor(Color.WHITE);
+        tabs.setElevation(ui.dp(10));
         shell.addView(tabs);
         activity.setContentView(shell);
         renderTabs();
@@ -92,6 +94,7 @@ public final class AppNavigator implements ScreenHost {
     }
 
     private void renderTabs() {
+        tabs.removeAllViews();
         addTab("工作台", this::showWorkbench);
         if (portal.workspace() == PortalState.Workspace.STUDENT) {
             addTab("成绩", this::showGrades);
@@ -105,14 +108,12 @@ public final class AppNavigator implements ScreenHost {
     }
 
     private void addTab(String title, Runnable action) {
-        Button button = new Button(activity);
-        button.setText(title);
-        button.setTextSize(12);
-        button.setTextColor(UiKit.BRAND_DARK);
-        button.setAllCaps(false);
-        button.setBackgroundColor(Color.TRANSPARENT);
-        button.setMinHeight(ui.dp(48));
-        button.setOnClickListener(view -> action.run());
+        Button button = ui.tabButton(title, title.equals(selectedTab));
+        button.setOnClickListener(view -> {
+            selectedTab = title;
+            renderTabs();
+            action.run();
+        });
         tabs.addView(button, new LinearLayout.LayoutParams(0, ui.dp(52), 1));
     }
 

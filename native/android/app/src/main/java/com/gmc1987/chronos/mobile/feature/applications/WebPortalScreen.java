@@ -48,7 +48,9 @@ public final class WebPortalScreen {
         LinearLayout page = ui.vertical();
         page.setBackgroundColor(Color.WHITE);
         LinearLayout bar = ui.horizontal();
-        bar.setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6));
+        bar.setPadding(ui.dp(12), ui.dp(8), ui.dp(14), ui.dp(8));
+        bar.setBackgroundColor(Color.WHITE);
+        bar.setElevation(ui.dp(5));
         Button backButton = ui.secondaryButton("返回应用中心");
         backButton.setOnClickListener(view -> back.run());
         bar.addView(backButton);

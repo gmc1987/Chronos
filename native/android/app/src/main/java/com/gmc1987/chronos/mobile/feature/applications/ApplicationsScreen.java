@@ -2,6 +2,7 @@ package com.gmc1987.chronos.mobile.feature.applications;
 
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
 import com.gmc1987.chronos.mobile.core.model.PortalState;
@@ -28,13 +29,26 @@ public final class ApplicationsScreen {
         for (int i = 0; i < portal.applications().length(); i++) {
             JSONObject application = portal.applications().optJSONObject(i);
             LinearLayout card = ui.card();
-            card.addView(ui.label(application.optString("name", "应用"), 17, UiKit.TEXT, true));
-            card.addView(ui.label(application.optString("description", "已由服务端授权"),
-                    13, UiKit.MUTED, false));
-            Button open = ui.secondaryButton("打开并办理");
+            LinearLayout row = ui.horizontal();
+            String name = application.optString("name", "应用");
+            if (name.isEmpty()) name = "应用";
+            row.addView(ui.badge(name.substring(0, 1), 42));
+            LinearLayout copy = ui.vertical();
+            copy.setPadding(ui.dp(13), 0, ui.dp(12), 0);
+            copy.addView(ui.label(name, 17, UiKit.TEXT, true));
+            TextView detail = ui.label(
+                    application.optString("description", "服务端授权应用"),
+                    13,
+                    UiKit.MUTED,
+                    false);
+            detail.setMaxLines(2);
+            copy.addView(detail);
+            row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+            Button open = ui.secondaryButton("打开  ›");
             open.setEnabled(!application.optString("routePath", "").isEmpty());
             open.setOnClickListener(view -> routes.open(application));
-            card.addView(open);
+            row.addView(open, new LinearLayout.LayoutParams(ui.dp(86), ui.dp(44)));
+            card.addView(row);
             page.addView(card);
         }
         host.show(ui.scroll(page));

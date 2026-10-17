@@ -48,10 +48,12 @@ public final class ProfileScreen {
         page.addView(card);
         LinearLayout settings = ui.card();
         settings.addView(ui.label("消息设置", 16, UiKit.TEXT, true));
+        settings.addView(ui.divider());
         settings.addView(ui.label("隐私与安全", 16, UiKit.TEXT, true));
+        settings.addView(ui.divider());
         settings.addView(ui.label("Chronos Android 0.1.0", 13, UiKit.MUTED, false));
         page.addView(settings);
-        Button logout = ui.primaryButton("退出登录");
+        Button logout = ui.destructiveButton("退出登录");
         logout.setOnClickListener(view -> {
             logout.setEnabled(false);
             logout.setText("正在退出…");

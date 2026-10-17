@@ -3,6 +3,7 @@ package com.gmc1987.chronos.mobile.feature.workbench;
 import android.content.SharedPreferences;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 import com.gmc1987.chronos.mobile.core.common.AsyncRunner;
 import com.gmc1987.chronos.mobile.core.common.DateFormats;
 import com.gmc1987.chronos.mobile.core.common.ErrorMessages;
@@ -70,15 +71,27 @@ public final class WorkbenchScreen {
 
     private LinearLayout summaryCard() {
         LinearLayout card = ui.card();
-        card.addView(ui.label(greeting() + "，" + portal.displayName(), 22, UiKit.TEXT, true));
+        LinearLayout identity = ui.horizontal();
+        String displayName = portal.displayName();
+        String initial = displayName == null || displayName.isEmpty()
+                ? "C" : displayName.substring(0, 1);
+        identity.addView(ui.badge(initial, 54));
+        LinearLayout copy = ui.vertical();
+        copy.setPadding(ui.dp(15), 0, 0, 0);
+        TextView eyebrow = ui.label(title(), 12, UiKit.BRAND, true);
+        eyebrow.setLetterSpacing(.08f);
+        copy.addView(eyebrow);
+        copy.addView(ui.label(greeting() + "，" + displayName, 22, UiKit.TEXT, true));
         if (!portal.organization().isEmpty()) {
-            card.addView(ui.label(portal.organization(), 14, UiKit.MUTED, false));
+            copy.addView(ui.label(portal.organization(), 14, UiKit.MUTED, false));
         }
         if (portal.workspace() == PortalState.Workspace.STUDENT) {
-            card.addView(ui.label("班级信息待服务端学生摘要补充", 13, UiKit.MUTED, false));
+            copy.addView(ui.label("班级信息待服务端学生摘要补充", 13, UiKit.MUTED, false));
         }
-        card.addView(ui.label(portal.termName() + " · " + DateFormats.display(new Date()),
+        copy.addView(ui.label(portal.termName() + " · " + DateFormats.display(new Date()),
                 13, UiKit.MUTED, false));
+        identity.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+        card.addView(identity);
         return card;
     }
 
