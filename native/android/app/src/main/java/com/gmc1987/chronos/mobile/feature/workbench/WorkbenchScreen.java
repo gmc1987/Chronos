@@ -17,6 +17,7 @@ import java.util.Date;
 import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.function.Consumer;
 
 public final class WorkbenchScreen {
     private final UiKit ui;
@@ -28,6 +29,7 @@ public final class WorkbenchScreen {
     private final MeetingsRepository meetings;
     private final SupervisionRepository supervision;
     private final Runnable applications;
+    private final Consumer<JSONObject> courseDetails;
 
     public WorkbenchScreen(
             UiKit ui,
@@ -38,7 +40,8 @@ public final class WorkbenchScreen {
             ScheduleRepository schedules,
             MeetingsRepository meetings,
             SupervisionRepository supervision,
-            Runnable applications) {
+            Runnable applications,
+            Consumer<JSONObject> courseDetails) {
         this.ui = ui;
         this.async = async;
         this.host = host;
@@ -48,6 +51,7 @@ public final class WorkbenchScreen {
         this.meetings = meetings;
         this.supervision = supervision;
         this.applications = applications;
+        this.courseDetails = courseDetails;
     }
 
     public void show() {
@@ -56,7 +60,8 @@ public final class WorkbenchScreen {
         if (portal.workspace() == PortalState.Workspace.STUDENT
                 || portal.workspace() == PortalState.Workspace.TEACHER) {
             page.addView(new ScheduleView(
-                    ui, async, preferences, schedules, portal, this::show).build());
+                    ui, async, preferences, schedules, portal, this::show,
+                    courseDetails).build());
         }
         if (portal.workspace() == PortalState.Workspace.STUDENT) addLearningCards(page);
         else addStaffCards(page);

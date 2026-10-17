@@ -33,9 +33,13 @@ struct TimetableCard: View {
         .padding(16)
         .cardStyle()
         .task(id: weekOffset) { await load() }
-        .sheet(item: $selectedLesson) { lesson in
-            LessonDetailView(lesson: lesson)
-                .presentationDetents([.medium])
+        .navigationDestination(isPresented: Binding(
+            get: { selectedLesson != nil },
+            set: { if !$0 { selectedLesson = nil } }
+        )) {
+            if let selectedLesson {
+                LessonDetailView(lesson: selectedLesson)
+            }
         }
     }
 
@@ -266,28 +270,31 @@ enum ScheduleLoadState {
 
 struct LessonDetailView: View {
     let lesson: ScheduleOccurrence
-    @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
+            Section("课程安排") {
                 LabeledContent("课程", value: lesson.entry.courseName)
-                LabeledContent("日期", value: lesson.date)
-                LabeledContent("时间", value: timeText(lesson))
-                LabeledContent("教师", value: lesson.effectiveTeacherName ?? lesson.entry.teacherName ?? "待定")
-                LabeledContent("教室", value: lesson.entry.classroomName ?? "待定")
+                LabeledContent("上课日期", value: lesson.date)
+                LabeledContent("上课时间", value: timeText(lesson))
+                LabeledContent("上课教师", value: teacher(lesson.effectiveTeacherName))
+                LabeledContent("任课老师", value: teacher(lesson.entry.teacherName))
                 LabeledContent("教学班", value: lesson.entry.teachingClassName ?? "未提供")
-                LabeledContent("状态", value: statusText(lesson.occurrenceStatus))
-                if let reason = lesson.reason, !reason.isEmpty {
-                    Section("调整说明") { Text(reason) }
-                }
+                LabeledContent("上课教室", value: lesson.entry.classroomName ?? "待定")
+                LabeledContent("课程状态", value: statusText(lesson.occurrenceStatus))
             }
-            .navigationTitle("课程详情")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
-                }
+            if let reason = lesson.reason, !reason.isEmpty {
+                Section("调整说明") { Text(reason) }
             }
         }
+        .navigationTitle("课程详情")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func teacher(_ name: String?) -> String {
+        guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "待定"
+        }
+        return name
     }
 }

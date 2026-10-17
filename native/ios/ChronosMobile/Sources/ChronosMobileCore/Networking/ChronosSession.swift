@@ -28,6 +28,11 @@ public actor ChronosSession {
         tokenStore.clear()
     }
 
+    /// Supplies the short-lived access token to the trusted in-app portal.
+    public func currentAccessToken() -> String? {
+        tokens?.accessToken
+    }
+
     public func login(username: String, password: String, consumer: Bool = false) async throws -> LoginPayload {
         let path = consumer ? "/consumer/users/login" : "/auth/login"
         let data = try await request(

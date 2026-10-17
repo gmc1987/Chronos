@@ -31,29 +31,14 @@ public final class ApplicationsScreen {
             card.addView(ui.label(application.optString("name", "应用"), 17, UiKit.TEXT, true));
             card.addView(ui.label(application.optString("description", "已由服务端授权"),
                     13, UiKit.MUTED, false));
-            String route = application.optString("routePath", "");
-            if (supportsNativeRoute(route)) {
-                Button open = ui.secondaryButton("打开");
-                open.setOnClickListener(view -> routes.open(route));
-                card.addView(open);
-            } else {
-                card.addView(ui.label(route.isEmpty()
-                        ? "移动入口建设中" : "请前往 Web 端处理 · " + route,
-                        12, UiKit.BRAND, false));
-            }
+            Button open = ui.secondaryButton("打开并办理");
+            open.setEnabled(!application.optString("routePath", "").isEmpty());
+            open.setOnClickListener(view -> routes.open(application));
+            card.addView(open);
             page.addView(card);
         }
         host.show(ui.scroll(page));
     }
 
-    private static boolean supportsNativeRoute(String route) {
-        return route.contains("/education/schedule")
-                || route.contains("/education/grades")
-                || route.contains("/education/exam/my-exams")
-                || route.contains("/education/meetings")
-                || route.contains("/education/supervision")
-                || route.contains("/publications");
-    }
-
-    public interface RouteHandler { void open(String route); }
+    public interface RouteHandler { void open(JSONObject application); }
 }

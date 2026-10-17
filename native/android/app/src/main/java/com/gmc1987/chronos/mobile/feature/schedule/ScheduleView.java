@@ -22,6 +22,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -32,6 +33,7 @@ public final class ScheduleView {
     private final ScheduleRepository repository;
     private final PortalState portal;
     private final Runnable refreshDashboard;
+    private final Consumer<JSONObject> courseDetails;
     private Calendar weekStart = DateFormats.weekStart(new Date());
 
     public ScheduleView(
@@ -40,13 +42,15 @@ public final class ScheduleView {
             SharedPreferences preferences,
             ScheduleRepository repository,
             PortalState portal,
-            Runnable refreshDashboard) {
+            Runnable refreshDashboard,
+            Consumer<JSONObject> courseDetails) {
         this.ui = ui;
         this.async = async;
         this.preferences = preferences;
         this.repository = repository;
         this.portal = portal;
         this.refreshDashboard = refreshDashboard;
+        this.courseDetails = courseDetails;
     }
 
     public View build() {
@@ -154,7 +158,13 @@ public final class ScheduleView {
         Calendar date = (Calendar) weekStart.clone();
         for (int column = 0; column < 7; column++) {
             JSONObject lesson = lessonAt(occurrences, DateFormats.iso(date.getTime()), period);
-            row.addView(cell(lesson == null ? "—" : lessonText(lesson), false, 120));
+            View lessonCell = cell(lesson == null ? "—" : lessonText(lesson), false, 120);
+            if (lesson != null) {
+                lessonCell.setClickable(true);
+                lessonCell.setFocusable(true);
+                lessonCell.setOnClickListener(view -> courseDetails.accept(lesson));
+            }
+            row.addView(lessonCell);
             date.add(Calendar.DATE, 1);
         }
         return row;

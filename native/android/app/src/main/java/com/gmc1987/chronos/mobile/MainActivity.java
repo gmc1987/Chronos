@@ -29,13 +29,14 @@ public final class MainActivity extends Activity implements ScreenHost {
     private AuthRepository auth;
     private PortalRepository portal;
     private HttpClient http;
+    private SessionStore session;
 
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
         ui = new UiKit(this);
         async = new AsyncRunner(this);
-        SessionStore session = new SessionStore(getSharedPreferences(PREFS, MODE_PRIVATE));
+        session = new SessionStore(getSharedPreferences(PREFS, MODE_PRIVATE));
         http = new HttpClient(BuildConfig.API_BASE_URL, session);
         auth = new AuthRepository(http, session);
         portal = new PortalRepository(http);
@@ -70,6 +71,7 @@ public final class MainActivity extends Activity implements ScreenHost {
                 new AnnouncementsRepository(http),
                 new MeetingsRepository(http),
                 new SupervisionRepository(http),
+                session,
                 this::showLogin).start();
     }
 

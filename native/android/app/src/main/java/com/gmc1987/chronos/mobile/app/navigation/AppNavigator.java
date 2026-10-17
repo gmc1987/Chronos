@@ -11,6 +11,7 @@ import com.gmc1987.chronos.mobile.core.common.RowFormatters;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
 import com.gmc1987.chronos.mobile.core.model.PortalState;
+import com.gmc1987.chronos.mobile.core.network.SessionStore;
 import com.gmc1987.chronos.mobile.feature.announcements.AnnouncementsRepository;
 import com.gmc1987.chronos.mobile.feature.applications.ApplicationsScreen;
 import com.gmc1987.chronos.mobile.feature.auth.AuthRepository;
@@ -18,6 +19,8 @@ import com.gmc1987.chronos.mobile.feature.exams.ExamsRepository;
 import com.gmc1987.chronos.mobile.feature.grades.GradesRepository;
 import com.gmc1987.chronos.mobile.feature.profile.ProfileScreen;
 import com.gmc1987.chronos.mobile.feature.schedule.ScheduleRepository;
+import com.gmc1987.chronos.mobile.feature.schedule.CourseDetailScreen;
+import com.gmc1987.chronos.mobile.feature.applications.WebPortalScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingsRepository;
 import com.gmc1987.chronos.mobile.feature.workbench.SupervisionRepository;
 import com.gmc1987.chronos.mobile.feature.workbench.WorkbenchScreen;
@@ -34,6 +37,7 @@ public final class AppNavigator implements ScreenHost {
     private final AnnouncementsRepository announcements;
     private final MeetingsRepository meetings;
     private final SupervisionRepository supervision;
+    private final SessionStore session;
     private final Runnable loggedOut;
     private FrameLayout content;
     private LinearLayout tabs;
@@ -50,6 +54,7 @@ public final class AppNavigator implements ScreenHost {
             AnnouncementsRepository announcements,
             MeetingsRepository meetings,
             SupervisionRepository supervision,
+            SessionStore session,
             Runnable loggedOut) {
         this.activity = activity;
         this.ui = ui;
@@ -62,6 +67,7 @@ public final class AppNavigator implements ScreenHost {
         this.announcements = announcements;
         this.meetings = meetings;
         this.supervision = supervision;
+        this.session = session;
         this.loggedOut = loggedOut;
     }
 
@@ -113,11 +119,12 @@ public final class AppNavigator implements ScreenHost {
     private void showWorkbench() {
         new WorkbenchScreen(ui, async, this,
                 activity.getSharedPreferences("chronos_session", Activity.MODE_PRIVATE),
-                portal, schedules, meetings, supervision, this::showApplications).show();
+                portal, schedules, meetings, supervision, this::showApplications,
+                this::showCourseDetail).show();
     }
 
     private void showApplications() {
-        new ApplicationsScreen(ui, this, portal, this::openRoute).show();
+        new ApplicationsScreen(ui, this, portal, this::openApplication).show();
     }
 
     private void showProfile() {
@@ -136,16 +143,12 @@ public final class AppNavigator implements ScreenHost {
         remote().show(title, empty, announcements::list, RowFormatters::publications);
     }
 
-    private void openRoute(String route) {
-        if (route.contains("/education/grades")) showGrades();
-        else if (route.contains("/education/exam/my-exams")) showExams();
-        else if (route.contains("/education/meetings")) {
-            remote().show("会议", "未来暂无会议", meetings::list, RowFormatters::meetings);
-        } else if (route.contains("/education/supervision")) {
-            remote().show("督办事项", "当前没有督办事项",
-                    supervision::list, RowFormatters::generic);
-        } else if (route.contains("/publications")) showAnnouncements("公告", "当前没有可见公告");
-        else showWorkbench();
+    private void openApplication(org.json.JSONObject application) {
+        new WebPortalScreen(activity, ui, this, session, application, this::showApplications).show();
+    }
+
+    private void showCourseDetail(org.json.JSONObject occurrence) {
+        new CourseDetailScreen(ui, this, occurrence, this::showWorkbench).show();
     }
 
     private RemoteListScreen remote() {

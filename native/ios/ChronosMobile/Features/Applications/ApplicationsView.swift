@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 struct ApplicationsView: View {
     let applications: [PortalApplication]
@@ -39,26 +40,100 @@ struct ApplicationsView: View {
 
 @ViewBuilder
 func ApplicationDestination(application: PortalApplication) -> some View {
-    let route = application.routePath.lowercased()
-    if route.contains("/grades") {
-        GradesListView()
-    } else if route.contains("/my-exams") {
-        ExamsListView()
-    } else if route.contains("/schedule") {
-        NavigationStack {
-            ScrollView { TimetableCard().padding() }
-                .background(ChronosPalette.background)
-                .navigationTitle(application.name)
-        }
-    } else if route.contains("/publications") {
-        PublicationsListView(title: application.name, type: nil)
+    if application.openMode == "EXTERNAL" || URL(string: application.routePath)?.scheme != nil {
+        ExternalApplicationView(application: application)
     } else {
-        ConstructionView(
-            title: application.name,
-            message: application.openMode == "EXTERNAL"
-                ? "该应用为外部系统，请通过受控 Web 门户访问。"
-                : "该应用已获授权，原生页面尚在建设中，请前往 Web 门户处理。"
-        )
+        AuthenticatedPortalView(application: application)
+    }
+}
+
+struct ExternalApplicationView: View {
+    let application: PortalApplication
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(application.name, systemImage: "arrow.up.right.square")
+        } description: {
+            Text("该应用由外部系统提供。")
+        } actions: {
+            Button("打开应用") {
+                if let url = URL(string: application.routePath) { openURL(url) }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .navigationTitle(application.name)
+    }
+}
+
+/// Hosts the complete operational portal page and reuses the current mobile login.
+struct AuthenticatedPortalView: View {
+    let application: PortalApplication
+    @EnvironmentObject var model: AppModel
+    @State private var accessToken: String?
+    @State private var loadedToken = false
+
+    var body: some View {
+        Group {
+            if let accessToken {
+                PortalWebView(
+                    routePath: application.routePath,
+                    accessToken: accessToken
+                )
+            } else if loadedToken {
+                ContentUnavailableView(
+                    "登录状态已失效",
+                    systemImage: "person.crop.circle.badge.exclamationmark",
+                    description: Text("请退出后重新登录，再打开应用。")
+                )
+            } else {
+                ProgressView("正在打开应用…")
+            }
+        }
+        .navigationTitle(application.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            accessToken = await model.session.currentAccessToken()
+            loadedToken = true
+        }
+    }
+}
+
+struct PortalWebView: UIViewRepresentable {
+    let routePath: String
+    let accessToken: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        let source = "localStorage.setItem('admin_access_token', \(json(accessToken)));"
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: source,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.allowsBackForwardNavigationGestures = true
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        let base = ProcessInfo.processInfo.environment["CHRONOS_PORTAL_BASE_URL"]
+            ?? "http://localhost:5173"
+        let normalizedRoute = routePath.hasPrefix("/") ? routePath : "/\(routePath)"
+        guard let url = URL(string: base + normalizedRoute),
+              webView.url != url else { return }
+        webView.load(URLRequest(url: url))
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {}
+
+    private func json(_ value: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+              let array = String(data: data, encoding: .utf8) else { return "\"\"" }
+        return String(array.dropFirst().dropLast())
     }
 }
 
