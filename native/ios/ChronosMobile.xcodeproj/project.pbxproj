@@ -7,13 +7,91 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		000000000000000000000003 /* ChronosMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000001 /* ChronosMobileApp.swift */; };
-		000000000000000000000010 /* Sources/ChronosMobileCore/ChronosMobileCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000009 /* Sources/ChronosMobileCore/ChronosMobileCore.swift */; };
+		A10000000000000000000001 /* App/AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* App/AppModel.swift */; };
+		A10000000000000000000002 /* App/PortalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* App/PortalView.swift */; };
+		A10000000000000000000003 /* App/RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* App/RootView.swift */; };
+		A10000000000000000000004 /* ChronosMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* ChronosMobileApp.swift */; };
+		A10000000000000000000005 /* Features/Announcements/AnnouncementsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* Features/Announcements/AnnouncementsAPI.swift */; };
+		A10000000000000000000006 /* Features/Announcements/PublicationsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* Features/Announcements/PublicationsListView.swift */; };
+		A10000000000000000000007 /* Features/Applications/ApplicationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* Features/Applications/ApplicationsView.swift */; };
+		A10000000000000000000008 /* Features/Auth/LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* Features/Auth/LoginView.swift */; };
+		A10000000000000000000009 /* Features/Exams/ExamsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* Features/Exams/ExamsAPI.swift */; };
+		A1000000000000000000000A /* Features/Exams/ExamsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* Features/Exams/ExamsListView.swift */; };
+		A1000000000000000000000B /* Features/Grades/GradesAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* Features/Grades/GradesAPI.swift */; };
+		A1000000000000000000000C /* Features/Grades/GradesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* Features/Grades/GradesListView.swift */; };
+		A1000000000000000000000D /* Features/Profile/ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* Features/Profile/ProfileView.swift */; };
+		A1000000000000000000000E /* Features/Schedule/ScheduleAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* Features/Schedule/ScheduleAPI.swift */; };
+		A1000000000000000000000F /* Features/Schedule/TimetableCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* Features/Schedule/TimetableCard.swift */; };
+		A10000000000000000000010 /* Features/Workbench/BootstrapStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* Features/Workbench/BootstrapStateView.swift */; };
+		A10000000000000000000011 /* Features/Workbench/Components/IdentityHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* Features/Workbench/Components/IdentityHeader.swift */; };
+		A10000000000000000000012 /* Features/Workbench/Components/LearningCapabilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* Features/Workbench/Components/LearningCapabilitiesView.swift */; };
+		A10000000000000000000013 /* Features/Workbench/Components/WorkbenchCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* Features/Workbench/Components/WorkbenchCards.swift */; };
+		A10000000000000000000014 /* Features/Workbench/MeetingsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* Features/Workbench/MeetingsAPI.swift */; };
+		A10000000000000000000015 /* Features/Workbench/RoleWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* Features/Workbench/RoleWorkbenchView.swift */; };
+		A10000000000000000000016 /* Features/Workbench/StudentWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* Features/Workbench/StudentWorkbenchView.swift */; };
+		A10000000000000000000017 /* Features/Workbench/WorkbenchAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* Features/Workbench/WorkbenchAPI.swift */; };
+		A10000000000000000000018 /* Shared/Formatting/DisplayFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* Shared/Formatting/DisplayFormatting.swift */; };
+		A10000000000000000000019 /* Shared/Theme/ChronosPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* Shared/Theme/ChronosPalette.swift */; };
+		A1000000000000000000001A /* Shared/UI/CardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* Shared/UI/CardStyle.swift */; };
+		A1000000000000000000001B /* Shared/UI/StateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001B /* Shared/UI/StateViews.swift */; };
+		A1000000000000000000001C /* Sources/ChronosMobileCore/ChronosMobileCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001C /* Sources/ChronosMobileCore/ChronosMobileCore.swift */; };
+		A1000000000000000000001D /* Sources/ChronosMobileCore/Models/AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* Sources/ChronosMobileCore/Models/AuthModels.swift */; };
+		A1000000000000000000001E /* Sources/ChronosMobileCore/Models/BootstrapModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* Sources/ChronosMobileCore/Models/BootstrapModels.swift */; };
+		A1000000000000000000001F /* Sources/ChronosMobileCore/Models/ExamModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* Sources/ChronosMobileCore/Models/ExamModels.swift */; };
+		A10000000000000000000020 /* Sources/ChronosMobileCore/Models/GradeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* Sources/ChronosMobileCore/Models/GradeModels.swift */; };
+		A10000000000000000000021 /* Sources/ChronosMobileCore/Models/MeetingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* Sources/ChronosMobileCore/Models/MeetingModels.swift */; };
+		A10000000000000000000022 /* Sources/ChronosMobileCore/Models/PublicationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* Sources/ChronosMobileCore/Models/PublicationModels.swift */; };
+		A10000000000000000000023 /* Sources/ChronosMobileCore/Models/ScheduleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* Sources/ChronosMobileCore/Models/ScheduleModels.swift */; };
+		A10000000000000000000024 /* Sources/ChronosMobileCore/Models/WorkbenchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000024 /* Sources/ChronosMobileCore/Models/WorkbenchModels.swift */; };
+		A10000000000000000000025 /* Sources/ChronosMobileCore/Networking/APIConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* Sources/ChronosMobileCore/Networking/APIConfiguration.swift */; };
+		A10000000000000000000026 /* Sources/ChronosMobileCore/Networking/APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* Sources/ChronosMobileCore/Networking/APIError.swift */; };
+		A10000000000000000000027 /* Sources/ChronosMobileCore/Networking/ChronosSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000027 /* Sources/ChronosMobileCore/Networking/ChronosSession.swift */; };
+		A10000000000000000000028 /* Sources/ChronosMobileCore/Networking/ResponseEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000028 /* Sources/ChronosMobileCore/Networking/ResponseEnvelope.swift */; };
+		A10000000000000000000029 /* Sources/ChronosMobileCore/Networking/TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000029 /* Sources/ChronosMobileCore/Networking/TokenStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		000000000000000000000001 /* ChronosMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChronosMobileApp.swift; sourceTree = "<group>"; };
-		000000000000000000000009 /* Sources/ChronosMobileCore/ChronosMobileCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/ChronosMobileCore.swift; sourceTree = "<group>"; };
+		B10000000000000000000001 /* App/AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AppModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* App/PortalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PortalView.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* App/RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/RootView.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* ChronosMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChronosMobileApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* Features/Announcements/AnnouncementsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Announcements/AnnouncementsAPI.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* Features/Announcements/PublicationsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Announcements/PublicationsListView.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* Features/Applications/ApplicationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Applications/ApplicationsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* Features/Auth/LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Auth/LoginView.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* Features/Exams/ExamsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Exams/ExamsAPI.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* Features/Exams/ExamsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Exams/ExamsListView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000B /* Features/Grades/GradesAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Grades/GradesAPI.swift; sourceTree = "<group>"; };
+		B1000000000000000000000C /* Features/Grades/GradesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Grades/GradesListView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000D /* Features/Profile/ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Profile/ProfileView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000E /* Features/Schedule/ScheduleAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Schedule/ScheduleAPI.swift; sourceTree = "<group>"; };
+		B1000000000000000000000F /* Features/Schedule/TimetableCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Schedule/TimetableCard.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* Features/Workbench/BootstrapStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/BootstrapStateView.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* Features/Workbench/Components/IdentityHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/Components/IdentityHeader.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* Features/Workbench/Components/LearningCapabilitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/Components/LearningCapabilitiesView.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* Features/Workbench/Components/WorkbenchCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/Components/WorkbenchCards.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* Features/Workbench/MeetingsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/MeetingsAPI.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* Features/Workbench/RoleWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/RoleWorkbenchView.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* Features/Workbench/StudentWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/StudentWorkbenchView.swift; sourceTree = "<group>"; };
+		B10000000000000000000017 /* Features/Workbench/WorkbenchAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Workbench/WorkbenchAPI.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* Shared/Formatting/DisplayFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/Formatting/DisplayFormatting.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* Shared/Theme/ChronosPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/Theme/ChronosPalette.swift; sourceTree = "<group>"; };
+		B1000000000000000000001A /* Shared/UI/CardStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/UI/CardStyle.swift; sourceTree = "<group>"; };
+		B1000000000000000000001B /* Shared/UI/StateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/UI/StateViews.swift; sourceTree = "<group>"; };
+		B1000000000000000000001C /* Sources/ChronosMobileCore/ChronosMobileCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/ChronosMobileCore.swift; sourceTree = "<group>"; };
+		B1000000000000000000001D /* Sources/ChronosMobileCore/Models/AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/AuthModels.swift; sourceTree = "<group>"; };
+		B1000000000000000000001E /* Sources/ChronosMobileCore/Models/BootstrapModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/BootstrapModels.swift; sourceTree = "<group>"; };
+		B1000000000000000000001F /* Sources/ChronosMobileCore/Models/ExamModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/ExamModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* Sources/ChronosMobileCore/Models/GradeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/GradeModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* Sources/ChronosMobileCore/Models/MeetingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/MeetingModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000022 /* Sources/ChronosMobileCore/Models/PublicationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/PublicationModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000023 /* Sources/ChronosMobileCore/Models/ScheduleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/ScheduleModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000024 /* Sources/ChronosMobileCore/Models/WorkbenchModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/WorkbenchModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000025 /* Sources/ChronosMobileCore/Networking/APIConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Networking/APIConfiguration.swift; sourceTree = "<group>"; };
+		B10000000000000000000026 /* Sources/ChronosMobileCore/Networking/APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Networking/APIError.swift; sourceTree = "<group>"; };
+		B10000000000000000000027 /* Sources/ChronosMobileCore/Networking/ChronosSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Networking/ChronosSession.swift; sourceTree = "<group>"; };
+		B10000000000000000000028 /* Sources/ChronosMobileCore/Networking/ResponseEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Networking/ResponseEnvelope.swift; sourceTree = "<group>"; };
+		B10000000000000000000029 /* Sources/ChronosMobileCore/Networking/TokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Networking/TokenStore.swift; sourceTree = "<group>"; };
 		000000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		000000000000000000000014 /* ChronosMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChronosMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -22,8 +100,47 @@
 		000000000000000000000002 /* ChronosMobile */ = {
 			isa = PBXGroup;
 			children = (
-				000000000000000000000001 /* ChronosMobileApp.swift */,
-				000000000000000000000009 /* Sources/ChronosMobileCore/ChronosMobileCore.swift */,
+				B10000000000000000000001 /* App/AppModel.swift */,
+				B10000000000000000000002 /* App/PortalView.swift */,
+				B10000000000000000000003 /* App/RootView.swift */,
+				B10000000000000000000004 /* ChronosMobileApp.swift */,
+				B10000000000000000000005 /* Features/Announcements/AnnouncementsAPI.swift */,
+				B10000000000000000000006 /* Features/Announcements/PublicationsListView.swift */,
+				B10000000000000000000007 /* Features/Applications/ApplicationsView.swift */,
+				B10000000000000000000008 /* Features/Auth/LoginView.swift */,
+				B10000000000000000000009 /* Features/Exams/ExamsAPI.swift */,
+				B1000000000000000000000A /* Features/Exams/ExamsListView.swift */,
+				B1000000000000000000000B /* Features/Grades/GradesAPI.swift */,
+				B1000000000000000000000C /* Features/Grades/GradesListView.swift */,
+				B1000000000000000000000D /* Features/Profile/ProfileView.swift */,
+				B1000000000000000000000E /* Features/Schedule/ScheduleAPI.swift */,
+				B1000000000000000000000F /* Features/Schedule/TimetableCard.swift */,
+				B10000000000000000000010 /* Features/Workbench/BootstrapStateView.swift */,
+				B10000000000000000000011 /* Features/Workbench/Components/IdentityHeader.swift */,
+				B10000000000000000000012 /* Features/Workbench/Components/LearningCapabilitiesView.swift */,
+				B10000000000000000000013 /* Features/Workbench/Components/WorkbenchCards.swift */,
+				B10000000000000000000014 /* Features/Workbench/MeetingsAPI.swift */,
+				B10000000000000000000015 /* Features/Workbench/RoleWorkbenchView.swift */,
+				B10000000000000000000016 /* Features/Workbench/StudentWorkbenchView.swift */,
+				B10000000000000000000017 /* Features/Workbench/WorkbenchAPI.swift */,
+				B10000000000000000000018 /* Shared/Formatting/DisplayFormatting.swift */,
+				B10000000000000000000019 /* Shared/Theme/ChronosPalette.swift */,
+				B1000000000000000000001A /* Shared/UI/CardStyle.swift */,
+				B1000000000000000000001B /* Shared/UI/StateViews.swift */,
+				B1000000000000000000001C /* Sources/ChronosMobileCore/ChronosMobileCore.swift */,
+				B1000000000000000000001D /* Sources/ChronosMobileCore/Models/AuthModels.swift */,
+				B1000000000000000000001E /* Sources/ChronosMobileCore/Models/BootstrapModels.swift */,
+				B1000000000000000000001F /* Sources/ChronosMobileCore/Models/ExamModels.swift */,
+				B10000000000000000000020 /* Sources/ChronosMobileCore/Models/GradeModels.swift */,
+				B10000000000000000000021 /* Sources/ChronosMobileCore/Models/MeetingModels.swift */,
+				B10000000000000000000022 /* Sources/ChronosMobileCore/Models/PublicationModels.swift */,
+				B10000000000000000000023 /* Sources/ChronosMobileCore/Models/ScheduleModels.swift */,
+				B10000000000000000000024 /* Sources/ChronosMobileCore/Models/WorkbenchModels.swift */,
+				B10000000000000000000025 /* Sources/ChronosMobileCore/Networking/APIConfiguration.swift */,
+				B10000000000000000000026 /* Sources/ChronosMobileCore/Networking/APIError.swift */,
+				B10000000000000000000027 /* Sources/ChronosMobileCore/Networking/ChronosSession.swift */,
+				B10000000000000000000028 /* Sources/ChronosMobileCore/Networking/ResponseEnvelope.swift */,
+				B10000000000000000000029 /* Sources/ChronosMobileCore/Networking/TokenStore.swift */,
 				000000000000000000000011 /* Info.plist */,
 				0C533F303078DDB7000F1BA7 /* Products */,
 			);
@@ -88,8 +205,47 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				000000000000000000000003 /* ChronosMobileApp.swift in Sources */,
-				000000000000000000000010 /* Sources/ChronosMobileCore/ChronosMobileCore.swift in Sources */,
+				A10000000000000000000001 /* App/AppModel.swift in Sources */,
+				A10000000000000000000002 /* App/PortalView.swift in Sources */,
+				A10000000000000000000003 /* App/RootView.swift in Sources */,
+				A10000000000000000000004 /* ChronosMobileApp.swift in Sources */,
+				A10000000000000000000005 /* Features/Announcements/AnnouncementsAPI.swift in Sources */,
+				A10000000000000000000006 /* Features/Announcements/PublicationsListView.swift in Sources */,
+				A10000000000000000000007 /* Features/Applications/ApplicationsView.swift in Sources */,
+				A10000000000000000000008 /* Features/Auth/LoginView.swift in Sources */,
+				A10000000000000000000009 /* Features/Exams/ExamsAPI.swift in Sources */,
+				A1000000000000000000000A /* Features/Exams/ExamsListView.swift in Sources */,
+				A1000000000000000000000B /* Features/Grades/GradesAPI.swift in Sources */,
+				A1000000000000000000000C /* Features/Grades/GradesListView.swift in Sources */,
+				A1000000000000000000000D /* Features/Profile/ProfileView.swift in Sources */,
+				A1000000000000000000000E /* Features/Schedule/ScheduleAPI.swift in Sources */,
+				A1000000000000000000000F /* Features/Schedule/TimetableCard.swift in Sources */,
+				A10000000000000000000010 /* Features/Workbench/BootstrapStateView.swift in Sources */,
+				A10000000000000000000011 /* Features/Workbench/Components/IdentityHeader.swift in Sources */,
+				A10000000000000000000012 /* Features/Workbench/Components/LearningCapabilitiesView.swift in Sources */,
+				A10000000000000000000013 /* Features/Workbench/Components/WorkbenchCards.swift in Sources */,
+				A10000000000000000000014 /* Features/Workbench/MeetingsAPI.swift in Sources */,
+				A10000000000000000000015 /* Features/Workbench/RoleWorkbenchView.swift in Sources */,
+				A10000000000000000000016 /* Features/Workbench/StudentWorkbenchView.swift in Sources */,
+				A10000000000000000000017 /* Features/Workbench/WorkbenchAPI.swift in Sources */,
+				A10000000000000000000018 /* Shared/Formatting/DisplayFormatting.swift in Sources */,
+				A10000000000000000000019 /* Shared/Theme/ChronosPalette.swift in Sources */,
+				A1000000000000000000001A /* Shared/UI/CardStyle.swift in Sources */,
+				A1000000000000000000001B /* Shared/UI/StateViews.swift in Sources */,
+				A1000000000000000000001C /* Sources/ChronosMobileCore/ChronosMobileCore.swift in Sources */,
+				A1000000000000000000001D /* Sources/ChronosMobileCore/Models/AuthModels.swift in Sources */,
+				A1000000000000000000001E /* Sources/ChronosMobileCore/Models/BootstrapModels.swift in Sources */,
+				A1000000000000000000001F /* Sources/ChronosMobileCore/Models/ExamModels.swift in Sources */,
+				A10000000000000000000020 /* Sources/ChronosMobileCore/Models/GradeModels.swift in Sources */,
+				A10000000000000000000021 /* Sources/ChronosMobileCore/Models/MeetingModels.swift in Sources */,
+				A10000000000000000000022 /* Sources/ChronosMobileCore/Models/PublicationModels.swift in Sources */,
+				A10000000000000000000023 /* Sources/ChronosMobileCore/Models/ScheduleModels.swift in Sources */,
+				A10000000000000000000024 /* Sources/ChronosMobileCore/Models/WorkbenchModels.swift in Sources */,
+				A10000000000000000000025 /* Sources/ChronosMobileCore/Networking/APIConfiguration.swift in Sources */,
+				A10000000000000000000026 /* Sources/ChronosMobileCore/Networking/APIError.swift in Sources */,
+				A10000000000000000000027 /* Sources/ChronosMobileCore/Networking/ChronosSession.swift in Sources */,
+				A10000000000000000000028 /* Sources/ChronosMobileCore/Networking/ResponseEnvelope.swift in Sources */,
+				A10000000000000000000029 /* Sources/ChronosMobileCore/Networking/TokenStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
