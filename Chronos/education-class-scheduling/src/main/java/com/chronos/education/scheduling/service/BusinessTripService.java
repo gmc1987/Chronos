@@ -78,7 +78,6 @@ public class BusinessTripService {
 			throw new IllegalArgumentException("启用财务强制校验后必须填写预算项目和成本中心");
 		}
 		Map<String, Object> form = new LinkedHashMap<>();
-		form.put("integrationBusinessKey", businessKey);
 		form.put("destination", destination);
 		form.put("startDate", startDate.toString());
 		form.put("endDate", endDate.toString());

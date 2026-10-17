@@ -155,19 +155,22 @@ public class CollaborationOfficeService {
 		String businessKey = value.getBusinessKey();
 		String flowCode = "VEHICLE".equals(type) ? VEHICLE_FLOW : SEAL_FLOW;
 		Map<String, Object> formData = new LinkedHashMap<>();
-		formData.put("requestId", value.getId());
-		formData.put("requestType", type);
 		formData.put("resourceName", resource.getResourceName());
 		formData.put("purpose", value.getPurpose());
 		formData.put("startAt", value.getStartAt().toString());
 		formData.put("endAt", value.getEndAt().toString());
-		formData.put("destination", value.getDestination() == null ? "" : value.getDestination());
-		formData.put("passengerCount", value.getPassengerCount() == null ? "" : value.getPassengerCount());
-		formData.put("documentTitle", value.getDocumentTitle() == null ? "" : value.getDocumentTitle());
-		formData.put("copyCount", value.getCopyCount() == null ? "" : value.getCopyCount());
-		formData.put(
-				"attachmentFileId",
-				value.getAttachmentFileId() == null ? "" : value.getAttachmentFileId());
+		// 工作流表单采用严格字段校验。不同申请类型只能提交其主表单中定义的字段，
+		// 业务记录 ID 由 businessKey 关联，无需作为可见表单字段重复传递。
+		if ("VEHICLE".equals(type)) {
+			formData.put("destination", value.getDestination());
+			formData.put("passengerCount", value.getPassengerCount());
+		} else {
+			formData.put("documentTitle", value.getDocumentTitle());
+			formData.put("copyCount", value.getCopyCount());
+			if (value.getAttachmentFileId() != null) {
+				formData.put("attachmentFileId", value.getAttachmentFileId());
+			}
+		}
 		var started = workflow.startByCode(flowCode, businessKey, formData, username);
 		value.setBusinessKey(businessKey);
 		value.setWorkflowInstanceId(started.getId());

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.chronos.education.scheduling.model.OfficeApprovalRequest;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeRepository;
 import com.chronos.education.scheduling.model.CollaborationFileShare;
@@ -18,9 +19,12 @@ import com.chronos.education.scheduling.repository.OfficialDocumentRepository;
 import com.chronos.file.service.ManagedFileService;
 import com.chronos.model.pojo.AdminUser;
 import com.chronos.model.pojo.Employee;
+import com.chronos.model.workflow.WorkflowInstance;
 import com.chronos.workflow.WorkflowService;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -83,6 +87,49 @@ class CollaborationOfficeServiceTest {
 				org.mockito.ArgumentMatchers.anyString(),
 				org.mockito.ArgumentMatchers.anyMap(),
 				org.mockito.ArgumentMatchers.anyString());
+	}
+
+	@Test
+	void vehicleWorkflowReceivesOnlyFieldsDefinedByItsPublishedForm() {
+		OfficeResource vehicle = new OfficeResource();
+		vehicle.setId("vehicle-1");
+		vehicle.setResourceType("VEHICLE");
+		vehicle.setResourceName("公务车一号");
+		vehicle.setCapacity(5);
+		vehicle.setEnabled(true);
+		LocalDateTime start = LocalDateTime.of(2026, 12, 24, 9, 0);
+		LocalDateTime end = start.plusHours(3);
+		when(resources.findLockedById("vehicle-1")).thenReturn(Optional.of(vehicle));
+		when(requests.countConflicts("vehicle-1", start, end)).thenReturn(0L);
+		when(requests.save(org.mockito.ArgumentMatchers.any(OfficeApprovalRequest.class)))
+				.thenAnswer(invocation -> {
+					OfficeApprovalRequest value = invocation.getArgument(0);
+					if (value.getId() == null) value.setId("request-1");
+					return value;
+				});
+		WorkflowInstance instance = new WorkflowInstance();
+		instance.setId("workflow-1");
+		when(workflow.startByCode(
+				org.mockito.ArgumentMatchers.eq(CollaborationOfficeService.VEHICLE_FLOW),
+				org.mockito.ArgumentMatchers.anyString(),
+				org.mockito.ArgumentMatchers.anyMap(),
+				org.mockito.ArgumentMatchers.eq("staff"))).thenReturn(instance);
+
+		service.createRequest(
+				"staff",
+				new CollaborationOfficeService.OfficeRequestCommand(
+						"VEHICLE", "vehicle-1", start, end, "校外教研",
+						"市教研院", 4, null, null, null));
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<Map<String, Object>> form = ArgumentCaptor.forClass(Map.class);
+		verify(workflow).startByCode(
+				org.mockito.ArgumentMatchers.eq(CollaborationOfficeService.VEHICLE_FLOW),
+				org.mockito.ArgumentMatchers.anyString(),
+				form.capture(),
+				org.mockito.ArgumentMatchers.eq("staff"));
+		assertThat(form.getValue()).containsOnlyKeys(
+				"resourceName", "purpose", "startAt", "endAt", "destination", "passengerCount");
 	}
 
 	@Test
