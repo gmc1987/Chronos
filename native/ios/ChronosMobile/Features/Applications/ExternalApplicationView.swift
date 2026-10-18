@@ -14,12 +14,36 @@ struct ExternalApplicationView: View {
 }
 
 struct NativeModule: Identifiable {
-    let id: String, title: String, detail: String, icon: String, path: String
+    enum Destination {
+        case records(path: String, empty: String)
+        case leaves
+        case businessTrips
+        case officeRequests
+    }
+
+    let id: String, title: String, detail: String, icon: String, destination: Destination
+
+    init(id: String, title: String, detail: String, icon: String, path: String, empty: String? = nil) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.icon = icon
+        self.destination = .records(path: path, empty: empty ?? "暂无\(title)数据")
+    }
+
+    init(id: String, title: String, detail: String, icon: String, destination: Destination) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.icon = icon
+        self.destination = destination
+    }
 }
 
 let collaborationModules = [
-    NativeModule(id: "requests", title: "用车与用印", detail: "申请与执行状态", icon: "car", path: "/portal/collaboration/requests/my"),
-    NativeModule(id: "trips", title: "出差", detail: "行程、预算和审批", icon: "suitcase", path: "/portal/collaboration/business-trips"),
+    NativeModule(id: "leaves", title: "请假", detail: "发起请假并查看审批状态", icon: "calendar.badge.clock", destination: .leaves),
+    NativeModule(id: "requests", title: "用车与用印", detail: "发起申请并查看执行状态", icon: "car", destination: .officeRequests),
+    NativeModule(id: "trips", title: "出差", detail: "发起出差并查看行程、预算和审批", icon: "suitcase", destination: .businessTrips),
     NativeModule(id: "documents", title: "公文", detail: "收发、签发和归档", icon: "doc.text", path: "/portal/collaboration/documents/my"),
     NativeModule(id: "files", title: "共享文件", detail: "统一文件共享", icon: "folder", path: "/portal/collaboration/files/shares"),
     NativeModule(id: "contacts", title: "通讯录", detail: "教职工联系方式", icon: "person.2", path: "/portal/collaboration/contacts?keyword=")]

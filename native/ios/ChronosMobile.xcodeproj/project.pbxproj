@@ -67,6 +67,12 @@
 		CB8E8205C4EC659BB2C0C8B7 /* ApplicationDestinationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1322E8C946A909A51E5042B3 /* ApplicationDestinationView.swift */; };
 		D43C0A619026E78BE35D6AEF /* WorkbenchItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC60A3B4855B88BF5124E08B /* WorkbenchItemDetailView.swift */; };
 		E1F0F29B3D9E0362151BAFC0 /* DynamicWorkflowFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC814E13FD4BAF5E41676448 /* DynamicWorkflowFieldView.swift */; };
+		F10000000000000000000001 /* LeaveRequestsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* LeaveRequestsView.swift */; };
+		F10000000000000000000002 /* LeaveRequestForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* LeaveRequestForm.swift */; };
+		F10000000000000000000003 /* BusinessTripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003 /* BusinessTripsView.swift */; };
+		F10000000000000000000004 /* BusinessTripForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000004 /* BusinessTripForm.swift */; };
+		F10000000000000000000005 /* OfficeRequestsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000005 /* OfficeRequestsView.swift */; };
+		F10000000000000000000006 /* OfficeRequestForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000006 /* OfficeRequestForm.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -83,6 +89,12 @@
 		83171C934E51A712D48BBD42 /* NativeRecordDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeRecordDetailView.swift; path = Features/Applications/NativeRecordDetailView.swift; sourceTree = "<group>"; };
 		8899E1D3A4E974DD6C328F6F /* ExternalApplicationView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExternalApplicationView.swift; path = Features/Applications/ExternalApplicationView.swift; sourceTree = "<group>"; };
 		A601C6E440FD6A872347C780 /* WorkflowRecordsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WorkflowRecordsView.swift; path = Features/Applications/WorkflowRecordsView.swift; sourceTree = "<group>"; };
+		F20000000000000000000001 /* LeaveRequestsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LeaveRequestsView.swift; path = Features/Applications/LeaveRequestsView.swift; sourceTree = "<group>"; };
+		F20000000000000000000002 /* LeaveRequestForm.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LeaveRequestForm.swift; path = Features/Applications/LeaveRequestForm.swift; sourceTree = "<group>"; };
+		F20000000000000000000003 /* BusinessTripsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BusinessTripsView.swift; path = Features/Applications/BusinessTripsView.swift; sourceTree = "<group>"; };
+		F20000000000000000000004 /* BusinessTripForm.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BusinessTripForm.swift; path = Features/Applications/BusinessTripForm.swift; sourceTree = "<group>"; };
+		F20000000000000000000005 /* OfficeRequestsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OfficeRequestsView.swift; path = Features/Applications/OfficeRequestsView.swift; sourceTree = "<group>"; };
+		F20000000000000000000006 /* OfficeRequestForm.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OfficeRequestForm.swift; path = Features/Applications/OfficeRequestForm.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AppModel.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* PortalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PortalView.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/RootView.swift; sourceTree = "<group>"; };
@@ -200,6 +212,12 @@
 				6AB354BD79DB8DF965790056 /* NativeRecordCard.swift */,
 				A601C6E440FD6A872347C780 /* WorkflowRecordsView.swift */,
 				21BF7EB9D92DCDF88E7FEE3A /* AvailableWorkflowsView.swift */,
+				F20000000000000000000001 /* LeaveRequestsView.swift */,
+				F20000000000000000000002 /* LeaveRequestForm.swift */,
+				F20000000000000000000003 /* BusinessTripsView.swift */,
+				F20000000000000000000004 /* BusinessTripForm.swift */,
+				F20000000000000000000005 /* OfficeRequestsView.swift */,
+				F20000000000000000000006 /* OfficeRequestForm.swift */,
 			);
 			path = ChronosMobile;
 			sourceTree = "<group>";
@@ -322,6 +340,12 @@
 				B2213AE2397B2433A099F9AA /* NativeRecordCard.swift in Sources */,
 				9ED4B146B30158FB85F452C6 /* WorkflowRecordsView.swift in Sources */,
 				4DC8914251BB9153CE637D98 /* AvailableWorkflowsView.swift in Sources */,
+				F10000000000000000000001 /* LeaveRequestsView.swift in Sources */,
+				F10000000000000000000002 /* LeaveRequestForm.swift in Sources */,
+				F10000000000000000000003 /* BusinessTripsView.swift in Sources */,
+				F10000000000000000000004 /* BusinessTripForm.swift in Sources */,
+				F10000000000000000000005 /* OfficeRequestsView.swift in Sources */,
+				F10000000000000000000006 /* OfficeRequestForm.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
