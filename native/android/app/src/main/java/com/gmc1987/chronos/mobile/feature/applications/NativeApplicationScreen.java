@@ -77,6 +77,10 @@ public final class NativeApplicationScreen {
         }
     }
 
+    public void showWorkflowInstance(String instanceId) {
+        workflowInstance(instanceId, "待办任务", "/workflow-tasks/pending?page=0&size=50", "暂无待办任务");
+    }
+
     private void workflowCenter() {
         LinearLayout page = page("流程中心", back);
         LinearLayout tabs = ui.horizontal();
@@ -393,7 +397,7 @@ public final class NativeApplicationScreen {
     private static List<Option> options(JSONObject field) { List<Option> result = new ArrayList<>(); String raw = field.optString("optionsJson"); try { JSONArray values = new JSONArray(raw); for (int i = 0; i < values.length(); i++) { JSONObject item = values.optJSONObject(i); if (item != null) result.add(new Option(String.valueOf(item.opt("value")), String.valueOf(item.opt("label")))); } } catch (Exception ignored) {} return result; }
 
     private static List<Module> collaborationModules() { List<Module> result = new ArrayList<>(); result.add(new Module("用车与用印", "申请与执行状态", "/portal/collaboration/requests/my")); result.add(new Module("出差", "行程、预算和审批", "/portal/collaboration/business-trips")); result.add(new Module("公文", "收发、签发和归档", "/portal/collaboration/documents/my")); result.add(new Module("共享文件", "统一文件共享", "/portal/collaboration/files/shares")); result.add(new Module("通讯录", "教职工联系方式", "/portal/collaboration/contacts?keyword=")); return result; }
-    private static List<Module> teachingModules() { String[][] values = {{"plans","教学计划"},{"lessons","教案"},{"preparations","集体备课"},{"courseware","课件"},{"materials","教学材料"},{"questions","题库"},{"knowledge-points","知识点"},{"research","教研"},{"mistakes","错题沉淀"}}; List<Module> result = new ArrayList<>(); for (String[] value : values) result.add(new Module(value[1], "查看和管理" + value[1], "/education/teaching-center/api/" + value[0] + "?page=0&size=50")); return result; }
+    private static List<Module> teachingModules() { String[][] values = {{"plans","教学计划"},{"lesson-plans","教案"},{"preparations","集体备课"},{"coursewares","课件"},{"materials","教学材料"},{"questions","题库"},{"knowledge-points","知识点"},{"research","教研"},{"mistakes","错题沉淀"}}; List<Module> result = new ArrayList<>(); for (String[] value : values) result.add(new Module(value[1], "查看和管理" + value[1], "/education/teaching-center/api/" + value[0] + "?page=0&size=50")); return result; }
 
     private interface CardDecorator { void decorate(JSONObject row, LinearLayout card); }
     private interface ValueProvider { Object get(); }

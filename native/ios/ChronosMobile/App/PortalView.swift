@@ -21,7 +21,7 @@ struct PortalView: View {
         case .student:
             TabView {
                 StudentWorkbenchView(bootstrap: bootstrap)
-                    .tabItem { Label("工作台", systemImage: "rectangle.grid.2x2") }
+                    .tabItem { Label("工作台", systemImage: "house.fill") }
                 GradesListView()
                     .tabItem { Label("成绩", systemImage: "graduationcap") }
                 ExamsListView()
@@ -34,7 +34,7 @@ struct PortalView: View {
         case .teacher, .staff, .management:
             TabView {
                 RoleWorkbenchView(bootstrap: bootstrap, kind: model.workbenchKind)
-                    .tabItem { Label("工作台", systemImage: "rectangle.grid.2x2") }
+                    .tabItem { Label("工作台", systemImage: "house.fill") }
                 ApplicationsView(applications: bootstrap.applications)
                     .tabItem { Label("应用", systemImage: "square.grid.2x2") }
                 PublicationsListView(title: "公告", type: "ANNOUNCEMENT")
@@ -45,4 +45,3 @@ struct PortalView: View {
         }
     }
 }
-

@@ -23,8 +23,10 @@ import com.gmc1987.chronos.mobile.feature.schedule.ScheduleRepository;
 import com.gmc1987.chronos.mobile.feature.schedule.CourseDetailScreen;
 import com.gmc1987.chronos.mobile.feature.applications.NativeApplicationScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingsRepository;
+import com.gmc1987.chronos.mobile.feature.workbench.MeetingDetailScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.SupervisionRepository;
 import com.gmc1987.chronos.mobile.feature.workbench.WorkbenchScreen;
+import com.gmc1987.chronos.mobile.feature.workbench.WorkbenchItemDetailScreen;
 
 public final class AppNavigator implements ScreenHost {
     private final Activity activity;
@@ -124,7 +126,8 @@ public final class AppNavigator implements ScreenHost {
         new WorkbenchScreen(ui, async, this,
                 activity.getSharedPreferences("chronos_session", Activity.MODE_PRIVATE),
                 portal, schedules, meetings, supervision, this::showApplications,
-                this::showCourseDetail).show();
+                this::showCourseDetail, this::showMeetingDetail,
+                this::showWorkflowDetail, this::showWorkbenchItemDetail).show();
     }
 
     private void showApplications() {
@@ -154,6 +157,19 @@ public final class AppNavigator implements ScreenHost {
 
     private void showCourseDetail(org.json.JSONObject occurrence) {
         new CourseDetailScreen(ui, this, occurrence, this::showWorkbench).show();
+    }
+
+    private void showMeetingDetail(org.json.JSONObject meeting) {
+        new MeetingDetailScreen(ui, async, this, meetings, meeting, this::showWorkbench).show();
+    }
+
+    private void showWorkflowDetail(String instanceId) {
+        new NativeApplicationScreen(activity, ui, async, this, http, new org.json.JSONObject(),
+                this::showWorkbench).showWorkflowInstance(instanceId);
+    }
+
+    private void showWorkbenchItemDetail(org.json.JSONObject item) {
+        new WorkbenchItemDetailScreen(ui, this, "事项", item, this::showWorkbench).show();
     }
 
     private RemoteListScreen remote() {

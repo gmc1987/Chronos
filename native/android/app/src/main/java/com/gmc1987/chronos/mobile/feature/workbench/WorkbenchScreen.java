@@ -31,6 +31,9 @@ public final class WorkbenchScreen {
     private final SupervisionRepository supervision;
     private final Runnable applications;
     private final Consumer<JSONObject> courseDetails;
+    private final Consumer<JSONObject> meetingDetails;
+    private final Consumer<String> workflowDetails;
+    private final Consumer<JSONObject> itemDetails;
 
     public WorkbenchScreen(
             UiKit ui,
@@ -42,7 +45,10 @@ public final class WorkbenchScreen {
             MeetingsRepository meetings,
             SupervisionRepository supervision,
             Runnable applications,
-            Consumer<JSONObject> courseDetails) {
+            Consumer<JSONObject> courseDetails,
+            Consumer<JSONObject> meetingDetails,
+            Consumer<String> workflowDetails,
+            Consumer<JSONObject> itemDetails) {
         this.ui = ui;
         this.async = async;
         this.host = host;
@@ -53,6 +59,9 @@ public final class WorkbenchScreen {
         this.supervision = supervision;
         this.applications = applications;
         this.courseDetails = courseDetails;
+        this.meetingDetails = meetingDetails;
+        this.workflowDetails = workflowDetails;
+        this.itemDetails = itemDetails;
     }
 
     public void show() {
@@ -119,11 +128,9 @@ public final class WorkbenchScreen {
 
     private void addStaffCards(LinearLayout page) {
         addContributionCard(page, "我的待办", "WORKFLOW", "当前没有待处理事项");
-        addRemoteCard(page, "近期会议", "未来暂无会议",
-                meetings::list, RowFormatters::meetings);
+        addMeetingsCard(page);
         if (portal.workspace() == PortalState.Workspace.MANAGEMENT) {
-            addRemoteCard(page, "督办事项", "当前没有督办事项",
-                    supervision::list, RowFormatters::generic);
+            addSupervisionCard(page);
             addMetricsCard(page);
             return;
         }
@@ -143,8 +150,25 @@ public final class WorkbenchScreen {
         card.addView(ui.label(title, 17, UiKit.TEXT, true));
         if (contribution.length() > 0 && contribution.optBoolean("available", false)) {
             JSONObject data = contribution.optJSONObject("data");
-            card.addView(ui.label(data == null || data.length() == 0
-                    ? emptyText : "服务已接入，可在应用中心处理", 13, UiKit.MUTED, false));
+            JSONArray items = data == null ? null : data.optJSONArray("items");
+            if (items == null || items.length() == 0) {
+                card.addView(ui.label(emptyText, 13, UiKit.MUTED, false));
+            } else for (int i = 0; i < Math.min(3, items.length()); i++) {
+                JSONObject item = items.optJSONObject(i);
+                if (item == null) continue;
+                LinearLayout row = ui.vertical();
+                row.addView(ui.label(item.optString("title", item.optString("flowName", "事项")),
+                        14, UiKit.TEXT, true));
+                row.addView(ui.label(item.optString("summary", item.optString("nodeName", "点击查看详情")),
+                        12, UiKit.MUTED, false));
+                row.setClickable(true);
+                row.setOnClickListener(view -> {
+                    String instanceId = item.optString("instanceId");
+                    if (instanceId.isEmpty()) itemDetails.accept(item);
+                    else workflowDetails.accept(instanceId);
+                });
+                card.addView(row);
+            }
         } else {
             card.addView(ui.label("建设中 · " + (contribution.length() == 0
                     ? "服务端尚未提供摘要接口"
@@ -178,12 +202,83 @@ public final class WorkbenchScreen {
         });
     }
 
+    private void addMeetingsCard(LinearLayout page) {
+        LinearLayout card = ui.card();
+        card.addView(ui.label("近期会议", 17, UiKit.TEXT, true));
+        LinearLayout body = ui.vertical();
+        body.addView(new ProgressBar(card.getContext()));
+        card.addView(body);
+        page.addView(card);
+        async.run(meetings::list, response -> {
+            body.removeAllViews();
+            JSONArray rows = response.optJSONArray("data");
+            if (rows == null || rows.length() == 0) {
+                body.addView(ui.empty("未来暂无会议"));
+                return;
+            }
+            for (int i = 0; i < Math.min(3, rows.length()); i++) {
+                JSONObject row = rows.optJSONObject(i);
+                if (row == null || row.optJSONObject("meeting") == null) continue;
+                JSONObject meeting = row.optJSONObject("meeting");
+                LinearLayout item = ui.vertical();
+                item.setPadding(0, ui.dp(8), 0, ui.dp(8));
+                item.addView(ui.label(meeting.optString("title", "会议"), 14, UiKit.TEXT, true));
+                item.addView(ui.label(meeting.optString("startTime", "") + " · 点击查看详情",
+                        12, UiKit.MUTED, false));
+                item.setClickable(true);
+                item.setOnClickListener(view -> meetingDetails.accept(row));
+                body.addView(item);
+            }
+        }, error -> {
+            body.removeAllViews();
+            body.addView(ui.error(ErrorMessages.display(error, "近期会议加载失败"), this::show));
+        });
+    }
+
+    private void addSupervisionCard(LinearLayout page) {
+        LinearLayout card = ui.card();
+        card.addView(ui.label("督办事项", 17, UiKit.TEXT, true));
+        LinearLayout body = ui.vertical();
+        body.addView(new ProgressBar(card.getContext()));
+        card.addView(body);
+        page.addView(card);
+        async.run(supervision::list, response -> {
+            body.removeAllViews();
+            Object data = response.opt("data");
+            JSONArray rows = data instanceof JSONArray ? (JSONArray) data
+                    : data instanceof JSONObject ? ((JSONObject) data).optJSONArray("content") : null;
+            if (rows == null || rows.length() == 0) {
+                body.addView(ui.empty("当前没有督办事项"));
+                return;
+            }
+            for (int i = 0; i < Math.min(3, rows.length()); i++) {
+                JSONObject row = rows.optJSONObject(i);
+                if (row == null) continue;
+                LinearLayout item = ui.vertical();
+                item.addView(ui.label(row.optString("title", row.optString("name", "督办事项")),
+                        14, UiKit.TEXT, true));
+                item.addView(ui.label(row.optString("status", "点击查看详情"),
+                        12, UiKit.MUTED, false));
+                item.setClickable(true);
+                item.setOnClickListener(view -> itemDetails.accept(row));
+                body.addView(item);
+            }
+        }, error -> {
+            body.removeAllViews();
+            body.addView(ui.error(ErrorMessages.display(error, "督办事项加载失败"), this::show));
+        });
+    }
+
     private void addApplicationCard(LinearLayout page, String title, String... keys) {
         LinearLayout card = ui.card();
         card.addView(ui.label(title, 17, UiKit.TEXT, true));
         List<String> names = portal.applicationNames(keys);
         card.addView(ui.label(names.isEmpty()
                 ? "当前账号暂无授权应用" : String.join(" · ", names), 13, UiKit.MUTED, false));
+        if (!names.isEmpty()) {
+            card.setClickable(true);
+            card.setOnClickListener(view -> applications.run());
+        }
         page.addView(card);
     }
 
