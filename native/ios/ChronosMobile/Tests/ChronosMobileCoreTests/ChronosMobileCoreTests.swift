@@ -101,6 +101,36 @@ final class ChronosMobileCoreTests: XCTestCase {
         XCTAssertNil(bootstrap.contributions["DATA"]?.data?.mySchedule?.first?.offeringId)
     }
 
+    func testBootstrapApplicationDecodesConfiguredPortalRoute() throws {
+        let payload = """
+        {
+          "user": {
+            "username": "teacher",
+            "roles": ["TEACHER"],
+            "permissions": []
+          },
+          "applications": [{
+            "id": "application-1",
+            "code": "teaching-center",
+            "name": "教学中心",
+            "routePath": "/portal/education/teaching-center",
+            "openMode": "INTERNAL",
+            "recommended": true,
+            "favorite": false
+          }],
+          "widgets": [],
+          "contributions": {}
+        }
+        """
+
+        let bootstrap = try JSONDecoder().decode(PortalBootstrap.self, from: Data(payload.utf8))
+
+        XCTAssertEqual(
+            bootstrap.applications.first?.routePath,
+            "/portal/education/teaching-center"
+        )
+    }
+
     private func decodeBootstrap(
         roles: [String],
         permissions: [String],

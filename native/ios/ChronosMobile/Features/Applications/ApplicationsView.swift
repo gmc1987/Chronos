@@ -72,14 +72,45 @@ struct AuthenticatedPortalView: View {
     @EnvironmentObject var model: AppModel
     @State private var accessToken: String?
     @State private var loadedToken = false
+    @State private var loadError: String?
+    @State private var reloadID = UUID()
+
+    private var routePath: String {
+        application.routePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         Group {
-            if let accessToken {
-                PortalWebView(
-                    routePath: application.routePath,
-                    accessToken: accessToken
+            if routePath.isEmpty {
+                ContentUnavailableView(
+                    "应用地址未配置",
+                    systemImage: "link.badge.plus",
+                    description: Text("请在门户配置中为“\(application.name)”设置访问地址。")
                 )
+            } else if let accessToken {
+                ZStack {
+                    PortalWebView(
+                        routePath: routePath,
+                        accessToken: accessToken,
+                        loadError: $loadError
+                    )
+                    .id(reloadID)
+
+                    if let loadError {
+                        ContentUnavailableView {
+                            Label("页面加载失败", systemImage: "wifi.exclamationmark")
+                        } description: {
+                            Text(loadError)
+                        } actions: {
+                            Button("重新加载") {
+                                self.loadError = nil
+                                reloadID = UUID()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .background(ChronosPalette.background)
+                    }
+                }
             } else if loadedToken {
                 ContentUnavailableView(
                     "登录状态已失效",
@@ -102,6 +133,7 @@ struct AuthenticatedPortalView: View {
 struct PortalWebView: UIViewRepresentable {
     let routePath: String
     let accessToken: String
+    @Binding var loadError: String?
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -126,9 +158,35 @@ struct PortalWebView: UIViewRepresentable {
         webView.load(URLRequest(url: url))
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(loadError: $loadError) }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {}
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        private var loadError: Binding<String?>
+
+        init(loadError: Binding<String?>) {
+            self.loadError = loadError
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            loadError.wrappedValue = nil
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            loadError.wrappedValue = error.localizedDescription
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFail navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            loadError.wrappedValue = error.localizedDescription
+        }
+    }
 
     private func json(_ value: String) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: [value]),
