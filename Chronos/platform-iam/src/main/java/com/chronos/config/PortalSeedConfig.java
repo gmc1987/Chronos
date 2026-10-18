@@ -81,7 +81,20 @@ public class PortalSeedConfig {
     private PortalApplication app(String code, String name, String description, String icon, String path, int order) {
         PortalApplication app = new PortalApplication(); app.setAppCode(code); app.setAppName(name);
         app.setDescription(description); app.setIcon(icon); app.setRoutePath(path); app.setOpenMode("INTERNAL");
+        app.setPresentationMode("NATIVE"); app.setNativeFeatureCode(nativeFeatureCode(code));
         app.setSortOrder(order); app.setEnabled(true); app.setRecommended(order <= 30); return app;
+    }
+
+    private String nativeFeatureCode(String code) {
+        return switch (code) {
+            case "workflow" -> "WORKFLOW_TASKS";
+            case "oa" -> "COLLABORATION";
+            case "document" -> "DOCUMENTS";
+            case "file" -> "FILES";
+            case "knowledge" -> "KNOWLEDGE";
+            case "ai" -> "AI_CENTER";
+            default -> code.toUpperCase(java.util.Locale.ROOT).replace('-', '_');
+        };
     }
 
     private PortalWidget widget(String code, String name, String component, String provider, String size, int order) {

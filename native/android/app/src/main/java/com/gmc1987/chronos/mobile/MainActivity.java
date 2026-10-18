@@ -71,7 +71,7 @@ public final class MainActivity extends Activity implements ScreenHost {
                 new AnnouncementsRepository(http),
                 new MeetingsRepository(http),
                 new SupervisionRepository(http),
-                session,
+                http,
                 this::showLogin).start();
     }
 

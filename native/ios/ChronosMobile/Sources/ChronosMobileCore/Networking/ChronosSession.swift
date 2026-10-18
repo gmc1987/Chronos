@@ -28,7 +28,7 @@ public actor ChronosSession {
         tokenStore.clear()
     }
 
-    /// Supplies the short-lived access token to the trusted in-app portal.
+    /// Exposes the short-lived access token to native feature clients that need it.
     public func currentAccessToken() -> String? {
         tokens?.accessToken
     }
@@ -97,6 +97,26 @@ public actor ChronosSession {
         return value
     }
 
+    public func getJSON(_ path: String) async throws -> JSONValue {
+        try await get(path, as: JSONValue.self)
+    }
+
+    public func sendJSON(
+        _ path: String,
+        method: String = "POST",
+        body: JSONValue = .object([:])
+    ) async throws -> JSONValue {
+        let bodyData = try JSONEncoder().encode(body)
+        let data = try await requestData(
+            path: path,
+            method: method,
+            bodyData: bodyData,
+            authenticated: true,
+            retry: true
+        )
+        return try decode(JSONValue.self, from: data) ?? .null
+    }
+
     private func request(
         path: String,
         method: String,
@@ -104,15 +124,30 @@ public actor ChronosSession {
         authenticated: Bool,
         retry: Bool = true
     ) async throws -> Data {
+        let bodyData = body.map { try? JSONSerialization.data(withJSONObject: $0) } ?? nil
+        return try await requestData(
+            path: path,
+            method: method,
+            bodyData: bodyData,
+            authenticated: authenticated,
+            retry: retry
+        )
+    }
+
+    private func requestData(
+        path: String,
+        method: String,
+        bodyData: Data?,
+        authenticated: Bool,
+        retry: Bool
+    ) async throws -> Data {
         var urlRequest = URLRequest(url: try makeURL(path))
         urlRequest.httpMethod = method
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if authenticated, let accessToken = tokens?.accessToken {
             urlRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
-        if let body {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
-        }
+        urlRequest.httpBody = bodyData
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
         guard let http = response as? HTTPURLResponse else {
@@ -120,10 +155,10 @@ public actor ChronosSession {
         }
         if http.statusCode == 401 && authenticated && retry {
             try await refresh()
-            return try await request(
+            return try await requestData(
                 path: path,
                 method: method,
-                body: body,
+                bodyData: bodyData,
                 authenticated: true,
                 retry: false
             )

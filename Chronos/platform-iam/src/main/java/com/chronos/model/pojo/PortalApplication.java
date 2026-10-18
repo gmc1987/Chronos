@@ -29,6 +29,11 @@ public class PortalApplication extends BaseEntity {
     private String routePath;
     @Column(name = "open_mode", length = 20, nullable = false)
     private String openMode = "INTERNAL";
+    /** Native clients navigate by a stable capability code instead of a web URL. */
+    @Column(name = "presentation_mode", length = 30, nullable = false)
+    private String presentationMode = "NATIVE";
+    @Column(name = "native_feature_code", length = 80)
+    private String nativeFeatureCode;
     @Column(name = "required_permission", length = 200)
     private String requiredPermission;
     @Column(name = "sort_order")

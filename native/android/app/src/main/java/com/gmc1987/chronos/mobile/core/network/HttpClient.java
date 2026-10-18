@@ -26,6 +26,14 @@ public final class HttpClient {
         return request(path, "POST", body, authenticated, authenticated);
     }
 
+    public JSONObject put(String path, JSONObject body) throws Exception {
+        return request(path, "PUT", body, true, true);
+    }
+
+    public JSONObject delete(String path) throws Exception {
+        return request(path, "DELETE", null, true, true);
+    }
+
     private JSONObject request(
             String path, String method, JSONObject body, boolean authenticated, boolean retry)
             throws Exception {

@@ -20,9 +20,8 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- The native shell embeds the configured Chronos portal in WKWebView.
-		     Local and private-network validation environments still use HTTP. -->
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<!-- Local and private-network validation environments still use HTTP APIs. -->
+		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>

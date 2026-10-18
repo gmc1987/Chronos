@@ -39,11 +39,14 @@ public struct PortalApplication: Decodable, Identifiable, Sendable {
     public let icon: String?
     public let routePath: String
     public let openMode: String?
+    public let presentationMode: String
+    public let nativeFeatureCode: String?
     public let recommended: Bool
     public let favorite: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, code, name, appName, description, icon, routePath, openMode, recommended, favorite
+        case id, code, name, appName, description, icon, routePath, openMode, presentationMode,
+             nativeFeatureCode, recommended, favorite
     }
 
     public init(from decoder: Decoder) throws {
@@ -57,8 +60,62 @@ public struct PortalApplication: Decodable, Identifiable, Sendable {
         icon = try container.decodeIfPresent(String.self, forKey: .icon)
         routePath = try container.decodeIfPresent(String.self, forKey: .routePath) ?? ""
         openMode = try container.decodeIfPresent(String.self, forKey: .openMode)
+        presentationMode = try container.decodeIfPresent(String.self, forKey: .presentationMode)
+            ?? (openMode == "EXTERNAL" ? "EXTERNAL" : "NATIVE")
+        nativeFeatureCode = try container.decodeIfPresent(String.self, forKey: .nativeFeatureCode)
         recommended = try container.decodeIfPresent(Bool.self, forKey: .recommended) ?? false
         favorite = try container.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
+    }
+}
+
+/// A Sendable JSON tree used by API-driven native screens and workflow form values.
+public enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else if let value = try? container.decode([String: JSONValue].self) { self = .object(value) }
+        else { self = .array(try container.decode([JSONValue].self)) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+
+    public var objectValue: [String: JSONValue]? {
+        guard case .object(let value) = self else { return nil }
+        return value
+    }
+
+    public var arrayValue: [JSONValue]? {
+        guard case .array(let value) = self else { return nil }
+        return value
+    }
+
+    public var stringValue: String? {
+        switch self {
+        case .string(let value): return value
+        case .number(let value): return value.rounded() == value ? String(Int(value)) : String(value)
+        case .bool(let value): return value ? "是" : "否"
+        default: return nil
+        }
     }
 }
 

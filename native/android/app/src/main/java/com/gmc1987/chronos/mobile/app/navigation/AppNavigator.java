@@ -12,7 +12,7 @@ import com.gmc1987.chronos.mobile.core.common.RowFormatters;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
 import com.gmc1987.chronos.mobile.core.model.PortalState;
-import com.gmc1987.chronos.mobile.core.network.SessionStore;
+import com.gmc1987.chronos.mobile.core.network.HttpClient;
 import com.gmc1987.chronos.mobile.feature.announcements.AnnouncementsRepository;
 import com.gmc1987.chronos.mobile.feature.applications.ApplicationsScreen;
 import com.gmc1987.chronos.mobile.feature.auth.AuthRepository;
@@ -21,7 +21,7 @@ import com.gmc1987.chronos.mobile.feature.grades.GradesRepository;
 import com.gmc1987.chronos.mobile.feature.profile.ProfileScreen;
 import com.gmc1987.chronos.mobile.feature.schedule.ScheduleRepository;
 import com.gmc1987.chronos.mobile.feature.schedule.CourseDetailScreen;
-import com.gmc1987.chronos.mobile.feature.applications.WebPortalScreen;
+import com.gmc1987.chronos.mobile.feature.applications.NativeApplicationScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingsRepository;
 import com.gmc1987.chronos.mobile.feature.workbench.SupervisionRepository;
 import com.gmc1987.chronos.mobile.feature.workbench.WorkbenchScreen;
@@ -38,7 +38,7 @@ public final class AppNavigator implements ScreenHost {
     private final AnnouncementsRepository announcements;
     private final MeetingsRepository meetings;
     private final SupervisionRepository supervision;
-    private final SessionStore session;
+    private final HttpClient http;
     private final Runnable loggedOut;
     private FrameLayout content;
     private LinearLayout tabs;
@@ -56,7 +56,7 @@ public final class AppNavigator implements ScreenHost {
             AnnouncementsRepository announcements,
             MeetingsRepository meetings,
             SupervisionRepository supervision,
-            SessionStore session,
+            HttpClient http,
             Runnable loggedOut) {
         this.activity = activity;
         this.ui = ui;
@@ -69,7 +69,7 @@ public final class AppNavigator implements ScreenHost {
         this.announcements = announcements;
         this.meetings = meetings;
         this.supervision = supervision;
-        this.session = session;
+        this.http = http;
         this.loggedOut = loggedOut;
     }
 
@@ -148,7 +148,8 @@ public final class AppNavigator implements ScreenHost {
     }
 
     private void openApplication(org.json.JSONObject application) {
-        new WebPortalScreen(activity, ui, this, session, application, this::showApplications).show();
+        new NativeApplicationScreen(activity, ui, async, this, http, application,
+                this::showApplications).show();
     }
 
     private void showCourseDetail(org.json.JSONObject occurrence) {

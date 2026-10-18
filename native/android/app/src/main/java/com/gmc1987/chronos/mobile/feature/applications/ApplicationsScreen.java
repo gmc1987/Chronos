@@ -45,7 +45,12 @@ public final class ApplicationsScreen {
             copy.addView(detail);
             row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
             Button open = ui.secondaryButton("打开  ›");
-            open.setEnabled(!application.optString("routePath", "").isEmpty());
+            boolean external = "EXTERNAL".equalsIgnoreCase(application.optString("presentationMode"))
+                    || "EXTERNAL".equalsIgnoreCase(application.optString("openMode"));
+            open.setEnabled(external
+                    ? !application.optString("routePath", "").isEmpty()
+                    : !application.optString("nativeFeatureCode",
+                            application.optString("code", "")).isEmpty());
             open.setOnClickListener(view -> routes.open(application));
             row.addView(open, new LinearLayout.LayoutParams(ui.dp(86), ui.dp(44)));
             card.addView(row);

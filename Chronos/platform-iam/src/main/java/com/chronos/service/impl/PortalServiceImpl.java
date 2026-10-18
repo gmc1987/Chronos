@@ -227,6 +227,13 @@ public class PortalServiceImpl implements IPortalService {
         requireText(app.getAppCode(),"应用编码");requireText(app.getAppName(),"应用名称");if(target.getId()!=null&&!java.util.Objects.equals(target.getAppCode(),app.getAppCode()))throw new IllegalArgumentException("应用编码创建后不允许修改");validateRoute(app);applicationRepository.findByAppCode(app.getAppCode()).filter(v->!v.getId().equals(app.getId())).ifPresent(v->{throw new IllegalArgumentException("应用编码已存在");});
         target.setAppCode(app.getAppCode()); target.setAppName(app.getAppName()); target.setDescription(app.getDescription());
         target.setIcon(app.getIcon()); target.setRoutePath(app.getRoutePath()); target.setOpenMode(app.getOpenMode());
+        String presentationMode = app.getPresentationMode() == null || app.getPresentationMode().isBlank()
+                ? ("EXTERNAL".equalsIgnoreCase(app.getOpenMode()) ? "EXTERNAL" : "NATIVE")
+                : app.getPresentationMode().trim().toUpperCase(java.util.Locale.ROOT);
+        target.setPresentationMode(presentationMode);
+        target.setNativeFeatureCode(app.getNativeFeatureCode() == null
+                ? null
+                : app.getNativeFeatureCode().trim().toUpperCase(java.util.Locale.ROOT));
         target.setRequiredPermission(app.getRequiredPermission()); target.setSortOrder(app.getSortOrder());
         target.setEnabled(app.getEnabled()); target.setRecommended(app.getRecommended());
         target.setAudienceRoleCodes(app.getAudienceRoleCodes());target.setAudienceOrganizationIds(app.getAudienceOrganizationIds());target.setAudienceDepartmentIds(app.getAudienceDepartmentIds());
@@ -268,6 +275,7 @@ public class PortalServiceImpl implements IPortalService {
         data.put("id", app.getId()); data.put("code", app.getAppCode()); data.put("name", app.getAppName());
         data.put("description", app.getDescription()); data.put("icon", app.getIcon()); data.put("routePath", app.getRoutePath());
         data.put("openMode", app.getOpenMode()); data.put("recommended", app.getRecommended()); data.put("favorite", favorite);
+        data.put("presentationMode", app.getPresentationMode()); data.put("nativeFeatureCode", app.getNativeFeatureCode());
         return data;
     }
 
