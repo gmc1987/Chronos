@@ -26,7 +26,12 @@ public final class WorkflowStartScreen {
     public void show() {
         ApplicationScreenChrome chrome = new ApplicationScreenChrome(ui, host);
         chrome.loading("正在加载流程表单…");
-        async.run(() -> ApplicationJson.dataObject(http.get("/workflows/" + flowId + "/start-form")),
+        async.run(() -> {
+                    JSONObject schema = ApplicationJson.dataObject(
+                            http.get("/workflows/" + flowId + "/start-form"));
+                    WorkflowOptionResolver.resolve(http, schema.optJSONArray("fields"));
+                    return schema;
+                },
                 this::render,
                 error -> chrome.error("发起流程", error, this::show, back));
     }
@@ -36,8 +41,8 @@ public final class WorkflowStartScreen {
         LinearLayout page = chrome.page(schema.optString("flowName", "发起流程"), back);
         EditText businessKey = ui.input("业务编号（可选）", false);
         page.addView(businessKey);
-        DynamicWorkflowForm form = new DynamicWorkflowForm(
-                activity, ui, schema.optJSONArray("fields"), new JSONObject());
+        DynamicWorkflowForm form = new DynamicWorkflowForm(activity, ui, async, http, null,
+                schema.optJSONArray("fields"), new JSONObject());
         page.addView(form.view());
         Button submit = ui.primaryButton("提交申请");
         submit.setOnClickListener(view -> submit(businessKey, form, submit));

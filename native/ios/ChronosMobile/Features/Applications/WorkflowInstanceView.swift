@@ -7,13 +7,20 @@ struct WorkflowInstanceView: View {
     @State private var formValues: [String: [String: JSONValue]] = [:]
     @State private var comment = ""
     @State private var error: String?
+    @State private var activeUploads = 0
+    @State private var submitting = false
     var body: some View {
         Form {
             if let bundle {
                 ForEach(Array((bundle["forms"]?.arrayValue ?? []).enumerated()), id: \.offset) { _, form in
                     if let f = form.objectValue, let formID = f["formId"]?.stringValue {
                         Section(f["formName"]?.stringValue ?? "流程表单") {
-                            DynamicWorkflowFields(fields: f["fields"]?.arrayValue ?? [], values: valuesBinding(formID))
+                            DynamicWorkflowFields(
+                                fields: f["fields"]?.arrayValue ?? [],
+                                businessID: instanceID,
+                                onUploadingChange: trackUpload,
+                                values: valuesBinding(formID)
+                            )
                         }
                     }
                 }
@@ -27,12 +34,15 @@ struct WorkflowInstanceView: View {
                     TextField("请输入处理意见", text: $comment, axis: .vertical)
                     if task["taskKind"]?.stringValue == "STARTER_REWORK" {
                         Button("重新提交") { Task { await complete(.resubmit) } }
+                            .disabled(submitting || activeUploads > 0)
                     } else {
                         if bundle["operations"]?.objectValue?["approve"] != .bool(false) {
                             Button("同意") { Task { await complete(.approve) } }
+                                .disabled(submitting || activeUploads > 0)
                         }
                         if bundle["operations"]?.objectValue?["reject"] != .bool(false) {
                             Button("驳回", role: .destructive) { Task { await complete(.reject) } }
+                                .disabled(submitting || activeUploads > 0)
                         }
                     }
                 }}
@@ -52,7 +62,10 @@ struct WorkflowInstanceView: View {
     }
     private enum Action { case approve, reject, resubmit }
     private func complete(_ action: Action) async {
+        guard !submitting, activeUploads == 0 else { return }
         guard let id = bundle?["currentTask"]?.objectValue?["id"]?.stringValue else { return }
+        submitting = true
+        defer { submitting = false }
         do {
             for form in bundle?["forms"]?.arrayValue ?? [] {
                 guard let object = form.objectValue, let formID = object["formId"]?.stringValue else { continue }
@@ -85,5 +98,8 @@ struct WorkflowInstanceView: View {
     }
     private func valuesBinding(_ formID: String) -> Binding<[String: JSONValue]> {
         Binding(get: { formValues[formID] ?? [:] }, set: { formValues[formID] = $0 })
+    }
+    private func trackUpload(_ uploading: Bool) {
+        activeUploads = max(0, activeUploads + (uploading ? 1 : -1))
     }
 }

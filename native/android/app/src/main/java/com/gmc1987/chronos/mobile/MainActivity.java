@@ -2,11 +2,13 @@ package com.gmc1987.chronos.mobile;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.content.Intent;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import com.gmc1987.chronos.mobile.app.navigation.AppNavigator;
 import com.gmc1987.chronos.mobile.core.common.AsyncRunner;
 import com.gmc1987.chronos.mobile.core.common.ErrorMessages;
+import com.gmc1987.chronos.mobile.core.common.DocumentPicker;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
 import com.gmc1987.chronos.mobile.core.model.PortalState;
@@ -30,6 +32,17 @@ public final class MainActivity extends Activity implements ScreenHost {
     private PortalRepository portal;
     private HttpClient http;
     private SessionStore session;
+    private AppNavigator navigator;
+    private final DocumentPicker documentPicker = new DocumentPicker();
+
+    public DocumentPicker documentPicker() { return documentPicker; }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (!documentPicker.handle(requestCode, resultCode, data)) {
+            super.onActivityResult(requestCode, resultCode, data);
+        }
+    }
 
     @Override
     public void onCreate(Bundle state) {
@@ -45,11 +58,18 @@ public final class MainActivity extends Activity implements ScreenHost {
     }
 
     @Override
+    public void onBackPressed() {
+        if (navigator != null && navigator.navigateBack()) return;
+        super.onBackPressed();
+    }
+
+    @Override
     public void show(android.view.View view) {
         setContentView(view);
     }
 
     private void showLogin() {
+        navigator = null;
         new LoginScreen(ui, async, this, auth).show(this::initializePortal);
     }
 
@@ -59,7 +79,7 @@ public final class MainActivity extends Activity implements ScreenHost {
     }
 
     private void startApplication(PortalState state) {
-        new AppNavigator(
+        navigator = new AppNavigator(
                 this,
                 ui,
                 async,
@@ -72,7 +92,8 @@ public final class MainActivity extends Activity implements ScreenHost {
                 new MeetingsRepository(http),
                 new SupervisionRepository(http),
                 http,
-                this::showLogin).start();
+                this::showLogin);
+        navigator.start();
     }
 
     private void showInitializationError(Exception error) {

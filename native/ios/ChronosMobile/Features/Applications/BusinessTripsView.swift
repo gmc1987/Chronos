@@ -12,7 +12,11 @@ struct BusinessTripsView: View {
             else if let error { InlineErrorView(message: error, retry: { Task { await load() } }) }
             else if rows.isEmpty { EmptyStateView(icon: "suitcase", text: "暂无出差申请") }
             else { List(Array(rows.enumerated()), id: \.offset) { _, row in
-                NavigationLink { NativeRecordDetailView(title: "出差详情", record: row) } label: { NativeRecordCard(record: row) }
+                NavigationLink {
+                    RequestActionDetailView(title: "出差详情", record: row, kind: .businessTrip) {
+                        Task { await load() }
+                    }
+                } label: { NativeRecordCard(record: row) }
             }.listStyle(.insetGrouped) }
         }
         .navigationTitle("出差")

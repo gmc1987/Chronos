@@ -45,6 +45,7 @@ public final class AppNavigator implements ScreenHost {
     private FrameLayout content;
     private LinearLayout tabs;
     private String selectedTab = "工作台";
+    private Runnable backAction;
 
     public AppNavigator(
             Activity activity,
@@ -96,20 +97,38 @@ public final class AppNavigator implements ScreenHost {
         content.addView(view);
     }
 
+    @Override
+    public void setBackAction(Runnable action) {
+        backAction = action;
+    }
+
+    public boolean navigateBack() {
+        if (backAction == null) return false;
+        Runnable action = backAction;
+        backAction = null;
+        action.run();
+        return true;
+    }
+
+    private void showRoot(Runnable action) {
+        backAction = null;
+        action.run();
+    }
+
     private void renderTabs() {
         tabs.removeAllViews();
-        addTab("工作台", R.drawable.ic_tab_workbench, this::showWorkbench);
+        addTab("工作台", R.drawable.ic_tab_workbench, () -> showRoot(this::showWorkbench));
         if (portal.workspace() == PortalState.Workspace.STUDENT) {
-            addTab("成绩", R.drawable.ic_tab_grades, this::showGrades);
-            addTab("考试", R.drawable.ic_tab_exams, this::showExams);
+            addTab("成绩", R.drawable.ic_tab_grades, () -> showRoot(this::showGrades));
+            addTab("考试", R.drawable.ic_tab_exams, () -> showRoot(this::showExams));
             addTab("通知", R.drawable.ic_tab_notifications,
-                    () -> showAnnouncements("通知", "当前没有可见通知"));
+                    () -> showRoot(() -> showAnnouncements("通知", "当前没有可见通知")));
         } else {
-            addTab("应用", R.drawable.ic_tab_applications, this::showApplications);
+            addTab("应用", R.drawable.ic_tab_applications, () -> showRoot(this::showApplications));
             addTab("公告", R.drawable.ic_tab_announcements,
-                    () -> showAnnouncements("公告", "当前没有可见公告"));
+                    () -> showRoot(() -> showAnnouncements("公告", "当前没有可见公告")));
         }
-        addTab("我的", R.drawable.ic_tab_profile, this::showProfile);
+        addTab("我的", R.drawable.ic_tab_profile, () -> showRoot(this::showProfile));
     }
 
     private void addTab(String title, int iconResource, Runnable action) {
@@ -123,6 +142,7 @@ public final class AppNavigator implements ScreenHost {
     }
 
     private void showWorkbench() {
+        backAction = null;
         new WorkbenchScreen(ui, async, this,
                 activity.getSharedPreferences("chronos_session", Activity.MODE_PRIVATE),
                 portal, schedules, meetings, supervision, this::showApplications,
@@ -131,22 +151,27 @@ public final class AppNavigator implements ScreenHost {
     }
 
     private void showApplications() {
+        backAction = null;
         new ApplicationsScreen(ui, this, portal, this::openApplication).show();
     }
 
     private void showProfile() {
+        backAction = null;
         new ProfileScreen(ui, async, this, portal, auth, loggedOut).show();
     }
 
     private void showGrades() {
+        backAction = null;
         remote().show("成绩", "当前学期暂无已发布成绩", grades::list, RowFormatters::grades);
     }
 
     private void showExams() {
+        backAction = null;
         remote().show("考试", "近期没有考试安排", exams::list, RowFormatters::exams);
     }
 
     private void showAnnouncements(String title, String empty) {
+        backAction = null;
         remote().show(title, empty, announcements::list, RowFormatters::publications);
     }
 
@@ -156,19 +181,23 @@ public final class AppNavigator implements ScreenHost {
     }
 
     private void showCourseDetail(org.json.JSONObject occurrence) {
+        backAction = this::showWorkbench;
         new CourseDetailScreen(ui, this, occurrence, this::showWorkbench).show();
     }
 
     private void showMeetingDetail(org.json.JSONObject meeting) {
+        backAction = this::showWorkbench;
         new MeetingDetailScreen(ui, async, this, meetings, meeting, this::showWorkbench).show();
     }
 
     private void showWorkflowDetail(String instanceId) {
+        backAction = this::showWorkbench;
         new NativeApplicationScreen(activity, ui, async, this, http, new org.json.JSONObject(),
                 this::showWorkbench).showWorkflowInstance(instanceId);
     }
 
     private void showWorkbenchItemDetail(org.json.JSONObject item) {
+        backAction = this::showWorkbench;
         new WorkbenchItemDetailScreen(ui, this, "事项", item, this::showWorkbench).show();
     }
 

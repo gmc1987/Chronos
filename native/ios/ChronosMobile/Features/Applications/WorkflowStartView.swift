@@ -9,12 +9,24 @@ struct WorkflowStartView: View {
     @State private var businessKey = ""
     @State private var error: String?
     @State private var submitting = false
+    @State private var activeUploads = 0
     var body: some View {
         Form {
             if let schema {
-                Section("申请信息") { TextField("业务编号（可选）", text: $businessKey); DynamicWorkflowFields(fields: schema["fields"]?.arrayValue ?? [], values: $values) }
+                Section("申请信息") {
+                    TextField("业务编号（可选）", text: $businessKey)
+                    DynamicWorkflowFields(
+                        fields: schema["fields"]?.arrayValue ?? [],
+                        businessID: nil,
+                        onUploadingChange: trackUpload,
+                        values: $values
+                    )
+                }
                 if let error { Text(error).foregroundStyle(.red) }
-                Button(submitting ? "正在提交…" : "提交申请") { Task { await submit() } }.disabled(submitting)
+                Button(submitting ? "正在提交…" : activeUploads > 0 ? "附件上传中…" : "提交申请") {
+                    Task { await submit() }
+                }
+                .disabled(submitting || activeUploads > 0)
             } else if let error { InlineErrorView(message: error, retry: { Task { await load() } }) }
             else { ProgressView("正在加载表单…") }
         }.navigationTitle(schema?["flowName"]?.stringValue ?? "发起流程").task { await load() }
@@ -23,8 +35,8 @@ struct WorkflowStartView: View {
     private func submit() async {
         guard let schema else { return }
         let missing = (schema["fields"]?.arrayValue ?? []).compactMap { field -> String? in
-            guard let f = field.objectValue, f["required"] == .bool(true), let key = f["fieldKey"]?.stringValue,
-                  values[key]?.stringValue?.isEmpty != false else { return nil }
+            guard let f = field.objectValue, f["required"] == .bool(true),
+                  let key = f["fieldKey"]?.stringValue, isBlank(values[key]) else { return nil }
             return f["fieldLabel"]?.stringValue ?? key
         }
         guard missing.isEmpty else { error = "请填写：\(missing.joined(separator: "、"))"; return }
@@ -36,5 +48,18 @@ struct WorkflowStartView: View {
             dismiss()
         } catch { self.error = error.localizedDescription }
         submitting = false
+    }
+    private func trackUpload(_ uploading: Bool) {
+        activeUploads = max(0, activeUploads + (uploading ? 1 : -1))
+    }
+    private func isBlank(_ value: JSONValue?) -> Bool {
+        guard let value else { return true }
+        switch value {
+        case .null: return true
+        case .string(let text): return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .array(let values): return values.isEmpty
+        case .object(let values): return values.isEmpty
+        case .number, .bool: return false
+        }
     }
 }

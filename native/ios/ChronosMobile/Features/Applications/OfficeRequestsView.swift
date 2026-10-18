@@ -12,7 +12,11 @@ struct OfficeRequestsView: View {
             else if let error { InlineErrorView(message: error, retry: { Task { await load() } }) }
             else if rows.isEmpty { EmptyStateView(icon: "car", text: "暂无用车或用印申请") }
             else { List(Array(rows.enumerated()), id: \.offset) { _, row in
-                NavigationLink { NativeRecordDetailView(title: "申请详情", record: row) } label: { NativeRecordCard(record: row) }
+                NavigationLink {
+                    RequestActionDetailView(title: "申请详情", record: row, kind: .office) {
+                        Task { await load() }
+                    }
+                } label: { NativeRecordCard(record: row) }
             }.listStyle(.insetGrouped) }
         }
         .navigationTitle("用车与用印")

@@ -55,8 +55,8 @@ public final class OfficeRequestsScreen {
             if (row == null) continue;
             LinearLayout card = records.card(row);
             card.setClickable(true);
-            card.setOnClickListener(view -> new NativeRecordDetailScreen(
-                    ui, host, "申请", row, this::show).show());
+            card.setOnClickListener(view -> new RequestActionDetailScreen(activity, ui, async,
+                    host, http, "申请", row, RequestActionDetailScreen.Kind.OFFICE, this::show).show());
             card.addView(ui.label("查看详情  ›", 13, UiKit.BRAND, true));
             page.addView(card);
         }

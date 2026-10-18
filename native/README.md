@@ -4,8 +4,9 @@
 
 ## API 配置
 
-- iOS：运行 Scheme 时设置 `CHRONOS_API_BASE_URL`，默认 `http://localhost:8080`
-- Android：通过 `-PapiBaseUrl=https://your-host.example.com` 配置；默认值为 `http://10.0.2.2:8080`
+- iOS Debug：运行 Scheme 时设置 `CHRONOS_API_BASE_URL` 和 `CHRONOS_PORTAL_BASE_URL`，也可在 Info.plist 中配置 `ChronosAPIBaseURL`、`ChronosPortalBaseURL`。Release 默认使用不可解析占位地址，打包前必须写入正式 HTTPS 地址。
+- Android Debug：通过 `-PapiBaseUrl=http://your-host:8080 -PportalBaseUrl=http://your-host:5173` 配置。
+- Android Release：通过 `-PreleaseApiBaseUrl=https://api.example.com -PreleasePortalBaseUrl=https://portal.example.com` 配置；正式包禁止明文 HTTP。
 - 不要把真实地址、JWT、refresh token 或其它凭据提交到仓库。
 
 认证使用：
@@ -15,7 +16,7 @@
 - 刷新：`POST /auth/refresh`
 - 撤销：`POST /auth/revoke`
 
-已接入的移动端入口：成绩 `/portal/education/grades`、课表 `/portal/education/schedule`、通知 `/portal/education/class-notices`、公开消息 `/publications`，以及按服务端返回角色显示的“家校”入口。
+已接入的移动端入口包括成绩、课表、通知公告、会议、流程待办与发起、请假、出差、用车用印、协同办公、教学中心等服务端授权应用。流程表单原生支持文本、数字、日期时间、选择、布尔和附件字段；必须建立业务记录的流程只能从对应原生业务入口发起。
 
 ## 构建验证
 

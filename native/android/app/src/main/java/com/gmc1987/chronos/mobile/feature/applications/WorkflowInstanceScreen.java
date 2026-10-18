@@ -28,8 +28,17 @@ public final class WorkflowInstanceScreen {
     public void show() {
         ApplicationScreenChrome chrome = new ApplicationScreenChrome(ui, host);
         chrome.loading("正在加载流程详情…");
-        async.run(() -> ApplicationJson.dataObject(
-                        http.get("/workflow-instances/" + instanceId + "/forms")),
+        async.run(() -> {
+                    JSONObject bundle = ApplicationJson.dataObject(
+                            http.get("/workflow-instances/" + instanceId + "/forms"));
+                    JSONArray forms = bundle.optJSONArray("forms");
+                    if (forms != null) for (int i = 0; i < forms.length(); i++) {
+                        JSONObject form = forms.optJSONObject(i);
+                        if (form != null) WorkflowOptionResolver.resolve(
+                                http, form.optJSONArray("fields"));
+                    }
+                    return bundle;
+                },
                 this::render,
                 error -> chrome.error("流程详情", error, this::show, back));
     }
@@ -44,8 +53,8 @@ public final class WorkflowInstanceScreen {
             JSONObject formJson = forms.optJSONObject(i); if (formJson == null) continue;
             page.addView(ui.label(formJson.optString("formName", "流程表单"),
                     18, UiKit.TEXT, true));
-            DynamicWorkflowForm dynamic = new DynamicWorkflowForm(activity, ui,
-                    formJson.optJSONArray("fields"), formJson.optJSONObject("data"));
+            DynamicWorkflowForm dynamic = new DynamicWorkflowForm(activity, ui, async, http,
+                    instanceId, formJson.optJSONArray("fields"), formJson.optJSONObject("data"));
             page.addView(dynamic.view());
             sections.add(new FormSection(formJson.optString("formId"), dynamic));
         }

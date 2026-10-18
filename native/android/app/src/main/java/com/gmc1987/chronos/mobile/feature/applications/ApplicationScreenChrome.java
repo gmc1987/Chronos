@@ -17,9 +17,13 @@ final class ApplicationScreenChrome {
     }
 
     LinearLayout page(String title, Runnable back) {
+        host.setBackAction(back);
         LinearLayout page = ui.page(title);
         Button button = ui.secondaryButton("‹ 返回");
-        button.setOnClickListener(view -> back.run());
+        button.setOnClickListener(view -> {
+            host.setBackAction(null);
+            back.run();
+        });
         page.addView(button, 0, new LinearLayout.LayoutParams(-1, ui.dp(44)));
         return page;
     }

@@ -117,6 +117,65 @@ public actor ChronosSession {
         return try decode(JSONValue.self, from: data) ?? .null
     }
 
+    /// Uploads a workflow or business attachment with the same authenticated
+    /// multipart contract used by the web client.
+    public func uploadFile(
+        data: Data,
+        name: String,
+        mimeType: String,
+        businessType: String,
+        businessId: String? = nil
+    ) async throws -> JSONValue {
+        let boundary = "ChronosBoundary-\(UUID().uuidString)"
+        var body = Data()
+        func append(_ value: String) {
+            body.append(Data(value.utf8))
+        }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(name.replacingOccurrences(of: "\"", with: ""))\"\r\n")
+        append("Content-Type: \(mimeType)\r\n\r\n")
+        body.append(data)
+        append("\r\n--\(boundary)--\r\n")
+
+        var components = URLComponents()
+        components.path = "/files"
+        components.queryItems = [URLQueryItem(name: "businessType", value: businessType)]
+        if let businessId, !businessId.isEmpty {
+            components.queryItems?.append(URLQueryItem(name: "businessId", value: businessId))
+        }
+        let response = try await requestData(
+            path: components.string ?? "/files",
+            method: "POST",
+            bodyData: body,
+            authenticated: true,
+            retry: true,
+            contentType: "multipart/form-data; boundary=\(boundary)"
+        )
+        return try decode(JSONValue.self, from: response) ?? .null
+    }
+
+    public func downloadFile(id: String) async throws -> Data {
+        try await requestData(
+            path: "/files/\(id)/content",
+            method: "GET",
+            bodyData: nil,
+            authenticated: true,
+            retry: true,
+            contentType: nil
+        )
+    }
+
+    public func deleteFile(id: String) async throws {
+        _ = try await requestData(
+            path: "/files/\(id)",
+            method: "DELETE",
+            bodyData: nil,
+            authenticated: true,
+            retry: true,
+            contentType: nil
+        )
+    }
+
     private func request(
         path: String,
         method: String,
@@ -139,11 +198,14 @@ public actor ChronosSession {
         method: String,
         bodyData: Data?,
         authenticated: Bool,
-        retry: Bool
+        retry: Bool,
+        contentType: String? = "application/json"
     ) async throws -> Data {
         var urlRequest = URLRequest(url: try makeURL(path))
         urlRequest.httpMethod = method
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let contentType {
+            urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        }
         if authenticated, let accessToken = tokens?.accessToken {
             urlRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
@@ -160,7 +222,8 @@ public actor ChronosSession {
                 method: method,
                 bodyData: bodyData,
                 authenticated: true,
-                retry: false
+                retry: false,
+                contentType: contentType
             )
         }
         switch http.statusCode {

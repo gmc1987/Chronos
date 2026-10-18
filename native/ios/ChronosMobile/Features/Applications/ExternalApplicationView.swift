@@ -7,7 +7,11 @@ struct ExternalApplicationView: View {
         ContentUnavailableView { Label(application.name, systemImage: "arrow.up.right.square") }
         description: { Text("该功能由外部系统提供，将使用系统浏览器打开。") }
         actions: {
-            Button("打开外部应用") { if let url = URL(string: application.routePath) { openURL(url) } }
+            Button("打开外部应用") {
+                if let url = ChronosAPIConfiguration.fromEnvironment.portalURL(for: application.routePath) {
+                    openURL(url)
+                }
+            }
                 .buttonStyle(.borderedProminent)
         }.navigationTitle(application.name)
     }

@@ -1,7 +1,9 @@
 plugins { id 'com.android.application' }
 
-def apiBaseUrl = project.findProperty("apiBaseUrl") ?: "http://192.168.50.225:8080"
-def portalBaseUrl = project.findProperty("portalBaseUrl") ?: "http://192.168.50.225:5173"
+def debugApiBaseUrl = project.findProperty("apiBaseUrl") ?: "http://192.168.0.104:8080"
+def debugPortalBaseUrl = project.findProperty("portalBaseUrl") ?: "http://192.168.0.104:5173"
+def releaseApiBaseUrl = project.findProperty("releaseApiBaseUrl") ?: "https://api.example.invalid"
+def releasePortalBaseUrl = project.findProperty("releasePortalBaseUrl") ?: "https://portal.example.invalid"
 android {
     namespace 'com.gmc1987.chronos.mobile'
     compileSdk 35
@@ -12,8 +14,16 @@ android {
         targetSdk 35;
         versionCode 1;
         versionName '0.1.0';
-        buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl}\""
-        buildConfigField 'String', 'PORTAL_BASE_URL', "\"${portalBaseUrl}\""
+    }
+    buildTypes {
+        debug {
+            buildConfigField 'String', 'API_BASE_URL', "\"${debugApiBaseUrl}\""
+            buildConfigField 'String', 'PORTAL_BASE_URL', "\"${debugPortalBaseUrl}\""
+        }
+        release {
+            buildConfigField 'String', 'API_BASE_URL', "\"${releaseApiBaseUrl}\""
+            buildConfigField 'String', 'PORTAL_BASE_URL', "\"${releasePortalBaseUrl}\""
+        }
     }
 }
 

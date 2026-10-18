@@ -16,6 +16,8 @@
 		4DC8914251BB9153CE637D98 /* AvailableWorkflowsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21BF7EB9D92DCDF88E7FEE3A /* AvailableWorkflowsView.swift */; };
 		4E5B86C18A1A707401791306 /* RecentMeetingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C76523A6E335C4D985BFE761 /* RecentMeetingsCard.swift */; };
 		5936CAC1B29BD40B599E9566 /* NativeRecordDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83171C934E51A712D48BBD42 /* NativeRecordDetailView.swift */; };
+		5D1000000000000000000001 /* MeetingsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D2000000000000000000001 /* MeetingsListView.swift */; };
+		5D1000000000000000000002 /* RequestActionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D2000000000000000000002 /* RequestActionDetailView.swift */; };
 		5BBA9FE2FE10D3CD71EB6501 /* MeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A7D7F3336DC802993B40D4 /* MeetingDetailView.swift */; };
 		63259FA81A51F2FA255FEEF8 /* DynamicWorkflowFieldsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C048AAFFC6B92209C04EE432 /* DynamicWorkflowFieldsView.swift */; };
 		8610C70D68DC5FA11457D3A9 /* CapabilityGroupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6287337378E9E54DAA0618F /* CapabilityGroupCard.swift */; };
@@ -82,6 +84,8 @@
 		21BF7EB9D92DCDF88E7FEE3A /* AvailableWorkflowsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AvailableWorkflowsView.swift; path = Features/Applications/AvailableWorkflowsView.swift; sourceTree = "<group>"; };
 		3E2B741ED7674A79C506B6FF /* WorkflowInstanceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WorkflowInstanceView.swift; path = Features/Applications/WorkflowInstanceView.swift; sourceTree = "<group>"; };
 		51BE9AE07AE6E915DEC857BE /* NativeModuleListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeModuleListView.swift; path = Features/Applications/NativeModuleListView.swift; sourceTree = "<group>"; };
+		5D2000000000000000000001 /* MeetingsListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MeetingsListView.swift; path = Features/Applications/MeetingsListView.swift; sourceTree = "<group>"; };
+		5D2000000000000000000002 /* RequestActionDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RequestActionDetailView.swift; path = Features/Applications/RequestActionDetailView.swift; sourceTree = "<group>"; };
 		6534C84BD6C2C26F36BA0F47 /* ApplicationJSONSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApplicationJSONSupport.swift; path = Features/Applications/ApplicationJSONSupport.swift; sourceTree = "<group>"; };
 		6AB354BD79DB8DF965790056 /* NativeRecordCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeRecordCard.swift; path = Features/Applications/NativeRecordCard.swift; sourceTree = "<group>"; };
 		73597D687602FFFDC55EEB0A /* WorkflowStartView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WorkflowStartView.swift; path = Features/Applications/WorkflowStartView.swift; sourceTree = "<group>"; };
@@ -196,6 +200,8 @@
 				6534C84BD6C2C26F36BA0F47 /* ApplicationJSONSupport.swift */,
 				C048AAFFC6B92209C04EE432 /* DynamicWorkflowFieldsView.swift */,
 				51BE9AE07AE6E915DEC857BE /* NativeModuleListView.swift */,
+				5D2000000000000000000001 /* MeetingsListView.swift */,
+				5D2000000000000000000002 /* RequestActionDetailView.swift */,
 				C427432EF03CE3C035E46059 /* NativeRecordsView.swift */,
 				B96FB8F5C62853FA50CABF37 /* WorkflowCenterView.swift */,
 				3E2B741ED7674A79C506B6FF /* WorkflowInstanceView.swift */,
@@ -337,6 +343,8 @@
 				44CA6730B2B5FECBE2B597C4 /* ExternalApplicationView.swift in Sources */,
 				E1F0F29B3D9E0362151BAFC0 /* DynamicWorkflowFieldView.swift in Sources */,
 				5936CAC1B29BD40B599E9566 /* NativeRecordDetailView.swift in Sources */,
+				5D1000000000000000000001 /* MeetingsListView.swift in Sources */,
+				5D1000000000000000000002 /* RequestActionDetailView.swift in Sources */,
 				B2213AE2397B2433A099F9AA /* NativeRecordCard.swift in Sources */,
 				9ED4B146B30158FB85F452C6 /* WorkflowRecordsView.swift in Sources */,
 				4DC8914251BB9153CE637D98 /* AvailableWorkflowsView.swift in Sources */,
@@ -387,9 +395,51 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
+		};
+		000000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEVELOPMENT_TEAM = 73TG52LQW2;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
 		};
 		000000000000000000000013 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -404,6 +454,19 @@
 			};
 			name = Debug;
 		};
+		000000000000000000000015 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				INFOPLIST_FILE = "ChronosMobile/Info-Release.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.gmc1987.chronos.mobile;
+				PRODUCT_NAME = ChronosMobile;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -411,6 +474,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				000000000000000000000008 /* Debug */,
+				000000000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -419,6 +483,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				000000000000000000000013 /* Debug */,
+				000000000000000000000015 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

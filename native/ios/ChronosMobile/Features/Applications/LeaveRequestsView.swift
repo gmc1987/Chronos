@@ -12,7 +12,11 @@ struct LeaveRequestsView: View {
             else if let error { InlineErrorView(message: error, retry: { Task { await load() } }) }
             else if rows.isEmpty { EmptyStateView(icon: "calendar.badge.clock", text: "暂无请假记录") }
             else { List(Array(rows.enumerated()), id: \.offset) { _, row in
-                NavigationLink { NativeRecordDetailView(title: "请假详情", record: row) } label: { NativeRecordCard(record: row) }
+                NavigationLink {
+                    RequestActionDetailView(title: "请假详情", record: row, kind: .leave) {
+                        Task { await load() }
+                    }
+                } label: { NativeRecordCard(record: row) }
             }.listStyle(.insetGrouped) }
         }
         .navigationTitle("请假")
