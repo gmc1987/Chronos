@@ -17,15 +17,22 @@ public final class MeetingDetailScreen {
     private final ScreenHost host;
     private final MeetingsRepository meetings;
     private final Runnable back;
+    private final String backLabel;
     private JSONObject value;
 
     public MeetingDetailScreen(UiKit ui, AsyncRunner async, ScreenHost host,
             MeetingsRepository meetings, JSONObject value, Runnable back) {
+        this(ui, async, host, meetings, value, "返回工作台", back);
+    }
+
+    public MeetingDetailScreen(UiKit ui, AsyncRunner async, ScreenHost host,
+            MeetingsRepository meetings, JSONObject value, String backLabel, Runnable back) {
         this.ui = ui;
         this.async = async;
         this.host = host;
         this.meetings = meetings;
         this.value = value;
+        this.backLabel = backLabel;
         this.back = back;
     }
 
@@ -33,7 +40,7 @@ public final class MeetingDetailScreen {
         JSONObject meeting = value.optJSONObject("meeting");
         if (meeting == null) meeting = value;
         LinearLayout page = ui.page("会议详情");
-        Button backButton = ui.secondaryButton("‹ 返回工作台");
+        Button backButton = ui.secondaryButton("‹ " + backLabel);
         backButton.setOnClickListener(view -> back.run());
         page.addView(backButton);
         detail(page, "主题", meeting.optString("title", "—"));
@@ -82,15 +89,20 @@ public final class MeetingDetailScreen {
     }
 
     private void respond(String status, String comment) {
-        String id = value.optJSONObject("meeting").optString("id");
+        String id = meetingId();
         async.run(() -> meetings.respond(id, status, comment), ignored -> reload(id),
                 error -> showError(error.getMessage()));
     }
 
     private void checkIn() {
-        String id = value.optJSONObject("meeting").optString("id");
+        String id = meetingId();
         async.run(() -> meetings.checkIn(id), ignored -> reload(id),
                 error -> showError(error.getMessage()));
+    }
+
+    private String meetingId() {
+        JSONObject meeting = value.optJSONObject("meeting");
+        return meeting == null ? value.optString("id") : meeting.optString("id");
     }
 
     private void reload(String id) {
@@ -98,7 +110,8 @@ public final class MeetingDetailScreen {
             JSONArray rows = response.optJSONArray("data");
             if (rows != null) for (int i = 0; i < rows.length(); i++) {
                 JSONObject row = rows.optJSONObject(i);
-                if (row != null && id.equals(row.optJSONObject("meeting").optString("id"))) {
+                JSONObject meeting = row == null ? null : row.optJSONObject("meeting");
+                if (meeting != null && id.equals(meeting.optString("id"))) {
                     value = row;
                     break;
                 }
