@@ -186,6 +186,20 @@ struct PortalWebView: UIViewRepresentable {
         ) {
             loadError.wrappedValue = error.localizedDescription
         }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationResponse: WKNavigationResponse,
+            decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        ) {
+            guard let response = navigationResponse.response as? HTTPURLResponse,
+                  response.statusCode >= 400 else {
+                decisionHandler(.allow)
+                return
+            }
+            loadError.wrappedValue = "门户服务返回 HTTP \(response.statusCode)"
+            decisionHandler(.cancel)
+        }
     }
 
     private func json(_ value: String) -> String {
