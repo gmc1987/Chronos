@@ -1,7 +1,7 @@
 plugins { id 'com.android.application' }
 
-def apiBaseUrl = project.findProperty("apiBaseUrl") ?: "http://10.0.2.2:8080"
-def portalBaseUrl = project.findProperty("portalBaseUrl") ?: "http://10.0.2.2:5173"
+def apiBaseUrl = project.findProperty("apiBaseUrl") ?: "http://192.168.50.225:8080"
+def portalBaseUrl = project.findProperty("portalBaseUrl") ?: "http://192.168.50.225:5173"
 android {
     namespace 'com.gmc1987.chronos.mobile'
     compileSdk 35
