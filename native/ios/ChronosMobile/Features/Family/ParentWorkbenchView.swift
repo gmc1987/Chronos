@@ -5,6 +5,7 @@ struct ParentWorkbenchView: View {
     @EnvironmentObject private var model: AppModel
     @State private var children: [FamilyChild] = []
     @State private var grades: [JSONValue] = []
+    @State private var selectedStudentID = ""
     @State private var loading = true
     @State private var error: String?
 
@@ -43,6 +44,15 @@ struct ParentWorkbenchView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("我的子女").font(.headline)
             if children.isEmpty && !loading { Text("当前账号尚未绑定有效学生").foregroundStyle(.secondary) }
+            if !children.isEmpty {
+                Picker("当前查看", selection: $selectedStudentID) {
+                    ForEach(children) { child in
+                        Text(child.studentName).tag(child.id)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("parent-child-picker")
+            }
             ForEach(children) { child in
                 HStack {
                     Image(systemName: "graduationcap.fill").foregroundStyle(ChronosPalette.green)
@@ -61,8 +71,8 @@ struct ParentWorkbenchView: View {
     private var gradesCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("成绩概览").font(.headline)
-            if grades.isEmpty && !loading { Text("当前没有已发布成绩").foregroundStyle(.secondary) }
-            ForEach(Array(grades.prefix(5).enumerated()), id: \.offset) { _, grade in
+            if filteredGrades.isEmpty && !loading { Text("当前子女没有已发布成绩").foregroundStyle(.secondary) }
+            ForEach(Array(filteredGrades.prefix(5).enumerated()), id: \.offset) { _, grade in
                 Text(gradeSummary(grade)).font(.subheadline)
                 Divider()
             }
@@ -75,15 +85,28 @@ struct ParentWorkbenchView: View {
             async let childValues = model.session.get(FamilyAPI.children, as: [FamilyChild].self)
             async let gradeValues = model.session.get(FamilyAPI.grades, as: [JSONValue].self)
             (children, grades) = try await (childValues, gradeValues)
+            if selectedStudentID.isEmpty || !children.contains(where: { $0.id == selectedStudentID }) {
+                selectedStudentID = children.first?.id ?? ""
+            }
             error = nil
         } catch { self.error = error.localizedDescription }
         loading = false
     }
 
+    private var filteredGrades: [JSONValue] {
+        guard !selectedStudentID.isEmpty else { return grades }
+        return grades.filter { grade in
+            grade.objectValue?["studentId"]?.stringValue == selectedStudentID
+        }
+    }
+
     private func gradeSummary(_ grade: JSONValue) -> String {
         guard let value = grade.objectValue else { return grade.stringValue ?? "成绩记录" }
         let course = value["courseName"]?.stringValue ?? value["course"]?.stringValue ?? "课程"
-        let score = value["score"]?.stringValue ?? value["finalScore"]?.stringValue ?? "待发布"
+        let score = value["totalScore"]?.stringValue
+            ?? value["score"]?.stringValue
+            ?? value["finalScore"]?.stringValue
+            ?? "待发布"
         return "\(course) · \(score)"
     }
 }

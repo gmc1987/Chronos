@@ -53,9 +53,7 @@ public final class FamilyFeedbackScreen {
         student.setAdapter(new ArrayAdapter<>(activity, android.R.layout.simple_spinner_dropdown_item, names));
         page.addView(student);
         EditText title = ui.input("反馈主题", false);
-        EditText content = ui.input("反馈内容", false);
-        content.setSingleLine(false);
-        content.setMinLines(5);
+        EditText content = ui.multilineInput("反馈内容", 5);
         content.setGravity(Gravity.TOP | Gravity.START);
         page.addView(title);
         page.addView(content);

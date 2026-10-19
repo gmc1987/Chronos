@@ -24,9 +24,17 @@ struct ProfileView: View {
                     Text("工作台由服务端身份、角色、权限和授权应用共同决定，不提供身份切换。")
                 }
                 Section("设置") {
-                    Label("消息设置", systemImage: "bell.badge")
-                    Label("隐私与安全", systemImage: "lock.shield")
-                    LabeledContent("App 版本", value: "0.1.0")
+                    NavigationLink {
+                        NotificationSettingsView()
+                    } label: {
+                        Label("消息设置", systemImage: "bell.badge")
+                    }
+                    NavigationLink {
+                        PrivacySecurityView()
+                    } label: {
+                        Label("隐私与安全", systemImage: "lock.shield")
+                    }
+                    LabeledContent("App 版本", value: appVersion)
                 }
                 Section {
                     Button("退出登录", role: .destructive, action: model.logout)
@@ -34,6 +42,10 @@ struct ProfileView: View {
             }
             .navigationTitle("我的")
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
     }
 }
 

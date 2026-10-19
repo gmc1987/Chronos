@@ -19,6 +19,7 @@ import com.gmc1987.chronos.mobile.feature.announcements.PublicationDetailScreen;
 import com.gmc1987.chronos.mobile.feature.applications.ApplicationsScreen;
 import com.gmc1987.chronos.mobile.feature.auth.AuthRepository;
 import com.gmc1987.chronos.mobile.feature.exams.ExamsRepository;
+import com.gmc1987.chronos.mobile.feature.exams.InvigilationScreen;
 import com.gmc1987.chronos.mobile.feature.grades.GradesRepository;
 import com.gmc1987.chronos.mobile.feature.profile.ProfileScreen;
 import com.gmc1987.chronos.mobile.feature.family.FamilyFeedbackScreen;
@@ -31,6 +32,8 @@ import com.gmc1987.chronos.mobile.feature.applications.NativeApplicationScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingsRepository;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingDetailScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.SupervisionRepository;
+import com.gmc1987.chronos.mobile.feature.workbench.SupervisionTasksScreen;
+import com.gmc1987.chronos.mobile.feature.workbench.TeachingSupervisionScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.WorkbenchScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.WorkbenchItemDetailScreen;
 
@@ -191,7 +194,9 @@ public final class AppNavigator implements ScreenHost {
                 activity.getSharedPreferences("chronos_session", Activity.MODE_PRIVATE),
                 portal, schedules, meetings, supervision, this::showApplications,
                 this::showCourseDetail, this::showMeetingDetail,
-                this::showWorkflowDetail, this::showWorkbenchItemDetail).show();
+                this::showWorkflowDetail, this::showWorkbenchItemDetail,
+                this::showInvigilations, this::showSupervisionTasks,
+                this::showTeachingSupervision).show();
     }
 
     private void showApplications() {
@@ -201,7 +206,7 @@ public final class AppNavigator implements ScreenHost {
 
     private void showProfile() {
         backAction = null;
-        new ProfileScreen(ui, async, this, portal, auth, loggedOut).show();
+        new ProfileScreen(ui, async, this, portal, auth, http, loggedOut).show();
     }
 
     private void showGrades() {
@@ -255,6 +260,22 @@ public final class AppNavigator implements ScreenHost {
     private void showWorkbenchItemDetail(org.json.JSONObject item) {
         backAction = this::showWorkbench;
         new WorkbenchItemDetailScreen(ui, this, "事项", item, this::showWorkbench).show();
+    }
+
+    private void showInvigilations() {
+        backAction = this::showWorkbench;
+        new InvigilationScreen(ui, async, this, exams, this::showWorkbench).show();
+    }
+
+    private void showSupervisionTasks() {
+        backAction = this::showWorkbench;
+        new SupervisionTasksScreen(activity, ui, async, this, supervision, http,
+                this::showWorkbench).show();
+    }
+
+    private void showTeachingSupervision() {
+        backAction = this::showWorkbench;
+        new TeachingSupervisionScreen(ui, async, this, supervision, this::showWorkbench).show();
     }
 
     private RemoteListScreen remote() {

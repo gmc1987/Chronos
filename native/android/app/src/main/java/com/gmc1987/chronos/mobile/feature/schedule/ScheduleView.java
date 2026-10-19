@@ -34,7 +34,7 @@ public final class ScheduleView {
     private final PortalState portal;
     private final Runnable refreshDashboard;
     private final Consumer<JSONObject> courseDetails;
-    private Calendar weekStart = DateFormats.weekStart(new Date());
+    private Calendar weekStart;
 
     public ScheduleView(
             UiKit ui,
@@ -51,6 +51,8 @@ public final class ScheduleView {
         this.portal = portal;
         this.refreshDashboard = refreshDashboard;
         this.courseDetails = courseDetails;
+        weekStart = DateFormats.weekStart(new Date(
+                preferences.getLong(weekPreferenceKey(), new Date().getTime())));
     }
 
     public View build() {
@@ -107,6 +109,7 @@ public final class ScheduleView {
         previous.setOnClickListener(view -> move(-7));
         current.setOnClickListener(view -> {
             weekStart = DateFormats.weekStart(new Date());
+            preferences.edit().remove(weekPreferenceKey()).apply();
             refreshDashboard.run();
         });
         next.setOnClickListener(view -> move(7));
@@ -232,6 +235,7 @@ public final class ScheduleView {
 
     private void move(int days) {
         weekStart.add(Calendar.DATE, days);
+        preferences.edit().putLong(weekPreferenceKey(), weekStart.getTimeInMillis()).apply();
         refreshDashboard.run();
     }
 
@@ -242,6 +246,10 @@ public final class ScheduleView {
 
     private String preferenceKey() {
         return "schedule_expanded_" + portal.user().optString("username", "current");
+    }
+
+    private String weekPreferenceKey() {
+        return "schedule_week_" + portal.user().optString("username", "current");
     }
 
     private LinearLayout.LayoutParams weighted() {

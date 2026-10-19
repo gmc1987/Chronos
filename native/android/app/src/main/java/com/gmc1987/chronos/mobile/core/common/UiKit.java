@@ -108,6 +108,23 @@ public final class UiKit {
         return input;
     }
 
+    /** Creates an actually expandable text area for reasons, remarks and form descriptions. */
+    public EditText multilineInput(String hint, int minimumLines) {
+        EditText input = input(hint, false);
+        input.setSingleLine(false);
+        input.setGravity(Gravity.TOP | Gravity.START);
+        input.setMinLines(Math.max(3, minimumLines));
+        input.setMaxLines(Math.max(6, minimumLines));
+        input.setPadding(dp(16), dp(14), dp(16), dp(14));
+        input.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(6), 0, dp(6));
+        input.setLayoutParams(params);
+        return input;
+    }
+
     public Button primaryButton(String title) {
         Button button = button(title, Color.WHITE, BRAND, 15);
         button.setMinHeight(dp(54));

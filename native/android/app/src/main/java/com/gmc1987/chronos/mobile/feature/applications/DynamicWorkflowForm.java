@@ -36,13 +36,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Builds a native Android form from the workflow field schema. */
-final class DynamicWorkflowForm {
+public final class DynamicWorkflowForm {
     private static final long MAX_FILE_BYTES = 20L * 1024L * 1024L;
     private final LinearLayout view;
     private final Map<String, FieldReader> readers = new LinkedHashMap<>();
     private final List<FileField> fileFields = new ArrayList<>();
 
-    DynamicWorkflowForm(Activity activity, UiKit ui, AsyncRunner async, HttpClient http,
+    public DynamicWorkflowForm(Activity activity, UiKit ui, AsyncRunner async, HttpClient http,
             String businessId, JSONArray fields, JSONObject initial) {
         view = ui.vertical();
         if (fields == null) return;
@@ -80,10 +80,10 @@ final class DynamicWorkflowForm {
                 view.addView(input);
                 readers.put(key, new FieldReader(field, () -> input.getText().toString().trim()));
             } else {
-                EditText input = ui.input(title, false);
+                EditText input = "TEXTAREA".equals(type)
+                        ? ui.multilineInput(title, 4) : ui.input(title, false);
                 input.setText(old == null || old == JSONObject.NULL ? "" : String.valueOf(old));
                 input.setEnabled(!readOnly);
-                if ("TEXTAREA".equals(type)) { input.setSingleLine(false); input.setMinLines(4); }
                 if ("NUMBER".equals(type)) input.setInputType(InputType.TYPE_CLASS_NUMBER
                         | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED);
                 view.addView(input);
@@ -92,8 +92,8 @@ final class DynamicWorkflowForm {
         }
     }
 
-    LinearLayout view() { return view; }
-    JSONObject values(boolean validate) {
+    public LinearLayout view() { return view; }
+    public JSONObject values(boolean validate) {
         verifyNoUpload();
         return collect(validate, false);
     }

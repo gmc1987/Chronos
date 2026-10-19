@@ -37,6 +37,11 @@ public actor ChronosSession {
 
     public func lastResponseWasCached() -> Bool { servedFromCache }
 
+    public func clearOfflineCache() {
+        servedFromCache = false
+        clearResponseCache()
+    }
+
     public func login(username: String, password: String, consumer: Bool = false) async throws -> LoginPayload {
         let path = consumer ? "/consumer/users/login" : "/auth/login"
         let data = try await request(

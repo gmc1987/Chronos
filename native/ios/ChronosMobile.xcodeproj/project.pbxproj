@@ -47,6 +47,12 @@
 		A1000000000000000000000B /* GradesAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* GradesAPI.swift */; };
 		A1000000000000000000000C /* GradesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* GradesListView.swift */; };
 		A1000000000000000000000D /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* ProfileView.swift */; };
+		A10000000000000000000034 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000034 /* NotificationSettingsView.swift */; };
+		A10000000000000000000035 /* PrivacySecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000035 /* PrivacySecurityView.swift */; };
+		A10000000000000000000036 /* InvigilationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000036 /* InvigilationView.swift */; };
+		A10000000000000000000037 /* SupervisionTasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000037 /* SupervisionTasksView.swift */; };
+		A10000000000000000000038 /* TeachingSupervisionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000038 /* TeachingSupervisionView.swift */; };
+		A10000000000000000000039 /* SupervisionEvaluationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000039 /* SupervisionEvaluationView.swift */; };
 		A1000000000000000000000E /* ScheduleAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* ScheduleAPI.swift */; };
 		A1000000000000000000000F /* TimetableCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* TimetableCard.swift */; };
 		A10000000000000000000010 /* BootstrapStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* BootstrapStateView.swift */; };
@@ -132,6 +138,12 @@
 		B1000000000000000000000B /* GradesAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GradesAPI.swift; path = Features/Grades/GradesAPI.swift; sourceTree = "<group>"; };
 		B1000000000000000000000C /* GradesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GradesListView.swift; path = Features/Grades/GradesListView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000D /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProfileView.swift; path = Features/Profile/ProfileView.swift; sourceTree = "<group>"; };
+		B10000000000000000000034 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NotificationSettingsView.swift; path = Features/Profile/NotificationSettingsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000035 /* PrivacySecurityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PrivacySecurityView.swift; path = Features/Profile/PrivacySecurityView.swift; sourceTree = "<group>"; };
+		B10000000000000000000036 /* InvigilationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = InvigilationView.swift; path = Features/Exams/InvigilationView.swift; sourceTree = "<group>"; };
+		B10000000000000000000037 /* SupervisionTasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SupervisionTasksView.swift; path = Features/Workbench/SupervisionTasksView.swift; sourceTree = "<group>"; };
+		B10000000000000000000038 /* TeachingSupervisionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TeachingSupervisionView.swift; path = Features/Workbench/TeachingSupervisionView.swift; sourceTree = "<group>"; };
+		B10000000000000000000039 /* SupervisionEvaluationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SupervisionEvaluationView.swift; path = Features/Workbench/SupervisionEvaluationView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000E /* ScheduleAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ScheduleAPI.swift; path = Features/Schedule/ScheduleAPI.swift; sourceTree = "<group>"; };
 		B1000000000000000000000F /* TimetableCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TimetableCard.swift; path = Features/Schedule/TimetableCard.swift; sourceTree = "<group>"; };
 		B10000000000000000000010 /* BootstrapStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BootstrapStateView.swift; path = Features/Workbench/BootstrapStateView.swift; sourceTree = "<group>"; };
@@ -191,6 +203,12 @@
 				B10000000000000000000008 /* LoginView.swift */,
 				B10000000000000000000014 /* MeetingsAPI.swift */,
 				B1000000000000000000000D /* ProfileView.swift */,
+				B10000000000000000000034 /* NotificationSettingsView.swift */,
+				B10000000000000000000035 /* PrivacySecurityView.swift */,
+				B10000000000000000000036 /* InvigilationView.swift */,
+				B10000000000000000000037 /* SupervisionTasksView.swift */,
+				B10000000000000000000038 /* TeachingSupervisionView.swift */,
+				B10000000000000000000039 /* SupervisionEvaluationView.swift */,
 				B10000000000000000000006 /* PublicationsListView.swift */,
 				B1000000000000000000002A /* PublicationDetailView.swift */,
 				B1000000000000000000002B /* UnsupportedApplicationView.swift */,
@@ -339,6 +357,12 @@
 				A1000000000000000000000B /* GradesAPI.swift in Sources */,
 				A1000000000000000000000C /* GradesListView.swift in Sources */,
 				A1000000000000000000000D /* ProfileView.swift in Sources */,
+				A10000000000000000000034 /* NotificationSettingsView.swift in Sources */,
+				A10000000000000000000035 /* PrivacySecurityView.swift in Sources */,
+				A10000000000000000000036 /* InvigilationView.swift in Sources */,
+				A10000000000000000000037 /* SupervisionTasksView.swift in Sources */,
+				A10000000000000000000038 /* TeachingSupervisionView.swift in Sources */,
+				A10000000000000000000039 /* SupervisionEvaluationView.swift in Sources */,
 				A1000000000000000000000E /* ScheduleAPI.swift in Sources */,
 				A1000000000000000000000F /* TimetableCard.swift in Sources */,
 				A10000000000000000000010 /* BootstrapStateView.swift in Sources */,

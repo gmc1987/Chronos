@@ -34,6 +34,9 @@ public final class WorkbenchScreen {
     private final Consumer<JSONObject> meetingDetails;
     private final Consumer<String> workflowDetails;
     private final Consumer<JSONObject> itemDetails;
+    private final Runnable invigilations;
+    private final Runnable supervisionTasks;
+    private final Runnable teachingSupervision;
 
     public WorkbenchScreen(
             UiKit ui,
@@ -48,7 +51,10 @@ public final class WorkbenchScreen {
             Consumer<JSONObject> courseDetails,
             Consumer<JSONObject> meetingDetails,
             Consumer<String> workflowDetails,
-            Consumer<JSONObject> itemDetails) {
+            Consumer<JSONObject> itemDetails,
+            Runnable invigilations,
+            Runnable supervisionTasks,
+            Runnable teachingSupervision) {
         this.ui = ui;
         this.async = async;
         this.host = host;
@@ -62,6 +68,9 @@ public final class WorkbenchScreen {
         this.meetingDetails = meetingDetails;
         this.workflowDetails = workflowDetails;
         this.itemDetails = itemDetails;
+        this.invigilations = invigilations;
+        this.supervisionTasks = supervisionTasks;
+        this.teachingSupervision = teachingSupervision;
     }
 
     public void show() {
@@ -129,14 +138,32 @@ public final class WorkbenchScreen {
     private void addStaffCards(LinearLayout page) {
         addContributionCard(page, "我的待办", "WORKFLOW", "当前没有待处理事项");
         addMeetingsCard(page);
-        if (portal.workspace() == PortalState.Workspace.MANAGEMENT) {
+        if (portal.hasPermission("education:supervision:assignment:view")) {
             addSupervisionCard(page);
+        }
+        if (portal.workspace() == PortalState.Workspace.MANAGEMENT) {
             addMetricsCard(page);
             return;
         }
         addApplicationCard(page, "协同办公",
                 "collaboration", "协同", "office", "leave", "trip");
         if (portal.workspace() == PortalState.Workspace.TEACHER) {
+            LinearLayout invigilation = ui.card();
+            invigilation.addView(ui.label("监考任务", 17, UiKit.TEXT, true));
+            invigilation.addView(ui.label("确认监考安排、到场签到或申请调换",
+                    13, UiKit.MUTED, false));
+            android.widget.Button open = ui.secondaryButton("查看我的监考");
+            open.setOnClickListener(view -> invigilations.run());
+            invigilation.addView(open);
+            page.addView(invigilation);
+            LinearLayout supervisionProof = ui.card();
+            supervisionProof.addView(ui.label("课堂督导核验", 17, UiKit.TEXT, true));
+            supervisionProof.addView(ui.label("向现场督导提供一次性签到核验码",
+                    13, UiKit.MUTED, false));
+            android.widget.Button proof = ui.secondaryButton("查看督导任务");
+            proof.setOnClickListener(view -> teachingSupervision.run());
+            supervisionProof.addView(proof);
+            page.addView(supervisionProof);
             addApplicationCard(page, "教学中心", "education", "教学", "题库", "课件");
         } else {
             addContributionCard(page, "公告摘要", "ANNOUNCEMENT", "当前没有可见公告");
@@ -241,6 +268,9 @@ public final class WorkbenchScreen {
         LinearLayout body = ui.vertical();
         body.addView(new ProgressBar(card.getContext()));
         card.addView(body);
+        android.widget.Button open = ui.secondaryButton("查看全部并办理");
+        open.setOnClickListener(view -> supervisionTasks.run());
+        card.addView(open);
         page.addView(card);
         async.run(supervision::list, response -> {
             body.removeAllViews();

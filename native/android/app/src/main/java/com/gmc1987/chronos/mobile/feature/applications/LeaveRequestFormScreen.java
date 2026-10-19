@@ -48,9 +48,7 @@ public final class LeaveRequestFormScreen {
         NativeDateField end = new NativeDateField(activity, ui, "结束日期", endValue, false);
         card.addView(start.view());
         card.addView(end.view());
-        EditText reason = ui.input("请假原因", false);
-        reason.setSingleLine(false);
-        reason.setMinLines(3);
+        EditText reason = ui.multilineInput("请假原因", 3);
         card.addView(reason);
         page.addView(card);
         Button submit = ui.primaryButton("提交请假申请");

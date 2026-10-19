@@ -44,9 +44,7 @@ public final class BusinessTripFormScreen {
         NativeDateField end = new NativeDateField(activity, ui, "结束日期", now, false);
         itinerary.addView(start.view());
         itinerary.addView(end.view());
-        EditText purpose = ui.input("出差事由", false);
-        purpose.setSingleLine(false);
-        purpose.setMinLines(3);
+        EditText purpose = ui.multilineInput("出差事由", 3);
         itinerary.addView(purpose);
         page.addView(itinerary);
 

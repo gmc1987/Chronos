@@ -17,6 +17,24 @@ struct RoleWorkbenchView: View {
                     )
                     if kind == .teacher {
                         TimetableCard()
+                        NavigationLink {
+                            InvigilationView()
+                        } label: {
+                            Label("我的监考", systemImage: "person.badge.clock")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .cardStyle()
+                        }
+                        .buttonStyle(.plain)
+                        NavigationLink {
+                            TeachingSupervisionView()
+                        } label: {
+                            Label("课堂督导核验", systemImage: "qrcode.viewfinder")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .cardStyle()
+                        }
+                        .buttonStyle(.plain)
                     }
                     SummaryContributionCard(
                         title: "我的待办",
@@ -25,6 +43,17 @@ struct RoleWorkbenchView: View {
                         emptyMessage: "当前没有待处理事项"
                     )
                     RecentMeetingsCard()
+                    if bootstrap.user.permissions.contains("education:supervision:assignment:view") {
+                        NavigationLink {
+                            SupervisionTasksView()
+                        } label: {
+                            Label("督导任务办理", systemImage: "checkmark.seal")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .cardStyle()
+                        }
+                        .buttonStyle(.plain)
+                    }
                     if kind == .management {
                         SummaryContributionCard(
                             title: "督办事项",

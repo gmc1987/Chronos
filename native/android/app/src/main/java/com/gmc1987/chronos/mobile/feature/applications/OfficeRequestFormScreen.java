@@ -67,8 +67,7 @@ public final class OfficeRequestFormScreen {
         NativeDateField start = new NativeDateField(activity, ui, "开始时间", startValue, true);
         NativeDateField end = new NativeDateField(activity, ui, "结束时间", endValue, true);
         basic.addView(start.view()); basic.addView(end.view());
-        EditText purpose = ui.input("申请事由", false);
-        purpose.setSingleLine(false); purpose.setMinLines(3);
+        EditText purpose = ui.multilineInput("申请事由", 3);
         basic.addView(purpose);
         page.addView(basic);
 

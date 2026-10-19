@@ -7,6 +7,7 @@ import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
 import com.gmc1987.chronos.mobile.core.model.PortalState;
 import com.gmc1987.chronos.mobile.feature.auth.AuthRepository;
+import com.gmc1987.chronos.mobile.core.network.HttpClient;
 
 public final class ProfileScreen {
     private final UiKit ui;
@@ -14,6 +15,7 @@ public final class ProfileScreen {
     private final ScreenHost host;
     private final PortalState portal;
     private final AuthRepository auth;
+    private final HttpClient http;
     private final Runnable loggedOut;
 
     public ProfileScreen(
@@ -22,12 +24,14 @@ public final class ProfileScreen {
             ScreenHost host,
             PortalState portal,
             AuthRepository auth,
+            HttpClient http,
             Runnable loggedOut) {
         this.ui = ui;
         this.async = async;
         this.host = host;
         this.portal = portal;
         this.auth = auth;
+        this.http = http;
         this.loggedOut = loggedOut;
     }
 
@@ -47,9 +51,15 @@ public final class ProfileScreen {
         }
         page.addView(card);
         LinearLayout settings = ui.card();
-        settings.addView(ui.label("消息设置", 16, UiKit.TEXT, true));
+        Button notifications = ui.secondaryButton("消息设置");
+        notifications.setOnClickListener(view -> new NotificationSettingsScreen(
+                ui, host, this::show).show());
+        settings.addView(notifications);
         settings.addView(ui.divider());
-        settings.addView(ui.label("隐私与安全", 16, UiKit.TEXT, true));
+        Button privacy = ui.secondaryButton("隐私与安全");
+        privacy.setOnClickListener(view -> new PrivacySecurityScreen(
+                ui, host, http, this::show).show());
+        settings.addView(privacy);
         settings.addView(ui.divider());
         settings.addView(ui.label("Chronos Android 0.1.0", 13, UiKit.MUTED, false));
         page.addView(settings);
@@ -71,6 +81,7 @@ public final class ProfileScreen {
             case STUDENT: return "学生";
             case TEACHER: return "教师";
             case MANAGEMENT: return "校领导 / 管理人员";
+            case PARENT: return "家长";
             default: return "教职工";
         }
     }
