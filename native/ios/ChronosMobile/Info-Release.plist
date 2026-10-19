@@ -16,8 +16,34 @@
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.gmc1987.chronos.mobile</string>
+			<key>CFBundleURLSchemes</key>
+			<array><string>chronos</string></array>
+		</dict>
+	</array>
+	<key>ChronosAPIBaseURL</key>
+	<string>$(CHRONOS_API_BASE_URL)</string>
+	<key>ChronosPortalBaseURL</key>
+	<string>$(CHRONOS_PORTAL_BASE_URL)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

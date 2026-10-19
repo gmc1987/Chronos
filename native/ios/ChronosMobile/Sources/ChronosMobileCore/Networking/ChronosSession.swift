@@ -5,6 +5,7 @@ public actor ChronosSession {
     private var tokens: SessionTokens?
     private let decoder = JSONDecoder()
     private let tokenStore = TokenStore()
+    private var servedFromCache = false
 
     public init(configuration: ChronosAPIConfiguration = .fromEnvironment) {
         self.configuration = configuration
@@ -26,12 +27,15 @@ public actor ChronosSession {
     public func clear() {
         tokens = nil
         tokenStore.clear()
+        clearResponseCache()
     }
 
     /// Exposes the short-lived access token to native feature clients that need it.
     public func currentAccessToken() -> String? {
         tokens?.accessToken
     }
+
+    public func lastResponseWasCached() -> Bool { servedFromCache }
 
     public func login(username: String, password: String, consumer: Bool = false) async throws -> LoginPayload {
         let path = consumer ? "/consumer/users/login" : "/auth/login"
@@ -165,6 +169,18 @@ public actor ChronosSession {
         )
     }
 
+    /// Downloads a binary resource from an authenticated business endpoint.
+    public func download(_ path: String) async throws -> Data {
+        try await requestData(
+            path: path,
+            method: "GET",
+            bodyData: nil,
+            authenticated: true,
+            retry: true,
+            contentType: nil
+        )
+    }
+
     public func deleteFile(id: String) async throws {
         _ = try await requestData(
             path: "/files/\(id)",
@@ -211,7 +227,18 @@ public actor ChronosSession {
         }
         urlRequest.httpBody = bodyData
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: urlRequest)
+            servedFromCache = false
+        } catch {
+            if method == "GET", contentType == "application/json", let cached = cachedResponse(path) {
+                servedFromCache = true
+                return cached
+            }
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else {
             throw ChronosAPIError.invalidResponse
         }
@@ -228,6 +255,7 @@ public actor ChronosSession {
         }
         switch http.statusCode {
         case 200..<300:
+            if method == "GET", contentType == "application/json" { cache(data, for: path) }
             return data
         case 401:
             throw ChronosAPIError.unauthorized
@@ -261,6 +289,45 @@ public actor ChronosSession {
 
     private func persist(_ tokens: SessionTokens) {
         tokenStore.save(tokens)
+    }
+
+    private func cache(_ data: Data, for path: String) {
+        guard cacheable(path) else { return }
+        let url = cacheURL(path)
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    private func cachedResponse(_ path: String) -> Data? {
+        guard cacheable(path) else { return nil }
+        let url = cacheURL(path)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let modified = attributes[.modificationDate] as? Date,
+              Date().timeIntervalSince(modified) < 24 * 60 * 60 else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    private func cacheable(_ path: String) -> Bool {
+        ["/portal/bootstrap", "/publications", "/portal/education/family/", "/education/portal/"]
+            .contains { path.hasPrefix($0) }
+    }
+
+    private func cacheURL(_ path: String) -> URL {
+        let encoded = Data(path.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ChronosOffline", isDirectory: true)
+            .appendingPathComponent(encoded + ".json")
+    }
+
+    private func clearResponseCache() {
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ChronosOffline", isDirectory: true)
+        try? FileManager.default.removeItem(at: directory)
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T? {

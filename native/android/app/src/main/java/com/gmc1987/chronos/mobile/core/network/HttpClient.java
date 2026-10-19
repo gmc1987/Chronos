@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.File;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -12,15 +13,35 @@ import org.json.JSONObject;
 public final class HttpClient {
     private final String baseUrl;
     private final SessionStore session;
+    private final File cacheDirectory;
+    private volatile boolean servedFromCache;
 
-    public HttpClient(String baseUrl, SessionStore session) {
+    public HttpClient(String baseUrl, SessionStore session, File cacheRoot) {
         this.baseUrl = baseUrl.replaceAll("/$", "");
         this.session = session;
+        this.cacheDirectory = new File(cacheRoot, "chronos-offline");
     }
 
     public JSONObject get(String path) throws Exception {
-        return request(path, "GET", null, true, true);
+        try {
+            JSONObject response = request(path, "GET", null, true, true);
+            servedFromCache = false;
+            writeCache(path, response);
+            return response;
+        } catch (ApiException apiError) {
+            // Authorization and business failures must never reveal stale data from an older session.
+            throw apiError;
+        } catch (IOException networkError) {
+            JSONObject cached = readCache(path);
+            if (cached == null) throw networkError;
+            servedFromCache = true;
+            return cached;
+        }
     }
+
+    public boolean lastResponseWasCached() { return servedFromCache; }
+
+    public void clearCache() { deleteRecursively(cacheDirectory); }
 
     public JSONObject post(String path, JSONObject body, boolean authenticated) throws Exception {
         return request(path, "POST", body, authenticated, authenticated);
@@ -185,5 +206,36 @@ public final class HttpClient {
             while ((length = input.read(buffer)) != -1) bytes.write(buffer, 0, length);
             return bytes.toByteArray();
         }
+    }
+
+    private void writeCache(String path, JSONObject response) {
+        if (!cacheable(path)) return;
+        if (!cacheDirectory.exists() && !cacheDirectory.mkdirs()) return;
+        File target = new File(cacheDirectory, Integer.toHexString(path.hashCode()) + ".json");
+        try (java.io.FileOutputStream output = new java.io.FileOutputStream(target)) {
+            output.write(response.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) { }
+    }
+
+    private JSONObject readCache(String path) {
+        if (!cacheable(path)) return null;
+        File target = new File(cacheDirectory, Integer.toHexString(path.hashCode()) + ".json");
+        if (!target.isFile() || System.currentTimeMillis() - target.lastModified() > 86_400_000L) return null;
+        try (java.io.FileInputStream input = new java.io.FileInputStream(target)) {
+            return new JSONObject(read(input));
+        } catch (Exception ignored) { return null; }
+    }
+
+    private boolean cacheable(String path) {
+        return path.startsWith("/portal/bootstrap")
+                || path.startsWith("/publications")
+                || path.startsWith("/portal/education/family/")
+                || path.startsWith("/education/portal/");
+    }
+
+    private static void deleteRecursively(File value) {
+        File[] children = value.listFiles();
+        if (children != null) for (File child : children) deleteRecursively(child);
+        if (value.exists()) value.delete();
     }
 }

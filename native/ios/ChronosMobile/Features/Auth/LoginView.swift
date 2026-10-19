@@ -50,7 +50,6 @@ struct LoginView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .preferredColorScheme(.light)
     }
 
     var brandSection: some View {

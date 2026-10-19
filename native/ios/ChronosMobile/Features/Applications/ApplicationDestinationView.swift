@@ -5,12 +5,14 @@ enum NativeFeature: String {
     case files = "FILES", meetings = "MEETINGS", trips = "BUSINESS_TRIPS"
     case knowledge = "KNOWLEDGE", ai = "AI_CENTER", teaching = "TEACHING_CENTER"
 
-    init(_ app: PortalApplication) {
+    init?(_ app: PortalApplication) {
         let fallback: [String: Self] = ["workflow": .workflow, "oa": .collaboration,
             "document": .documents, "file": .files, "EDUCATION_MEETINGS": .meetings,
             "STAFF_BUSINESS_TRIP": .trips, "knowledge": .knowledge, "ai": .ai,
             "teaching-center": .teaching]
-        self = Self(rawValue: app.nativeFeatureCode ?? "") ?? fallback[app.code ?? ""] ?? .collaboration
+        if let value = Self(rawValue: app.nativeFeatureCode ?? "") { self = value; return }
+        if let value = fallback[app.code ?? ""] { self = value; return }
+        return nil
     }
 }
 
@@ -28,6 +30,7 @@ enum NativeFeature: String {
         case .knowledge: NativeRecordsView(title: "知识中心", path: "/admin/knowledge-bases?page=0&size=50", empty: "暂无知识库")
         case .ai: NativeRecordsView(title: "AI 智能中心", path: "/agent/specs/list?page=0&size=50", empty: "暂无智能体")
         case .teaching: NativeModuleList(title: "教学中心", modules: teachingModules)
+        case nil: UnsupportedApplicationView(application: application)
         }
     }
 }

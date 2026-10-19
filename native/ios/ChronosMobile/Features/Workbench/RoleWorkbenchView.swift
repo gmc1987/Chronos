@@ -71,6 +71,7 @@ struct RoleWorkbenchView: View {
         case .staff: return "教职工工作台"
         case .management: return "管理工作台"
         case .student: return "学生工作台"
+        case .parent: return "家长工作台"
         }
     }
 

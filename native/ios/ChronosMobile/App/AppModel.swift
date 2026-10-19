@@ -8,6 +8,8 @@ import SwiftUI
     @Published var error: String?
     @Published var isLoggingIn = false
     @Published var isBootstrapping = false
+    @Published var deepLink: MobileDeepLink?
+    @Published var usingOfflineData = false
 
     init() {
         Task {
@@ -39,6 +41,7 @@ import SwiftUI
             let value = try await session.get(WorkbenchAPI.bootstrap, as: PortalBootstrap.self)
             bootstrap = value
             workbenchKind = WorkbenchResolver.resolve(bootstrap: value)
+            usingOfflineData = await session.lastResponseWasCached()
         } catch {
             self.error = error.localizedDescription
         }
@@ -52,4 +55,6 @@ import SwiftUI
         error = nil
         UserDefaults.standard.removeObject(forKey: "chronos.mobile.timetable.expanded")
     }
+
+    func open(url: URL) { deepLink = MobileDeepLink(url: url) }
 }

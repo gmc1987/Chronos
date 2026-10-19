@@ -30,6 +30,16 @@
 		A10000000000000000000004 /* ChronosMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* ChronosMobileApp.swift */; };
 		A10000000000000000000005 /* AnnouncementsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* AnnouncementsAPI.swift */; };
 		A10000000000000000000006 /* PublicationsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* PublicationsListView.swift */; };
+		A1000000000000000000002A /* PublicationDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002A /* PublicationDetailView.swift */; };
+		A1000000000000000000002B /* UnsupportedApplicationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002B /* UnsupportedApplicationView.swift */; };
+		A1000000000000000000002C /* FamilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002C /* FamilyModels.swift */; };
+		A1000000000000000000002D /* FamilyAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002D /* FamilyAPI.swift */; };
+		A1000000000000000000002E /* ParentWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002E /* ParentWorkbenchView.swift */; };
+		A1000000000000000000002F /* FamilyNoticesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002F /* FamilyNoticesView.swift */; };
+		A10000000000000000000030 /* FamilyFeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000030 /* FamilyFeedbackView.swift */; };
+		A10000000000000000000031 /* MobileDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000031 /* MobileDeepLink.swift */; };
+		A10000000000000000000032 /* DeepLinkDestinationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000032 /* DeepLinkDestinationView.swift */; };
+		A10000000000000000000033 /* ChronosNotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000033 /* ChronosNotificationDelegate.swift */; };
 		A10000000000000000000007 /* ApplicationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* ApplicationsView.swift */; };
 		A10000000000000000000008 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* LoginView.swift */; };
 		A10000000000000000000009 /* ExamsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* ExamsAPI.swift */; };
@@ -105,6 +115,16 @@
 		B10000000000000000000004 /* ChronosMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChronosMobileApp.swift; sourceTree = "<group>"; };
 		B10000000000000000000005 /* AnnouncementsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AnnouncementsAPI.swift; path = Features/Announcements/AnnouncementsAPI.swift; sourceTree = "<group>"; };
 		B10000000000000000000006 /* PublicationsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PublicationsListView.swift; path = Features/Announcements/PublicationsListView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002A /* PublicationDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PublicationDetailView.swift; path = Features/Announcements/PublicationDetailView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002B /* UnsupportedApplicationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UnsupportedApplicationView.swift; path = Features/Applications/UnsupportedApplicationView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002C /* FamilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/ChronosMobileCore/Models/FamilyModels.swift; sourceTree = "<group>"; };
+		B1000000000000000000002D /* FamilyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Family/FamilyAPI.swift; sourceTree = "<group>"; };
+		B1000000000000000000002E /* ParentWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Family/ParentWorkbenchView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002F /* FamilyNoticesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Family/FamilyNoticesView.swift; sourceTree = "<group>"; };
+		B10000000000000000000030 /* FamilyFeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Family/FamilyFeedbackView.swift; sourceTree = "<group>"; };
+		B10000000000000000000031 /* MobileDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/MobileDeepLink.swift; sourceTree = "<group>"; };
+		B10000000000000000000032 /* DeepLinkDestinationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/DeepLinkDestinationView.swift; sourceTree = "<group>"; };
+		B10000000000000000000033 /* ChronosNotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/ChronosNotificationDelegate.swift; sourceTree = "<group>"; };
 		B10000000000000000000007 /* ApplicationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ApplicationsView.swift; path = Features/Applications/ApplicationsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000008 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LoginView.swift; path = Features/Auth/LoginView.swift; sourceTree = "<group>"; };
 		B10000000000000000000009 /* ExamsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExamsAPI.swift; path = Features/Exams/ExamsAPI.swift; sourceTree = "<group>"; };
@@ -172,6 +192,16 @@
 				B10000000000000000000014 /* MeetingsAPI.swift */,
 				B1000000000000000000000D /* ProfileView.swift */,
 				B10000000000000000000006 /* PublicationsListView.swift */,
+				B1000000000000000000002A /* PublicationDetailView.swift */,
+				B1000000000000000000002B /* UnsupportedApplicationView.swift */,
+				B1000000000000000000002C /* FamilyModels.swift */,
+				B1000000000000000000002D /* FamilyAPI.swift */,
+				B1000000000000000000002E /* ParentWorkbenchView.swift */,
+				B1000000000000000000002F /* FamilyNoticesView.swift */,
+				B10000000000000000000030 /* FamilyFeedbackView.swift */,
+				B10000000000000000000031 /* MobileDeepLink.swift */,
+				B10000000000000000000032 /* DeepLinkDestinationView.swift */,
+				B10000000000000000000033 /* ChronosNotificationDelegate.swift */,
 				B10000000000000000000015 /* RoleWorkbenchView.swift */,
 				B1000000000000000000000E /* ScheduleAPI.swift */,
 				B10000000000000000000018 /* DisplayFormatting.swift */,
@@ -292,6 +322,16 @@
 				A10000000000000000000004 /* ChronosMobileApp.swift in Sources */,
 				A10000000000000000000005 /* AnnouncementsAPI.swift in Sources */,
 				A10000000000000000000006 /* PublicationsListView.swift in Sources */,
+				A1000000000000000000002A /* PublicationDetailView.swift in Sources */,
+				A1000000000000000000002B /* UnsupportedApplicationView.swift in Sources */,
+				A1000000000000000000002C /* FamilyModels.swift in Sources */,
+				A1000000000000000000002D /* FamilyAPI.swift in Sources */,
+				A1000000000000000000002E /* ParentWorkbenchView.swift in Sources */,
+				A1000000000000000000002F /* FamilyNoticesView.swift in Sources */,
+				A10000000000000000000030 /* FamilyFeedbackView.swift in Sources */,
+				A10000000000000000000031 /* MobileDeepLink.swift in Sources */,
+				A10000000000000000000032 /* DeepLinkDestinationView.swift in Sources */,
+				A10000000000000000000033 /* ChronosNotificationDelegate.swift in Sources */,
 				A10000000000000000000007 /* ApplicationsView.swift in Sources */,
 				A10000000000000000000008 /* LoginView.swift in Sources */,
 				A10000000000000000000009 /* ExamsAPI.swift in Sources */,
@@ -457,6 +497,8 @@
 		000000000000000000000015 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CHRONOS_API_BASE_URL = "https://api.example.invalid";
+				CHRONOS_PORTAL_BASE_URL = "https://portal.example.invalid";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				INFOPLIST_FILE = "ChronosMobile/Info-Release.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";

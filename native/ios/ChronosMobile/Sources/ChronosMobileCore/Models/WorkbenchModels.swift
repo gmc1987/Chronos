@@ -2,6 +2,7 @@ import Foundation
 
 public enum WorkbenchKind: String, Sendable {
     case student
+    case parent
     case teacher
     case staff
     case management
@@ -32,6 +33,9 @@ public enum WorkbenchResolver {
         }
         if profileTypes.contains("STUDENT") {
             return .student
+        }
+        if profileTypes.contains("PARENT") {
+            return .parent
         }
         if profileTypes.contains("TEACHER") {
             return .teacher

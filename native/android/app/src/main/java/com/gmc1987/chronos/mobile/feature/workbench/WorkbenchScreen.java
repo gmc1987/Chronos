@@ -298,6 +298,7 @@ public final class WorkbenchScreen {
     private String title() {
         switch (portal.workspace()) {
             case STUDENT: return "学生工作台";
+            case PARENT: return "家长工作台";
             case TEACHER: return "教师工作台";
             case MANAGEMENT: return "管理工作台";
             default: return "职工工作台";

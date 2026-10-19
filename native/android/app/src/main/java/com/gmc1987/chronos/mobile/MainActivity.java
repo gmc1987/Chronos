@@ -34,6 +34,7 @@ public final class MainActivity extends Activity implements ScreenHost {
     private SessionStore session;
     private AppNavigator navigator;
     private final DocumentPicker documentPicker = new DocumentPicker();
+    private android.net.Uri pendingDeepLink;
 
     public DocumentPicker documentPicker() { return documentPicker; }
 
@@ -50,11 +51,20 @@ public final class MainActivity extends Activity implements ScreenHost {
         ui = new UiKit(this);
         async = new AsyncRunner(this);
         session = new SessionStore(getSharedPreferences(PREFS, MODE_PRIVATE));
-        http = new HttpClient(BuildConfig.API_BASE_URL, session);
+        http = new HttpClient(BuildConfig.API_BASE_URL, session, getCacheDir());
+        pendingDeepLink = getIntent() == null ? null : getIntent().getData();
         auth = new AuthRepository(http, session);
         portal = new PortalRepository(http);
         if (auth.hasSession()) initializePortal();
         else showLogin();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (navigator != null && intent.getData() != null) navigator.openDeepLink(intent.getData());
+        else pendingDeepLink = intent.getData();
     }
 
     @Override
@@ -92,8 +102,16 @@ public final class MainActivity extends Activity implements ScreenHost {
                 new MeetingsRepository(http),
                 new SupervisionRepository(http),
                 http,
-                this::showLogin);
+                this::logoutToLogin);
         navigator.start();
+        if (http.lastResponseWasCached()) {
+            android.widget.Toast.makeText(this, "网络不可用，正在显示最近缓存",
+                    android.widget.Toast.LENGTH_LONG).show();
+        }
+        if (pendingDeepLink != null) {
+            navigator.openDeepLink(pendingDeepLink);
+            pendingDeepLink = null;
+        }
     }
 
     private void showInitializationError(Exception error) {
@@ -104,10 +122,15 @@ public final class MainActivity extends Activity implements ScreenHost {
         retry.setOnClickListener(view -> initializePortal());
         logout.setOnClickListener(view -> {
             auth.clear();
-            showLogin();
+            logoutToLogin();
         });
         page.addView(retry);
         page.addView(logout);
         show(page);
+    }
+
+    private void logoutToLogin() {
+        if (http != null) http.clearCache();
+        showLogin();
     }
 }

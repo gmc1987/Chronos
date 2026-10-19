@@ -386,7 +386,9 @@ public class IamProductionBootstrapConfig {
         });
 		Permission publicationRead = permissions.findByPermissionCode("message:publication:read");
 		roles.findAll().stream()
-				.filter(role -> "ROLE_PLATFORM_USER".equalsIgnoreCase(role.getRoleCode()))
+				.filter(role -> "ROLE_PLATFORM_USER".equalsIgnoreCase(role.getRoleCode())
+						|| "EDU_TEACHER".equalsIgnoreCase(role.getRoleCode())
+						|| "EDU_CLASS_ADVISOR".equalsIgnoreCase(role.getRoleCode()))
 				.forEach(role -> {
 					boolean exists = rolePermissions.findByRoleId(role.getId()).stream()
 							.anyMatch(item -> item.getPermissionId().equals(publicationRead.getId()));

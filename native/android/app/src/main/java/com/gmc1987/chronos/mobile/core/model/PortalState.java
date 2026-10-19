@@ -7,7 +7,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public final class PortalState {
-    public enum Workspace { STUDENT, TEACHER, STAFF, MANAGEMENT }
+    public enum Workspace { STUDENT, PARENT, TEACHER, STAFF, MANAGEMENT }
 
     private final JSONObject data;
     private final JSONObject user;
@@ -41,6 +41,9 @@ public final class PortalState {
     public JSONObject education() { return education; }
     public JSONArray applications() { return applications; }
     public Workspace workspace() { return workspace; }
+    public boolean hasPermission(String permission) {
+        return permissions.stream().anyMatch(value -> permission.equalsIgnoreCase(value));
+    }
     public String displayName() {
         return user.optString("displayName", user.optString("username", "用户"));
     }
@@ -65,6 +68,14 @@ public final class PortalState {
         return null;
     }
 
+    public JSONObject findApplicationById(String id) {
+        for (int i = 0; i < applications.length(); i++) {
+            JSONObject application = applications.optJSONObject(i);
+            if (application != null && id.equals(application.optString("id"))) return application;
+        }
+        return null;
+    }
+
     public List<String> applicationNames(String... words) {
         List<String> names = new ArrayList<>();
         for (int i = 0; i < applications.length(); i++) {
@@ -83,6 +94,7 @@ public final class PortalState {
 
     private Workspace classify() {
         boolean student = contains(profileTypes, "STUDENT");
+        boolean parent = contains(profileTypes, "PARENT");
         boolean teacher = contains(profileTypes, "TEACHER");
         boolean managementRole = containsAny(roles,
                 "管理员", "校领导", "校长", "院长", "书记", "ADMIN", "MANAGER", "LEADER");
@@ -101,6 +113,7 @@ public final class PortalState {
         }
         if (teacher) return Workspace.TEACHER;
         if (student) return Workspace.STUDENT;
+        if (parent) return Workspace.PARENT;
         if (managementPermission && managementApplication) return Workspace.MANAGEMENT;
         return Workspace.STAFF;
     }

@@ -14,11 +14,17 @@ import com.gmc1987.chronos.mobile.core.common.UiKit;
 import com.gmc1987.chronos.mobile.core.model.PortalState;
 import com.gmc1987.chronos.mobile.core.network.HttpClient;
 import com.gmc1987.chronos.mobile.feature.announcements.AnnouncementsRepository;
+import com.gmc1987.chronos.mobile.feature.announcements.PublicationsScreen;
+import com.gmc1987.chronos.mobile.feature.announcements.PublicationDetailScreen;
 import com.gmc1987.chronos.mobile.feature.applications.ApplicationsScreen;
 import com.gmc1987.chronos.mobile.feature.auth.AuthRepository;
 import com.gmc1987.chronos.mobile.feature.exams.ExamsRepository;
 import com.gmc1987.chronos.mobile.feature.grades.GradesRepository;
 import com.gmc1987.chronos.mobile.feature.profile.ProfileScreen;
+import com.gmc1987.chronos.mobile.feature.family.FamilyFeedbackScreen;
+import com.gmc1987.chronos.mobile.feature.family.FamilyNoticesScreen;
+import com.gmc1987.chronos.mobile.feature.family.FamilyRepository;
+import com.gmc1987.chronos.mobile.feature.family.ParentWorkbenchScreen;
 import com.gmc1987.chronos.mobile.feature.schedule.ScheduleRepository;
 import com.gmc1987.chronos.mobile.feature.schedule.CourseDetailScreen;
 import com.gmc1987.chronos.mobile.feature.applications.NativeApplicationScreen;
@@ -41,6 +47,7 @@ public final class AppNavigator implements ScreenHost {
     private final MeetingsRepository meetings;
     private final SupervisionRepository supervision;
     private final HttpClient http;
+    private final FamilyRepository family;
     private final Runnable loggedOut;
     private FrameLayout content;
     private LinearLayout tabs;
@@ -73,6 +80,7 @@ public final class AppNavigator implements ScreenHost {
         this.meetings = meetings;
         this.supervision = supervision;
         this.http = http;
+        this.family = new FamilyRepository(http);
         this.loggedOut = loggedOut;
     }
 
@@ -83,7 +91,7 @@ public final class AppNavigator implements ScreenHost {
         shell.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         tabs = ui.horizontal();
         tabs.setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7));
-        tabs.setBackgroundColor(Color.WHITE);
+        tabs.setBackgroundColor(UiKit.SURFACE);
         tabs.setElevation(ui.dp(10));
         shell.addView(tabs);
         activity.setContentView(shell);
@@ -110,6 +118,29 @@ public final class AppNavigator implements ScreenHost {
         return true;
     }
 
+    /** Opens links emitted by notifications and external chronos:// URLs. */
+    public void openDeepLink(android.net.Uri uri) {
+        if (uri == null) return;
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (uri.getHost() != null && !uri.getHost().isEmpty()) parts.add(uri.getHost());
+        parts.addAll(uri.getPathSegments());
+        if (parts.size() < 2) return;
+        String kind = parts.get(0).toLowerCase(java.util.Locale.ROOT);
+        String id = parts.get(1);
+        if ("publication".equals(kind) || "notice".equals(kind) || "announcement".equals(kind)) {
+            backAction = this::showWorkbench;
+            new PublicationDetailScreen(activity, ui, async, this, announcements, id,
+                    this::showWorkbench).show();
+        } else if ("workflow".equals(kind) || "task".equals(kind)) {
+            showWorkflowDetail(id);
+        } else if ("application".equals(kind) || "app".equals(kind)) {
+            org.json.JSONObject application = portal.findApplicationById(id);
+            if (application != null) openApplication(application);
+            else android.widget.Toast.makeText(activity, "当前账号未获该应用授权",
+                    android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void showRoot(Runnable action) {
         backAction = null;
         action.run();
@@ -121,12 +152,20 @@ public final class AppNavigator implements ScreenHost {
         if (portal.workspace() == PortalState.Workspace.STUDENT) {
             addTab("成绩", R.drawable.ic_tab_grades, () -> showRoot(this::showGrades));
             addTab("考试", R.drawable.ic_tab_exams, () -> showRoot(this::showExams));
-            addTab("通知", R.drawable.ic_tab_notifications,
-                    () -> showRoot(() -> showAnnouncements("通知", "当前没有可见通知")));
+            if (portal.hasPermission("message:publication:read")) {
+                addTab("通知", R.drawable.ic_tab_notifications,
+                        () -> showRoot(() -> showAnnouncements("通知", "当前没有可见通知")));
+            }
+        } else if (portal.workspace() == PortalState.Workspace.PARENT) {
+            addTab("家校通知", R.drawable.ic_tab_notifications,
+                    () -> showRoot(this::showFamilyNotices));
+            addTab("应用", R.drawable.ic_tab_applications, () -> showRoot(this::showApplications));
         } else {
             addTab("应用", R.drawable.ic_tab_applications, () -> showRoot(this::showApplications));
-            addTab("公告", R.drawable.ic_tab_announcements,
-                    () -> showRoot(() -> showAnnouncements("公告", "当前没有可见公告")));
+            if (portal.hasPermission("message:publication:read")) {
+                addTab("公告", R.drawable.ic_tab_announcements,
+                        () -> showRoot(() -> showAnnouncements("公告", "当前没有可见公告")));
+            }
         }
         addTab("我的", R.drawable.ic_tab_profile, () -> showRoot(this::showProfile));
     }
@@ -143,6 +182,11 @@ public final class AppNavigator implements ScreenHost {
 
     private void showWorkbench() {
         backAction = null;
+        if (portal.workspace() == PortalState.Workspace.PARENT) {
+            new ParentWorkbenchScreen(ui, async, this, portal, family,
+                    this::showFamilyNotices, this::showFamilyFeedback).show();
+            return;
+        }
         new WorkbenchScreen(ui, async, this,
                 activity.getSharedPreferences("chronos_session", Activity.MODE_PRIVATE),
                 portal, schedules, meetings, supervision, this::showApplications,
@@ -152,7 +196,7 @@ public final class AppNavigator implements ScreenHost {
 
     private void showApplications() {
         backAction = null;
-        new ApplicationsScreen(ui, this, portal, this::openApplication).show();
+        new ApplicationsScreen(ui, async, this, portal, http, this::openApplication).show();
     }
 
     private void showProfile() {
@@ -172,7 +216,19 @@ public final class AppNavigator implements ScreenHost {
 
     private void showAnnouncements(String title, String empty) {
         backAction = null;
-        remote().show(title, empty, announcements::list, RowFormatters::publications);
+        String type = "通知".equals(title) ? "NOTICE" : "ANNOUNCEMENT";
+        new PublicationsScreen(activity, ui, async, this, announcements, title, type, empty,
+                this::showWorkbench).show();
+    }
+
+    private void showFamilyNotices() {
+        backAction = this::showWorkbench;
+        new FamilyNoticesScreen(activity, ui, async, this, family, this::showWorkbench).show();
+    }
+
+    private void showFamilyFeedback() {
+        backAction = this::showWorkbench;
+        new FamilyFeedbackScreen(activity, ui, async, this, family, this::showWorkbench).show();
     }
 
     private void openApplication(org.json.JSONObject application) {

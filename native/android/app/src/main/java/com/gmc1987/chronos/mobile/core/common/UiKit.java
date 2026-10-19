@@ -22,18 +22,31 @@ import android.widget.TextView;
 public final class UiKit {
     public static final int BRAND = Color.rgb(8, 123, 104);
     public static final int BRAND_DARK = Color.rgb(6, 61, 57);
-    public static final int BACKGROUND = Color.rgb(244, 247, 248);
-    public static final int TEXT = Color.rgb(23, 32, 42);
-    public static final int MUTED = Color.rgb(113, 128, 138);
+    public static int BACKGROUND = Color.rgb(244, 247, 248);
+    public static int SURFACE = Color.WHITE;
+    public static int TEXT = Color.rgb(23, 32, 42);
+    public static int MUTED = Color.rgb(113, 128, 138);
     public static final int ERROR = Color.rgb(190, 62, 46);
-    public static final int BORDER = Color.rgb(225, 231, 235);
-    public static final int FIELD = Color.rgb(248, 250, 251);
-    public static final int BRAND_SOFT = Color.rgb(235, 247, 244);
+    public static int BORDER = Color.rgb(225, 231, 235);
+    public static int FIELD = Color.rgb(248, 250, 251);
+    public static int BRAND_SOFT = Color.rgb(235, 247, 244);
 
     private final Context context;
 
     public UiKit(Context context) {
         this.context = context;
+        boolean dark = (context.getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        if (dark) {
+            BACKGROUND = Color.rgb(16, 23, 27);
+            SURFACE = Color.rgb(28, 38, 43);
+            TEXT = Color.rgb(235, 241, 243);
+            MUTED = Color.rgb(166, 180, 187);
+            BORDER = Color.rgb(57, 72, 78);
+            FIELD = Color.rgb(35, 47, 52);
+            BRAND_SOFT = Color.rgb(25, 67, 60);
+        }
     }
 
     public LinearLayout page(String title) {
@@ -48,7 +61,7 @@ public final class UiKit {
     public LinearLayout card() {
         LinearLayout card = vertical();
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(surface(18, Color.WHITE, Color.argb(12, 0, 0, 0), 1));
+        card.setBackground(surface(18, SURFACE, Color.argb(32, 0, 0, 0), 1));
         int availableWidth = context.getResources().getDisplayMetrics().widthPixels - dp(40);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 Math.min(availableWidth, dp(760)), -2);

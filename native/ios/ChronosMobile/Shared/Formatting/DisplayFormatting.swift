@@ -5,6 +5,7 @@ extension WorkbenchKind {
     var displayName: String {
         switch self {
         case .student: return "学生"
+        case .parent: return "家长"
         case .teacher: return "教师"
         case .staff: return "教职工"
         case .management: return "管理"
