@@ -30,7 +30,7 @@
 
 - iOS Release 必须通过构建设置注入 `CHRONOS_API_BASE_URL` 与 `CHRONOS_PORTAL_BASE_URL` 的正式 HTTPS 地址，并配置正式 Team、Bundle ID、签名证书、Provisioning Profile 和 APNs entitlement。
 - Android Release 必须传入 `releaseApiBaseUrl`、`releasePortalBaseUrl`，并配置正式 keystore/signingConfig；仓库不保存证书或密码。
-- 客户端已具备通知权限、通知点击和深链处理。远程通知实际送达仍需选定 APNs/FCM 服务、提供证书，并在后端增加设备令牌注册与发送通道；在这些外部材料就绪前不能把“远程推送送达”记为生产验收通过。
+- 客户端已具备通知权限、通知点击和深链处理；iOS APNs token 会加密注册到后端并在退出时停用，Android 已建立通知 channel 与运行时授权。远程通知实际送达仍需配置 APNs/FCM 证书和生产发送 Provider；在这些外部材料就绪前不能把“远程推送送达”记为生产验收通过。
 - 上架前应替换版本号、应用图标、隐私说明和商店资料，并在真机上完成弱网、推送、横竖屏和升级安装验收。
 
 ## 构建验证

@@ -12,6 +12,9 @@ struct ChronosMobileApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: .chronosDeepLink)) { event in
                     if let url = event.object as? URL { model.open(url: url) }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .chronosPushToken)) { event in
+                    if let token = event.object as? String { Task { await model.registerPushToken(token) } }
+                }
         }
     }
 }

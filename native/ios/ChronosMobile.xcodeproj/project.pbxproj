@@ -53,6 +53,7 @@
 		A10000000000000000000037 /* SupervisionTasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000037 /* SupervisionTasksView.swift */; };
 		A10000000000000000000038 /* TeachingSupervisionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000038 /* TeachingSupervisionView.swift */; };
 		A10000000000000000000039 /* SupervisionEvaluationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000039 /* SupervisionEvaluationView.swift */; };
+		A1000000000000000000003A /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000003A /* QRCodeScannerView.swift */; };
 		A1000000000000000000000E /* ScheduleAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* ScheduleAPI.swift */; };
 		A1000000000000000000000F /* TimetableCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* TimetableCard.swift */; };
 		A10000000000000000000010 /* BootstrapStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* BootstrapStateView.swift */; };
@@ -144,6 +145,7 @@
 		B10000000000000000000037 /* SupervisionTasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SupervisionTasksView.swift; path = Features/Workbench/SupervisionTasksView.swift; sourceTree = "<group>"; };
 		B10000000000000000000038 /* TeachingSupervisionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TeachingSupervisionView.swift; path = Features/Workbench/TeachingSupervisionView.swift; sourceTree = "<group>"; };
 		B10000000000000000000039 /* SupervisionEvaluationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SupervisionEvaluationView.swift; path = Features/Workbench/SupervisionEvaluationView.swift; sourceTree = "<group>"; };
+		B1000000000000000000003A /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = QRCodeScannerView.swift; path = Features/Workbench/QRCodeScannerView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000E /* ScheduleAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ScheduleAPI.swift; path = Features/Schedule/ScheduleAPI.swift; sourceTree = "<group>"; };
 		B1000000000000000000000F /* TimetableCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TimetableCard.swift; path = Features/Schedule/TimetableCard.swift; sourceTree = "<group>"; };
 		B10000000000000000000010 /* BootstrapStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BootstrapStateView.swift; path = Features/Workbench/BootstrapStateView.swift; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 				B10000000000000000000037 /* SupervisionTasksView.swift */,
 				B10000000000000000000038 /* TeachingSupervisionView.swift */,
 				B10000000000000000000039 /* SupervisionEvaluationView.swift */,
+				B1000000000000000000003A /* QRCodeScannerView.swift */,
 				B10000000000000000000006 /* PublicationsListView.swift */,
 				B1000000000000000000002A /* PublicationDetailView.swift */,
 				B1000000000000000000002B /* UnsupportedApplicationView.swift */,
@@ -363,6 +366,7 @@
 				A10000000000000000000037 /* SupervisionTasksView.swift in Sources */,
 				A10000000000000000000038 /* TeachingSupervisionView.swift in Sources */,
 				A10000000000000000000039 /* SupervisionEvaluationView.swift in Sources */,
+				A1000000000000000000003A /* QRCodeScannerView.swift in Sources */,
 				A1000000000000000000000E /* ScheduleAPI.swift in Sources */,
 				A1000000000000000000000F /* TimetableCard.swift in Sources */,
 				A10000000000000000000010 /* BootstrapStateView.swift in Sources */,

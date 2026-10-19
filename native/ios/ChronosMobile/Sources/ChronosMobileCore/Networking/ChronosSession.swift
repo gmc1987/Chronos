@@ -6,6 +6,7 @@ public actor ChronosSession {
     private let decoder = JSONDecoder()
     private let tokenStore = TokenStore()
     private var servedFromCache = false
+    private var cachedAt: Date?
 
     public init(configuration: ChronosAPIConfiguration = .fromEnvironment) {
         self.configuration = configuration
@@ -36,9 +37,11 @@ public actor ChronosSession {
     }
 
     public func lastResponseWasCached() -> Bool { servedFromCache }
+    public func lastCachedAt() -> Date? { cachedAt }
 
     public func clearOfflineCache() {
         servedFromCache = false
+        cachedAt = nil
         clearResponseCache()
     }
 
@@ -237,6 +240,7 @@ public actor ChronosSession {
         do {
             (data, response) = try await URLSession.shared.data(for: urlRequest)
             servedFromCache = false
+            cachedAt = nil
         } catch {
             if method == "GET", contentType == "application/json", let cached = cachedResponse(path) {
                 servedFromCache = true
@@ -312,6 +316,7 @@ public actor ChronosSession {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let modified = attributes[.modificationDate] as? Date,
               Date().timeIntervalSince(modified) < 24 * 60 * 60 else { return nil }
+        cachedAt = modified
         return try? Data(contentsOf: url)
     }
 

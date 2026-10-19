@@ -29,6 +29,7 @@ import com.gmc1987.chronos.mobile.feature.family.ParentWorkbenchScreen;
 import com.gmc1987.chronos.mobile.feature.schedule.ScheduleRepository;
 import com.gmc1987.chronos.mobile.feature.schedule.CourseDetailScreen;
 import com.gmc1987.chronos.mobile.feature.applications.NativeApplicationScreen;
+import com.gmc1987.chronos.mobile.feature.applications.NativeRecordsScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingsRepository;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingDetailScreen;
 import com.gmc1987.chronos.mobile.feature.workbench.SupervisionRepository;
@@ -51,6 +52,8 @@ public final class AppNavigator implements ScreenHost {
     private final SupervisionRepository supervision;
     private final HttpClient http;
     private final FamilyRepository family;
+    private final boolean usingOfflineData;
+    private final long offlineCachedAt;
     private final Runnable loggedOut;
     private FrameLayout content;
     private LinearLayout tabs;
@@ -70,6 +73,8 @@ public final class AppNavigator implements ScreenHost {
             MeetingsRepository meetings,
             SupervisionRepository supervision,
             HttpClient http,
+            boolean usingOfflineData,
+            long offlineCachedAt,
             Runnable loggedOut) {
         this.activity = activity;
         this.ui = ui;
@@ -84,12 +89,27 @@ public final class AppNavigator implements ScreenHost {
         this.supervision = supervision;
         this.http = http;
         this.family = new FamilyRepository(http);
+        this.usingOfflineData = usingOfflineData;
+        this.offlineCachedAt = offlineCachedAt;
         this.loggedOut = loggedOut;
     }
 
     public void start() {
         LinearLayout shell = ui.vertical();
         shell.setBackgroundColor(UiKit.BACKGROUND);
+        if (usingOfflineData) {
+            String updated = offlineCachedAt <= 0 ? "更新时间未知"
+                    : new java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.CHINA)
+                            .format(new java.util.Date(offlineCachedAt));
+            android.widget.TextView offline = ui.label(
+                    "网络不可用 · 显示 24 小时内缓存 · " + updated,
+                    12, android.graphics.Color.WHITE, true);
+            offline.setBackgroundColor(android.graphics.Color.rgb(224, 123, 34));
+            offline.setGravity(android.view.Gravity.CENTER);
+            offline.setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(8));
+            offline.setContentDescription("离线数据，" + updated);
+            shell.addView(offline);
+        }
         content = new FrameLayout(activity);
         shell.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         tabs = ui.horizontal();
@@ -196,7 +216,7 @@ public final class AppNavigator implements ScreenHost {
                 this::showCourseDetail, this::showMeetingDetail,
                 this::showWorkflowDetail, this::showWorkbenchItemDetail,
                 this::showInvigilations, this::showSupervisionTasks,
-                this::showTeachingSupervision).show();
+                this::showTeachingSupervision, this::showMetricDetails).show();
     }
 
     private void showApplications() {
@@ -244,6 +264,19 @@ public final class AppNavigator implements ScreenHost {
     private void showCourseDetail(org.json.JSONObject occurrence) {
         backAction = this::showWorkbench;
         new CourseDetailScreen(ui, this, occurrence, this::showWorkbench).show();
+    }
+
+    private void showMetricDetails(org.json.JSONObject metric) {
+        backAction = this::showWorkbench;
+        new NativeRecordsScreen(
+                ui,
+                async,
+                this,
+                http,
+                metric.optString("label", "数据明细"),
+                metric.optString("route"),
+                "当前没有可查看的数据",
+                this::showWorkbench).show();
     }
 
     private void showMeetingDetail(org.json.JSONObject meeting) {

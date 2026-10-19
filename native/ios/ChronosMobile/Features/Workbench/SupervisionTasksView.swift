@@ -6,6 +6,7 @@ struct SupervisionTasksView: View {
     @State private var proofs: [String: String] = [:]
     @State private var loading = true
     @State private var error: String?
+    @State private var scanTarget: SupervisionScanTarget?
 
     var body: some View {
         List {
@@ -22,6 +23,9 @@ struct SupervisionTasksView: View {
                     if task.status == "PENDING" || task.status == "ACCEPTED" {
                         TextField("扫描教师二维码后填入核验码", text: proofBinding(task.id), axis: .vertical)
                             .lineLimit(3...6)
+                        Button("扫描教师二维码") {
+                            scanTarget = SupervisionScanTarget(id: task.id)
+                        }
                         Button("核验并签到") { Task { await checkIn(task) } }
                     }
                     if task.status == "CHECKED_IN" {
@@ -38,6 +42,12 @@ struct SupervisionTasksView: View {
         .navigationTitle("督导任务")
         .task { await load() }
         .refreshable { await load() }
+        .sheet(item: $scanTarget) { target in
+            QRCodeScannerView { value in
+                proofs[target.id] = value
+                scanTarget = nil
+            }
+        }
     }
 
     private func load() async {
@@ -82,6 +92,10 @@ struct SupervisionTasksView: View {
     private func proofBinding(_ id: String) -> Binding<String> {
         Binding(get: { proofs[id, default: ""] }, set: { proofs[id] = $0 })
     }
+}
+
+private struct SupervisionScanTarget: Identifiable {
+    let id: String
 }
 
 struct SupervisionTask: Decodable, Identifiable {

@@ -43,10 +43,12 @@ public struct PortalApplication: Decodable, Identifiable, Sendable {
     public let nativeFeatureCode: String?
     public let recommended: Bool
     public let favorite: Bool
+    public let category: String
+    public let badgeCount: Int
 
     private enum CodingKeys: String, CodingKey {
         case id, code, name, appName, description, icon, routePath, openMode, presentationMode,
-             nativeFeatureCode, recommended, favorite
+             nativeFeatureCode, recommended, favorite, category, badgeCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -65,6 +67,8 @@ public struct PortalApplication: Decodable, Identifiable, Sendable {
         nativeFeatureCode = try container.decodeIfPresent(String.self, forKey: .nativeFeatureCode)
         recommended = try container.decodeIfPresent(Bool.self, forKey: .recommended) ?? false
         favorite = try container.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
+        category = try container.decodeIfPresent(String.self, forKey: .category) ?? "其他应用"
+        badgeCount = try container.decodeIfPresent(Int.self, forKey: .badgeCount) ?? 0
     }
 }
 
@@ -146,11 +150,13 @@ public struct PortalContributionData: Decodable, Sendable {
     public let items: [PortalSummaryItem]?
     public let allRoute: String?
     public let mySchedule: [ScheduleEntry]?
+    public let meetings: [MeetingView]?
 }
 
 public struct PortalMetric: Decodable, Identifiable, Sendable {
     public let label: String
     public let value: Int
+    public let route: String?
     public var id: String { label }
 }
 

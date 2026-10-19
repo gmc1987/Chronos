@@ -44,15 +44,58 @@ public class PortalAggregationController {
     @GetMapping("/bootstrap")
     public ResultData<Object> bootstrap(Principal principal) {
         String username = principal.getName();
+        Map<String, PortalContribution> contributions = contributions(username);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("user", portalService.userContext(username));
-        data.put("applications", portalService.applications(username));
+        data.put("applications", applicationsWithBadges(
+                portalService.applications(username), contributions));
         data.put("widgets", portalService.widgets(username));
         data.put("preference", portalService.preference(username));
         data.put("favorites", portalService.favorites(username));
         data.put("recentVisits", portalService.recentVisits(username));
-        data.put("contributions", contributions(username));
+        data.put("contributions", contributions);
         return ok(data);
+    }
+
+    private List<Map<String, Object>> applicationsWithBadges(
+            List<Map<String, Object>> applications,
+            Map<String, PortalContribution> contributions) {
+        return applications.stream().map(application -> {
+            Map<String, Object> value = new LinkedHashMap<>(application);
+            String feature = String.valueOf(value.getOrDefault("nativeFeatureCode", ""));
+            String provider = switch (feature) {
+                case "WORKFLOW_TASKS" -> "WORKFLOW";
+                case "MEETINGS" -> "MEETING";
+                case "AI_CENTER" -> "AI";
+                default -> null;
+            };
+            int badge = provider == null ? 0 : contributionCount(contributions.get(provider));
+            value.put("badgeCount", badge);
+            value.put("category", applicationCategory(feature));
+            return value;
+        }).toList();
+    }
+
+    private int contributionCount(PortalContribution contribution) {
+        if (contribution == null || !contribution.available() || contribution.data() == null) {
+            return 0;
+        }
+        Object total = contribution.data().get("total");
+        if (total instanceof Number number) {
+            return Math.max(number.intValue(), 0);
+        }
+        Object items = contribution.data().get("items");
+        return items instanceof List<?> list ? list.size() : 0;
+    }
+
+    private String applicationCategory(String feature) {
+        return switch (feature) {
+            case "WORKFLOW_TASKS", "COLLABORATION", "DOCUMENTS", "FILES", "BUSINESS_TRIPS" -> "协同办公";
+            case "TEACHING_CENTER" -> "教学管理";
+            case "MEETINGS" -> "会议与日程";
+            case "KNOWLEDGE", "AI_CENTER" -> "智能服务";
+            default -> "其他应用";
+        };
     }
 
     @GetMapping("/home")

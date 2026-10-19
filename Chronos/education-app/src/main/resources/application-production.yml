@@ -1,0 +1,42 @@
+spring:
+  config:
+    activate:
+      on-profile: production
+  datasource:
+    url: ${CHRONOS_DB_URL}
+    username: ${CHRONOS_DB_USERNAME}
+    password: ${CHRONOS_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+security:
+  cors:
+    allowed-origin-patterns: ${CHRONOS_CORS_ALLOWED_ORIGINS}
+  jwt:
+    secret: ${CHRONOS_JWT_SECRET}
+
+minio:
+  endpoint: ${CHRONOS_MINIO_ENDPOINT}
+  accessKey: ${CHRONOS_MINIO_ACCESS_KEY}
+  secretKey: ${CHRONOS_MINIO_SECRET_KEY}
+
+chronos:
+  production-readiness:
+    enabled: true
+    deployment-acknowledgement: ${CHRONOS_PRODUCTION_ACK:}
+  security:
+    encryption-key: ${CHRONOS_ENCRYPTION_KEY}
+  file:
+    storage-type: MINIO
+  message:
+    storage-type: MINIO
+
+flowable:
+  database-schema-update: false
+
+management:
+  metrics:
+    export:
+      prometheus:
+        enabled: true

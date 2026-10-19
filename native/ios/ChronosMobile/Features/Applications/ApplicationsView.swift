@@ -16,6 +16,18 @@ struct ApplicationsView: View {
         }
     }
 
+    private var grouped: [(String, [PortalApplication])] {
+        let order = ["协同办公", "教学管理", "会议与日程", "智能服务", "其他应用"]
+        let available = filtered.filter { !favoriteIDs.contains($0.id) }
+        let groups = Dictionary(grouping: available, by: \.category)
+        return order.compactMap { name in
+            guard let values = groups[name], !values.isEmpty else { return nil }
+            return (name, values)
+        } + groups.keys.filter { !order.contains($0) }.sorted().compactMap { name in
+            groups[name].map { (name, $0) }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -27,8 +39,10 @@ struct ApplicationsView: View {
                 if !favorites.isEmpty {
                     Section("我的收藏") { ForEach(favorites) { applicationRow($0) } }
                 }
-                Section(query.isEmpty ? "全部应用" : "搜索结果") {
-                    ForEach(filtered.filter { !favoriteIDs.contains($0.id) }) { applicationRow($0) }
+                ForEach(grouped, id: \.0) { group in
+                    Section(query.isEmpty ? group.0 : "\(group.0) · 搜索结果") {
+                        ForEach(group.1) { applicationRow($0) }
+                    }
                 }
             }
             .overlay { if applications.isEmpty { EmptyStateView(icon: "square.grid.2x2", text: "当前账号暂无可用应用") } }
@@ -50,7 +64,16 @@ struct ApplicationsView: View {
                         .frame(width: 42, height: 42)
                         .background(ChronosPalette.green, in: RoundedRectangle(cornerRadius: 12))
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(app.name).font(.headline)
+                        HStack {
+                            Text(app.name).font(.headline)
+                            if app.badgeCount > 0 {
+                                Text(app.badgeCount > 99 ? "99+" : String(app.badgeCount))
+                                    .font(.caption2.bold()).foregroundStyle(.white)
+                                    .padding(.horizontal, 7).padding(.vertical, 2)
+                                    .background(.red, in: Capsule())
+                                    .accessibilityLabel("\(app.badgeCount) 项待处理")
+                            }
+                        }
                         Text(app.description ?? "服务端授权应用").font(.caption)
                             .foregroundStyle(.secondary).lineLimit(2)
                     }
@@ -61,6 +84,8 @@ struct ApplicationsView: View {
                     .foregroundStyle(favoriteIDs.contains(app.id) ? .orange : .secondary)
             }.buttonStyle(.borderless).accessibilityLabel(favoriteIDs.contains(app.id) ? "取消收藏" : "收藏")
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(app.name)，\(app.category)\(app.badgeCount > 0 ? "，\(app.badgeCount) 项待处理" : "")")
     }
 
     private func loadPersonalization() async {

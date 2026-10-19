@@ -8,6 +8,7 @@ import com.gmc1987.chronos.mobile.core.common.AsyncRunner;
 import com.gmc1987.chronos.mobile.core.common.ErrorMessages;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
+import com.gmc1987.chronos.mobile.core.common.QrCodeScanner;
 import com.gmc1987.chronos.mobile.core.network.HttpClient;
 import com.gmc1987.chronos.mobile.feature.applications.DynamicWorkflowForm;
 import org.json.JSONArray;
@@ -22,11 +23,13 @@ public final class SupervisionTasksScreen {
     private final SupervisionRepository repository;
     private final HttpClient http;
     private final Runnable back;
+    private final QrCodeScanner scanner;
 
     public SupervisionTasksScreen(android.app.Activity activity, UiKit ui, AsyncRunner async,
             ScreenHost host, SupervisionRepository repository, HttpClient http, Runnable back) {
         this.activity = activity; this.ui = ui; this.async = async; this.host = host;
         this.repository = repository; this.http = http; this.back = back;
+        this.scanner = new QrCodeScanner(activity);
     }
 
     public void show() {
@@ -65,6 +68,11 @@ public final class SupervisionTasksScreen {
                     || "ACCEPTED".equals(task.optString("status"))) {
                 EditText proof = ui.multilineInput("扫描教师二维码后填入核验码", 3);
                 card.addView(proof);
+                Button scan = ui.secondaryButton("扫描教师二维码");
+                scan.setOnClickListener(view -> scanner.scan(
+                        proof::setText,
+                        message -> Toast.makeText(activity, message, Toast.LENGTH_LONG).show()));
+                card.addView(scan);
                 addAction(card, "核验并签到", () -> {
                     String token = proof.getText().toString().trim();
                     if (token.isEmpty()) throw new IllegalArgumentException("请先扫描或填写教师核验码");

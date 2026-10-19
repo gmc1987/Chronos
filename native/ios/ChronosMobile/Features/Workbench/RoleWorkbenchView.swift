@@ -42,7 +42,7 @@ struct RoleWorkbenchView: View {
                         contribution: bootstrap.contributions["WORKFLOW"],
                         emptyMessage: "当前没有待处理事项"
                     )
-                    RecentMeetingsCard()
+                    RecentMeetingsCard(contribution: bootstrap.contributions["MEETING"])
                     if bootstrap.user.permissions.contains("education:supervision:assignment:view") {
                         NavigationLink {
                             SupervisionTasksView()

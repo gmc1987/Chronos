@@ -11,6 +11,7 @@ import com.gmc1987.chronos.mobile.core.common.ErrorMessages;
 import com.gmc1987.chronos.mobile.core.common.DocumentPicker;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
+import com.gmc1987.chronos.mobile.core.common.NotificationSupport;
 import com.gmc1987.chronos.mobile.core.model.PortalState;
 import com.gmc1987.chronos.mobile.core.network.HttpClient;
 import com.gmc1987.chronos.mobile.core.network.SessionStore;
@@ -49,6 +50,7 @@ public final class MainActivity extends Activity implements ScreenHost {
     public void onCreate(Bundle state) {
         super.onCreate(state);
         ui = new UiKit(this);
+        NotificationSupport.initialize(this);
         async = new AsyncRunner(this);
         session = new SessionStore(getSharedPreferences(PREFS, MODE_PRIVATE));
         http = new HttpClient(BuildConfig.API_BASE_URL, session, getCacheDir());
@@ -102,12 +104,10 @@ public final class MainActivity extends Activity implements ScreenHost {
                 new MeetingsRepository(http),
                 new SupervisionRepository(http),
                 http,
+                http.lastResponseWasCached(),
+                http.lastCachedAt(),
                 this::logoutToLogin);
         navigator.start();
-        if (http.lastResponseWasCached()) {
-            android.widget.Toast.makeText(this, "网络不可用，正在显示最近缓存",
-                    android.widget.Toast.LENGTH_LONG).show();
-        }
         if (pendingDeepLink != null) {
             navigator.openDeepLink(pendingDeepLink);
             pendingDeepLink = null;

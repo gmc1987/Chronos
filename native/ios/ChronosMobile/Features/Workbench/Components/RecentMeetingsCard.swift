@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RecentMeetingsCard: View {
+    let contribution: PortalContribution?
     @EnvironmentObject var model: AppModel
     @State var state: MeetingLoadState = .loading
 
@@ -39,7 +40,13 @@ struct RecentMeetingsCard: View {
         }
         .padding(16)
         .cardStyle()
-        .task { await load() }
+        .task {
+            if let values = contribution?.data?.meetings {
+                state = .loaded(upcoming(values))
+            } else {
+                await load()
+            }
+        }
     }
 
     func load() async {
@@ -49,13 +56,15 @@ struct RecentMeetingsCard: View {
                 MeetingsAPI.list,
                 as: [MeetingView].self
             )
-            let upcoming = values
-                .filter { $0.meeting.status != "CANCELLED" }
-                .sorted { $0.meeting.startTime < $1.meeting.startTime }
-            state = .loaded(upcoming)
+            state = .loaded(upcoming(values))
         } catch {
             state = .error(error.localizedDescription)
         }
+    }
+
+    private func upcoming(_ values: [MeetingView]) -> [MeetingView] {
+        values.filter { $0.meeting.status != "CANCELLED" }
+            .sorted { $0.meeting.startTime < $1.meeting.startTime }
     }
 }
 

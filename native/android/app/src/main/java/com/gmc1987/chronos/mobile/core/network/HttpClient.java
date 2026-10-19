@@ -15,6 +15,7 @@ public final class HttpClient {
     private final SessionStore session;
     private final File cacheDirectory;
     private volatile boolean servedFromCache;
+    private volatile long cachedAt;
 
     public HttpClient(String baseUrl, SessionStore session, File cacheRoot) {
         this.baseUrl = baseUrl.replaceAll("/$", "");
@@ -26,6 +27,7 @@ public final class HttpClient {
         try {
             JSONObject response = request(path, "GET", null, true, true);
             servedFromCache = false;
+            cachedAt = 0L;
             writeCache(path, response);
             return response;
         } catch (ApiException apiError) {
@@ -40,6 +42,7 @@ public final class HttpClient {
     }
 
     public boolean lastResponseWasCached() { return servedFromCache; }
+    public long lastCachedAt() { return cachedAt; }
 
     public void clearCache() { deleteRecursively(cacheDirectory); }
 
@@ -222,6 +225,7 @@ public final class HttpClient {
         File target = new File(cacheDirectory, Integer.toHexString(path.hashCode()) + ".json");
         if (!target.isFile() || System.currentTimeMillis() - target.lastModified() > 86_400_000L) return null;
         try (java.io.FileInputStream input = new java.io.FileInputStream(target)) {
+            cachedAt = target.lastModified();
             return new JSONObject(read(input));
         } catch (Exception ignored) { return null; }
     }

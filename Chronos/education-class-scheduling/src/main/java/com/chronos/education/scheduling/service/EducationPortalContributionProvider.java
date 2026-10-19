@@ -96,9 +96,9 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 				.collect(Collectors.toSet());
 		data.put("profileTypes", profileTypes.stream().sorted().toList());
 		data.put("metrics", List.of(
-				metric("教师", teachers.count()),
-				metric("学生", students.count()),
-				metric("班级", classes.count()),
+				metric("教师", teachers.count(), "/admin/education/teachers?page=0&size=20"),
+				metric("学生", students.count(), "/admin/education/students?page=0&size=20"),
+				metric("班级", classes.count(), "/admin/education/administrative-classes?page=0&size=20"),
 				metric("教学任务", offerings.count())));
 		data.put("allRoute", "/portal/education/schedule");
 		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
@@ -485,6 +485,10 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 		teachingClassMembers.findByStudentIdAndEnrollmentStatus(studentId, "ENROLLED").stream()
 				.map(item -> item.getOfferingId())
 				.forEach(target::add);
+	}
+
+	private Map<String, Object> metric(String label, long value, String route) {
+		return Map.of("label", label, "value", value, "route", route);
 	}
 
 	private Map<String, Object> metric(String label, long value) {

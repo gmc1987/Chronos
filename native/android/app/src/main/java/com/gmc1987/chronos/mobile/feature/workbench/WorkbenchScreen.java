@@ -37,6 +37,7 @@ public final class WorkbenchScreen {
     private final Runnable invigilations;
     private final Runnable supervisionTasks;
     private final Runnable teachingSupervision;
+    private final Consumer<JSONObject> metricDetails;
 
     public WorkbenchScreen(
             UiKit ui,
@@ -54,7 +55,8 @@ public final class WorkbenchScreen {
             Consumer<JSONObject> itemDetails,
             Runnable invigilations,
             Runnable supervisionTasks,
-            Runnable teachingSupervision) {
+            Runnable teachingSupervision,
+            Consumer<JSONObject> metricDetails) {
         this.ui = ui;
         this.async = async;
         this.host = host;
@@ -71,6 +73,7 @@ public final class WorkbenchScreen {
         this.invigilations = invigilations;
         this.supervisionTasks = supervisionTasks;
         this.teachingSupervision = teachingSupervision;
+        this.metricDetails = metricDetails;
     }
 
     public void show() {
@@ -236,30 +239,42 @@ public final class WorkbenchScreen {
         body.addView(new ProgressBar(card.getContext()));
         card.addView(body);
         page.addView(card);
+        JSONObject contribution = portal.contribution("MEETING");
+        JSONObject embeddedData = contribution.optJSONObject("data");
+        JSONArray embedded = embeddedData == null ? null : embeddedData.optJSONArray("meetings");
+        if (contribution.optBoolean("available", false) && embedded != null) {
+            renderMeetingRows(body, embedded);
+            return;
+        }
         async.run(meetings::list, response -> {
-            body.removeAllViews();
-            JSONArray rows = response.optJSONArray("data");
-            if (rows == null || rows.length() == 0) {
-                body.addView(ui.empty("未来暂无会议"));
-                return;
-            }
-            for (int i = 0; i < Math.min(3, rows.length()); i++) {
-                JSONObject row = rows.optJSONObject(i);
-                if (row == null || row.optJSONObject("meeting") == null) continue;
-                JSONObject meeting = row.optJSONObject("meeting");
-                LinearLayout item = ui.vertical();
-                item.setPadding(0, ui.dp(8), 0, ui.dp(8));
-                item.addView(ui.label(meeting.optString("title", "会议"), 14, UiKit.TEXT, true));
-                item.addView(ui.label(meeting.optString("startTime", "") + " · 点击查看详情",
-                        12, UiKit.MUTED, false));
-                item.setClickable(true);
-                item.setOnClickListener(view -> meetingDetails.accept(row));
-                body.addView(item);
-            }
+            renderMeetingRows(body, response.optJSONArray("data"));
         }, error -> {
             body.removeAllViews();
             body.addView(ui.error(ErrorMessages.display(error, "近期会议加载失败"), this::show));
         });
+    }
+
+    private void renderMeetingRows(LinearLayout body, JSONArray rows) {
+        body.removeAllViews();
+        if (rows == null || rows.length() == 0) {
+            body.addView(ui.empty("未来暂无会议"));
+            return;
+        }
+        for (int i = 0; i < Math.min(3, rows.length()); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || row.optJSONObject("meeting") == null) continue;
+            JSONObject meeting = row.optJSONObject("meeting");
+            LinearLayout item = ui.vertical();
+            item.setPadding(0, ui.dp(8), 0, ui.dp(8));
+            item.addView(ui.label(meeting.optString("title", "会议"), 14, UiKit.TEXT, true));
+            item.addView(ui.label(meeting.optString("startTime", "") + " · 点击查看详情",
+                    12, UiKit.MUTED, false));
+            item.setContentDescription(meeting.optString("title", "会议") + "，"
+                    + meeting.optString("startTime", "") + "，查看详情");
+            item.setClickable(true);
+            item.setOnClickListener(view -> meetingDetails.accept(row));
+            body.addView(item);
+        }
     }
 
     private void addSupervisionCard(LinearLayout page) {
@@ -319,8 +334,18 @@ public final class WorkbenchScreen {
         if (metrics == null || metrics.length() == 0) card.addView(ui.empty("当前没有授权指标"));
         else for (int i = 0; i < metrics.length(); i++) {
             JSONObject metric = metrics.optJSONObject(i);
-            card.addView(ui.label(metric.optString("label", "指标") + "  "
-                    + metric.optString("value", "—"), 15, UiKit.TEXT, false));
+            TextView row = ui.label(metric.optString("label", "指标") + "  "
+                    + metric.optString("value", "—")
+                    + (metric.optString("route").isEmpty() ? "" : "  ›"),
+                    15, UiKit.TEXT, false);
+            if (!metric.optString("route").isEmpty()) {
+                row.setClickable(true);
+                row.setFocusable(true);
+                row.setContentDescription(metric.optString("label", "指标") + "，"
+                        + metric.optString("value", "—") + "，查看明细");
+                row.setOnClickListener(view -> metricDetails.accept(metric));
+            }
+            card.addView(row);
         }
         page.addView(card);
     }

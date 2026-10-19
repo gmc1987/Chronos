@@ -15,11 +15,18 @@ struct PortalView: View {
         .sheet(item: $model.deepLink) { DeepLinkDestinationView(target: $0) }
         .safeAreaInset(edge: .top) {
             if model.usingOfflineData {
-                Label("网络不可用，正在显示最近缓存", systemImage: "wifi.slash")
+                Label(offlineMessage, systemImage: "wifi.slash")
                     .font(.caption).frame(maxWidth: .infinity).padding(6)
                     .background(.orange.opacity(0.9)).foregroundStyle(.white)
             }
         }
+    }
+
+    private var offlineMessage: String {
+        guard let date = model.offlineCachedAt else {
+            return "网络不可用，正在显示 24 小时内缓存"
+        }
+        return "离线缓存 · 更新于 \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 
     @ViewBuilder

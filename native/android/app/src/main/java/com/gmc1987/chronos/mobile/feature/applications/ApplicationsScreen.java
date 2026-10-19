@@ -84,21 +84,27 @@ public final class ApplicationsScreen {
         body.removeAllViews();
         String keyword = query.getText().toString().trim().toLowerCase(Locale.ROOT);
         if (keyword.isEmpty() && recent.length() > 0) {
-            addSection("最近使用", recent, keyword, false);
+            addSection("最近使用", recent, keyword, false, null);
         }
-        addSection("我的收藏", portal.applications(), keyword, true);
-        addSection(keyword.isEmpty() ? "全部应用" : "搜索结果",
-                portal.applications(), keyword, false);
+        addSection("我的收藏", portal.applications(), keyword, true, null);
+        String[] categories = {"协同办公", "教学管理", "会议与日程", "智能服务", "其他应用"};
+        for (String category : categories) {
+            addSection(keyword.isEmpty() ? category : category + " · 搜索结果",
+                    portal.applications(), keyword, false, category);
+        }
         if (body.getChildCount() == 0) body.addView(ui.empty("没有匹配的应用"));
     }
 
     private void addSection(
-            String title, JSONArray values, String keyword, boolean favoritesOnly) {
+            String title, JSONArray values, String keyword, boolean favoritesOnly,
+            String category) {
         LinearLayout section = ui.vertical();
         int count = 0;
         for (int i = 0; i < values.length(); i++) {
             JSONObject application = values.optJSONObject(i);
             if (application == null || !matches(application, keyword)) continue;
+            if (category != null && !category.equals(
+                    application.optString("category", "其他应用"))) continue;
             boolean favorite = favoriteIds.contains(application.optString("id"));
             if (!"最近使用".equals(title) && favoritesOnly != favorite) continue;
             section.addView(applicationCard(application, favorite));
@@ -118,6 +124,11 @@ public final class ApplicationsScreen {
         LinearLayout copy = ui.vertical();
         copy.setPadding(ui.dp(13), 0, ui.dp(8), 0);
         copy.addView(ui.label(name, 17, UiKit.TEXT, true));
+        int badge = application.optInt("badgeCount", 0);
+        if (badge > 0) {
+            copy.addView(ui.label((badge > 99 ? "99+" : badge) + " 项待处理",
+                    12, UiKit.ERROR, true));
+        }
         TextView detail = ui.label(
                 application.optString("description", "服务端授权应用"),
                 13,
@@ -131,6 +142,9 @@ public final class ApplicationsScreen {
         star.setOnClickListener(view -> toggleFavorite(application, favorite));
         row.addView(star, new LinearLayout.LayoutParams(ui.dp(52), ui.dp(44)));
         card.addView(row);
+        card.setContentDescription(name + "，"
+                + application.optString("category", "其他应用")
+                + (badge > 0 ? "，" + badge + "项待处理" : ""));
         card.setOnClickListener(view -> open(application));
         return card;
     }

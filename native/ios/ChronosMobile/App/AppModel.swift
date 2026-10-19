@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor final class AppModel: ObservableObject {
     let session = ChronosSession()
@@ -10,6 +11,7 @@ import SwiftUI
     @Published var isBootstrapping = false
     @Published var deepLink: MobileDeepLink?
     @Published var usingOfflineData = false
+    @Published var offlineCachedAt: Date?
 
     init() {
         Task {
@@ -42,19 +44,58 @@ import SwiftUI
             bootstrap = value
             workbenchKind = WorkbenchResolver.resolve(bootstrap: value)
             usingOfflineData = await session.lastResponseWasCached()
+            offlineCachedAt = await session.lastCachedAt()
+            if let token = UserDefaults.standard.string(forKey: "chronos.mobile.apns-token") {
+                await registerPushToken(token)
+            }
         } catch {
             self.error = error.localizedDescription
         }
     }
 
     func logout() {
-        Task { await session.revoke() }
+        Task {
+            await unregisterPushToken()
+            await session.revoke()
+        }
         loggedIn = false
         bootstrap = nil
         workbenchKind = .staff
         error = nil
+        usingOfflineData = false
+        offlineCachedAt = nil
         UserDefaults.standard.removeObject(forKey: "chronos.mobile.timetable.expanded")
     }
 
     func open(url: URL) { deepLink = MobileDeepLink(url: url) }
+
+    func registerPushToken(_ token: String) async {
+        guard loggedIn, !token.isEmpty else { return }
+        _ = try? await session.sendJSON(
+            "/message/mobile-devices/\(installationID)",
+            method: "PUT",
+            body: .object([
+                "platform": .string("IOS"),
+                "providerToken": .string(token),
+                "deviceModel": .string(UIDevice.current.model),
+                "appVersion": .string(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+            ])
+        )
+    }
+
+    private func unregisterPushToken() async {
+        guard UserDefaults.standard.string(forKey: "chronos.mobile.apns-token") != nil else { return }
+        _ = try? await session.sendJSON(
+            "/message/mobile-devices/\(installationID)?platform=IOS",
+            method: "DELETE"
+        )
+    }
+
+    private var installationID: String {
+        let key = "chronos.mobile.installation-id"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let created = UUID().uuidString
+        UserDefaults.standard.set(created, forKey: key)
+        return created
+    }
 }
