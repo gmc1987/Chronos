@@ -2,7 +2,6 @@ package com.gmc1987.chronos.mobile.feature.applications;
 
 import android.app.Activity;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import com.gmc1987.chronos.mobile.core.common.AsyncRunner;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
@@ -39,24 +38,21 @@ public final class WorkflowStartScreen {
     private void render(JSONObject schema) {
         ApplicationScreenChrome chrome = new ApplicationScreenChrome(ui, host);
         LinearLayout page = chrome.page(schema.optString("flowName", "发起流程"), back);
-        EditText businessKey = ui.input("业务编号（可选）", false);
-        page.addView(businessKey);
         DynamicWorkflowForm form = new DynamicWorkflowForm(activity, ui, async, http, null,
                 schema.optJSONArray("fields"), new JSONObject());
         page.addView(form.view());
         Button submit = ui.primaryButton("提交申请");
-        submit.setOnClickListener(view -> submit(businessKey, form, submit));
+        submit.setOnClickListener(view -> submit(form, submit));
         page.addView(submit);
         host.show(ui.scroll(page));
     }
 
-    private void submit(EditText businessKey, DynamicWorkflowForm form, Button submit) {
+    private void submit(DynamicWorkflowForm form, Button submit) {
         ApplicationScreenChrome chrome = new ApplicationScreenChrome(ui, host);
         try {
             JSONObject values = form.values(true);
             JSONObject body = new JSONObject()
                     .put("idempotencyKey", UUID.randomUUID().toString())
-                    .put("businessKey", businessKey.getText().toString().trim())
                     .put("formData", values).put("variablesJson", values.toString());
             submit.setEnabled(false);
             async.run(() -> http.post("/workflows/" + flowId + "/start", body, true),

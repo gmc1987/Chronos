@@ -6,7 +6,6 @@ struct WorkflowStartView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var schema: [String: JSONValue]?
     @State private var values: [String: JSONValue] = [:]
-    @State private var businessKey = ""
     @State private var error: String?
     @State private var submitting = false
     @State private var activeUploads = 0
@@ -14,7 +13,6 @@ struct WorkflowStartView: View {
         Form {
             if let schema {
                 Section("申请信息") {
-                    TextField("业务编号（可选）", text: $businessKey)
                     DynamicWorkflowFields(
                         fields: schema["fields"]?.arrayValue ?? [],
                         businessID: nil,
@@ -43,7 +41,7 @@ struct WorkflowStartView: View {
         submitting = true
         do {
             _ = try await model.session.sendJSON("/workflows/\(flowID)/start", body: .object([
-                "idempotencyKey": .string(UUID().uuidString), "businessKey": .string(businessKey),
+                "idempotencyKey": .string(UUID().uuidString),
                 "formData": .object(values), "variablesJson": .string(jsonString(values))]))
             dismiss()
         } catch { self.error = error.localizedDescription }

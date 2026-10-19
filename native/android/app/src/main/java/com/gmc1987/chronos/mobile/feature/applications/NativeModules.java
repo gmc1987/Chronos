@@ -19,7 +19,7 @@ final class NativeModules {
         result.add(new NativeModule("共享文件", "统一文件共享",
                 "/portal/collaboration/files/shares"));
         result.add(new NativeModule("通讯录", "教职工联系方式",
-                "/portal/collaboration/contacts?keyword="));
+                "/portal/collaboration/contacts?keyword=&page=0&size=10"));
         return result;
     }
 

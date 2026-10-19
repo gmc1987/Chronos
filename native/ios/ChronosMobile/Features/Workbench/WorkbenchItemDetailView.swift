@@ -9,7 +9,6 @@ struct WorkbenchItemDetailView: View {
             detail("标题", item.title ?? item.flowName)
             detail("摘要", item.summary)
             detail("当前节点", item.nodeName)
-            detail("业务编号", item.businessKey)
             detail("到期时间", item.dueAt)
             detail("SLA 状态", item.slaStatus)
         }

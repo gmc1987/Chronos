@@ -21,7 +21,13 @@ struct StudentWorkbenchView: View {
             }
             .background(ChronosPalette.background)
             .navigationTitle("工作台")
-            .refreshable { await model.reloadBootstrap() }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await model.reloadBootstrap() } } label: {
+                        Label("刷新工作台", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
         }
     }
 }

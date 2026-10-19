@@ -7,6 +7,7 @@ struct WorkflowInstanceView: View {
     @State private var formValues: [String: [String: JSONValue]] = [:]
     @State private var comment = ""
     @State private var error: String?
+    @State private var statusMessage: String?
     @State private var activeUploads = 0
     @State private var submitting = false
     var body: some View {
@@ -30,6 +31,16 @@ struct WorkflowInstanceView: View {
                         NativeRecordCard(record: row)
                     }
                 }
+                if bundle["currentTask"]?.objectValue == nil,
+                   let taskID = claimableTaskID(in: bundle) {
+                    Section("审批操作") {
+                        Text("该任务已分配给候选审批人，请先认领任务，再进行同意或驳回。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Button("认领并办理") { Task { await claim(taskID) } }
+                            .disabled(submitting)
+                    }
+                }
                 if let task = bundle["currentTask"]?.objectValue { Section(task["taskKind"]?.stringValue == "STARTER_REWORK" ? "修改后重新提交" : "处理意见") {
                     TextField("请输入处理意见", text: $comment, axis: .vertical)
                     if task["taskKind"]?.stringValue == "STARTER_REWORK" {
@@ -46,6 +57,7 @@ struct WorkflowInstanceView: View {
                         }
                     }
                 }}
+                if let statusMessage { Text(statusMessage).foregroundStyle(.green) }
                 if let error { Text(error).foregroundStyle(.red) }
             } else if let error { InlineErrorView(message: error, retry: { Task { await load() } }) }
             else { ProgressView("正在加载流程…") }
@@ -61,6 +73,24 @@ struct WorkflowInstanceView: View {
         } catch { self.error = error.localizedDescription }
     }
     private enum Action { case approve, reject, resubmit }
+    private func claimableTaskID(in bundle: [String: JSONValue]) -> String? {
+        (bundle["history"]?.arrayValue ?? []).first { row in
+            row.objectValue?["status"]?.stringValue == "CLAIMABLE"
+        }?.objectValue?["id"]?.stringValue
+    }
+    private func claim(_ taskID: String) async {
+        guard !submitting else { return }
+        submitting = true
+        defer { submitting = false }
+        do {
+            _ = try await model.session.sendJSON("/workflow-tasks/\(taskID)/claim")
+            statusMessage = "任务认领成功，现在可以进行审批。"
+            error = nil
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
     private func complete(_ action: Action) async {
         guard !submitting, activeUploads == 0 else { return }
         guard let id = bundle?["currentTask"]?.objectValue?["id"]?.stringValue else { return }

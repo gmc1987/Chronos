@@ -9,6 +9,7 @@ import com.chronos.education.scheduling.service.CollaborationOfficeService.Docum
 import com.chronos.education.scheduling.service.CollaborationOfficeService.OfficeRequestCommand;
 import com.chronos.education.scheduling.service.CollaborationOfficeService.ResourceCommand;
 import com.chronos.education.scheduling.service.CollaborationOfficeService.ShareCommand;
+import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.pojo.Employee;
 import com.chronos.service.iService.IIamDirectoryService;
@@ -134,7 +135,10 @@ public class CollaborationOfficeController {
 	}
 
 	@GetMapping("/contacts")
-	public ResultData<?> contacts(@RequestParam(defaultValue = "") String keyword) {
+	public ResultData<?> contacts(
+			@RequestParam(defaultValue = "") String keyword,
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
 		String normalized = keyword.trim().toLowerCase(Locale.ROOT);
 		List<ContactView> result = directory.employees().stream()
 				.filter(employee -> "ACTIVE".equals(employee.getEmploymentStatus()))
@@ -143,10 +147,13 @@ public class CollaborationOfficeController {
 						|| contains(employee.getEmployeeCode(), normalized)
 						|| contains(employee.getEmail(), normalized))
 				.sorted(Comparator.comparing(Employee::getEmployeeName))
-				.limit(100)
 				.map(this::toContact)
 				.toList();
-		return ok(result);
+		// 保持 Web 端既有数组契约；移动端显式传入分页参数时按需返回，避免一次渲染整本通讯录。
+		if (page != null || size != null) {
+			return ok(PageView.from(result, page == null ? 0 : page, size == null ? 10 : size));
+		}
+		return ok(result.stream().limit(100).toList());
 	}
 
 	@GetMapping("/departments")

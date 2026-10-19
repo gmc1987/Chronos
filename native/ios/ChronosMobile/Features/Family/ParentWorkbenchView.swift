@@ -36,7 +36,13 @@ struct ParentWorkbenchView: View {
             .background(ChronosPalette.background)
             .navigationTitle("工作台")
             .task { await load() }
-            .refreshable { await load() }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await load() } } label: {
+                        Label("刷新工作台", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
         }
     }
 

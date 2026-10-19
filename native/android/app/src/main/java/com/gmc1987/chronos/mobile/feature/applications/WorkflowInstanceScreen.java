@@ -68,8 +68,45 @@ public final class WorkflowInstanceScreen {
             }
         }
         JSONObject task = bundle.optJSONObject("currentTask");
-        if (task != null) addActions(page, bundle, task, sections);
+        if (task != null) {
+            addActions(page, bundle, task, sections);
+        } else {
+            String claimableTaskId = claimableTaskId(bundle.optJSONArray("history"));
+            if (!claimableTaskId.isEmpty()) addClaimAction(page, claimableTaskId);
+        }
         host.show(ui.scroll(page));
+    }
+
+    /** Candidates must claim a shared task before the approve/reject actions become available. */
+    private String claimableTaskId(JSONArray history) {
+        if (history == null) return "";
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject row = history.optJSONObject(i);
+            if (row != null && "CLAIMABLE".equals(row.optString("status"))) {
+                return row.optString("id");
+            }
+        }
+        return "";
+    }
+
+    private void addClaimAction(LinearLayout page, String taskId) {
+        page.addView(ui.label("该任务已分配给候选审批人，请先认领任务，再进行同意或驳回。",
+                14, UiKit.MUTED, false));
+        Button claim = ui.primaryButton("认领并办理");
+        claim.setOnClickListener(view -> claimTask(taskId));
+        page.addView(claim, new LinearLayout.LayoutParams(-1, ui.dp(54)));
+    }
+
+    private void claimTask(String taskId) {
+        ApplicationScreenChrome chrome = new ApplicationScreenChrome(ui, host);
+        chrome.loading("正在认领审批任务…");
+        async.run(() -> http.post("/workflow-tasks/" + taskId + "/claim",
+                        new JSONObject(), true),
+                ignored -> {
+                    chrome.dialog("认领成功", "任务已认领，现在可以进行审批。");
+                    show();
+                },
+                error -> chrome.error("认领失败", error, this::show, back));
     }
 
     private void addActions(LinearLayout page, JSONObject bundle, JSONObject task,

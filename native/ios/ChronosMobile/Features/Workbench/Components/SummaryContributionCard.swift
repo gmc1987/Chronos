@@ -40,7 +40,7 @@ struct SummaryContributionCard: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(item.title ?? item.flowName ?? "待处理事项")
                                     .font(.subheadline.weight(.semibold))
-                                Text(item.summary ?? item.nodeName ?? item.businessKey ?? "点击查看详情")
+                                Text(item.summary ?? item.nodeName ?? "点击查看详情")
                                     .font(.caption)
                                     .foregroundStyle(ChronosPalette.secondary)
                                     .lineLimit(1)

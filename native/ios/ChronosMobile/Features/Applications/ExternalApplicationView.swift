@@ -50,7 +50,7 @@ let collaborationModules = [
     NativeModule(id: "trips", title: "出差", detail: "发起出差并查看行程、预算和审批", icon: "suitcase", destination: .businessTrips),
     NativeModule(id: "documents", title: "公文", detail: "收发、签发和归档", icon: "doc.text", path: "/portal/collaboration/documents/my"),
     NativeModule(id: "files", title: "共享文件", detail: "统一文件共享", icon: "folder", path: "/portal/collaboration/files/shares"),
-    NativeModule(id: "contacts", title: "通讯录", detail: "教职工联系方式", icon: "person.2", path: "/portal/collaboration/contacts?keyword=")]
+    NativeModule(id: "contacts", title: "通讯录", detail: "教职工联系方式", icon: "person.2", path: "/portal/collaboration/contacts?keyword=&page=0&size=10")]
 
 let teachingModules = [
     ("plans", "教学计划", "list.bullet.clipboard"), ("lesson-plans", "教案", "doc.richtext"),
