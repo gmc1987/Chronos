@@ -115,7 +115,9 @@ public final class AppNavigator implements ScreenHost {
         tabs = ui.horizontal();
         tabs.setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7));
         tabs.setBackgroundColor(UiKit.SURFACE);
-        tabs.setElevation(ui.dp(10));
+        // Keep the bottom navigation flush with the page, matching the iOS tab bar.
+        tabs.setElevation(0);
+        tabs.setTranslationZ(0);
         shell.addView(tabs);
         activity.setContentView(shell);
         renderTabs();
