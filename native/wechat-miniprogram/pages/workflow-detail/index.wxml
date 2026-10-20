@@ -1,0 +1,41 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="loading">正在加载流程详情…</view>
+  <block wx:else>
+    <view class="card" wx:for="{{sections}}" wx:for-item="section" wx:for-index="sectionIndex" wx:key="id">
+      <view class="section-card-title">{{section.title}}</view>
+      <block wx:for="{{section.fields}}" wx:for-item="field" wx:for-index="fieldIndex" wx:key="fieldKey">
+        <block wx:if="{{field.editable}}">
+          <view class="field-label">{{field.fieldLabel}}{{field.required ? ' *' : ''}}</view>
+          <textarea wx:if="{{field.fieldType === 'TEXTAREA'}}" class="field textarea" value="{{field.value}}" data-section="{{sectionIndex}}" data-field="{{fieldIndex}}" bindinput="inputField" />
+          <picker wx:elif="{{field.fieldType === 'SELECT' || field.fieldType === 'RADIO'}}" range="{{field.options}}" range-key="label" data-section="{{sectionIndex}}" data-field="{{fieldIndex}}" bindchange="chooseField">
+            <view class="field picker-field">{{field.displayValue || '请选择'}}</view>
+          </picker>
+          <picker wx:elif="{{field.fieldType === 'DATE'}}" mode="date" value="{{field.value}}" data-section="{{sectionIndex}}" data-field="{{fieldIndex}}" bindchange="inputField">
+            <view class="field picker-field">{{field.value || '请选择日期'}}</view>
+          </picker>
+          <switch wx:elif="{{field.fieldType === 'BOOLEAN'}}" checked="{{field.value}}" data-section="{{sectionIndex}}" data-field="{{fieldIndex}}" bindchange="inputField" color="#087b68" />
+          <input wx:else class="field" type="{{field.fieldType === 'NUMBER' ? 'digit' : 'text'}}" value="{{field.value}}" data-section="{{sectionIndex}}" data-field="{{fieldIndex}}" bindinput="inputField" />
+        </block>
+        <view wx:else class="detail-line"><text>{{field.fieldLabel}}</text><text>{{field.displayValue || '-'}}</text></view>
+      </block>
+      <view class="detail-line" wx:for="{{section.entries}}" wx:for-item="entry" wx:key="key"><text>{{entry.label}}</text><text>{{entry.value}}</text></view>
+    </view>
+    <view class="section-title" wx:if="{{history.length}}">审批记录</view>
+    <view class="card" wx:for="{{history}}" wx:key="index">
+      <view class="detail-line" wx:for="{{item.entries}}" wx:for-item="entry" wx:key="key"><text>{{entry.label}}</text><text>{{entry.value}}</text></view>
+    </view>
+    <view class="card" wx:if="{{claimableId && !task}}">
+      <view class="card-subtitle">该任务已分配给候选审批人，需要认领后办理。</view>
+      <button class="primary" loading="{{submitting}}" disabled="{{submitting}}" bindtap="claim">认领并办理</button>
+    </view>
+    <view class="card" wx:if="{{task}}">
+      <view class="section-card-title">{{task.taskKind === 'STARTER_REWORK' ? '修改后重新提交' : '办理任务'}}</view>
+      <textarea class="field textarea" value="{{comment}}" bindinput="inputComment" placeholder="请输入处理意见" />
+      <button wx:if="{{task.taskKind === 'STARTER_REWORK'}}" class="primary" loading="{{submitting}}" disabled="{{submitting}}" data-action="resubmit" bindtap="act">重新提交</button>
+      <view wx:else class="action-row">
+        <button wx:if="{{operations.approve !== false}}" class="primary" loading="{{submitting}}" disabled="{{submitting}}" data-action="approve" bindtap="act">同意</button>
+        <button wx:if="{{operations.reject !== false}}" class="danger" loading="{{submitting}}" disabled="{{submitting}}" data-action="reject" bindtap="act">驳回</button>
+      </view>
+    </view>
+  </block>
+</view>

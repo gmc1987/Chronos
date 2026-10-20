@@ -1,0 +1,2 @@
+.module-row { display:flex; align-items:center; gap:20rpx; }
+.module-icon { width:74rpx; height:74rpx; display:flex; align-items:center; justify-content:center; border-radius:22rpx; color:#087b68; background:#e8f4f1; font-size:28rpx; font-weight:700; }

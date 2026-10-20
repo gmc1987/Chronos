@@ -83,6 +83,11 @@ minio:
   secretKey: ${CHRONOS_MINIO_SECRET_KEY:minioadmin}
 
 chronos:
+  wechat:
+    mini-program:
+      app-id: ${CHRONOS_WECHAT_MINI_PROGRAM_APP_ID:}
+      app-secret: ${CHRONOS_WECHAT_MINI_PROGRAM_APP_SECRET:}
+      mock-enabled: ${CHRONOS_WECHAT_MINI_PROGRAM_MOCK_ENABLED:false}
   security:
     # Required in every deployment; provide a Base64 AES-128/192/256 key via the secret manager.
     encryption-key: ${CHRONOS_ENCRYPTION_KEY:}

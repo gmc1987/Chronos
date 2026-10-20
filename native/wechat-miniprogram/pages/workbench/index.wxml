@@ -1,0 +1,33 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="loading">正在加载工作台…</view>
+  <block wx:else>
+    <view class="hero">
+      <view class="hero-kicker">{{workspace === 'STUDENT' ? '学生工作台' : workspace === 'PARENT' ? '家长工作台' : workspace === 'TEACHER' ? '教师工作台' : '协同工作台'}}</view>
+      <view class="hero-title">你好，{{user.displayName || user.username}}</view>
+      <view class="hero-subtitle">{{user.departmentName || user.organizationName || 'Chronos 校园'}} · {{education.termName || '当前学期'}}</view>
+    </view>
+
+    <block wx:if="{{schedule.length}}">
+      <view class="section-title">本周课表</view>
+      <scroll-view class="schedule-scroll" scroll-x="true" enable-flex="true">
+        <view class="schedule-row">
+          <view class="schedule-card" wx:for="{{schedule}}" wx:key="id" data-item="{{item}}" bindtap="openSchedule">
+            <view class="schedule-course">{{item.courseName || item.title || '课程'}}</view>
+            <view class="schedule-meta">{{item.startTime || item.lessonDate || ''}}</view>
+            <view class="schedule-meta">{{item.teacherName || item.classroomName || ''}}</view>
+          </view>
+        </view>
+      </scroll-view>
+    </block>
+
+    <view class="section-title">常用服务</view>
+    <view class="grid">
+      <view class="card service-card" wx:for="{{cards}}" wx:key="title" data-item="{{item}}" bindtap="openCard">
+        <view class="service-icon">{{item.icon}}</view>
+        <view class="card-title">{{item.title}}</view>
+        <view class="card-subtitle">{{item.detail}}</view>
+        <view class="link">查看详情 ›</view>
+      </view>
+    </view>
+  </block>
+</view>

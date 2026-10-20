@@ -12,6 +12,8 @@ import jakarta.persistence.LockModeType;
 import java.util.Optional;
 
 public interface StudentProfileRepository extends JpaRepository<StudentProfile, String> {
+	Optional<StudentProfile> findByStudentNo(String studentNo);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	Optional<StudentProfile> findLockedById(String id);
 

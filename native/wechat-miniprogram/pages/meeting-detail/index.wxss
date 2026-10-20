@@ -1,0 +1,5 @@
+.detail-title { margin-bottom:18rpx; font-size:34rpx; font-weight:700; }
+.detail-row { display:flex; gap:24rpx; padding:20rpx 0; border-bottom:1rpx solid #edf1f3; }
+.detail-label { flex:0 0 160rpx; color:#71808a; font-size:25rpx; }
+.detail-value { flex:1; text-align:right; font-size:27rpx; word-break:break-all; }
+.action-grid { display:grid; grid-template-columns:1fr 1fr; gap:16rpx; }

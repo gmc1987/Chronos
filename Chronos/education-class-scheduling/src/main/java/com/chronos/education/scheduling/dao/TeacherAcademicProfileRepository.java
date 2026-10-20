@@ -12,6 +12,8 @@ import jakarta.persistence.LockModeType;
 import com.chronos.education.scheduling.model.TeacherAcademicProfile;
 
 public interface TeacherAcademicProfileRepository extends JpaRepository<TeacherAcademicProfile, String> {
+	Optional<TeacherAcademicProfile> findByTeacherNo(String teacherNo);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	Optional<TeacherAcademicProfile> findLockedById(String id);
 	List<TeacherAcademicProfile> findAllByOrderByTeacherNo();

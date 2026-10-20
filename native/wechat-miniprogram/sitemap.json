@@ -1,0 +1,4 @@
+{
+  "desc": "Chronos 小程序页面索引",
+  "rules": [{ "action": "disallow", "page": "*" }]
+}

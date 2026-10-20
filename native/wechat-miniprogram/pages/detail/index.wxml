@@ -1,0 +1,26 @@
+<view class="page">
+  <view class="card">
+    <view class="detail-title">{{title}}</view>
+    <view class="detail-row" wx:for="{{entries}}" wx:key="key">
+      <view class="detail-label">{{item.label}}</view>
+      <view class="detail-value">{{item.value}}</view>
+    </view>
+  </view>
+  <view class="card" wx:if="{{kind && record.status === 'PENDING'}}">
+    <view class="detail-title">撤回申请</view>
+    <textarea wx:if="{{kind !== 'office'}}" class="field textarea" data-key="reason" bindinput="input" placeholder="撤回原因（可选）" />
+    <button class="danger" loading="{{processing}}" disabled="{{processing}}" bindtap="withdraw">撤回</button>
+  </view>
+  <view class="card" wx:if="{{kind === 'trip' && record.status === 'APPROVED'}}">
+    <view class="detail-title">取消出差</view>
+    <textarea class="field textarea" data-key="reason" bindinput="input" placeholder="请输入取消原因" />
+    <button class="danger" loading="{{processing}}" disabled="{{processing}}" bindtap="cancelTrip">取消已批准的出差</button>
+  </view>
+  <view class="card" wx:if="{{kind === 'leave' && record.status === 'APPROVED'}}">
+    <view class="detail-title">申请销假</view>
+    <textarea class="field textarea" data-key="reason" bindinput="input" placeholder="请输入销假原因" />
+    <view class="field-label">实际结束日期</view>
+    <picker mode="date" value="{{actualEndDate}}" data-key="actualEndDate" bindchange="input"><view class="field picker-field">{{actualEndDate}}</view></picker>
+    <button class="primary" loading="{{processing}}" disabled="{{processing}}" bindtap="cancelLeave">提交销假申请</button>
+  </view>
+</view>

@@ -1,0 +1,18 @@
+<view class="page">
+  <view class="card">
+    <view class="detail-title">会议信息</view>
+    <view class="detail-row" wx:for="{{entries}}" wx:key="key">
+      <view class="detail-label">{{item.label}}</view><view class="detail-value">{{item.value}}</view>
+    </view>
+  </view>
+  <view class="card" wx:if="{{published}}">
+    <view class="detail-title">参会确认</view>
+    <textarea class="field textarea" value="{{comment}}" bindinput="inputComment" placeholder="谢绝或请假时请填写原因" />
+    <view class="action-grid">
+      <button class="primary" disabled="{{processing}}" data-status="ACCEPTED" bindtap="respond">确认参加</button>
+      <button class="secondary" disabled="{{processing}}" data-status="DECLINED" bindtap="respond">谢绝参加</button>
+      <button class="secondary" disabled="{{processing}}" data-status="LEAVE" bindtap="respond">会议请假</button>
+      <button class="secondary" disabled="{{processing || checkedIn}}" bindtap="checkIn">{{checkedIn ? '已签到' : '会议签到'}}</button>
+    </view>
+  </view>
+</view>

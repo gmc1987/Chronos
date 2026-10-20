@@ -1,0 +1,7 @@
+.record-title { margin-bottom: 15rpx; font-size: 31rpx; font-weight: 650; }
+.record-line { display:flex; gap:20rpx; margin-top:10rpx; font-size:25rpx; line-height:1.45; }
+.record-label { flex:0 0 150rpx; color:#71808a; }
+.record-value { flex:1; text-align:right; word-break:break-all; }
+.record-line:first-of-type { display:none; }
+.list-end { padding:26rpx; color:#a0abb2; text-align:center; font-size:23rpx; }
+.create-button { margin-top: 0; margin-bottom: 22rpx; }

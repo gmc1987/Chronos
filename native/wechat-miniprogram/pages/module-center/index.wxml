@@ -1,0 +1,8 @@
+<view class="page">
+  <view class="hero compact-hero"><view class="hero-title">{{title}}</view><view class="hero-subtitle">使用小程序原生页面完成查询和办理</view></view>
+  <view class="card module-row" wx:for="{{modules}}" wx:key="title" data-item="{{item}}" bindtap="open">
+    <view class="module-icon">{{item.icon}}</view>
+    <view class="grow"><view class="card-title">{{item.title}}</view><view class="card-subtitle">{{item.detail}}</view></view>
+    <view class="chevron">›</view>
+  </view>
+</view>

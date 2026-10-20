@@ -54,6 +54,11 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.POST, "/consumer/users/register/sms").permitAll()
 						.requestMatchers(HttpMethod.POST, "/consumer/users/register/oauth").permitAll()
 						.requestMatchers(HttpMethod.POST, "/consumer/users/login").permitAll()
+						.requestMatchers(HttpMethod.POST,
+								"/api/mini-program/auth/login",
+								"/api/mini-program/auth/bind-profile",
+								"/api/mini-program/auth/bind-guardian")
+						.permitAll()
 						.requestMatchers(HttpMethod.GET, "/dicts/**").permitAll()
 						.requestMatchers(
 								HttpMethod.GET,

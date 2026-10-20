@@ -1,0 +1,2 @@
+.form-title { margin-bottom:24rpx; font-size:36rpx; font-weight:700; }
+.picker-field { display:flex; align-items:center; color:#71808a; }

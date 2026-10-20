@@ -1,0 +1,9 @@
+.profile-hero { display:flex; align-items:center; gap:24rpx; }
+.avatar { display:flex; align-items:center; justify-content:center; width:104rpx; height:104rpx; border-radius:52rpx; color:#087b68; background:#fff; font-size:42rpx; font-weight:750; }
+.profile-copy { flex:1; }
+.profile-line { display:flex; justify-content:space-between; gap:20rpx; padding:22rpx 0; border-bottom:1rpx solid #edf1f3; font-size:26rpx; }
+.profile-line:last-child { border-bottom:0; }
+.profile-line text:first-child { color:#71808a; }
+.profile-line text:last-child { text-align:right; }
+.action-card { display:flex; align-items:center; }
+.chevron { color:#a0abb2; font-size:44rpx; }

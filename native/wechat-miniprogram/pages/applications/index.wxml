@@ -1,0 +1,25 @@
+<view class="page">
+  <view class="hero compact-hero">
+    <view class="hero-title">应用中心</view>
+    <view class="hero-subtitle">所有功能均使用小程序原生页面</view>
+  </view>
+  <view wx:if="{{loading}}" class="loading">正在加载应用…</view>
+  <block wx:else>
+    <view class="section-title">常用应用</view>
+    <view class="grid">
+      <view class="card app-card" wx:for="{{modules}}" wx:key="title" data-item="{{item}}" bindtap="open">
+        <view class="app-icon">{{item.icon}}</view>
+        <view class="card-title">{{item.title}}</view>
+        <view class="card-subtitle">{{item.detail}}</view>
+      </view>
+    </view>
+    <block wx:if="{{applications.length}}">
+      <view class="section-title">学校授权应用</view>
+      <view class="card app-row" wx:for="{{applications}}" wx:key="id" data-item="{{item}}" bindtap="open">
+        <view class="app-icon small">{{item.icon}}</view>
+        <view class="grow"><view class="card-title">{{item.title}}</view><view class="card-subtitle">{{item.detail}}</view></view>
+        <view class="chevron">›</view>
+      </view>
+    </block>
+  </block>
+</view>

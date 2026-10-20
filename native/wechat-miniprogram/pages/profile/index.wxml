@@ -1,0 +1,18 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="loading">正在加载个人信息…</view>
+  <block wx:else>
+    <view class="hero profile-hero">
+      <view class="avatar">{{user.initial}}</view>
+      <view class="profile-copy"><view class="hero-title">{{user.displayName || user.username}}</view><view class="hero-subtitle">{{user.departmentName || user.organizationName || 'Chronos 校园'}}</view></view>
+    </view>
+    <view class="section-title">账号与身份</view>
+    <view class="card">
+      <view class="profile-line"><text>登录账号</text><text>{{user.username}}</text></view>
+      <view class="profile-line"><text>当前学期</text><text>{{education.termName || '-'}}</text></view>
+      <view class="profile-line"><text>身份类型</text><text>{{education.profileTypes || '-'}}</text></view>
+    </view>
+    <view class="card action-card" wx:if="{{student}}" bindtap="guardianInvite"><view class="grow"><view class="card-title">邀请家长</view><view class="card-subtitle">生成10分钟有效的一次性家长关系码</view></view><view class="chevron">›</view></view>
+    <view class="card action-card" bindtap="openNotifications"><view class="grow"><view class="card-title">通知设置</view><view class="card-subtitle">管理消息接收和设备通知</view></view><view class="chevron">›</view></view>
+    <button class="danger" bindtap="logout">退出登录</button>
+  </block>
+</view>

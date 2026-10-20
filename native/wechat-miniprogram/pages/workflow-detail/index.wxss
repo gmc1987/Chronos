@@ -1,0 +1,5 @@
+.section-card-title { margin-bottom:18rpx; font-size:32rpx; font-weight:700; }
+.detail-line { display:flex; justify-content:space-between; gap:24rpx; padding:16rpx 0; border-bottom:1rpx solid #edf1f3; font-size:25rpx; }
+.detail-line text:first-child { color:#71808a; }
+.detail-line text:last-child { flex:1; text-align:right; word-break:break-all; }
+.action-row { display:grid; grid-template-columns:1fr 1fr; gap:16rpx; }

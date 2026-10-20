@@ -1,0 +1,30 @@
+<view class="page">
+  <view class="card">
+    <view class="card-title">{{title}}</view>
+    <block wx:if="{{type === 'leave'}}">
+      <view class="field-label">请假类型</view><picker range="{{leaveTypes}}" range-key="label" value="{{leaveTypeIndex}}" bindchange="chooseLeaveType"><view class="field picker-field">{{leaveTypes[leaveTypeIndex].label}}</view></picker>
+    </block>
+    <block wx:elif="{{type === 'office'}}">
+      <view class="field-label">申请类型</view><picker range="{{requestTypes}}" range-key="label" value="{{requestTypeIndex}}" bindchange="chooseRequestType"><view class="field picker-field">{{requestTypes[requestTypeIndex].label}}</view></picker>
+      <view class="field-label">使用资源</view><picker range="{{resources}}" range-key="resourceName" value="{{resourceIndex}}" bindchange="chooseResource"><view class="field picker-field">{{resources.length ? resources[resourceIndex].resourceName : '暂无可用资源'}}</view></picker>
+      <view class="field-label">{{requestTypes[requestTypeIndex].value === 'VEHICLE' ? '目的地' : '文件名称'}}</view><input class="field" data-key="name" bindinput="input" />
+      <view class="field-label">{{requestTypes[requestTypeIndex].value === 'VEHICLE' ? '乘车人数' : '文件份数'}}</view><input class="field" type="number" value="{{form.quantity}}" data-key="quantity" bindinput="input" />
+    </block>
+    <block wx:else>
+      <view class="field-label">出差地点</view><input class="field" data-key="destination" bindinput="input" />
+    </block>
+    <view class="field-label">开始日期</view><picker mode="date" value="{{form.startDate}}" data-key="startDate" bindchange="input"><view class="field picker-field">{{form.startDate}}</view></picker>
+    <view class="field-label">结束日期</view><picker mode="date" value="{{form.endDate}}" data-key="endDate" bindchange="input"><view class="field picker-field">{{form.endDate}}</view></picker>
+    <block wx:if="{{type === 'trip'}}">
+      <view class="field-label">出差事由</view><textarea class="field textarea" data-key="purpose" bindinput="input" />
+      <view class="field-label">交通费</view><input class="field" type="digit" value="{{form.transportAmount}}" data-key="transportAmount" bindinput="input" />
+      <view class="field-label">住宿费</view><input class="field" type="digit" value="{{form.accommodationAmount}}" data-key="accommodationAmount" bindinput="input" />
+      <view class="field-label">餐费</view><input class="field" type="digit" value="{{form.mealAmount}}" data-key="mealAmount" bindinput="input" />
+      <view class="field-label">其他费用</view><input class="field" type="digit" value="{{form.otherAmount}}" data-key="otherAmount" bindinput="input" />
+    </block>
+    <block wx:else>
+      <view class="field-label">{{type === 'leave' ? '请假原因' : '申请事由'}}</view><textarea class="field textarea" data-key="{{type === 'leave' ? 'reason' : 'purpose'}}" bindinput="input" />
+    </block>
+    <button class="primary" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submit">提交申请</button>
+  </view>
+</view>

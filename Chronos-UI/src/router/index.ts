@@ -60,6 +60,7 @@ const PortalParentMeetings = () => import('../modules/education/pages/PortalPare
 const AdminHomeSchool = () => import('../modules/education/pages/AdminHomeSchool.vue')
 const AdminParents = () => import('../modules/education/pages/AdminParents.vue')
 const AdminParentMeetings = () => import('../modules/education/pages/AdminParentMeetings.vue')
+const AdminMiniProgramEntry = () => import('../modules/education/pages/AdminMiniProgramEntry.vue')
 const AdminClassGroups = () => import('../modules/education/pages/AdminClassGroups.vue')
 const AdminParentFeedback = () => import('../modules/education/pages/AdminParentFeedback.vue')
 const AdminCommunicationRecords = () => import('../modules/education/pages/AdminCommunicationRecords.vue')
@@ -206,6 +207,8 @@ const router = createRouter({
         { path: 'education/parents', name: 'admin-education-parents', component: AdminParents },
         { path: 'education/home-school/notices', name: 'admin-education-home-school-notices', component: AdminHomeSchool },
         { path: 'education/parent-meetings', name: 'admin-education-parent-meetings', component: AdminParentMeetings },
+        { path: 'education/mini-program', name: 'admin-education-mini-program', component: AdminMiniProgramEntry,
+          meta: { requiredPermissions: ['education:mini-program:entry:manage'] } },
         { path: 'education/home-school/class-groups', name: 'admin-education-class-groups', component: AdminClassGroups },
         { path: 'education/home-school/feedback', name: 'admin-education-home-school-feedback', component: AdminParentFeedback },
         { path: 'education/home-school/communications', name: 'admin-education-home-school-communications', component: AdminCommunicationRecords },

@@ -229,6 +229,11 @@ export const listAdminParentMeetings = () => http.get('/admin/education/parent-m
 export const publishParentMeeting = (id) => http.post(`/admin/education/parent-meetings/${id}/publish`)
 export const listParentMeetings = () => http.get('/portal/education/parent-meetings')
 export const respondParentMeeting = (id, payload) => http.post(`/portal/education/parent-meetings/${id}/response`, payload)
+export const createMiniProgramSchoolEntry = (payload = {}) => http.post('/api/mini-program/admin/school-entry', payload)
+export const listMiniProgramSchools = () => http.get('/api/mini-program/admin/schools')
+export const downloadMiniProgramSchoolEntryCode = (organizationId = '') => http.download(
+  `/api/mini-program/admin/school-entry/code${organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : ''}`,
+)
 
 export const listSupervisionPlans = () => http.get('/admin/education/supervision/plans')
 export const createSupervisionPlan = (payload) => http.post('/admin/education/supervision/plans', payload)

@@ -1,0 +1,58 @@
+page {
+  min-height: 100%;
+  background: #f4f7f8;
+  color: #17202a;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+}
+.page { padding: 28rpx 28rpx calc(40rpx + env(safe-area-inset-bottom)); }
+.hero {
+  padding: 38rpx 34rpx;
+  border-radius: 32rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #087b68, #063d39);
+  box-shadow: 0 12rpx 32rpx rgba(8, 123, 104, .16);
+}
+.hero-title { margin-top: 8rpx; font-size: 42rpx; font-weight: 700; }
+.hero-subtitle { margin-top: 10rpx; color: rgba(255,255,255,.78); font-size: 26rpx; }
+.section-title { margin: 34rpx 4rpx 16rpx; font-size: 34rpx; font-weight: 700; }
+.card {
+  margin-bottom: 18rpx;
+  padding: 28rpx;
+  border-radius: 28rpx;
+  background: #fff;
+  box-sizing: border-box;
+}
+.card-title { font-size: 31rpx; font-weight: 650; }
+.card-subtitle { margin-top: 10rpx; color: #71808a; font-size: 25rpx; line-height: 1.5; }
+.link { margin-top: 18rpx; color: #087b68; font-size: 25rpx; font-weight: 600; }
+.primary, .secondary, .danger {
+  margin: 20rpx 0 0;
+  min-height: 92rpx;
+  border: 0;
+  border-radius: 24rpx;
+  font-size: 29rpx;
+  font-weight: 650;
+  line-height: 92rpx;
+}
+.primary { color: #fff; background: #087b68; }
+.secondary { color: #087b68; background: #ebf7f4; }
+.danger { color: #be3e2e; background: #fdf1ef; }
+.primary::after, .secondary::after, .danger::after { border: 0; }
+.field-label { margin: 22rpx 4rpx 10rpx; color: #71808a; font-size: 24rpx; }
+.field {
+  width: 100%; min-height: 94rpx; padding: 0 26rpx;
+  border-radius: 22rpx; background: #f8fafb; box-sizing: border-box;
+}
+.textarea { min-height: 180rpx; padding-top: 22rpx; }
+.empty { padding: 80rpx 20rpx; color: #71808a; text-align: center; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18rpx; }
+.grid .card { margin: 0; }
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 104rpx; height: 48rpx; padding: 0 16rpx; border-radius: 24rpx;
+  color: #087b68; background: #ebf7f4; font-size: 22rpx;
+}
+.row { display: flex; align-items: center; gap: 18rpx; }
+.grow { flex: 1; min-width: 0; }
+.loading { padding: 100rpx 20rpx; color: #71808a; text-align: center; }
+.safe-bottom { height: calc(20rpx + env(safe-area-inset-bottom)); }

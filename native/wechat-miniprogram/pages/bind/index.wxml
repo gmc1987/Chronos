@@ -1,0 +1,43 @@
+<view class="page bind-page">
+  <view class="brand">
+    <view class="logo">C</view>
+    <view class="brand-name">Chronos 校园</view>
+    <view class="brand-copy">连接学校、教师、学生与家庭</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="loading">正在通过微信安全登录…</view>
+
+  <view wx:elif="{{state === 'SCHOOL_REQUIRED'}}" class="card">
+    <view class="card-title">请扫描学校入口码</view>
+    <view class="card-subtitle">第一次使用需要从学校公众号、官网、班级群或入学材料中的专属小程序码进入。</view>
+  </view>
+
+  <view wx:elif="{{state === 'PROFILE_BINDING_REQUIRED'}}" class="card">
+    <view class="school-name">{{school.name}}</view>
+    <view class="card-title">绑定学校身份</view>
+    <view class="card-subtitle">微信身份只用于登录，正式权限来自学校已经建立的学生或教师账号。</view>
+    <view class="identity-tabs">
+      <view class="identity-tab {{profileType === 'STUDENT' ? 'active' : ''}}" data-type="STUDENT" bindtap="selectType">我是学生</view>
+      <view class="identity-tab {{profileType === 'TEACHER' ? 'active' : ''}}" data-type="TEACHER" bindtap="selectType">我是教师</view>
+    </view>
+    <view class="field-label">{{profileType === 'STUDENT' ? '学号' : '工号'}}</view>
+    <input class="field" value="{{credentialNo}}" bindinput="inputCredential" placeholder="请输入学校已经生成的编号" />
+    <button class="primary" open-type="getPhoneNumber" bindgetphonenumber="bindPhone">授权手机号并绑定</button>
+  </view>
+
+  <view wx:elif="{{state === 'GUARDIAN_BINDING_REQUIRED'}}" class="card">
+    <view class="school-name">{{school.name}}</view>
+    <view class="card-title">确认家长关系</view>
+    <view class="invite-student">{{invitation.studentName}} · {{invitation.relationship}}</view>
+    <view class="card-subtitle">该邀请由学生本人生成。绑定后只能查看与该学生相关的家校数据。</view>
+    <view class="field-label">家长姓名</view>
+    <input class="field" value="{{parentName}}" bindinput="inputParentName" placeholder="请输入真实姓名" />
+    <button class="primary" open-type="getPhoneNumber" bindgetphonenumber="bindPhone">授权手机号并建立关系</button>
+  </view>
+
+  <view wx:elif="{{state === 'ERROR'}}" class="card">
+    <view class="card-title">暂时无法登录</view>
+    <view class="card-subtitle">请检查网络后重试。如果持续失败，请联系学校管理员检查微信小程序配置。</view>
+    <button class="secondary" bindtap="onLoad">重新登录</button>
+  </view>
+</view>

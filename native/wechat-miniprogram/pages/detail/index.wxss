@@ -1,0 +1,5 @@
+.detail-title { margin-bottom: 18rpx; font-size: 36rpx; font-weight: 700; }
+.detail-row { display:flex; gap:24rpx; padding:22rpx 0; border-bottom:1rpx solid #edf1f3; }
+.detail-row:last-child { border-bottom:0; }
+.detail-label { flex:0 0 170rpx; color:#71808a; font-size:25rpx; }
+.detail-value { flex:1; font-size:27rpx; text-align:right; word-break:break-all; }

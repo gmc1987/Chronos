@@ -19,6 +19,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         "com.chronos.education.classgroup.model",
         "com.chronos.education.parentmeeting.model",
         "com.chronos.education.supervision.model",
+        "com.chronos.education.miniprogram.model",
         "com.chronos.integration.model",
         "com.chronos.knowledge.model",
         "com.chronos.ai.model"
@@ -36,6 +37,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         "com.chronos.education.classgroup.dao",
         "com.chronos.education.parentmeeting.dao",
         "com.chronos.education.supervision.dao",
+        "com.chronos.education.miniprogram.dao",
         "com.chronos.integration.dao",
         "com.chronos.knowledge.dao",
         "com.chronos.ai.dao"

@@ -1,0 +1,15 @@
+{
+  "description": "Chronos 教育微信小程序",
+  "compileType": "miniprogram",
+  "libVersion": "3.7.12",
+  "miniprogramRoot": "./",
+  "setting": {
+    "useCompilerPlugins": false,
+    "es6": true,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": true
+  },
+  "appid": "touristappid",
+  "projectname": "chronos-education-mini-program"
+}

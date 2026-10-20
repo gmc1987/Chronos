@@ -1,0 +1,38 @@
+{
+  "pages": [
+    "pages/bind/index",
+    "pages/workbench/index",
+    "pages/applications/index",
+    "pages/workflow/index",
+    "pages/profile/index",
+    "pages/records/index",
+    "pages/detail/index",
+    "pages/workflow-start/index",
+    "pages/workflow-detail/index",
+    "pages/guardian-invite/index",
+    "pages/business-form/index",
+    "pages/meeting-detail/index",
+    "pages/module-center/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "Chronos 校园",
+    "navigationBarBackgroundColor": "#f4f7f8",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f4f7f8",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#71808a",
+    "selectedColor": "#087b68",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/workbench/index", "text": "工作台", "iconPath": "assets/tab-workbench.png", "selectedIconPath": "assets/tab-workbench-active.png" },
+      { "pagePath": "pages/applications/index", "text": "应用", "iconPath": "assets/tab-apps.png", "selectedIconPath": "assets/tab-apps-active.png" },
+      { "pagePath": "pages/workflow/index", "text": "流程", "iconPath": "assets/tab-workflow.png", "selectedIconPath": "assets/tab-workflow-active.png" },
+      { "pagePath": "pages/profile/index", "text": "我的", "iconPath": "assets/tab-profile.png", "selectedIconPath": "assets/tab-profile-active.png" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

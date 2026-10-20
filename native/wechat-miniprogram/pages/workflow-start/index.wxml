@@ -1,0 +1,22 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="loading">正在加载流程表单…</view>
+  <view wx:else class="card form-card">
+    <view class="form-title">{{title}}</view>
+    <block wx:for="{{fields}}" wx:key="fieldKey">
+      <view class="field-label">{{item.fieldLabel}}{{item.required ? ' *' : ''}}</view>
+      <textarea wx:if="{{item.fieldType === 'TEXTAREA'}}" class="field textarea" data-key="{{item.fieldKey}}" bindinput="input" placeholder="请输入{{item.fieldLabel}}" />
+      <picker wx:elif="{{item.fieldType === 'SELECT' || item.fieldType === 'RADIO'}}" range="{{item.options}}" range-key="label" data-key="{{item.fieldKey}}" bindchange="choose">
+        <view class="field picker-field">{{values[item.fieldKey] || '请选择'}}</view>
+      </picker>
+      <picker wx:elif="{{item.fieldType === 'DATE'}}" mode="date" data-key="{{item.fieldKey}}" bindchange="input">
+        <view class="field picker-field">{{values[item.fieldKey] || '请选择日期'}}</view>
+      </picker>
+      <picker wx:elif="{{item.fieldType === 'DATETIME'}}" mode="date" data-key="{{item.fieldKey}}" bindchange="input">
+        <view class="field picker-field">{{values[item.fieldKey] || '请选择日期'}}</view>
+      </picker>
+      <switch wx:elif="{{item.fieldType === 'BOOLEAN'}}" data-key="{{item.fieldKey}}" bindchange="input" color="#087b68" />
+      <input wx:else class="field" type="{{item.fieldType === 'NUMBER' ? 'digit' : 'text'}}" data-key="{{item.fieldKey}}" bindinput="input" placeholder="请输入{{item.fieldLabel}}" />
+    </block>
+    <button class="primary" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submit">提交申请</button>
+  </view>
+</view>

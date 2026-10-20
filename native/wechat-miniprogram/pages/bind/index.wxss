@@ -1,0 +1,10 @@
+.bind-page { padding-top: 90rpx; }
+.brand { margin-bottom: 54rpx; text-align: center; }
+.logo { display: flex; align-items: center; justify-content: center; width: 112rpx; height: 112rpx; margin: 0 auto 22rpx; border-radius: 34rpx; color: #fff; background: linear-gradient(135deg, #087b68, #063d39); font-size: 52rpx; font-weight: 750; }
+.brand-name { font-size: 44rpx; font-weight: 750; }
+.brand-copy { margin-top: 10rpx; color: #71808a; font-size: 25rpx; }
+.school-name { margin-bottom: 16rpx; color: #087b68; font-size: 25rpx; font-weight: 650; }
+.identity-tabs { display: flex; gap: 14rpx; margin-top: 28rpx; padding: 8rpx; border-radius: 22rpx; background: #f4f7f8; }
+.identity-tab { flex: 1; padding: 20rpx; border-radius: 17rpx; color: #71808a; text-align: center; }
+.identity-tab.active { color: #087b68; background: #fff; font-weight: 650; }
+.invite-student { margin: 24rpx 0 8rpx; padding: 24rpx; border-radius: 22rpx; color: #087b68; background: #ebf7f4; font-size: 30rpx; font-weight: 650; }

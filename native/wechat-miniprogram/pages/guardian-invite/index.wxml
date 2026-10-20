@@ -1,0 +1,20 @@
+<view class="page">
+  <view class="card" wx:if="{{!invitation}}">
+    <view class="card-title">生成家长关系码</view>
+    <view class="card-subtitle">二维码10分钟内有效且只能使用一次，请当面交给对应家长扫码。</view>
+    <view class="field-label">监护关系</view>
+    <picker range="{{relationships}}" range-key="label" value="{{relationshipIndex}}" bindchange="chooseRelationship"><view class="field picker-field">{{relationships[relationshipIndex].label}}</view></picker>
+    <view class="switch-row"><text>设为主监护人</text><switch checked="{{primaryGuardian}}" bindchange="togglePrimary" color="#087b68" /></view>
+    <view class="switch-row"><text>设为紧急联系人</text><switch checked="{{emergencyContact}}" bindchange="toggleEmergency" color="#087b68" /></view>
+    <button class="primary" loading="{{loading}}" disabled="{{loading}}" bindtap="create">生成二维码</button>
+  </view>
+  <view class="card invitation-card" wx:else>
+    <view class="card-title">请家长使用微信扫码</view>
+    <view class="card-subtitle">{{invitation.studentName}} · {{relationships[relationshipIndex].label}}</view>
+    <image wx:if="{{imagePath}}" class="qr" src="{{imagePath}}" mode="aspectFit" />
+    <view wx:else class="loading">正在生成二维码…</view>
+    <view class="expires">有效期至 {{invitation.expiresAt}}</view>
+    <button class="secondary" bindtap="save">保存到相册</button>
+    <button class="primary" bindtap="create">重新生成</button>
+  </view>
+</view>

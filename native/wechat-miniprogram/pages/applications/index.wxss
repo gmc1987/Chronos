@@ -1,0 +1,6 @@
+.compact-hero { padding-top: 30rpx; padding-bottom: 30rpx; }
+.app-card { min-height: 250rpx; }
+.app-icon { display:flex; align-items:center; justify-content:center; width:72rpx; height:72rpx; margin-bottom:18rpx; border-radius:23rpx; color:#087b68; background:#ebf7f4; font-weight:700; }
+.app-icon.small { flex: 0 0 auto; width: 64rpx; height: 64rpx; margin: 0; }
+.app-row { display:flex; align-items:center; gap:20rpx; }
+.chevron { color:#a0abb2; font-size:44rpx; }
