@@ -179,7 +179,12 @@ public final class UiKit {
                 button.setCompoundDrawables(null, icon, null, null);
             }
         }
+        // Android's default Button animator raises selected/pressed controls even when elevation is 0.
+        // Tab items must remain completely flat in every interaction state.
+        button.setStateListAnimator(null);
         button.setElevation(0);
+        button.setTranslationZ(0);
+        button.setOutlineProvider(null);
         return button;
     }
 
