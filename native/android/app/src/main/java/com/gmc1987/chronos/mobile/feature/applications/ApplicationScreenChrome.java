@@ -1,8 +1,11 @@
 package com.gmc1987.chronos.mobile.feature.applications;
 
 import android.app.AlertDialog;
+import android.view.Gravity;
+import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
 
@@ -18,13 +21,25 @@ final class ApplicationScreenChrome {
 
     LinearLayout page(String title, Runnable back) {
         host.setBackAction(back);
-        LinearLayout page = ui.page(title);
-        Button button = ui.secondaryButton("‹ 返回");
+        LinearLayout page = ui.vertical();
+        page.setPadding(ui.dp(20), ui.dp(10), ui.dp(20), ui.dp(28));
+
+        LinearLayout navigation = ui.horizontal();
+        Button button = ui.navigationButton("‹ 返回");
         button.setOnClickListener(view -> {
             host.setBackAction(null);
             back.run();
         });
-        page.addView(button, 0, new LinearLayout.LayoutParams(-1, ui.dp(44)));
+        navigation.addView(button, new LinearLayout.LayoutParams(ui.dp(72), ui.dp(44)));
+
+        TextView heading = ui.label(title, 22, UiKit.TEXT, true);
+        heading.setGravity(Gravity.CENTER);
+        navigation.addView(heading, new LinearLayout.LayoutParams(0, ui.dp(44), 1));
+
+        // Keep the page title visually centered while the back action stays at the upper-left.
+        View trailingBalance = new View(button.getContext());
+        navigation.addView(trailingBalance, new LinearLayout.LayoutParams(ui.dp(72), ui.dp(44)));
+        page.addView(navigation, new LinearLayout.LayoutParams(-1, ui.dp(50)));
         return page;
     }
 

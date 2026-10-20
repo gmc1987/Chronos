@@ -138,6 +138,18 @@ public final class UiKit {
         return button;
     }
 
+    /** Compact text action used in a native navigation bar, matching the iOS back affordance. */
+    public Button navigationButton(String title) {
+        Button button = button(title, BRAND, Color.TRANSPARENT, 15);
+        button.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(dp(44));
+        button.setPadding(dp(4), 0, dp(8), 0);
+        button.setElevation(0);
+        return button;
+    }
+
     public Button destructiveButton(String title) {
         Button button = button(title, ERROR, Color.rgb(253, 241, 239), 15);
         button.setMinHeight(dp(52));
