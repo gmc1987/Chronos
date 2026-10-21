@@ -2,9 +2,10 @@
   <AcademicCrudPage
     :key="crudRevision"
     title="学生档案"
-    description="维护学生学籍、年级、专业和行政班"
+    description="维护已完成报到建档的学生学籍；新生请从“新生入学”完成资格核验和建档"
     entity-label="学生"
     permission-prefix="education:student"
+    :allow-create="false"
     :columns="columns"
     :fields="fields"
     :defaults="defaults"
@@ -216,9 +217,12 @@ const columns = [
   { prop: 'gradeId', label: '年级', lookup: 'grades' },
   { prop: 'administrativeClassId', label: '行政班', lookup: 'classes' },
   { prop: 'enrollmentStatus', label: '学籍状态', dictCode: 'EDU_STUDENT_STATUS' },
+  { prop: 'registrationStatus', label: '电子注册状态', valueMap: {
+    NOT_SUBMITTED: '未提交', PENDING: '待主管部门处理', REGISTERED: '注册成功', REJECTED: '注册退回',
+  } },
 ]
 const fields = [
-  { prop: 'studentNo', label: '学号' },
+  { prop: 'studentNo', label: '学号', disabled: true, placeholder: '建档时由系统自动生成' },
   { prop: 'studentName', label: '姓名' },
   { prop: 'gender', label: '性别', dictCode: 'COMMON_GENDER' },
   { prop: 'gradeYear', label: '入学年份', type: 'number', immutableOnEdit: true },
@@ -228,7 +232,7 @@ const fields = [
   { prop: 'enrollmentStatus', label: '学籍状态', dictCode: 'EDU_STUDENT_STATUS', immutableOnEdit: true },
   { prop: 'phone', label: '联系电话' },
 ]
-const defaults = { enrollmentStatus: 'ACTIVE' }
+const defaults = { enrollmentStatus: 'ACTIVE', registrationStatus: 'NOT_SUBMITTED' }
 const lookups = [
   { key: 'grades', loader: listEducationGrades, labelProp: 'gradeName' },
   { key: 'majors', loader: listEducationMajors, labelProp: 'majorName' },

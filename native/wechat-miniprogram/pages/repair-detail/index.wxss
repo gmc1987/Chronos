@@ -1,0 +1,1 @@
+.status{color:#087b68;font-weight:600;margin:14rpx 0}.line{padding:12rpx 0;color:#485861}.primary{background:#087b68;color:#fff;border-radius:18rpx;margin-top:18rpx}.secondary{color:#087b68;background:#eaf7f4;border-radius:16rpx}.card textarea{background:#f7f9fa;width:auto;padding:20rpx;border-radius:14rpx}.photo{width:220rpx;height:220rpx;border-radius:16rpx;margin:16rpx 0}

@@ -20,6 +20,14 @@ public final class DocumentPicker {
         activity.startActivityForResult(intent, OPEN_REQUEST);
     }
 
+    public void openImage(Activity activity, Consumer<Uri> callback) {
+        openCallback = callback;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("image/*");
+        activity.startActivityForResult(intent, OPEN_REQUEST);
+    }
+
     public void create(Activity activity, String fileName, String mimeType, Consumer<Uri> callback) {
         saveCallback = callback;
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)

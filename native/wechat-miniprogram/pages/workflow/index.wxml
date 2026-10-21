@@ -5,10 +5,12 @@
   <view class="page list-page">
     <view wx:if="{{loading}}" class="loading">正在加载流程…</view>
     <view wx:elif="{{!records.length}}" class="empty">当前没有相关流程</view>
-    <view wx:else class="card" wx:for="{{records}}" wx:key="index" data-item="{{item.raw}}" bindtap="open">
-      <view class="card-title">{{item.entries[0].value || '流程记录'}}</view>
-      <view class="workflow-line" wx:for="{{item.entries}}" wx:for-item="entry" wx:key="key"><text>{{entry.label}}</text><text>{{entry.value}}</text></view>
-      <view class="link">{{active === 'start' ? '填写申请' : '查看流程详情'}} ›</view>
-    </view>
+    <block wx:else>
+      <view class="card" wx:for="{{records}}" wx:key="index" data-item="{{item.raw}}" bindtap="open">
+        <view class="card-title">{{item.entries[0].value || '流程记录'}}</view>
+        <view class="workflow-line" wx:for="{{item.entries}}" wx:for-item="entry" wx:key="key"><text>{{entry.label}}</text><text>{{entry.value}}</text></view>
+        <view class="link">{{active === 'start' ? '填写申请' : '查看流程详情'}} ›</view>
+      </view>
+    </block>
   </view>
 </view>

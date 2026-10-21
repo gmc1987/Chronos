@@ -4,6 +4,7 @@ struct TimetableCard: View {
     @EnvironmentObject var model: AppModel
     @AppStorage("chronos.mobile.timetable.expanded") var expanded = true
     @State var weekOffset = 0
+    @State var loadedWeekOffset: Int?
     @State var state: ScheduleLoadState = .loading
     @State var selectedLesson: ScheduleOccurrence?
 
@@ -32,7 +33,7 @@ struct TimetableCard: View {
         }
         .padding(16)
         .cardStyle()
-        .task(id: weekOffset) { await load() }
+        .task(id: weekOffset) { await loadIfNeeded() }
         .navigationDestination(isPresented: Binding(
             get: { selectedLesson != nil },
             set: { if !$0 { selectedLesson = nil } }
@@ -230,18 +231,30 @@ struct TimetableCard: View {
     }
 
     func load() async {
+        let requestedWeekOffset = weekOffset
+        let requestedWeekStart = weekStart
         state = .loading
-        let end = Calendar.current.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
+        let end = Calendar.current.date(byAdding: .day, value: 6, to: requestedWeekStart) ?? requestedWeekStart
         let path = ScheduleAPI.calendar(
-            startDate: isoDate(weekStart),
+            startDate: isoDate(requestedWeekStart),
             endDate: isoDate(end)
         )
         do {
             let calendar = try await model.session.get(path, as: ScheduleCalendar.self)
+            guard requestedWeekOffset == weekOffset else { return }
             state = .loaded(calendar)
+            loadedWeekOffset = requestedWeekOffset
         } catch {
+            guard requestedWeekOffset == weekOffset else { return }
             state = .error(error.localizedDescription)
         }
+    }
+
+    /// SwiftUI may run a view task again after tab changes or view reconstruction.
+    /// Reuse the already loaded week to keep the card height and scroll position stable.
+    func loadIfNeeded() async {
+        guard loadedWeekOffset != weekOffset else { return }
+        await load()
     }
 
     func todayLessons(_ calendar: ScheduleCalendar) -> [ScheduleOccurrence] {

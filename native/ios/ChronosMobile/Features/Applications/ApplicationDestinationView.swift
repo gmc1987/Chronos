@@ -4,6 +4,7 @@ enum NativeFeature: String {
     case workflow = "WORKFLOW_TASKS", collaboration = "COLLABORATION", documents = "DOCUMENTS"
     case files = "FILES", meetings = "MEETINGS", trips = "BUSINESS_TRIPS"
     case knowledge = "KNOWLEDGE", ai = "AI_CENTER", teaching = "TEACHING_CENTER"
+    case repair = "FACILITY_REPAIR"
 
     init?(_ app: PortalApplication) {
         let fallback: [String: Self] = ["workflow": .workflow, "oa": .collaboration,
@@ -30,6 +31,7 @@ enum NativeFeature: String {
         case .knowledge: NativeRecordsView(title: "知识中心", path: "/admin/knowledge-bases?page=0&size=50", empty: "暂无知识库")
         case .ai: NativeRecordsView(title: "AI 智能中心", path: "/agent/specs/list?page=0&size=50", empty: "暂无智能体")
         case .teaching: NativeModuleList(title: "教学中心", modules: teachingModules)
+        case .repair: RepairListView()
         case nil: UnsupportedApplicationView(application: application)
         }
     }

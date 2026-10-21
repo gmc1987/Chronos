@@ -29,6 +29,7 @@
 		<module>platform-workflow</module>
 		<module>platform-file</module>
 		<module>platform-message</module>
+		<module>facility-maintenance</module>
 		<module>platform-industry</module>
 		<module>industry-hospital-template</module>
 		<module>industry-education-template</module>

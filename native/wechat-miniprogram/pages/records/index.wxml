@@ -2,12 +2,14 @@
   <button wx:if="{{form}}" class="primary create-button" bindtap="create">发起{{title}}</button>
   <view wx:if="{{loading}}" class="loading">正在加载{{title}}…</view>
   <view wx:elif="{{!records.length}}" class="empty">暂无{{title}}数据</view>
-  <view wx:else class="card record-card" wx:for="{{records}}" wx:key="index" data-item="{{item.raw}}" bindtap="open">
-    <view class="record-title">{{item.entries[0].value || title}}</view>
-    <view class="record-line" wx:for="{{item.entries}}" wx:for-item="entry" wx:key="key">
-      <text class="record-label">{{entry.label}}</text><text class="record-value">{{entry.value}}</text>
+  <block wx:else>
+    <view class="card record-card" wx:for="{{records}}" wx:key="index" data-item="{{item.raw}}" bindtap="open">
+      <view class="record-title">{{item.entries[0].value || title}}</view>
+      <view class="record-line" wx:for="{{item.entries}}" wx:for-item="entry" wx:key="key">
+        <text class="record-label">{{entry.label}}</text><text class="record-value">{{entry.value}}</text>
+      </view>
+      <view class="link">查看详情 ›</view>
     </view>
-    <view class="link">查看详情 ›</view>
-  </view>
+  </block>
   <view wx:if="{{records.length && finished}}" class="list-end">已经到底了</view>
 </view>

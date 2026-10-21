@@ -46,6 +46,8 @@ import com.chronos.education.scheduling.model.EducationUserBinding;
 import com.chronos.model.pojo.BaseEntity;
 import com.chronos.model.dto.TeacherAccountProvisioning;
 import com.chronos.service.iService.ITeacherAccountProvisioningService;
+import com.chronos.service.impl.BusinessNumberService;
+import com.chronos.Idao.IEmployeeRepository;
 
 /** 教务主数据与走班成员服务，删除操作均先校验业务引用。 */
 @Service
@@ -66,6 +68,8 @@ public class AcademicDataService {
 	private final ScheduleEntryRepository scheduleEntries;
 	private final EducationUserBindingRepository bindings;
 	private final ITeacherAccountProvisioningService teacherAccounts;
+	private final BusinessNumberService businessNumbers;
+	private final IEmployeeRepository employees;
 
 	public AcademicDataService(
 			AcademicTermRepository terms,
@@ -83,7 +87,9 @@ public class AcademicDataService {
 			CourseOfferingRepository offerings,
 			ScheduleEntryRepository scheduleEntries,
 			EducationUserBindingRepository bindings,
-			ITeacherAccountProvisioningService teacherAccounts) {
+			ITeacherAccountProvisioningService teacherAccounts,
+			BusinessNumberService businessNumbers,
+			IEmployeeRepository employees) {
 		this.terms = terms;
 		this.grades = grades;
 		this.subjects = subjects;
@@ -100,6 +106,8 @@ public class AcademicDataService {
 		this.scheduleEntries = scheduleEntries;
 		this.bindings = bindings;
 		this.teacherAccounts = teacherAccounts;
+		this.businessNumbers = businessNumbers;
+		this.employees = employees;
 	}
 
 	public List<AcademicTerm> terms() {
@@ -362,7 +370,10 @@ public class AcademicDataService {
 				throw new IllegalStateException("学籍状态、入学年份、年级、专业和行政班必须通过学籍异动功能修改");
 			}
 			// 普通档案编辑只更新非学籍字段，防止绕过异动审批覆盖历史关系。
-			existing.setStudentNo(command.getStudentNo());
+			if (command.getStudentNo() != null && !command.getStudentNo().isBlank()
+					&& !java.util.Objects.equals(existing.getStudentNo(), command.getStudentNo())) {
+				throw new IllegalStateException("学号创建后不允许在普通编辑中修改");
+			}
 			existing.setStudentName(command.getStudentName());
 			existing.setGender(command.getGender());
 			existing.setPhone(command.getPhone());
@@ -385,6 +396,15 @@ public class AcademicDataService {
 		}
 		if (!"ACTIVE".equals(command.getEnrollmentStatus())) {
 			throw new IllegalArgumentException("新建学生的初始学籍状态必须为在读");
+		}
+		if (command.getStudentNo() == null || command.getStudentNo().isBlank()) {
+			String educationStage = command.getGradeId() == null ? "" : grades.findById(command.getGradeId())
+					.map(EducationGrade::getEducationStage).orElse("");
+			command.setStudentNo(businessNumbers.nextStudentNumber(
+					targetClass.getCampusId(), command.getGradeYear(), educationStage));
+		}
+		if (command.getRegistrationStatus() == null || command.getRegistrationStatus().isBlank()) {
+			command.setRegistrationStatus("NOT_SUBMITTED");
 		}
 		return students.save(command);
 	}
@@ -466,6 +486,11 @@ public class AcademicDataService {
 		if (command == null || command.getEmployeeId() == null || command.getEmployeeId().isBlank()) {
 			throw new IllegalArgumentException("教师档案必须绑定 IAM 员工");
 		}
+		var employee = employees.findById(command.getEmployeeId())
+				.orElseThrow(() -> new IllegalArgumentException("绑定的 IAM 员工不存在"));
+		// 教师档案沿用唯一工号，避免人事工号与教务教师编号长期分叉。
+		command.setTeacherNo(employee.getEmployeeCode());
+		command.setTeacherName(employee.getEmployeeName());
 		TeacherAccountProvisioning account = teacherAccounts.provision(command.getEmployeeId(), command.getTeacherName());
 		TeacherAcademicProfile value;
 		if (id != null) {

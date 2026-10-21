@@ -97,6 +97,12 @@ const AdminIntegrations = () => import('../modules/integration/pages/AdminIntegr
 const AdminRecurringMeetings = () => import('../modules/education/pages/AdminRecurringMeetings.vue')
 const PortalPublications = () => import('../modules/message/pages/PortalPublications.vue')
 const PortalPublicationDetail = () => import('../modules/message/pages/PortalPublicationDetail.vue')
+const AdminRepairOrders = () => import('../modules/facility/pages/AdminRepairOrders.vue')
+const AdminTechnicians = () => import('../modules/facility/pages/AdminTechnicians.vue')
+const AdminMaintenanceMaterials = () => import('../modules/facility/pages/AdminMaintenanceMaterials.vue')
+const AdminMaterialRequests = () => import('../modules/facility/pages/AdminMaterialRequests.vue')
+const AdminMaintenanceLedger = () => import('../modules/facility/pages/AdminMaintenanceLedger.vue')
+const PortalRepairOrders = () => import('../modules/facility/pages/PortalRepairOrders.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -146,6 +152,7 @@ const router = createRouter({
         { path: 'workflow-instances/:id/forms', name: 'portal-workflow-forms', component: PortalWorkflowForms },
         { path: 'publications', name: 'portal-publications', component: PortalPublications },
         { path: 'publications/:id', name: 'portal-publication-detail', component: PortalPublicationDetail },
+        { path: 'facility/repairs', name: 'portal-facility-repairs', component: PortalRepairOrders },
       ],
     },
     { path: '/admin/login', name: 'admin-login', component: AdminLogin },
@@ -185,6 +192,17 @@ const router = createRouter({
         { path: 'publications', name: 'admin-publications', component: AdminPublications },
         { path: 'message-settings', name: 'admin-message-settings', component: AdminNotificationSettings },
         { path: 'integrations', name: 'admin-integrations', component: AdminIntegrations },
+        { path: 'facility', redirect: { name: 'admin-facility-repairs' } },
+        { path: 'facility/repairs', name: 'admin-facility-repairs', component: AdminRepairOrders,
+          meta: { requiredPermissions: ['facility:repair:view', 'facility:repair:manage'] } },
+        { path: 'facility/technicians', name: 'admin-facility-technicians', component: AdminTechnicians,
+          meta: { requiredPermissions: ['facility:technician:view', 'facility:technician:manage'] } },
+        { path: 'facility/materials', name: 'admin-facility-materials', component: AdminMaintenanceMaterials,
+          meta: { requiredPermissions: ['facility:material:view', 'facility:material:manage'] } },
+        { path: 'facility/material-requests', name: 'admin-facility-material-requests', component: AdminMaterialRequests,
+          meta: { requiredPermissions: ['facility:material-request:view', 'facility:material-request:manage'] } },
+        { path: 'facility/ledger', name: 'admin-facility-ledger', component: AdminMaintenanceLedger,
+          meta: { requiredPermissions: ['facility:ledger:view', 'facility:repair:manage'] } },
         { path: 'education/meeting/recurring', name: 'admin-education-recurring-meetings', component: AdminRecurringMeetings },
         { path: 'education/teaching-center/plan', name: 'admin-education-teaching-plan', component: AdminTeachingPlan },
         { path: 'education/teaching-center/lesson-plan', name: 'admin-education-lesson-plan', component: AdminLessonPlans },

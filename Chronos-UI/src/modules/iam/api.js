@@ -5,7 +5,7 @@ export {
   organizationUnits, saveOrganizationUnit, deleteOrganizationUnit,
   positions, savePosition, deletePosition, jobTitles, saveJobTitle, deleteJobTitle,
   jobLevels, saveJobLevel, deleteJobLevel,
-  employees, saveEmployee, deleteEmployee, employeeAssignments, saveEmployeeAssignment, deleteEmployeeAssignment, downloadDirectoryImportTemplate, importDirectoryData,
+  employees, saveEmployee, deleteEmployee, employeeAssignments, saveEmployeeAssignment, deleteEmployeeAssignment, downloadDirectoryImportTemplate, importDirectoryData, listBusinessNumberRules, saveBusinessNumberRule,
   dictTree, dictListByCode, dictionaryOptions, createDict, updateDict, deleteDict,
   auditLogs, exportAuditLogs,
   customerList, customerDetail, createCustomer, updateCustomer, deleteCustomer,

@@ -5,14 +5,14 @@
       <div class="header-actions">
         <slot name="actions" />
         <el-button
-          v-if="!permissionPrefix"
+          v-if="allowCreate && !permissionPrefix"
           type="primary"
           @click="openCreate"
         >
           新增{{ entityLabel }}
         </el-button>
         <el-button
-          v-else
+          v-else-if="allowCreate"
           v-permission="createPermissions"
           type="primary"
           @click="openCreate"
@@ -72,13 +72,13 @@
     <el-dialog v-model="dialog" :title="`${form.id ? '编辑' : '新增'}${entityLabel}`" width="640px">
       <el-form label-width="110px">
         <el-form-item v-for="field in fields" :key="field.prop" :label="field.label">
-          <el-select v-if="field.dictCode" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in dictionaryData[field.dictCode] || []" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-          <el-select v-else-if="field.options" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-          <el-date-picker v-else-if="field.type === 'date'" v-model="form[field.prop]" value-format="YYYY-MM-DD" :disabled="field.immutableOnEdit && !!form.id" />
-          <el-input-number v-else-if="field.type === 'number'" v-model="form[field.prop]" :min="field.min ?? 0" :disabled="field.immutableOnEdit && !!form.id" />
-          <el-switch v-else-if="field.type === 'boolean'" v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id" />
-          <el-select v-else-if="field.lookup" v-model="form[field.prop]" filterable :disabled="field.immutableOnEdit && !!form.id"><el-option v-for="option in lookupData[field.lookup] || []" :key="option.id" :label="option[field.labelProp]" :value="option.id" /></el-select>
-          <el-input v-else v-model="form[field.prop]" :disabled="field.immutableOnEdit && !!form.id" />
+          <el-select v-if="field.dictCode" v-model="form[field.prop]" :disabled="field.disabled || (field.immutableOnEdit && !!form.id)"><el-option v-for="option in dictionaryData[field.dictCode] || []" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+          <el-select v-else-if="field.options" v-model="form[field.prop]" :disabled="field.disabled || (field.immutableOnEdit && !!form.id)"><el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+          <el-date-picker v-else-if="field.type === 'date'" v-model="form[field.prop]" value-format="YYYY-MM-DD" :disabled="field.disabled || (field.immutableOnEdit && !!form.id)" />
+          <el-input-number v-else-if="field.type === 'number'" v-model="form[field.prop]" :min="field.min ?? 0" :disabled="field.disabled || (field.immutableOnEdit && !!form.id)" />
+          <el-switch v-else-if="field.type === 'boolean'" v-model="form[field.prop]" :disabled="field.disabled || (field.immutableOnEdit && !!form.id)" />
+          <el-select v-else-if="field.lookup" v-model="form[field.prop]" filterable :disabled="field.disabled || (field.immutableOnEdit && !!form.id)"><el-option v-for="option in lookupData[field.lookup] || []" :key="option.id" :label="option[field.labelProp]" :value="option.id" /></el-select>
+          <el-input v-else v-model="form[field.prop]" :placeholder="field.placeholder" :disabled="field.disabled || (field.immutableOnEdit && !!form.id)" />
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
@@ -91,7 +91,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
 
-const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, rowActions: { type: Array, default: () => [] }, permissionPrefix: String, lookups: { type: Array, default: () => [] } })
+const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, rowActions: { type: Array, default: () => [] }, permissionPrefix: String, lookups: { type: Array, default: () => [] }, allowCreate: { type: Boolean, default: true } })
 const rows = ref([]); const dialog = ref(false); const form = reactive({}); const lookupData = reactive({}); const dictionaryData = reactive({})
 const page = ref(1); const pageSize = ref(10); const total = ref(0)
 const createPermissions = computed(() => [`${props.permissionPrefix}:create`, `${props.permissionPrefix}:manage`])
@@ -133,6 +133,7 @@ const runRowAction = async (action, row) => {
   if (action.reload !== false) await load()
 }
 const displayValue = (column, value) => {
+	if (column.valueMap) return column.valueMap[value] || value || '-'
   if (column.dictCode) {
     return dictionaryData[column.dictCode]?.find(option => option.value === value)?.label || value || '-'
   }

@@ -12,6 +12,7 @@ const AdminMajors = () => import('../../modules/education/pages/AdminMajors.vue'
 const AdminAdministrativeClasses = () => import('../../modules/education/pages/AdminAdministrativeClasses.vue')
 const AdminTeachers = () => import('../../modules/education/pages/AdminTeachers.vue')
 const AdminStudents = () => import('../../modules/education/pages/AdminStudents.vue')
+const AdminAdmissions = () => import('../../modules/education/pages/AdminAdmissions.vue')
 const AdminGrades = () => import('../../modules/education/pages/AdminGrades.vue')
 const AdminSubjects = () => import('../../modules/education/pages/AdminSubjects.vue')
 const AdminParents = () => import('../../modules/education/pages/AdminParents.vue')
@@ -43,6 +44,7 @@ export const educationIndustry = {
     { path: '/admin/education/classes', name: 'admin-education-classes', component: AdminAdministrativeClasses },
     { path: '/admin/education/teachers', name: 'admin-education-teachers', component: AdminTeachers },
     { path: '/admin/education/students', name: 'admin-education-students', component: AdminStudents },
+    { path: '/admin/education/admissions', name: 'admin-education-admissions', component: AdminAdmissions },
     { path: '/admin/education/grades', name: 'admin-education-grades', component: AdminGrades },
     { path: '/admin/education/subjects', name: 'admin-education-subjects', component: AdminSubjects },
     { path: '/admin/education/parents', name: 'admin-education-parents', component: AdminParents },

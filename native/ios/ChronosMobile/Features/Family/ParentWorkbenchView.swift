@@ -12,7 +12,9 @@ struct ParentWorkbenchView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 16) {
+                // There are only a few cards here, so eager layout gives stable
+                // scrolling and avoids task restarts during bottom overscroll.
+                VStack(spacing: 16) {
                     IdentityHeader(
                         eyebrow: "家长工作台",
                         name: bootstrap.user.displayName ?? bootstrap.user.username,
@@ -36,13 +38,6 @@ struct ParentWorkbenchView: View {
             .background(ChronosPalette.background)
             .navigationTitle("工作台")
             .task { await load() }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { Task { await load() } } label: {
-                        Label("刷新工作台", systemImage: "arrow.clockwise")
-                    }
-                }
-            }
         }
     }
 

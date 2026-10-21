@@ -7,18 +7,52 @@
       <view class="hero-subtitle">{{user.departmentName || user.organizationName || 'Chronos 校园'}} · {{education.termName || '当前学期'}}</view>
     </view>
 
-    <block wx:if="{{schedule.length}}">
-      <view class="section-title">本周课表</view>
-      <scroll-view class="schedule-scroll" scroll-x="true" enable-flex="true">
-        <view class="schedule-row">
-          <view class="schedule-card" wx:for="{{schedule}}" wx:key="id" data-item="{{item}}" bindtap="openSchedule">
-            <view class="schedule-course">{{item.courseName || item.title || '课程'}}</view>
-            <view class="schedule-meta">{{item.startTime || item.lessonDate || ''}}</view>
-            <view class="schedule-meta">{{item.teacherName || item.classroomName || ''}}</view>
+    <view wx:if="{{workspace === 'STUDENT' || workspace === 'TEACHER'}}" class="card timetable-card">
+      <view class="timetable-heading">
+        <view>
+          <view class="card-title">二维周课表</view>
+          <view class="week-range">{{weekStart}} 至 {{weekEnd}}</view>
+        </view>
+      </view>
+      <view class="week-controls">
+        <button class="week-button" data-delta="-1" bindtap="changeWeek">‹ 上一周</button>
+        <button class="week-button" disabled="{{weekOffset === 0}}" bindtap="currentWeek">本周</button>
+        <button class="week-button" data-delta="1" bindtap="changeWeek">下一周 ›</button>
+      </view>
+
+      <view wx:if="{{scheduleState === 'loading'}}" class="schedule-state">正在加载个人课表…</view>
+      <view wx:elif="{{scheduleState === 'error'}}" class="schedule-state schedule-error">
+        <view>{{scheduleMessage}}</view>
+        <button class="retry-button" bindtap="retrySchedule">重新加载</button>
+      </view>
+      <view wx:elif="{{!scheduleOccurrences.length}}" class="schedule-state">本周暂无课程</view>
+      <scroll-view wx:else class="timetable-scroll" scroll-x="true" enable-flex="true">
+        <view class="timetable">
+          <view class="timetable-row timetable-header">
+            <view class="period-cell header-cell">节次</view>
+            <view class="lesson-cell header-cell {{day.today ? 'today-cell' : ''}}" wx:for="{{scheduleDays}}" wx:for-item="day" wx:key="date">
+              <view>{{day.label}}</view>
+              <view class="header-date">{{day.shortDate}}</view>
+            </view>
+          </view>
+          <view class="timetable-row" wx:for="{{scheduleRows}}" wx:for-item="row" wx:key="periodNo">
+            <view class="period-cell">
+              <view class="period-name">第 {{row.periodNo}} 节</view>
+              <view class="period-time">{{row.timeText}}</view>
+            </view>
+            <view class="lesson-cell {{cell.today ? 'today-cell' : ''}}" wx:for="{{row.cells}}" wx:for-item="cell" wx:key="key" data-item="{{cell}}" bindtap="openSchedule">
+              <block wx:if="{{cell.hasLesson}}">
+                <view class="lesson-content">
+                  <view class="lesson-course">{{cell.courseName}}</view>
+                  <view class="lesson-room">{{cell.classroomName}}</view>
+                  <view class="lesson-status status-{{cell.occurrenceStatus}}">{{cell.displayStatus}}</view>
+                </view>
+              </block>
+            </view>
           </view>
         </view>
       </scroll-view>
-    </block>
+    </view>
 
     <view class="section-title">常用服务</view>
     <view class="grid">

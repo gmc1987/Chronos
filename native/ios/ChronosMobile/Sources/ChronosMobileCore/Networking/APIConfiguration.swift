@@ -14,7 +14,7 @@ public struct ChronosAPIConfiguration: Sendable {
         let defaultAPI = "http://192.168.0.104:8080"
         let defaultPortal = "http://192.168.0.104:5173"
         #else
-        let defaultAPI = "https://api.example.invalid"
+        let defaultAPI = "https://api.examp                                                                         ```le.invalid"
         let defaultPortal = "https://portal.example.invalid"
         #endif
         let configuredAPI = Bundle.main.object(forInfoDictionaryKey: "ChronosAPIBaseURL") as? String

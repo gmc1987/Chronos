@@ -18,6 +18,7 @@ import com.chronos.model.pojo.JobLevel;
 import com.chronos.model.pojo.Position;
 import com.chronos.service.iService.IIamDirectoryService;
 import com.chronos.service.impl.DirectoryImportService;
+import com.chronos.service.impl.BusinessNumberService;
 
 class IamDirectoryControllerTest {
 
@@ -29,7 +30,8 @@ class IamDirectoryControllerTest {
         service = mock(IIamDirectoryService.class);
         controller = new IamDirectoryController(
                 service,
-                mock(DirectoryImportService.class));
+                mock(DirectoryImportService.class),
+                mock(BusinessNumberService.class));
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.gmc1987.chronos.mobile.core.common.ScreenHost;
 import com.gmc1987.chronos.mobile.core.common.UiKit;
 import com.gmc1987.chronos.mobile.core.network.HttpClient;
 import com.gmc1987.chronos.mobile.feature.workbench.MeetingsRepository;
+import com.gmc1987.chronos.mobile.feature.repair.RepairListScreen;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -61,6 +62,8 @@ public final class NativeApplicationScreen {
                 records("AI 智能中心", "/agent/specs/list?page=0&size=50", "暂无智能体").show(); break;
             case "TEACHING_CENTER":
                 modules("教学中心", NativeModules.teaching()).show(); break;
+            case "FACILITY_REPAIR":
+                new RepairListScreen(activity, ui, async, host, http, back).show(); break;
             default:
                 new ApplicationScreenChrome(ui, host).message(
                         application.optString("name", "应用"),
@@ -112,6 +115,7 @@ public final class NativeApplicationScreen {
         values.put("STAFF_BUSINESS_TRIP", "BUSINESS_TRIPS");
         values.put("knowledge", "KNOWLEDGE"); values.put("ai", "AI_CENTER");
         values.put("teaching-center", "TEACHING_CENTER");
+        values.put("FACILITY_REPAIR", "FACILITY_REPAIR");
         return values.getOrDefault(code, code);
     }
 }

@@ -1,0 +1,16 @@
+<view class="page">
+  <view class="course-hero">
+    <view class="course-kicker">课程详情</view>
+    <view class="course-title">{{title}}</view>
+  </view>
+  <view class="card detail-card">
+    <view class="detail-row" wx:for="{{rows}}" wx:key="label">
+      <view class="detail-label">{{item.label}}</view>
+      <view class="detail-value">{{item.value}}</view>
+    </view>
+  </view>
+  <view wx:if="{{reason}}" class="card">
+    <view class="card-title">调整说明</view>
+    <view class="reason">{{reason}}</view>
+  </view>
+</view>

@@ -1,0 +1,33 @@
+{
+  "libVersion": "3.7.12",
+  "projectname": "chronos-education-mini-program",
+  "setting": {
+    "urlCheck": false,
+    "coverView": false,
+    "lazyloadPlaceholderEnable": false,
+    "skylineRenderEnable": false,
+    "preloadBackgroundData": false,
+    "autoAudits": false,
+    "useApiHook": true,
+    "showShadowRootInWxmlPanel": false,
+    "useStaticServer": false,
+    "useLanDebug": false,
+    "showES6CompileOption": false,
+    "compileHotReLoad": true,
+    "checkInvalidKey": true,
+    "ignoreDevUnusedFiles": true,
+    "bigPackageSizeSupport": false
+  },
+  "condition": {
+    "miniprogram": {
+      "list": [
+        {
+          "name": "本地学生绑定",
+          "pathName": "pages/bind/index",
+          "query": "localMock=1&apiBaseURL=http%3A%2F%2F127.0.0.1%3A8080&scene=s_MA68SGZE5N8ZVMUF5M59&mockOpenId=codex-ui-student-2&mockPhone=13800138002",
+          "scene": null
+        }
+      ]
+    }
+  }
+}

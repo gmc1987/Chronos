@@ -2,12 +2,13 @@ import SwiftUI
 
 struct StudentWorkbenchView: View {
     let bootstrap: PortalBootstrap
-    @EnvironmentObject var model: AppModel
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 16) {
+                // Keep the timetable alive for the full lifetime of the page so
+                // reaching the bottom cannot restart its asynchronous load.
+                VStack(spacing: 16) {
                     IdentityHeader(
                         eyebrow: "学生工作台",
                         name: bootstrap.user.displayName ?? bootstrap.user.username,
@@ -21,13 +22,6 @@ struct StudentWorkbenchView: View {
             }
             .background(ChronosPalette.background)
             .navigationTitle("工作台")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { Task { await model.reloadBootstrap() } } label: {
-                        Label("刷新工作台", systemImage: "arrow.clockwise")
-                    }
-                }
-            }
         }
     }
 }

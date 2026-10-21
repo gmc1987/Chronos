@@ -1,8 +1,48 @@
 .hero-kicker { color: rgba(255,255,255,.72); font-size: 23rpx; letter-spacing: 3rpx; }
-.schedule-scroll { width: 100%; white-space: nowrap; }
-.schedule-row { display: inline-flex; gap: 16rpx; padding-bottom: 6rpx; }
-.schedule-card { width: 290rpx; padding: 26rpx; border-radius: 26rpx; background: #fff; box-sizing: border-box; }
-.schedule-course { overflow: hidden; font-size: 29rpx; font-weight: 650; text-overflow: ellipsis; }
-.schedule-meta { overflow: hidden; margin-top: 10rpx; color: #71808a; font-size: 23rpx; text-overflow: ellipsis; }
+.timetable-card { margin-top: 28rpx; padding: 28rpx 22rpx; }
+.timetable-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 6rpx; }
+.week-range { margin-top: 8rpx; color: #71808a; font-size: 23rpx; }
+.week-controls { display: flex; gap: 12rpx; margin: 22rpx 0 18rpx; }
+.week-button {
+  flex: 1; min-width: 0; height: 64rpx; margin: 0; padding: 0 8rpx;
+  border: 0; border-radius: 18rpx; color: #087b68; background: #ebf7f4;
+  font-size: 23rpx; font-weight: 650; line-height: 64rpx;
+}
+.week-button::after { border: 0; }
+.week-button[disabled] { color: #9da8ae; background: #f2f4f5; }
+.schedule-state { padding: 64rpx 20rpx; color: #71808a; text-align: center; font-size: 25rpx; }
+.schedule-error { color: #be3e2e; }
+.retry-button {
+  width: 190rpx; height: 64rpx; margin: 22rpx auto 0; border: 0; border-radius: 18rpx;
+  color: #087b68; background: #ebf7f4; font-size: 24rpx; line-height: 64rpx;
+}
+.retry-button::after { border: 0; }
+.timetable-scroll { width: 100%; white-space: nowrap; }
+.timetable { width: 1536rpx; padding-bottom: 6rpx; }
+.timetable-row { display: flex; gap: 6rpx; margin-bottom: 6rpx; }
+.period-cell, .lesson-cell {
+  flex: 0 0 180rpx; min-height: 154rpx; border-radius: 16rpx;
+  background: #fafcfc; box-sizing: border-box;
+}
+.period-cell {
+  flex-basis: 150rpx; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 12rpx; text-align: center;
+}
+.header-cell { min-height: 74rpx; color: #54636c; font-size: 22rpx; font-weight: 650; text-align: center; }
+.lesson-cell.header-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.header-date { margin-top: 4rpx; font-size: 19rpx; font-weight: 500; }
+.today-cell { background: #edf8f5; }
+.period-name { font-size: 22rpx; font-weight: 650; }
+.period-time { margin-top: 8rpx; color: #88949b; font-size: 18rpx; white-space: normal; }
+.lesson-content {
+  height: 100%; min-height: 154rpx; padding: 15rpx; border-left: 6rpx solid #087b68;
+  border-radius: 16rpx; background: rgba(8,123,104,.07); box-sizing: border-box;
+  white-space: normal;
+}
+.lesson-course { display: -webkit-box; overflow: hidden; font-size: 21rpx; font-weight: 700; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.lesson-room { overflow: hidden; margin-top: 8rpx; color: #71808a; font-size: 18rpx; text-overflow: ellipsis; white-space: nowrap; }
+.lesson-status { margin-top: 8rpx; color: #087b68; font-size: 18rpx; font-weight: 650; }
+.status-CANCELLED, .status-MOVED_OUT { color: #be3e2e; }
+.status-MOVED_IN, .status-SUBSTITUTED, .status-MAKEUP { color: #b56b08; }
 .service-card { min-height: 270rpx; }
 .service-icon { display: flex; align-items: center; justify-content: center; width: 68rpx; height: 68rpx; margin-bottom: 18rpx; border-radius: 22rpx; color: #087b68; background: #ebf7f4; font-weight: 700; }

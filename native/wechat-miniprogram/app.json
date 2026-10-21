@@ -7,12 +7,16 @@
     "pages/profile/index",
     "pages/records/index",
     "pages/detail/index",
+    "pages/course-detail/index",
     "pages/workflow-start/index",
     "pages/workflow-detail/index",
     "pages/guardian-invite/index",
     "pages/business-form/index",
     "pages/meeting-detail/index",
     "pages/module-center/index"
+    ,"pages/repair/index"
+    ,"pages/repair-form/index"
+    ,"pages/repair-detail/index"
   ],
   "window": {
     "navigationBarTitleText": "Chronos 校园",

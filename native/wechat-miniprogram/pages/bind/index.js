@@ -1,5 +1,6 @@
 const api = require('../../services/request')
 const session = require('../../services/session')
+const config = require('../../config')
 
 Page({
   data: {
@@ -10,18 +11,23 @@ Page({
     invitation: null,
     profileType: 'STUDENT',
     credentialNo: '',
-    parentName: ''
+    parentName: '',
+    localMock: false,
+    errorMessage: ''
   },
 
   onLoad(options) {
     const scene = decodeURIComponent(options.scene || wx.getStorageSync('chronosLaunchScene') || '')
+    this.setData({ localMock: config.localMockEnabled() })
     this.login(scene)
   },
 
   async login(scene) {
     this.setData({ loading: true })
     try {
-      const code = await new Promise((resolve, reject) => wx.login({ success: value => resolve(value.code), fail: reject }))
+      const code = this.data.localMock
+        ? `mock:${wx.getStorageSync('chronosMockOpenId') || 'chronos-local-user'}`
+        : await new Promise((resolve, reject) => wx.login({ success: value => resolve(value.code), fail: reject }))
       const result = await api.post('/api/mini-program/auth/login', { code, scene })
       if (result.state === 'AUTHENTICATED') return this.finish(result.tokens)
       this.setData({
@@ -32,7 +38,7 @@ Page({
         invitation: result.invitation || null
       })
     } catch (error) {
-      this.setData({ loading: false, state: 'ERROR' })
+      this.setData({ loading: false, state: 'ERROR', errorMessage: error.message || '登录失败' })
     }
   },
 
@@ -41,7 +47,10 @@ Page({
   inputParentName(event) { this.setData({ parentName: event.detail.value }) },
 
   async bindPhone(event) {
-    if (!event.detail.code) return wx.showToast({ title: '需要授权手机号完成学校身份核验', icon: 'none' })
+    const phoneCode = this.data.localMock
+      ? `mock:${wx.getStorageSync('chronosMockPhone') || ''}`
+      : event.detail.code
+    if (!phoneCode || phoneCode === 'mock:') return wx.showToast({ title: '需要授权手机号完成学校身份核验', icon: 'none' })
     try {
       wx.showLoading({ title: '正在核验' })
       let result
@@ -50,7 +59,7 @@ Page({
         result = await api.post('/api/mini-program/auth/bind-guardian', {
           bindingToken: this.data.bindingToken,
           parentName: this.data.parentName.trim(),
-          phoneCode: event.detail.code
+          phoneCode
         })
       } else {
         if (!this.data.credentialNo.trim()) throw new Error('请填写学号或工号')
@@ -58,7 +67,7 @@ Page({
           bindingToken: this.data.bindingToken,
           profileType: this.data.profileType,
           credentialNo: this.data.credentialNo.trim(),
-          phoneCode: event.detail.code
+          phoneCode
         })
       }
       this.finish(result.tokens)

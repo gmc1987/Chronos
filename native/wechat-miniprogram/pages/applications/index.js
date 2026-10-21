@@ -17,6 +17,7 @@ const nativeModules = [
   { title: 'AI 智能中心', detail: '查看学校配置的智能体能力', kind: 'records', feature: 'AI_CENTER', path: '/agent/specs/list?page=0&size=50', icon: '智' },
   { title: '家校通知', detail: '查看班级和学校通知', kind: 'records', path: '/portal/education/family/notices', icon: '家' },
   { title: '成绩', detail: '查看本人或孩子的成绩', kind: 'records', path: '/portal/education/grades', icon: '分' }
+  ,{ title: '故障报修', detail: '拍照提交设施故障并跟踪维修进度', kind: 'repair', target: '/pages/repair/index', icon: '修' }
 ]
 
 Page({
@@ -38,15 +39,18 @@ Page({
   async open(event) {
     const item = event.currentTarget.dataset.item
     if (item.kind === 'tab') return wx.switchTab({ url: item.target })
+    if (item.kind === 'repair') return wx.navigateTo({ url: item.target })
     if (item.kind === 'records') return wx.navigateTo({ url: `/pages/records/index?title=${encodeURIComponent(item.title)}&path=${encodeURIComponent(item.path)}&form=${item.form || ''}` })
     const aliases = {
       WORKFLOW_TASKS: '流程中心', DOCUMENTS: '公文中心', FILES: '文件中心',
       MEETINGS: '会议', BUSINESS_TRIPS: '出差', KNOWLEDGE: '知识中心', AI_CENTER: 'AI 智能中心',
       TEACHING_CENTER: '教学计划'
+      ,FACILITY_REPAIR: '故障报修'
     }
     const fallback = { workflow: '流程中心', oa: '请假', document: '公文中心', file: '文件中心',
       EDUCATION_MEETINGS: '会议', STAFF_BUSINESS_TRIP: '出差', knowledge: '知识中心', ai: 'AI 智能中心',
       'teaching-center': '教学计划' }
+    fallback.FACILITY_REPAIR = '故障报修'
     if (item.nativeFeatureCode === 'COLLABORATION' || item.code === 'oa') {
       return wx.navigateTo({ url: '/pages/module-center/index?type=collaboration' })
     }

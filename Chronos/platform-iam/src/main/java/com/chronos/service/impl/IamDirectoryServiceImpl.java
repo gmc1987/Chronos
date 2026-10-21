@@ -39,11 +39,14 @@ public class IamDirectoryServiceImpl implements IIamDirectoryService {
     private final IPositionRepository positions; private final IJobTitleRepository jobTitles; private final IJobLevelRepository jobLevels;
     private final IEmployeeRepository employees; private final IEmployeeAssignmentRepository assignments;
     private final IAdminUserRepository users; private final IRefreshTokenService refreshTokens;
+    private final BusinessNumberService businessNumbers;
     public IamDirectoryServiceImpl(IOrganizationRepository organizations,IOrganizationUnitRepository units,
             IPositionRepository positions,IJobTitleRepository jobTitles,IJobLevelRepository jobLevels,IEmployeeRepository employees,
-            IEmployeeAssignmentRepository assignments,IAdminUserRepository users,IRefreshTokenService refreshTokens) {
+            IEmployeeAssignmentRepository assignments,IAdminUserRepository users,IRefreshTokenService refreshTokens,
+            BusinessNumberService businessNumbers) {
         this.organizations=organizations;this.units=units;this.positions=positions;this.jobTitles=jobTitles;this.jobLevels=jobLevels;
         this.employees=employees;this.assignments=assignments;this.users=users;this.refreshTokens=refreshTokens;
+        this.businessNumbers=businessNumbers;
     }
     public List<OrganizationUnitVO> organizationUnits(String organizationId){
         organizations.findById(organizationId).orElseThrow(()->new IllegalArgumentException("organization not found"));
@@ -88,7 +91,18 @@ public class IamDirectoryServiceImpl implements IIamDirectoryService {
         String value=keyword.trim();
         return employees.findByEmployeeCodeContainingIgnoreCaseOrEmployeeNameContainingIgnoreCaseOrPhoneContainingIgnoreCase(value,value,value,pageable);
     }
-    @Transactional public Employee saveEmployee(Employee v){require(v.getEmployeeCode(),"employee code");require(v.getEmployeeName(),"employee name");employees.findByEmployeeCode(v.getEmployeeCode()).filter(x->!x.getId().equals(v.getId())).ifPresent(x->{throw new IllegalArgumentException("employee code already exists");});Employee t=v.getId()==null?new Employee():employees.findById(v.getId()).orElseThrow();copyEmployee(v,t);t=employees.save(t);if(!"ACTIVE".equals(t.getEmploymentStatus()))disableEmployeeAccount(t.getId());return t;}
+    @Transactional public Employee saveEmployee(Employee v){
+        require(v.getEmployeeName(),"employee name");
+        boolean creating=v.getId()==null;
+		if(creating&&v.getHireDate()==null)throw new IllegalArgumentException("新增员工必须填写入职日期，工号年份以入职年份为准");
+        if(creating&&(v.getEmployeeCode()==null||v.getEmployeeCode().isBlank())){
+            v.setEmployeeCode(businessNumbers.nextEmployeeNumber(v.getNumberingOrganizationId(),v.getHireDate()));
+        }
+        require(v.getEmployeeCode(),"employee code");
+        employees.findByEmployeeCode(v.getEmployeeCode()).filter(x->!x.getId().equals(v.getId())).ifPresent(x->{throw new IllegalArgumentException("employee code already exists");});
+        Employee t=creating?new Employee():employees.findById(v.getId()).orElseThrow();copyEmployee(v,t);t=employees.save(t);
+        if(!"ACTIVE".equals(t.getEmploymentStatus()))disableEmployeeAccount(t.getId());return t;
+    }
     @Transactional public void deleteEmployee(String id){if(!assignments.findByEmployeeIdAndStatus(id,1).isEmpty())throw new IllegalStateException("员工存在有效任职，不能删除");if(users.existsByEmployeeId(id))throw new IllegalStateException("员工已开通登录账号，请先停用账号，员工档案不允许直接删除");employees.deleteById(id);}
     public List<EmployeeAssignmentVO> assignments(String employeeId){return assignments.findCurrentAssignments(employeeId,java.time.LocalDate.now()).stream().map(this::assignmentVO).toList();}
     @Transactional public EmployeeAssignmentVO saveAssignment(EmployeeAssignmentDTO v){

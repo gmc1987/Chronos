@@ -8,7 +8,7 @@ function send(path, options = {}, accessToken = session.token()) {
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${config.baseURL}${path}`,
+      url: `${config.baseURL()}${path}`,
       method: options.method || 'GET',
       data: options.data,
       header: headers,
@@ -75,7 +75,7 @@ function put(path, data) { return request(path, { method: 'PUT', data }) }
 
 async function download(path, retried = false) {
   const run = accessToken => new Promise((resolve, reject) => wx.downloadFile({
-    url: `${config.baseURL}${path}`,
+    url: `${config.baseURL()}${path}`,
     header: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     success: resolve,
     fail: reject
@@ -96,4 +96,22 @@ async function download(path, retried = false) {
   }
 }
 
-module.exports = { request, get, post, put, download }
+async function upload(path, filePath, retried = false) {
+  const run = accessToken => new Promise((resolve, reject) => wx.uploadFile({
+    url: `${config.baseURL()}${path}`, filePath, name: 'file',
+    header: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    success: resolve, fail: reject
+  }))
+  try {
+    let response = await run(session.token())
+    if (response.statusCode === 401 && !retried) response = await run(await renewSession())
+    const body = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+    return unwrap({ statusCode: response.statusCode, data: body })
+  } catch (error) {
+    if (error.statusCode === 401) requireLogin()
+    wx.showToast({ title: error.message || '照片上传失败', icon: 'none' })
+    throw error
+  }
+}
+
+module.exports = { request, get, post, put, download, upload }

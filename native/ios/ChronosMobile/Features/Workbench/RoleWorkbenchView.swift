@@ -3,12 +3,14 @@ import SwiftUI
 struct RoleWorkbenchView: View {
     let bootstrap: PortalBootstrap
     let kind: WorkbenchKind
-    @EnvironmentObject var model: AppModel
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 16) {
+                // The workbench contains a small, fixed number of cards. Keeping
+                // them alive prevents off-screen cards from being recreated while
+                // the user overscrolls at the bottom of the page.
+                VStack(spacing: 16) {
                     IdentityHeader(
                         eyebrow: title,
                         name: bootstrap.user.displayName ?? bootstrap.user.username,
@@ -90,13 +92,6 @@ struct RoleWorkbenchView: View {
             }
             .background(ChronosPalette.background)
             .navigationTitle("工作台")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { Task { await model.reloadBootstrap() } } label: {
-                        Label("刷新工作台", systemImage: "arrow.clockwise")
-                    }
-                }
-            }
         }
     }
 

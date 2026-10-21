@@ -30,10 +30,12 @@ import com.chronos.model.pojo.Employee;
 import com.chronos.model.pojo.JobLevel;
 import com.chronos.model.pojo.JobTitle;
 import com.chronos.model.pojo.Position;
+import com.chronos.model.pojo.BusinessNumberRule;
 import com.chronos.model.vo.EmployeeAssignmentVO;
 import com.chronos.model.vo.OrganizationUnitVO;
 import com.chronos.service.iService.IIamDirectoryService;
 import com.chronos.service.impl.DirectoryImportService;
+import com.chronos.service.impl.BusinessNumberService;
 
 import jakarta.validation.Valid;
 
@@ -43,12 +45,15 @@ public class IamDirectoryController {
 
     private final IIamDirectoryService service;
     private final DirectoryImportService importService;
+    private final BusinessNumberService businessNumbers;
 
     public IamDirectoryController(
             IIamDirectoryService service,
-            DirectoryImportService importService) {
+            DirectoryImportService importService,
+            BusinessNumberService businessNumbers) {
         this.service = service;
         this.importService = importService;
+        this.businessNumbers = businessNumbers;
     }
 
     @GetMapping("/organization-units")
@@ -211,6 +216,18 @@ public class IamDirectoryController {
     public ResultData<Void> deleteEmployee(@PathVariable String id) {
         service.deleteEmployee(id);
         return ok(null);
+    }
+
+    @GetMapping("/number-rules")
+    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')")
+    public ResultData<List<BusinessNumberRule>> numberRules() {
+        return ok(businessNumbers.rules());
+    }
+
+    @PutMapping("/number-rules")
+    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage')")
+    public ResultData<BusinessNumberRule> saveNumberRule(@RequestBody BusinessNumberRule value) {
+        return ok(businessNumbers.saveRule(value));
     }
 
     @GetMapping("/import/templates/{type}")

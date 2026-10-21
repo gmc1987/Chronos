@@ -18,6 +18,10 @@ public record StudentProfileView(
 		String administrativeClassId,
 		String enrollmentStatus,
 		String phone,
+		String candidateNo,
+		String admissionNo,
+		String nationalStudentNo,
+		String registrationStatus,
 		String createBy,
 		LocalDateTime createTime,
 		String lastUpdateBy,
@@ -36,10 +40,20 @@ public record StudentProfileView(
 				student.getAdministrativeClassId(),
 				student.getEnrollmentStatus(),
 				privacyVisible ? student.getPhone() : maskPhone(student.getPhone()),
+				student.getCandidateNo(),
+				student.getAdmissionNo(),
+				privacyVisible ? student.getNationalStudentNo() : maskOfficialNo(student.getNationalStudentNo()),
+				student.getRegistrationStatus(),
 				student.getCreateBy(),
 				student.getCreateTime(),
 				student.getLastUpdateBy(),
 				student.getLastUpdateTime());
+	}
+
+	private static String maskOfficialNo(String value) {
+		if (value == null || value.isBlank()) return value;
+		if (value.length() <= 8) return "****";
+		return value.substring(0, 4) + "********" + value.substring(value.length() - 4);
 	}
 
 	private static String maskPhone(String phone) {

@@ -42,4 +42,16 @@ public class StudentProfile extends BaseEntity {
 	@Column(name = "phone", length = 32)
 	private String phone;
 
+	@Column(name = "candidate_no", length = 64)
+	private String candidateNo;
+
+	@Column(name = "admission_no", length = 64)
+	private String admissionNo;
+
+	@Column(name = "national_student_no", length = 64)
+	private String nationalStudentNo;
+
+	@Column(name = "registration_status", length = 24, nullable = false)
+	private String registrationStatus = "NOT_SUBMITTED";
+
 }

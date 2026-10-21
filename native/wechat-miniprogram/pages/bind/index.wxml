@@ -22,7 +22,8 @@
     </view>
     <view class="field-label">{{profileType === 'STUDENT' ? '学号' : '工号'}}</view>
     <input class="field" value="{{credentialNo}}" bindinput="inputCredential" placeholder="请输入学校已经生成的编号" />
-    <button class="primary" open-type="getPhoneNumber" bindgetphonenumber="bindPhone">授权手机号并绑定</button>
+    <button wx:if="{{localMock}}" class="primary" bindtap="bindPhone">使用本地模拟手机号绑定</button>
+    <button wx:else class="primary" open-type="getPhoneNumber" bindgetphonenumber="bindPhone">授权手机号并绑定</button>
   </view>
 
   <view wx:elif="{{state === 'GUARDIAN_BINDING_REQUIRED'}}" class="card">
@@ -32,12 +33,13 @@
     <view class="card-subtitle">该邀请由学生本人生成。绑定后只能查看与该学生相关的家校数据。</view>
     <view class="field-label">家长姓名</view>
     <input class="field" value="{{parentName}}" bindinput="inputParentName" placeholder="请输入真实姓名" />
-    <button class="primary" open-type="getPhoneNumber" bindgetphonenumber="bindPhone">授权手机号并建立关系</button>
+    <button wx:if="{{localMock}}" class="primary" bindtap="bindPhone">使用本地模拟手机号建立关系</button>
+    <button wx:else class="primary" open-type="getPhoneNumber" bindgetphonenumber="bindPhone">授权手机号并建立关系</button>
   </view>
 
   <view wx:elif="{{state === 'ERROR'}}" class="card">
     <view class="card-title">暂时无法登录</view>
-    <view class="card-subtitle">请检查网络后重试。如果持续失败，请联系学校管理员检查微信小程序配置。</view>
+    <view class="card-subtitle">{{errorMessage || '请检查网络后重试。如果持续失败，请联系学校管理员检查微信小程序配置。'}}</view>
     <button class="secondary" bindtap="onLoad">重新登录</button>
   </view>
 </view>

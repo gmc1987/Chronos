@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		740000000000000000000001 /* RepairModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741000000000000000000001 /* RepairModels.swift */; };
+		740000000000000000000002 /* RepairListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741000000000000000000002 /* RepairListView.swift */; };
+		740000000000000000000003 /* RepairFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741000000000000000000003 /* RepairFormView.swift */; };
+		740000000000000000000004 /* RepairDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741000000000000000000004 /* RepairDetailView.swift */; };
+		740000000000000000000005 /* RepairCompletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741000000000000000000005 /* RepairCompletionView.swift */; };
+		740000000000000000000006 /* RepairMaterialRequestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741000000000000000000006 /* RepairMaterialRequestView.swift */; };
 		125DC9A61C71D897631ECE05 /* ApplicationJSONSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6534C84BD6C2C26F36BA0F47 /* ApplicationJSONSupport.swift */; };
 		14A2A68AB07D9FAA5D7D75D5 /* WorkflowStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73597D687602FFFDC55EEB0A /* WorkflowStartView.swift */; };
 		35C59607EA7C7AC450882302 /* WorkflowCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B96FB8F5C62853FA50CABF37 /* WorkflowCenterView.swift */; };
@@ -95,6 +101,12 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		741000000000000000000001 /* RepairModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Repair/RepairModels.swift; sourceTree = "<group>"; };
+		741000000000000000000002 /* RepairListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Repair/RepairListView.swift; sourceTree = "<group>"; };
+		741000000000000000000003 /* RepairFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Repair/RepairFormView.swift; sourceTree = "<group>"; };
+		741000000000000000000004 /* RepairDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Repair/RepairDetailView.swift; sourceTree = "<group>"; };
+		741000000000000000000005 /* RepairCompletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Repair/RepairCompletionView.swift; sourceTree = "<group>"; };
+		741000000000000000000006 /* RepairMaterialRequestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Repair/RepairMaterialRequestView.swift; sourceTree = "<group>"; };
 		000000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		000000000000000000000014 /* ChronosMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChronosMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1322E8C946A909A51E5042B3 /* ApplicationDestinationView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApplicationDestinationView.swift; path = Features/Applications/ApplicationDestinationView.swift; sourceTree = "<group>"; };
@@ -188,6 +200,12 @@
 		000000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
+				741000000000000000000001 /* RepairModels.swift */,
+				741000000000000000000002 /* RepairListView.swift */,
+				741000000000000000000003 /* RepairFormView.swift */,
+				741000000000000000000004 /* RepairDetailView.swift */,
+				741000000000000000000005 /* RepairCompletionView.swift */,
+				741000000000000000000006 /* RepairMaterialRequestView.swift */,
 				000000000000000000000011 /* Info.plist */,
 				B10000000000000000000005 /* AnnouncementsAPI.swift */,
 				B10000000000000000000001 /* AppModel.swift */,
@@ -337,6 +355,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				740000000000000000000001 /* RepairModels.swift in Sources */,
+				740000000000000000000002 /* RepairListView.swift in Sources */,
+				740000000000000000000003 /* RepairFormView.swift in Sources */,
+				740000000000000000000004 /* RepairDetailView.swift in Sources */,
+				740000000000000000000005 /* RepairCompletionView.swift in Sources */,
+				740000000000000000000006 /* RepairMaterialRequestView.swift in Sources */,
 				A10000000000000000000001 /* AppModel.swift in Sources */,
 				A10000000000000000000002 /* PortalView.swift in Sources */,
 				A10000000000000000000003 /* RootView.swift in Sources */,

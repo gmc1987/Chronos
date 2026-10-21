@@ -12,9 +12,12 @@ services:
     container_name: chronos-milvus-minio
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: ${CHRONOS_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${CHRONOS_MINIO_SECRET_KEY:-minioadmin}
     command: minio server /minio_data --console-address ":9001"
+    ports:
+      - "${CHRONOS_MINIO_API_PORT:-9000}:9000"
+      - "${CHRONOS_MINIO_CONSOLE_PORT:-9001}:9001"
     volumes: [milvus-minio:/minio_data]
   milvus:
     container_name: chronos-milvus

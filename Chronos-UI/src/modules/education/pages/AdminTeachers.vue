@@ -7,6 +7,7 @@
     :columns="columns"
     :fields="fields"
     :defaults="defaults"
+    :lookups="lookups"
     :loader="listEducationTeachers"
     :creator="createEducationTeacher"
     :updater="updateEducationTeacher"
@@ -87,7 +88,8 @@ import {
   resetUserPassword,
   unbindEducationTeacherAccount,
   updateEducationTeacher,
-  userByEmployee
+  userByEmployee,
+  employees
 } from '../../../api/admin'
 const columns = [
   { prop: 'teacherNo', label: '教师编号', width: 130 },
@@ -101,9 +103,7 @@ const columns = [
   { prop: 'maxConsecutiveLessons', label: '连续课时上限', width: 130 }
 ]
 const fields = [
-  { prop: 'employeeId', label: 'IAM 员工 ID' },
-  { prop: 'teacherNo', label: '教师编号' },
-  { prop: 'teacherName', label: '教师姓名' },
+  { prop: 'employeeId', label: '教职工', lookup: 'employees', labelProp: 'employeeName', immutableOnEdit: true },
   { prop: 'departmentId', label: '所属单位 ID', immutableOnEdit: true },
   { prop: 'specialty', label: '专业方向' },
   { prop: 'maxWeeklyLessons', label: '周课时上限', type: 'number', min: 1 },
@@ -122,6 +122,7 @@ const fields = [
     max: 10
   }
 ]
+const lookups = [{ key: 'employees', loader: employees, labelProp: 'employeeName' }]
 const defaults = {
   maxWeeklyLessons: 20,
   maxDailyLessons: 6,

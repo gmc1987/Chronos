@@ -1,0 +1,9 @@
+.course-hero { padding: 34rpx; border-radius: 30rpx; color: #fff; background: linear-gradient(135deg, #087b68, #063d39); }
+.course-kicker { color: rgba(255,255,255,.72); font-size: 23rpx; letter-spacing: 3rpx; }
+.course-title { margin-top: 10rpx; font-size: 38rpx; font-weight: 700; line-height: 1.35; }
+.detail-card { margin-top: 24rpx; }
+.detail-row { display: flex; gap: 24rpx; padding: 22rpx 0; border-bottom: 1rpx solid #edf1f3; }
+.detail-row:last-child { border-bottom: 0; }
+.detail-label { flex: 0 0 150rpx; color: #71808a; font-size: 25rpx; }
+.detail-value { flex: 1; font-size: 27rpx; line-height: 1.45; text-align: right; word-break: break-all; }
+.reason { margin-top: 16rpx; color: #54636c; font-size: 26rpx; line-height: 1.65; }

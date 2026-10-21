@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -23,4 +24,6 @@ public class Employee extends BaseEntity {
     @Column(name = "employee_type", length = 32, nullable = false) private String employeeType = "STAFF";
     @Column(name = "hire_date") private LocalDate hireDate;
     @Column(name = "leave_date") private LocalDate leaveDate;
+    /** 新建工号时使用的学校范围，不落员工主表；正式归属仍由任职关系管理。 */
+    @Transient private String numberingOrganizationId;
 }

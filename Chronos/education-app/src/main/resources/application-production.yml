@@ -36,7 +36,7 @@ flowable:
   database-schema-update: false
 
 management:
-  metrics:
-    export:
-      prometheus:
+  prometheus:
+    metrics:
+      export:
         enabled: true
