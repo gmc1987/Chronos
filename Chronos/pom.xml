@@ -34,6 +34,7 @@
 		<module>industry-hospital-template</module>
 		<module>industry-education-template</module>
 		<module>education-class-scheduling</module>
+		<module>education-operation-agent</module>
 		<module>hospital-oa</module>
 		<module>ai-gateway</module>
 		<module>agent-runtime</module>

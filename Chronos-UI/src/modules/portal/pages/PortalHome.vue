@@ -94,6 +94,24 @@
             </button>
             <div v-if="!(contribution(widget).data.items || []).length" class="workflow-empty">暂无可见内容</div>
           </template>
+          <template v-else-if="widget.code === 'meeting' && contribution(widget).available">
+            <div class="workflow-summary">
+              <strong>{{ contribution(widget).data.total || 0 }}</strong><span>场近期会议</span>
+            </div>
+            <button
+              v-for="view in (contribution(widget).data.meetings || []).slice(0, 4)"
+              :key="view.meeting?.id"
+              class="workflow-item meeting-item"
+              @click="router.push(contribution(widget).data.allRoute || '/portal/education/meetings')"
+            >
+              <span>
+                <b>{{ view.meeting?.title || '未命名会议' }}</b>
+                <small>{{ formatMeetingTime(view.meeting) }} · {{ meetingLocation(view) }}</small>
+              </span>
+              <i>{{ meetingParticipation(view) }}</i>
+            </button>
+            <div v-if="!(contribution(widget).data.meetings || []).length" class="workflow-empty">暂无近期会议</div>
+          </template>
           <template v-else-if="widget.code === 'data-card' && contribution(widget).available">
             <div class="education-metrics">
               <div v-for="metric in contribution(widget).data.metrics || []" :key="metric.label">
@@ -186,6 +204,22 @@ const personaCards = computed(() => {
 })
 const contribution = (widget) => bootstrap.value.contributions?.[widget.provider] || { available: false, message: '模块接口已预留' }
 const weekday = value => ['一', '二', '三', '四', '五', '六', '日'][Number(value) - 1] ? `星期${['一', '二', '三', '四', '五', '六', '日'][Number(value) - 1]}` : '未排时间'
+const formatMeetingTime = meeting => {
+  if (!meeting?.startTime) return '时间待定'
+  const start = new Date(meeting.startTime)
+  const end = meeting.endTime ? new Date(meeting.endTime) : null
+  if (Number.isNaN(start.getTime())) return String(meeting.startTime).replace('T', ' ').slice(0, 16)
+  const date = `${start.getMonth() + 1}月${start.getDate()}日`
+  const time = value => `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`
+  return `${date} ${time(start)}${end && !Number.isNaN(end.getTime()) ? `-${time(end)}` : ''}`
+}
+const meetingLocation = view => view?.room?.roomName
+  || (view?.meeting?.meetingType === 'ONLINE' ? '线上会议' : '地点待定')
+const meetingParticipation = view => {
+  const response = view?.currentParticipant?.responseStatus
+  return ({ INVITED: '待确认', ACCEPTED: '已接受', DECLINED: '已谢绝', LEAVE: '已请假' })[response]
+    || (view?.meeting?.organizerUsername === view?.currentUsername ? '我组织的' : '查看详情')
+}
 const load = async () => {
   loading.value = true; error.value = ''
   try {
@@ -240,6 +274,7 @@ onMounted(load)
 .workflow-item small { overflow:hidden; color:#8b979f; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .workflow-item i { flex:none; padding:3px 7px; border-radius:10px; background:#edf7f5; color:#217a6d; font-size:10px; font-style:normal; }
 .workflow-item i.overdue { background:#fff0ed; color:#bd503b; }
+.meeting-item small { line-height:1.5; }
 .workflow-item--supervision > button { flex:none; border:0; border-radius:10px; padding:6px 10px; background:#edf7f5; color:#087b68; cursor:pointer; }
 .workflow-empty { display:grid; min-height:100px; place-content:center; color:#9aa4aa; font-size:12px; }
 .education-metrics { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; padding:14px 0; }

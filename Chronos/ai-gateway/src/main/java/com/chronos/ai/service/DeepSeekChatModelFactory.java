@@ -7,6 +7,8 @@ import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.ai.deepseek.api.DeepSeekApi;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.core.retry.RetryPolicy;
+import org.springframework.core.retry.RetryTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -42,6 +44,9 @@ public class DeepSeekChatModelFactory {
 		return DeepSeekChatModel.builder()
 				.deepSeekApi(api)
 				.options(options.build())
+				// The agent owns its recovery strategy. Provider retries used to turn a
+				// 60-second read timeout into a two-to-three minute opaque wait.
+				.retryTemplate(new RetryTemplate(RetryPolicy.withMaxRetries(0)))
 				.build();
 	}
 }

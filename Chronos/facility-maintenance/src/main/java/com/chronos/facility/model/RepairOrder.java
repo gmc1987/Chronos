@@ -52,6 +52,12 @@ public class RepairOrder extends BaseEntity {
 	private String technicianName;
 	@Column(name = "dispatched_at")
 	private LocalDateTime dispatchedAt;
+	@Column(name = "dispatch_deadline")
+	private LocalDateTime dispatchDeadline;
+	@Column(name = "next_dispatch_retry_at")
+	private LocalDateTime nextDispatchRetryAt;
+	@Column(name = "dispatch_attempts", nullable = false)
+	private Integer dispatchAttempts = 0;
 	@Column(name = "accepted_at")
 	private LocalDateTime acceptedAt;
 	@Column(name = "started_at")

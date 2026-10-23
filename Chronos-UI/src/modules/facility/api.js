@@ -10,6 +10,7 @@ export const autoDispatchRepairOrder = id => http.post(`/admin/facility/repair-o
 export const cancelRepairOrder = (id, remark) => http.post(`/admin/facility/repair-orders/${id}/cancel`, { remark })
 
 export const technicians = () => http.get('/admin/facility/technicians')
+export const facilityOrganizationOptions = () => http.get('/admin/facility/organization-options')
 export const createTechnician = payload => http.post('/admin/facility/technicians', payload)
 export const updateTechnician = (id, payload) => http.put(`/admin/facility/technicians/${id}`, payload)
 

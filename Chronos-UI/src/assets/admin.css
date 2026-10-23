@@ -650,3 +650,9 @@
   padding: 8px;
   background: #0f1114;
 }
+
+/* Interactive agent workspace */
+.admin-layout.agent-view-open .admin-content { margin-right:clamp(320px,16.667vw,420px);transition:margin-right .2s ease; }
+.admin-topbar .agent-toggle { display:flex;align-items:center;gap:6px;cursor:pointer; }
+.admin-topbar .agent-toggle.active { border-color:#4aa58f;color:#087b68;background:#eef8f5; }
+@media(max-width:720px){.admin-layout.agent-view-open .admin-content{margin-right:0}.admin-topbar .agent-toggle span{display:none}}

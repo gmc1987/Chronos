@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeRepository;
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.Idao.IRoleRepository;
 import com.chronos.facility.dao.MaintenanceLedgerRepository;
 import com.chronos.facility.dao.MaintenanceMaterialRepository;
@@ -45,6 +47,7 @@ class FacilityMaintenanceServiceTest {
 	private final MaintenanceLedgerRepository ledger = mock(MaintenanceLedgerRepository.class);
 	private final RepairOrderEventRepository events = mock(RepairOrderEventRepository.class);
 	private final IEmployeeRepository employees = mock(IEmployeeRepository.class);
+	private final IOrganizationRepository organizations = mock(IOrganizationRepository.class);
 	private final IAdminUserRepository users = mock(IAdminUserRepository.class);
 	private final IRoleRepository roles = mock(IRoleRepository.class);
 	private final ManagedFileRepository files = mock(ManagedFileRepository.class);
@@ -55,7 +58,7 @@ class FacilityMaintenanceServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new FacilityMaintenanceService(orders, technicians, materials, requests, requestItems,
-				ledger, events, employees, users, roles, files, fileService, audit);
+				ledger, events, employees, organizations, users, roles, files, fileService, audit);
 		when(orders.nextOrderSequence()).thenReturn(12L);
 		when(orders.save(any(RepairOrder.class))).thenAnswer(invocation -> {
 			RepairOrder value = invocation.getArgument(0);
@@ -89,6 +92,8 @@ class FacilityMaintenanceServiceTest {
 
 		assertThat(result.status()).isEqualTo("DISPATCHED");
 		assertThat(result.technicianUsername()).isEqualTo("electrician");
+		assertThat(result.dispatchDeadline()).isAfter(result.dispatchedAt());
+		assertThat(result.dispatchAttempts()).isEqualTo(1);
 		assertThat(electrician.getCurrentLoad()).isEqualTo(2);
 		verify(fileService).bind(List.of("photo-1"), FacilityMaintenanceService.REPORT_FILE_TYPE,
 				"repair-1", "reporter");
@@ -97,6 +102,68 @@ class FacilityMaintenanceServiceTest {
 		ArgumentCaptor<RepairOrder> saved = ArgumentCaptor.forClass(RepairOrder.class);
 		verify(orders, org.mockito.Mockito.atLeastOnce()).save(saved.capture());
 		assertThat(saved.getValue().getOrderNo()).startsWith("BX").endsWith("000012");
+	}
+
+	@Test
+	void keepsOrderPendingWhenTechnicianDoesNotCoverRepairArea() {
+		MaintenanceTechnician electrician = new MaintenanceTechnician();
+		electrician.setId("technician-1");
+		electrician.setUsername("electrician");
+		electrician.setTechnicianName("电工一号");
+		electrician.setSkillCategories("ELECTRICAL");
+		electrician.setResponsibilityAreas("实训楼");
+		electrician.setCurrentLoad(0);
+		electrician.setMaxConcurrent(5);
+		when(technicians.lockAutoDispatchCandidates()).thenReturn(List.of(electrician));
+
+		var result = service.create(command(List.of("photo-1")), "reporter");
+
+		assertThat(result.status()).isEqualTo("PENDING_DISPATCH");
+		assertThat(result.technicianId()).isNull();
+		assertThat(result.dispatchAttempts()).isEqualTo(1);
+		verify(technicians, never()).save(electrician);
+	}
+
+	@Test
+	void reassignsExpiredDispatchToAnotherAvailableTechnician() {
+		LocalDateTime now = LocalDateTime.of(2026, 10, 21, 10, 0);
+		MaintenanceTechnician previous = technician("technician-old", "old-tech", 1);
+		MaintenanceTechnician replacement = technician("technician-new", "new-tech", 0);
+		RepairOrder order = new RepairOrder();
+		order.setId("repair-timeout");
+		order.setStatus("DISPATCHED");
+		order.setUrgency("CRITICAL");
+		order.setCategory("ELECTRICAL");
+		order.setLocation("第一教学楼三层");
+		order.setTechnicianId(previous.getId());
+		order.setTechnicianUsername(previous.getUsername());
+		order.setTechnicianName(previous.getTechnicianName());
+		order.setDispatchDeadline(now.minusMinutes(1));
+
+		when(orders.lockExpiredDispatches(any(), any())).thenReturn(List.of(order));
+		when(orders.lockPendingAutoDispatches(any(), any())).thenReturn(List.of());
+		when(technicians.findById(previous.getId())).thenReturn(Optional.of(previous));
+		when(technicians.lockAutoDispatchCandidates()).thenReturn(List.of(previous, replacement));
+
+		int processed = service.processDispatchGovernance(now, 100);
+
+		assertThat(processed).isEqualTo(1);
+		assertThat(order.getTechnicianId()).isEqualTo(replacement.getId());
+		assertThat(order.getStatus()).isEqualTo("DISPATCHED");
+		assertThat(order.getDispatchDeadline()).isEqualTo(now.plusMinutes(10));
+		assertThat(previous.getCurrentLoad()).isZero();
+		assertThat(replacement.getCurrentLoad()).isEqualTo(1);
+	}
+
+	@Test
+	void reconcilesStoredTechnicianLoadWithActiveOrders() {
+		MaintenanceTechnician technician = technician("technician-1", "repair-user", 9);
+		when(technicians.findAll()).thenReturn(List.of(technician));
+		when(orders.countByTechnicianIdAndStatusIn(any(), any())).thenReturn(2L);
+
+		assertThat(service.reconcileTechnicianLoads()).isEqualTo(1);
+		assertThat(technician.getCurrentLoad()).isEqualTo(2);
+		verify(technicians).save(technician);
 	}
 
 	@Test
@@ -130,7 +197,8 @@ class FacilityMaintenanceServiceTest {
 		when(technicians.save(any(MaintenanceTechnician.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		var result = service.saveTechnician(null,
-				new TechnicianCommand("employee-1", "ELECTRICAL", true, true, "AVAILABLE", 5));
+				new TechnicianCommand("employee-1", "ELECTRICAL", true, true, "AVAILABLE", 5,
+						"ALL", "ALL", "ALL", null, null));
 
 		assertThat(result.username()).isEqualTo("repair-user");
 		assertThat(account.getRoles()).containsExactly(technicianRole);
@@ -149,5 +217,16 @@ class FacilityMaintenanceServiceTest {
 				"13800000000",
 				"AUTO",
 				photoIds);
+	}
+
+	private MaintenanceTechnician technician(String id, String username, int currentLoad) {
+		MaintenanceTechnician value = new MaintenanceTechnician();
+		value.setId(id);
+		value.setUsername(username);
+		value.setTechnicianName(username);
+		value.setSkillCategories("ELECTRICAL");
+		value.setCurrentLoad(currentLoad);
+		value.setMaxConcurrent(5);
+		return value;
 	}
 }

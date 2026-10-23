@@ -3,6 +3,7 @@ package com.chronos.facility.service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.Set;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeRepository;
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.Idao.IRoleRepository;
 import com.chronos.facility.dao.MaintenanceLedgerRepository;
 import com.chronos.facility.dao.MaintenanceMaterialRepository;
@@ -49,6 +52,7 @@ import com.chronos.facility.model.dto.FacilityDtos.MaterialCommand;
 import com.chronos.facility.model.dto.FacilityDtos.MaterialRequestItemView;
 import com.chronos.facility.model.dto.FacilityDtos.MaterialRequestView;
 import com.chronos.facility.model.dto.FacilityDtos.MaterialView;
+import com.chronos.facility.model.dto.FacilityDtos.OrganizationOption;
 import com.chronos.facility.model.dto.FacilityDtos.RepairOrderView;
 import com.chronos.facility.model.dto.FacilityDtos.ReviewMaterialRequest;
 import com.chronos.facility.model.dto.FacilityDtos.StockCommand;
@@ -67,7 +71,7 @@ public class FacilityMaintenanceService {
 	public static final String REPORT_FILE_TYPE = "FACILITY_REPAIR_REPORT";
 	public static final String COMPLETION_FILE_TYPE = "FACILITY_REPAIR_COMPLETION";
 	private static final Set<String> ACTIVE_ORDER_STATUSES = Set.of(
-			"DISPATCHED", "ACCEPTED", "IN_PROGRESS", "WAITING_MATERIAL");
+			"DISPATCHED", "ACCEPTED", "IN_PROGRESS", "WAITING_MATERIAL", "COMPLETED");
 
 	private final RepairOrderRepository orders;
 	private final MaintenanceTechnicianRepository technicians;
@@ -77,11 +81,24 @@ public class FacilityMaintenanceService {
 	private final MaintenanceLedgerRepository ledger;
 	private final RepairOrderEventRepository events;
 	private final IEmployeeRepository employees;
+	private final IOrganizationRepository organizations;
 	private final IAdminUserRepository users;
 	private final IRoleRepository roles;
 	private final ManagedFileRepository files;
 	private final ManagedFileService fileService;
 	private final IAuditLogService audit;
+	@Value("${chronos.facility.dispatch.acceptance-minutes.normal:60}")
+	private int normalAcceptanceMinutes = 60;
+	@Value("${chronos.facility.dispatch.acceptance-minutes.urgent:30}")
+	private int urgentAcceptanceMinutes = 30;
+	@Value("${chronos.facility.dispatch.acceptance-minutes.critical:10}")
+	private int criticalAcceptanceMinutes = 10;
+	@Value("${chronos.facility.dispatch.retry-minutes.normal:15}")
+	private int normalRetryMinutes = 15;
+	@Value("${chronos.facility.dispatch.retry-minutes.urgent:5}")
+	private int urgentRetryMinutes = 5;
+	@Value("${chronos.facility.dispatch.retry-minutes.critical:1}")
+	private int criticalRetryMinutes = 1;
 
 	public FacilityMaintenanceService(
 			RepairOrderRepository orders,
@@ -92,6 +109,7 @@ public class FacilityMaintenanceService {
 			MaintenanceLedgerRepository ledger,
 			RepairOrderEventRepository events,
 			IEmployeeRepository employees,
+			IOrganizationRepository organizations,
 			IAdminUserRepository users,
 			IRoleRepository roles,
 			ManagedFileRepository files,
@@ -105,6 +123,7 @@ public class FacilityMaintenanceService {
 		this.ledger = ledger;
 		this.events = events;
 		this.employees = employees;
+		this.organizations = organizations;
 		this.users = users;
 		this.roles = roles;
 		this.files = files;
@@ -212,6 +231,7 @@ public class FacilityMaintenanceService {
 		RepairOrder order = assigned(id, actor);
 		transition(order, Set.of("DISPATCHED"), "ACCEPTED", "ACCEPT", actor, "维修人员接单");
 		order.setAcceptedAt(LocalDateTime.now());
+		order.setDispatchDeadline(null);
 		return view(orders.save(order), true);
 	}
 
@@ -273,6 +293,14 @@ public class FacilityMaintenanceService {
 		return technicians.findAll(Sort.by("technicianName")).stream().map(TechnicianView::from).toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<OrganizationOption> organizationOptions() {
+		return organizations.findAll(Sort.by("sortOrder").ascending().and(Sort.by("organizationName"))).stream()
+				.filter(value -> Integer.valueOf(1).equals(value.getStatus()))
+				.map(value -> new OrganizationOption(value.getId(), value.getOrganizationName(), value.getOrganizationType()))
+				.toList();
+	}
+
 	@Transactional
 	public TechnicianView saveTechnician(String id, TechnicianCommand command) {
 		require(command != null && command.employeeId() != null, "请选择员工");
@@ -297,6 +325,14 @@ public class FacilityMaintenanceService {
 				"AVAILABLE", "工作状态无效"));
 		value.setMaxConcurrent(command.maxConcurrent() == null ? 5 : command.maxConcurrent());
 		require(value.getMaxConcurrent() > 0 && value.getMaxConcurrent() <= 100, "并发工单上限应在1到100之间");
+		value.setResponsibilityOrganizationIds(csvOrAll(command.responsibilityOrganizationIds()));
+		value.setResponsibilityAreas(csvOrAll(command.responsibilityAreas()));
+		value.setDutyDays(csvOrAll(command.dutyDays()));
+		Set<String> configuredDutyDays = csv(value.getDutyDays());
+		require(configuredDutyDays.contains("ALL") || Set.of("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY",
+				"FRIDAY", "SATURDAY", "SUNDAY").containsAll(configuredDutyDays), "值班星期配置无效");
+		value.setDutyStartTime(command.dutyStartTime() == null ? LocalTime.MIN : command.dutyStartTime());
+		value.setDutyEndTime(command.dutyEndTime() == null ? LocalTime.of(23, 59, 59) : command.dutyEndTime());
 		return TechnicianView.from(technicians.save(value));
 	}
 
@@ -461,18 +497,34 @@ public class FacilityMaintenanceService {
 	}
 
 	private void autoDispatch(RepairOrder order, String actor) {
+		autoDispatch(order, actor, null, LocalDateTime.now());
+	}
+
+	private void autoDispatch(RepairOrder order, String actor, String excludedTechnicianId, LocalDateTime now) {
 		MaintenanceTechnician target = technicians.lockAutoDispatchCandidates().stream()
+				.filter(value -> !value.getId().equals(excludedTechnicianId))
 				.filter(value -> skills(value).contains(order.getCategory()) || skills(value).contains("ALL"))
+				.filter(value -> coversOrganization(value, order.getOrganizationId()))
+				.filter(value -> coversArea(value, order.getLocation()))
+				.filter(value -> isOnDuty(value, now))
 				.findFirst().orElse(null);
 		if (target == null) {
+			order.setDispatchAttempts(order.getDispatchAttempts() + 1);
+			order.setNextDispatchRetryAt(now.plusMinutes(retryMinutes(order.getUrgency())));
+			orders.save(order);
 			recordEvent(order, "AUTO_DISPATCH_FAILED", order.getStatus(), order.getStatus(), actor,
-					"没有满足技能、状态和负载条件的维修人员，已转人工待派单");
+					"没有满足技能、校区、责任区域、值班状态和负载条件的维修人员，将按紧急程度自动重试");
 			return;
 		}
-		assign(order, target, "AUTO", actor, "系统自动派单");
+		assign(order, target, "AUTO", actor, "系统按技能、责任范围、值班和负载自动派单", now);
 	}
 
 	private void assign(RepairOrder order, MaintenanceTechnician target, String mode, String actor, String remark) {
+		assign(order, target, mode, actor, remark, LocalDateTime.now());
+	}
+
+	private void assign(RepairOrder order, MaintenanceTechnician target, String mode, String actor, String remark,
+			LocalDateTime now) {
 		String old = order.getStatus();
 		boolean sameTechnician = target.getId().equals(order.getTechnicianId());
 		order.setDispatchMode(mode);
@@ -480,7 +532,10 @@ public class FacilityMaintenanceService {
 		order.setTechnicianUsername(target.getUsername());
 		order.setTechnicianName(target.getTechnicianName());
 		order.setStatus("DISPATCHED");
-		order.setDispatchedAt(LocalDateTime.now());
+		order.setDispatchedAt(now);
+		order.setDispatchDeadline(now.plusMinutes(acceptanceMinutes(order.getUrgency())));
+		order.setNextDispatchRetryAt(null);
+		order.setDispatchAttempts(order.getDispatchAttempts() + 1);
 		orders.save(order);
 		if (!sameTechnician) {
 			target.setCurrentLoad(target.getCurrentLoad() + 1);
@@ -488,6 +543,46 @@ public class FacilityMaintenanceService {
 		}
 		recordEvent(order, mode + "_DISPATCH", old, "DISPATCHED", actor,
 				or(remark, "派单给" + target.getTechnicianName()));
+	}
+
+	@Transactional
+	public int processDispatchGovernance(LocalDateTime now, int batchSize) {
+		Pageable batch = PageRequest.of(0, Math.max(1, Math.min(batchSize, 200)));
+		List<RepairOrder> expired = orders.lockExpiredDispatches(now, batch);
+		for (RepairOrder order : expired) {
+			String previousTechnicianId = order.getTechnicianId();
+			String previousTechnicianName = order.getTechnicianName();
+			releaseTechnician(previousTechnicianId);
+			order.setStatus("PENDING_DISPATCH");
+			order.setTechnicianId(null);
+			order.setTechnicianUsername(null);
+			order.setTechnicianName(null);
+			order.setDispatchDeadline(null);
+			orders.save(order);
+			recordEvent(order, "ACCEPT_TIMEOUT", "DISPATCHED", "PENDING_DISPATCH", "SYSTEM",
+					"维修人员" + previousTechnicianName + "未在规定时间内接单，系统自动改派");
+			autoDispatch(order, "SYSTEM", previousTechnicianId, now);
+		}
+		List<RepairOrder> pending = orders.lockPendingAutoDispatches(now, batch);
+		for (RepairOrder order : pending) {
+			autoDispatch(order, "SYSTEM", null, now);
+		}
+		return expired.size() + pending.size();
+	}
+
+	@Transactional
+	public int reconcileTechnicianLoads() {
+		int changed = 0;
+		for (MaintenanceTechnician technician : technicians.findAll()) {
+			int actual = Math.toIntExact(orders.countByTechnicianIdAndStatusIn(
+					technician.getId(), ACTIVE_ORDER_STATUSES));
+			if (!Integer.valueOf(actual).equals(technician.getCurrentLoad())) {
+				technician.setCurrentLoad(actual);
+				technicians.save(technician);
+				changed++;
+			}
+		}
+		return changed;
 	}
 
 	private void transition(RepairOrder order, Collection<String> allowed, String target, String type,
@@ -533,9 +628,11 @@ public class FacilityMaintenanceService {
 	private RepairOrderView view(RepairOrder value, boolean detailed) {
 		return new RepairOrderView(value.getId(), value.getOrderNo(), value.getTitle(), value.getCategory(),
 				value.getDescription(), value.getLocation(), value.getUrgency(), value.getContactName(),
-				value.getContactPhone(), value.getReporterUsername(), value.getReporterName(), value.getStatus(),
+				value.getContactPhone(), value.getReporterUsername(), value.getReporterName(), value.getOrganizationId(),
+				value.getStatus(),
 				value.getDispatchMode(), value.getTechnicianId(), value.getTechnicianUsername(), value.getTechnicianName(),
-				value.getCreateTime(), value.getDispatchedAt(), value.getAcceptedAt(), value.getStartedAt(),
+				value.getCreateTime(), value.getDispatchedAt(), value.getDispatchDeadline(), value.getDispatchAttempts(),
+				value.getAcceptedAt(), value.getStartedAt(),
 				value.getCompletedAt(), value.getClosedAt(), value.getCompletionNote(), value.getCloseComment(),
 				value.getRating(),
 				detailed ? fileViews(REPORT_FILE_TYPE, value.getId()) : List.of(),
@@ -597,6 +694,63 @@ public class FacilityMaintenanceService {
 	private Set<String> skills(MaintenanceTechnician value) {
 		return Arrays.stream(value.getSkillCategories().toUpperCase(Locale.ROOT).split(","))
 				.map(String::trim).filter(item -> !item.isBlank()).collect(Collectors.toSet());
+	}
+
+	private boolean coversOrganization(MaintenanceTechnician technician, String organizationId) {
+		Set<String> scopes = csv(technician.getResponsibilityOrganizationIds());
+		return scopes.contains("ALL") || organizationId != null && scopes.contains(organizationId.toUpperCase(Locale.ROOT));
+	}
+
+	private boolean coversArea(MaintenanceTechnician technician, String location) {
+		Set<String> areas = csv(technician.getResponsibilityAreas());
+		if (areas.contains("ALL")) return true;
+		if (location == null || location.isBlank()) return false;
+		String normalizedLocation = location.toUpperCase(Locale.ROOT);
+		return areas.stream().anyMatch(normalizedLocation::contains);
+	}
+
+	private boolean isOnDuty(MaintenanceTechnician technician, LocalDateTime now) {
+		Set<String> days = csv(technician.getDutyDays());
+		LocalTime start = technician.getDutyStartTime();
+		LocalTime end = technician.getDutyEndTime();
+		LocalTime time = now.toLocalTime();
+		if (!start.isAfter(end)) {
+			return includesDay(days, now.getDayOfWeek().name()) && !time.isBefore(start) && !time.isAfter(end);
+		}
+		if (!time.isBefore(start)) return includesDay(days, now.getDayOfWeek().name());
+		return !time.isAfter(end) && includesDay(days, now.minusDays(1).getDayOfWeek().name());
+	}
+
+	private boolean includesDay(Set<String> days, String day) {
+		return days.contains("ALL") || days.contains(day);
+	}
+
+	private Set<String> csv(String value) {
+		if (value == null || value.isBlank()) return Set.of("ALL");
+		return Arrays.stream(value.toUpperCase(Locale.ROOT).split(","))
+				.map(String::trim).filter(item -> !item.isBlank()).collect(Collectors.toSet());
+	}
+
+	private String csvOrAll(String value) {
+		if (value == null || value.isBlank()) return "ALL";
+		return Arrays.stream(value.split(","))
+				.map(String::trim).filter(item -> !item.isBlank()).distinct().collect(Collectors.joining(","));
+	}
+
+	private int acceptanceMinutes(String urgency) {
+		return switch (urgency) {
+			case "CRITICAL" -> Math.max(1, criticalAcceptanceMinutes);
+			case "URGENT" -> Math.max(1, urgentAcceptanceMinutes);
+			default -> Math.max(1, normalAcceptanceMinutes);
+		};
+	}
+
+	private int retryMinutes(String urgency) {
+		return switch (urgency) {
+			case "CRITICAL" -> Math.max(1, criticalRetryMinutes);
+			case "URGENT" -> Math.max(1, urgentRetryMinutes);
+			default -> Math.max(1, normalRetryMinutes);
+		};
 	}
 
 	private String number(String prefix, long sequence) {

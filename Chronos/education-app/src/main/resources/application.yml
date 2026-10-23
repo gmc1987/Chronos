@@ -100,6 +100,18 @@ chronos:
     max-attempts: ${CHRONOS_DOMAIN_EVENTS_MAX_ATTEMPTS:10}
     lease-seconds: ${CHRONOS_DOMAIN_EVENTS_LEASE_SECONDS:120}
     dispatch-delay-ms: ${CHRONOS_DOMAIN_EVENTS_DISPATCH_DELAY_MS:5000}
+  facility:
+    dispatch:
+      scan-delay-ms: ${CHRONOS_FACILITY_DISPATCH_SCAN_DELAY_MS:60000}
+      load-reconcile-ms: ${CHRONOS_FACILITY_LOAD_RECONCILE_MS:900000}
+      acceptance-minutes:
+        normal: ${CHRONOS_FACILITY_ACCEPT_NORMAL_MINUTES:60}
+        urgent: ${CHRONOS_FACILITY_ACCEPT_URGENT_MINUTES:30}
+        critical: ${CHRONOS_FACILITY_ACCEPT_CRITICAL_MINUTES:10}
+      retry-minutes:
+        normal: ${CHRONOS_FACILITY_RETRY_NORMAL_MINUTES:15}
+        urgent: ${CHRONOS_FACILITY_RETRY_URGENT_MINUTES:5}
+        critical: ${CHRONOS_FACILITY_RETRY_CRITICAL_MINUTES:1}
   file:
     storage-type: ${CHRONOS_FILE_STORAGE_TYPE:MINIO}
     storage-path: ${CHRONOS_FILE_STORAGE_PATH:./data/files}

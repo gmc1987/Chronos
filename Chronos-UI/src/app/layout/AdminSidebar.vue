@@ -10,7 +10,9 @@
           v-if="item.path"
           :to="item.path"
           class="admin-nav-item"
-          :class="{ bubbling: bubbleKey === item.path }"
+          active-class="admin-route-active"
+          exact-active-class="admin-route-exact-active"
+          :class="{ active: isActive(item.path), bubbling: bubbleKey === item.path }"
           @click="triggerBubble(item.path)"
         >
           <span class="label">{{ item.name }}</span>
@@ -45,6 +47,8 @@
               v-if="child.path"
               :to="child.path"
               class="admin-nav-item child"
+              active-class="admin-route-active"
+              exact-active-class="admin-route-exact-active"
               :class="{ active: isActive(child.path), bubbling: bubbleKey === child.path }"
               @click="triggerBubble(child.path)"
             >
@@ -134,7 +138,12 @@ onMounted(async () => {
   }))
 })
 
-const isActive = (path) => route.path.startsWith(path)
+// 菜单路径只匹配自身及其真正的下级路由，避免 /homework 同时匹配 /homework-analysis。
+const isActive = (path) => {
+  if (!path) return false
+  const normalizedPath = path.length > 1 ? path.replace(/\/+$/, '') : path
+  return route.path === normalizedPath || route.path.startsWith(`${normalizedPath}/`)
+}
 const triggerBubble = (key) => {
   bubbleKey.value = key
   setTimeout(() => {

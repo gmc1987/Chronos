@@ -14,6 +14,10 @@
 
 Docker MinIO 合并后再次执行完整浏览器闭环，生成报修单 `BX20261021000002` 和物料申请 `WL20261021000002`。系统自动派单给 `scale-hv-t007`，维修人员完成接单、开工、申请 1 只 LED 节能灯泡及完工拍照，管理员完成审批、出库和 5 分评价关闭。最终工单状态为 `CLOSED`、派单模式为 `AUTO`、处理事件 8 条，维修人员负载恢复为 0/5，物料库存为 47、预留库存为 0，维修台账新增 `MATERIAL_OUT` 18.50 元和 `ORDER_CLOSED` 两条记录。
 
+自动派单生产治理增强完成后执行第三次浏览器闭环，生成重大报修单 `BX20261021000003`。维修人员 `scale-hv-t007` 配置为全部校区和机构、责任区域“第一教学楼,实训楼”、全天值班、最大并发 5 单。系统同时校验技能、责任机构、责任区域、值班时间、工作状态及当前负载后自动派单，管理端显示重大工单接单截止时间 `2026-10-21 18:32:53`、派单次数 1。维修人员完成接单、开工和带照片完工，报修人 5 分评价关闭。数据库最终状态为 `CLOSED`、派单模式 `AUTO`、紧急程度 `CRITICAL`、派单次数 1、维修人员负载 0；事件链完整保留 `SUBMIT`、`AUTO_DISPATCH`、`ACCEPT`、`START`、`COMPLETE`、`CLOSE` 6 条记录。
+
+治理能力还包括按紧急程度配置接单 SLA（普通 60 分钟、紧急 30 分钟、重大 10 分钟）、逾期未接单自动释放原维修人员并改派、无可用人员时按紧急程度定时重试，以及每 15 分钟根据未关闭工单校准维修人员负载。相关间隔均可通过 `chronos.facility.dispatch` 配置覆盖。
+
 本次报修照片和完工照片均以 `BOUND/ACTIVE` 状态绑定至工单，Docker MinIO 的 `chronos-education-files` 桶对象数由 6 增至 8。两个新增对象均可读取，SHA-256 均为 `43523837b485f3e27a552b0359353baf55d464944cdd33ba1179cd33eac36c9d`，与浏览器上传源文件一致。MinIO API、MinIO Console 和 Milvus 健康检查均返回 HTTP 200。
 
 ## 验收中发现并处理的问题
@@ -23,6 +27,7 @@ Docker MinIO 合并后再次执行完整浏览器闭环，生成报修单 `BX202
 
 ## 验证结果
 
-- `FacilityMaintenanceServiceTest`：3 项通过，覆盖照片必填、按技能自动派单、维修人员角色自动授予。
+- `FacilityMaintenanceServiceTest`：6 项通过，覆盖照片必填、按技能和容量自动派单、责任区域过滤、重大工单超时改派、维修人员负载校准、维修人员角色自动授予及默认治理配置。
 - 后端聚合打包、Vue 生产构建、iOS `xcodebuild`、Android `assembleDebug`、微信小程序 JSON/JavaScript 语法检查均通过。
+- Flyway `V20270165__facility_dispatch_governance.sql` 已在本地验收库成功执行；后端 19 模块聚合打包及 Vue 生产构建再次通过。
 - 验收数据保留在本地 `ChronosEducation` 数据库，未生成验收截图。

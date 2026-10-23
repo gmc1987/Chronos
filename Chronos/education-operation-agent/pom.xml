@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.chronos</groupId>
+		<artifactId>chronos-platform</artifactId>
+		<version>0.1.0-SNAPSHOT</version>
+	</parent>
+	<artifactId>education-operation-agent</artifactId>
+	<dependencies>
+		<dependency><groupId>com.chronos</groupId><artifactId>platform-common</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>platform-audit</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>platform-iam</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>platform-file</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>platform-workflow</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>agent-runtime</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>ai-gateway</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>knowledge-center</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>com.chronos</groupId><artifactId>education-class-scheduling</artifactId><version>${project.version}</version></dependency>
+		<dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><optional>true</optional></dependency>
+		<dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+	</dependencies>
+</project>

@@ -4,6 +4,8 @@ package com.chronos.agent;
 public enum AgentStepStatus {
 	QUEUED,
 	RUNNING,
+	PAUSED,
+	WAITING_APPROVAL,
 	SUCCEEDED,
 	FAILED,
 	SKIPPED

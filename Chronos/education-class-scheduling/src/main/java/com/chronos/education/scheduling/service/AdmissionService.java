@@ -70,6 +70,27 @@ public class AdmissionService {
 		return candidates.save(value);
 	}
 
+	/** Agent 分班工具只能为尚未复查的录取记录设置经过校验的拟分班。 */
+	@Transactional
+	public AdmissionCandidate assignPlannedClass(String id, String administrativeClassId) {
+		AdmissionCandidate value = require(id);
+		if (!"ADMITTED".equals(value.getAdmissionStatus())) {
+			throw new IllegalStateException("只有待资格复查的新生可以调整拟分班");
+		}
+		var targetClass = classes.findById(administrativeClassId)
+				.orElseThrow(() -> new IllegalArgumentException("拟分行政班不存在"));
+		if (!"ACTIVE".equals(targetClass.getStatus())) throw new IllegalArgumentException("拟分行政班未启用");
+		if (!value.getAdmissionYear().equals(targetClass.getGradeYear())) {
+			throw new IllegalArgumentException("行政班入学年份与录取年份不一致");
+		}
+		if (value.getAdmittedMajorId() == null) throw new IllegalArgumentException("新生尚未确定录取专业");
+		if (!value.getAdmittedMajorId().equals(targetClass.getMajorId())) {
+			throw new IllegalArgumentException("行政班专业与录取专业不一致");
+		}
+		value.setPlannedClassId(targetClass.getId());
+		return candidates.save(value);
+	}
+
 	@Transactional
 	public AdmissionCandidate enroll(String id, EnrollmentCommand command) {
 		AdmissionCandidate value = require(id);

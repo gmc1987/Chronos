@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -18,6 +19,7 @@ import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.MajorRepository;
 import com.chronos.education.scheduling.model.AdmissionCandidate;
 import com.chronos.education.scheduling.model.dto.AdmissionDtos.ImportResult;
+import com.chronos.education.scheduling.model.dto.AdmissionDtos.ImportRow;
 
 /** 录取名册 Excel 导入；先完整校验再整批写入，任何错误都不会留下半批数据。 */
 @Service
@@ -40,7 +42,7 @@ public class AdmissionImportService {
 			Row header = sheet.createRow(0);
 			for (int index = 0; index < HEADERS.length; index++) header.createCell(index).setCellValue(HEADERS[index]);
 			Row sample = sheet.createRow(1);
-			String[] values = {"2026-GK-01", "264401010001", "LQ2026000001", "示例学生", "MALE", "2026", "HIGHER_EDUCATION", "专业代码", "行政班代码", "13800000000"};
+			String[] values = {"2026-GK-01", "264401010001", "LQ2026000001", "示例学生", "MALE", "2026", "HIGHER_EDUCATION", "", "", "13800000000"};
 			for (int index = 0; index < values.length; index++) { sample.createCell(index, CellType.STRING).setCellValue(values[index]); sheet.setColumnWidth(index, index == 3 ? 16 * 256 : 22 * 256); }
 			// 填写说明放在独立工作表，避免导入器将说明文字误识别为名册数据。
 			var instructions = workbook.createSheet("填写说明");
@@ -54,8 +56,19 @@ public class AdmissionImportService {
 	@Transactional
 	public ImportResult importFile(MultipartFile file, boolean dryRun) {
 		if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择录取名册文件");
+		try {
+			return importBytes(file.getBytes(), dryRun);
+		} catch (IOException exception) {
+			throw new IllegalArgumentException("无法读取 Excel 文件", exception);
+		}
+	}
+
+	/** 供受控批处理和智能体复用；字节内容仍执行与浏览器上传完全相同的整批校验。 */
+	@Transactional
+	public ImportResult importBytes(byte[] content, boolean dryRun) {
+		if (content == null || content.length == 0) throw new IllegalArgumentException("录取名册内容为空");
 		List<AdmissionCandidate> values = new ArrayList<>(); List<String> errors = new ArrayList<>(); Set<String> fileKeys = new HashSet<>();
-		try (var workbook = new XSSFWorkbook(file.getInputStream())) {
+		try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
 			var sheet = workbook.getSheetAt(0); DataFormatter formatter = new DataFormatter();
 			if (sheet.getLastRowNum() > MAX_ROWS) throw new IllegalArgumentException("单次最多导入" + MAX_ROWS + "名新生");
 			for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
@@ -70,9 +83,18 @@ public class AdmissionImportService {
 				} catch (RuntimeException exception) { errors.add("第" + (rowIndex + 1) + "行：" + exception.getMessage()); }
 			}
 		} catch (IOException exception) { throw new IllegalArgumentException("无法读取 Excel 文件", exception); }
-		if (!errors.isEmpty()) return new ImportResult(values.size() + errors.size(), 0, errors);
+		List<ImportRow> rows = values.stream().map(this::preview).toList();
+		if (!errors.isEmpty()) return new ImportResult(values.size() + errors.size(), 0, errors, rows);
 		if (!dryRun) values.forEach(admissions::save);
-		return new ImportResult(values.size(), values.size(), List.of());
+		return new ImportResult(values.size(), values.size(), List.of(), rows);
+	}
+
+	private ImportRow preview(AdmissionCandidate value) {
+		return new ImportRow(
+				value.getSourceBatchNo(), value.getCandidateNo(), value.getAdmissionNo(),
+				value.getStudentName(), value.getGender(), value.getAdmissionYear(),
+				value.getEducationLevel(), value.getAdmittedMajorId(), value.getPlannedClassId(),
+				value.getPhone());
 	}
 
 	private AdmissionCandidate parse(Row row, DataFormatter formatter) {

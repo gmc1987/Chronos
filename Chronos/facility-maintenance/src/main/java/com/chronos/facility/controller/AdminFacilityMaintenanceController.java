@@ -21,6 +21,7 @@ import com.chronos.facility.model.dto.FacilityDtos.LedgerView;
 import com.chronos.facility.model.dto.FacilityDtos.MaterialCommand;
 import com.chronos.facility.model.dto.FacilityDtos.MaterialRequestView;
 import com.chronos.facility.model.dto.FacilityDtos.MaterialView;
+import com.chronos.facility.model.dto.FacilityDtos.OrganizationOption;
 import com.chronos.facility.model.dto.FacilityDtos.RepairOrderView;
 import com.chronos.facility.model.dto.FacilityDtos.ReviewMaterialRequest;
 import com.chronos.facility.model.dto.FacilityDtos.StockCommand;
@@ -81,6 +82,12 @@ public class AdminFacilityMaintenanceController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:technician:view','facility:technician:manage')")
 	public ResultData<List<TechnicianView>> technicians() {
 		return ok(service.technicians());
+	}
+
+	@GetMapping("/organization-options")
+	@PreAuthorize("@iamAuthorization.any(authentication,'facility:technician:view','facility:technician:manage')")
+	public ResultData<List<OrganizationOption>> organizationOptions() {
+		return ok(service.organizationOptions());
 	}
 
 	@PostMapping("/technicians")

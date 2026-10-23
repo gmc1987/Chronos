@@ -70,6 +70,11 @@
 		</dependency>
 		<dependency>
 			<groupId>com.chronos</groupId>
+			<artifactId>education-operation-agent</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.chronos</groupId>
 			<artifactId>ai-gateway</artifactId>
 			<version>${project.version}</version>
 		</dependency>

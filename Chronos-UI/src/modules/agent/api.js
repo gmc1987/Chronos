@@ -1,0 +1,26 @@
+import { http } from '../../api/http'
+
+export const fetchOperationAgentTools = () => http.get('/agent/operations/tools')
+export const fetchOperationAgentPlans = () => http.get('/agent/operations/plans')
+export const draftOperationAgentPlan = payload => http.post('/agent/operations/plans/draft', payload)
+export const uploadOperationAgentAdmissionRoster = file => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload('/agent/operations/files/admission-rosters', data)
+}
+export const createOperationAgentPlan = payload => http.post('/agent/operations/plans', payload)
+export const updateOperationAgentPlan = (id, payload) => http.put(`/agent/operations/plans/${id}`, payload)
+export const deleteOperationAgentPlan = id => http.delete(`/agent/operations/plans/${id}`)
+export const startOperationAgentRun = id => http.post(`/agent/operations/plans/${id}/runs`)
+export const fetchOperationAgentRuns = () => http.get('/agent/operations/runs')
+export const fetchOperationAgentRun = id => http.get(`/agent/operations/runs/${id}`)
+export const fetchOperationAgentEvents = (id, after = 0) => http.get(`/agent/operations/runs/${id}/events?after=${after}`)
+export const pauseOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/pause`)
+export const resumeOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/resume`)
+export const approveOperationAgentStep = (id, comment = '') => http.post(`/agent/operations/runs/${id}/approve`, { comment })
+export const rejectOperationAgentStep = (id, comment) => http.post(`/agent/operations/runs/${id}/reject`, { comment })
+export const addOperationAgentCondition = (id, conditionText) => http.post(`/agent/operations/runs/${id}/conditions`, { conditionText })
+export const supplyOperationAgentInput = (id, stepOrder, values) => http.post(`/agent/operations/runs/${id}/inputs`, { stepOrder, values })
+export const cancelOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/cancel`)
+export const retryOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/retry`)
+export const promoteOperationAgentCandidate = id => http.post(`/agent/operations/runs/${id}/promote`)

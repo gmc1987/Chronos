@@ -517,6 +517,10 @@ export const enrollAdmissionCandidate = (id, payload) => http.post(`/admin/educa
 export const updateAdmissionRegistration = (id, payload) => http.post(`/admin/education/admissions/${id}/registration`, payload)
 export const downloadAdmissionImportTemplate = () => http.download('/admin/education/admissions/import-template')
 export const importAdmissionCandidates = (file, dryRun = true) => { const data = new FormData(); data.append('file', file); return http.upload(`/admin/education/admissions/import?${qs({ dryRun })}`, data) }
+export const batchAssignAdmissionClasses = payload => http.post('/admin/education/admissions/batch/class-assignment', payload)
+export const batchReviewAdmissions = payload => http.post('/admin/education/admissions/batch/review', payload)
+export const batchEnrollAdmissions = payload => http.post('/admin/education/admissions/batch/enroll', payload)
+export const generateOfferingsFromAssignments = payload => http.post('/admin/education/course-offerings/generate-from-assignments', payload)
 export const listStudentStatusChanges = (studentId, params = {}) => http.get(`/admin/education/student-status-changes?${qs({ studentId, ...params })}`)
 export const cancelStudentStatusChange = (id) => http.post(`/admin/education/student-status-changes/${id}/cancel`)
 export const requestStudentStatusChange = (studentId, payload) => http.post(`/admin/education/student-status-changes/${studentId}`, payload)

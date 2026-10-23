@@ -1,5 +1,7 @@
 package com.chronos.facility.model;
 
+import java.time.LocalTime;
+
 import com.chronos.model.pojo.BaseEntity;
 
 import jakarta.persistence.Column;
@@ -38,6 +40,16 @@ public class MaintenanceTechnician extends BaseEntity {
 	private Integer currentLoad = 0;
 	@Column(name = "max_concurrent", nullable = false)
 	private Integer maxConcurrent = 5;
+	@Column(name = "responsibility_organization_ids", nullable = false, length = 1000)
+	private String responsibilityOrganizationIds = "ALL";
+	@Column(name = "responsibility_areas", nullable = false, length = 1000)
+	private String responsibilityAreas = "ALL";
+	@Column(name = "duty_days", nullable = false, length = 100)
+	private String dutyDays = "ALL";
+	@Column(name = "duty_start_time", nullable = false)
+	private LocalTime dutyStartTime = LocalTime.MIN;
+	@Column(name = "duty_end_time", nullable = false)
+	private LocalTime dutyEndTime = LocalTime.of(23, 59, 59);
 	@Version
 	@Column(name = "row_version", nullable = false)
 	private Long rowVersion = 0L;

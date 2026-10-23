@@ -2,6 +2,7 @@ package com.chronos.facility.model.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 import com.chronos.facility.model.MaintenanceLedgerEntry;
@@ -47,7 +48,15 @@ public final class FacilityDtos {
 			Boolean active,
 			Boolean autoDispatch,
 			String workStatus,
-			Integer maxConcurrent) {
+			Integer maxConcurrent,
+			String responsibilityOrganizationIds,
+			String responsibilityAreas,
+			String dutyDays,
+			LocalTime dutyStartTime,
+			LocalTime dutyEndTime) {
+	}
+
+	public record OrganizationOption(String id, String name, String type) {
 	}
 
 	public record MaterialCommand(
@@ -87,6 +96,7 @@ public final class FacilityDtos {
 			String contactPhone,
 			String reporterUsername,
 			String reporterName,
+			String organizationId,
 			String status,
 			String dispatchMode,
 			String technicianId,
@@ -94,6 +104,8 @@ public final class FacilityDtos {
 			String technicianName,
 			LocalDateTime createTime,
 			LocalDateTime dispatchedAt,
+			LocalDateTime dispatchDeadline,
+			Integer dispatchAttempts,
 			LocalDateTime acceptedAt,
 			LocalDateTime startedAt,
 			LocalDateTime completedAt,
@@ -132,12 +144,18 @@ public final class FacilityDtos {
 			Boolean active,
 			Boolean autoDispatch,
 			Integer currentLoad,
-			Integer maxConcurrent) {
+			Integer maxConcurrent,
+			String responsibilityOrganizationIds,
+			String responsibilityAreas,
+			String dutyDays,
+			LocalTime dutyStartTime,
+			LocalTime dutyEndTime) {
 		public static TechnicianView from(MaintenanceTechnician value) {
 			return new TechnicianView(value.getId(), value.getEmployeeId(), value.getUsername(),
 					value.getEmployeeCode(), value.getTechnicianName(), value.getPhone(), value.getSkillCategories(),
 					value.getWorkStatus(), value.getActive(), value.getAutoDispatch(), value.getCurrentLoad(),
-					value.getMaxConcurrent());
+					value.getMaxConcurrent(), value.getResponsibilityOrganizationIds(), value.getResponsibilityAreas(),
+					value.getDutyDays(), value.getDutyStartTime(), value.getDutyEndTime());
 		}
 	}
 
