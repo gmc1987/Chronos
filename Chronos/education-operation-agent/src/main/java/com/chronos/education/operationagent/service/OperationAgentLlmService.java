@@ -70,6 +70,7 @@ public class OperationAgentLlmService {
 			   每项格式为 {"teacherNo":"工号","subjectCode":"学科编码","classCode":"行政班编码","weeklyLessons":2}；
 			7. 新生名册文件 ID 只能使用调用方明确提供的 managedFileId，禁止猜测。
 			8. 用户选择“先生成候选结果”时，本轮计划停在检查、导入校验、拟分班、教师分工候选或排课候选，不包含应用或发布正式课表。
+			9. 每个文本字段保持简洁，description、successCriteria、rationale 各不超过 80 个中文字符；不要复述工具目录或准备度快照。
 			工具目录：
 			""" + toolPrompt() + "\n用户目标：" + request
 				+ "\n当前业务准备度：" + writeJson(readiness)
@@ -236,6 +237,16 @@ public class OperationAgentLlmService {
 		}
 		if (containsAny(goal, "期末", "成绩收口")) selected.add("term.end.check");
 		if (containsAny(goal, "毕业")) selected.add("term.graduation.prepare");
+		// 用户明确要求完成新生建档、账号生成或账号绑定时，无论 DeepSeek
+		// 如何失败，安全规划器都必须补齐整条依赖链。不能仅依赖“分班”一词，
+		// 否则“行政班分配”等同义表达会遗漏阶段 3，后续报到建档必然无班可用。
+		if (requiresCompletedAdmission(request)) {
+			selected.addAll(List.of(
+					"admission.import.managed-file", "admission.data.check",
+					"admission.class.assign.batch", "admission.review.batch",
+					"admission.enroll.batch", "student.account.provision.batch",
+					"account.binding.check"));
+		}
 		if (selected.isEmpty()) selected.add("semester.context.check");
 
 		List<StepCommand> steps = new ArrayList<>();
@@ -252,7 +263,9 @@ public class OperationAgentLlmService {
 				config.put("admissionYear", command.admissionYear());
 			}
 			if ("admission.import.managed-file".equals(toolCode)) {
-				config.put("managedFileId", command.managedFileId().trim());
+				if (command.managedFileId() != null && !command.managedFileId().isBlank()) {
+					config.put("managedFileId", command.managedFileId().trim());
+				}
 			}
 			if (candidateOnly && definition.writeTool()) config.put("dryRun", true);
 			steps.add(new StepCommand("SAFE_STEP_" + order++, definition.name(),

@@ -18,6 +18,7 @@ export const fetchOperationAgentEvents = (id, after = 0) => http.get(`/agent/ope
 export const pauseOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/pause`)
 export const resumeOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/resume`)
 export const approveOperationAgentStep = (id, comment = '') => http.post(`/agent/operations/runs/${id}/approve`, { comment })
+export const refreshOperationAgentApprovalEvidence = id => http.post(`/agent/operations/runs/${id}/approval-evidence/refresh`)
 export const rejectOperationAgentStep = (id, comment) => http.post(`/agent/operations/runs/${id}/reject`, { comment })
 export const addOperationAgentCondition = (id, conditionText) => http.post(`/agent/operations/runs/${id}/conditions`, { conditionText })
 export const supplyOperationAgentInput = (id, stepOrder, values) => http.post(`/agent/operations/runs/${id}/inputs`, { stepOrder, values })

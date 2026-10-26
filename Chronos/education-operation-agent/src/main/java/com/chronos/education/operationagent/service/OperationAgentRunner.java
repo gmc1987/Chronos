@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -32,6 +33,12 @@ public class OperationAgentRunner {
 	private final OperationAgentNotificationService notifications;
 	private final OperationAgentLlmService llm;
 	private final ObjectMapper mapper;
+	/**
+	 * 同一运行实例在单节点内只能有一个执行线程。审批、重试和调度可能在很短
+	 * 时间内重复提交同一个 runId；如果两个线程同时读取到 QUEUED，会重复调用
+	 * 正式业务工具并触发 JPA 乐观锁冲突。
+	 */
+	private final Set<String> submittedRuns = ConcurrentHashMap.newKeySet();
 
 	public OperationAgentRunner(
 			@Qualifier("operationAgentExecutor") Executor executor,
@@ -59,7 +66,35 @@ public class OperationAgentRunner {
 	}
 
 	public void submit(String runId) {
-		executor.execute(() -> execute(runId));
+		if (!submittedRuns.add(runId)) return;
+		executor.execute(() -> {
+			try {
+				execute(runId);
+			} finally {
+				submittedRuns.remove(runId);
+			}
+		});
+	}
+
+	/** 供审核界面按需刷新当前检查点的只读候选证据。 */
+	public void refreshApprovalEvidence(String runId) {
+		OperationAgentRun run = runs.findById(runId)
+				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
+		if (!"WAITING_APPROVAL".equals(run.getStatus())) {
+			throw new IllegalStateException("当前没有等待确认的步骤");
+		}
+		OperationAgentStepRun step = stepRuns.findByRunIdAndStepOrder(runId, run.getCurrentStepOrder())
+				.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
+		OperationAgentPlan plan = plans.findById(run.getPlanId())
+				.orElseThrow(() -> new IllegalStateException("执行计划不存在"));
+		try {
+			refreshApprovalEvidence(run, plan, step, readSet(plan.getAuthorizedToolsJson()),
+					effectiveConfig(run, step));
+		} catch (RuntimeException exception) {
+			throw exception;
+		} catch (Exception exception) {
+			throw new IllegalStateException("刷新候选证据失败：" + exception.getMessage(), exception);
+		}
 	}
 
 	private void execute(String runId) {
@@ -131,6 +166,11 @@ public class OperationAgentRunner {
 							? "平台安全策略要求人工确认" : decision.nextAction());
 				}
 				if (Boolean.TRUE.equals(step.getApprovalRequired()) && step.getApprovedAt() == null) {
+					refreshApprovalEvidence(run, plan, step, authorized, config);
+					// Runner itself is intentionally non-transactional. Repository save() in
+					// the preview call advances the optimistic-lock version, so continue with
+					// the freshly persisted entity instead of the stale loop instance.
+					step = stepRuns.findById(step.getId()).orElseThrow();
 					step.setStatus("WAITING_APPROVAL");
 					step.setMessage("此步骤将写入正式业务数据，需要人工确认");
 					stepRuns.save(step);
@@ -160,10 +200,18 @@ public class OperationAgentRunner {
 		} catch (Exception exception) {
 			OperationAgentRun failed = runs.findById(runId).orElse(null);
 			if (failed != null) {
-				stepRuns.findByRunIdOrderByStepOrder(runId).stream()
+				java.util.Optional<OperationAgentStepRun> stepToFail = stepRuns
+						.findByRunIdOrderByStepOrder(runId).stream()
 						.filter(value -> "RUNNING".equals(value.getStatus()))
-						.findFirst()
-						.ifPresent(value -> {
+						.findFirst();
+				// 失败也可能发生在生成下一个人工检查点时，此时步骤尚未进入
+				// RUNNING。仍要把首个未完成步骤标成可重试，避免运行实例卡死。
+				if (stepToFail.isEmpty()) {
+					stepToFail = stepRuns.findByRunIdOrderByStepOrder(runId).stream()
+							.filter(value -> !Set.of("SUCCEEDED", "SKIPPED").contains(value.getStatus()))
+							.findFirst();
+				}
+				stepToFail.ifPresent(value -> {
 							value.setStatus("FAILED");
 							value.setProgress(100);
 							value.setMessage("执行失败：" + trim(exception.getMessage(), 800));
@@ -195,6 +243,33 @@ public class OperationAgentRunner {
 				notifications.failed(failed);
 			}
 		}
+	}
+
+	/**
+	 * 审批人必须看到基于当前业务状态计算出的候选结果。正式链路会在前一步
+	 * 写入后才到达下一检查点，因此不能继续展示创建正式运行时复制的旧候选证据。
+	 * 这里强制改为 dry-run，只刷新证据而不写入任何正式数据。
+	 */
+	private void refreshApprovalEvidence(
+			OperationAgentRun run,
+			OperationAgentPlan plan,
+			OperationAgentStepRun step,
+			Set<String> authorized,
+			Map<String, Object> config) throws Exception {
+		if (!authorized.contains(step.getToolCode())) {
+			throw new IllegalStateException("计划快照未授权工具：" + step.getToolCode());
+		}
+		Map<String, Object> previewConfig = new java.util.LinkedHashMap<>(config);
+		previewConfig.put("dryRun", true);
+		Map<String, Object> preview = executeToolAs(
+				run.getOwnerUsername(), step.getToolCode(), previewConfig,
+				plan.getKnowledgeBaseId(), plan.getObjective());
+		step.setResultJson(mapper.writeValueAsString(preview));
+		step.setMessage("已按当前业务数据生成最新候选结果，等待人工确认");
+		stepRuns.save(step);
+		events.append(run.getId(), "APPROVAL_EVIDENCE_REFRESHED", "INFO",
+				"已刷新候选证据：" + step.getStepName(),
+				"审批检查点已基于前序步骤的最新结果重新执行只读预演。", step.getResultJson());
 	}
 
 	private void executeStep(

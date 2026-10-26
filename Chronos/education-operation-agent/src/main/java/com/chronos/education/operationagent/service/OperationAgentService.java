@@ -397,6 +397,22 @@ public class OperationAgentService {
 		return runView(run);
 	}
 
+	@Transactional
+	public RunDetail refreshApprovalEvidence(String id, Authentication authentication) {
+		if (!hasReviewPermission(authentication)) {
+			throw new IllegalStateException("当前账号没有学期运营智能体审核权限");
+		}
+		OperationAgentRun run = runs.findLockedById(id)
+				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
+		if (authentication.getName().equals(run.getOwnerUsername())) {
+			throw new IllegalStateException("计划负责人不能刷新并审核自己的步骤");
+		}
+		runner.refreshApprovalEvidence(id);
+		audit.log(authentication.getName(), "OPERATION_AGENT_APPROVAL_EVIDENCE_REFRESH",
+				"runId=" + id + ", stepOrder=" + run.getCurrentStepOrder());
+		return detail(id, authentication);
+	}
+
 	/** Rejects a write checkpoint and returns the run to its owner for correction. */
 	@Transactional
 	public RunView reject(String id, ReviewCommand command, Authentication authentication) {
@@ -579,7 +595,12 @@ public class OperationAgentService {
 		OperationAgentStepRun failedStep = stepRuns.findByRunIdOrderByStepOrder(id).stream()
 				.filter(value -> "FAILED".equals(value.getStatus()))
 				.findFirst()
-				.orElseThrow(() -> new IllegalStateException("没有可重试的失败步骤"));
+				// 兼容旧版本在建立下一审批检查点时失败、只将运行实例标成
+				// FAILED 而步骤仍为 QUEUED 的现场数据。
+				.orElseGet(() -> stepRuns.findByRunIdOrderByStepOrder(id).stream()
+						.filter(value -> !Set.of("SUCCEEDED", "SKIPPED").contains(value.getStatus()))
+						.findFirst()
+						.orElseThrow(() -> new IllegalStateException("没有可重试的失败步骤")));
 		failedStep.setStatus("QUEUED");
 		failedStep.setProgress(0);
 		failedStep.setAttemptNo(0);

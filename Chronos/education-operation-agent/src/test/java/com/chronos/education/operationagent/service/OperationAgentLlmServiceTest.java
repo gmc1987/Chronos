@@ -160,6 +160,48 @@ class OperationAgentLlmServiceTest {
 	}
 
 	@Test
+	void fallbackKeepsCompleteAdmissionChainForAdministrativeClassWording() {
+		when(planningContext.inspect("2026-2027-1", 2026)).thenReturn(Map.of("termExists", true));
+		doThrow(new IllegalStateException("provider timeout")).when(models).chat(isNull(), anyString());
+
+		var result = service.draft(
+				new OperationAgentLlmService.DraftCommand(
+						"导入新生名册，完成行政班分配、正式建档、学生账号生成和账号绑定",
+						null, "2026-2027-1", 2026, "managed-file-1", true),
+				new UsernamePasswordAuthenticationToken("admin", "", List.of()));
+
+		assertThat(result.plan().steps()).extracting(OperationAgentService.StepCommand::toolCode)
+				.containsExactly(
+						"admission.import.managed-file", "admission.data.check",
+						"admission.class.assign.batch", "admission.review.batch",
+						"admission.enroll.batch", "student.account.provision.batch",
+						"account.binding.check");
+	}
+
+	@Test
+	void fallbackReportsMissingRosterInsteadOfFailingWhenNoFileWasUploaded() {
+		when(planningContext.inspect(null, 2026)).thenReturn(Map.of("termExists", true));
+		doThrow(new IllegalStateException("truncated model json")).when(models).chat(isNull(), anyString());
+
+		var result = service.draft(
+				new OperationAgentLlmService.DraftCommand(
+						"读取新生名册并完成正式建档、学生账号生成和账号绑定",
+						null, null, 2026, null, true),
+				new UsernamePasswordAuthenticationToken("admin", "", List.of()));
+
+		assertThat(result.modelGenerated()).isFalse();
+		assertThat(result.readyToSave()).isFalse();
+		assertThat(result.plan().steps()).extracting(OperationAgentService.StepCommand::toolCode)
+				.containsExactly(
+						"admission.import.managed-file", "admission.data.check",
+						"admission.class.assign.batch", "admission.review.batch",
+						"admission.enroll.batch", "student.account.provision.batch",
+						"account.binding.check");
+		assertThat(result.requiredInputs())
+				.anyMatch(input -> "managedFileId".equals(input.key()));
+	}
+
+	@Test
 	void interpretsNaturalLanguageConditionWithinSafeBounds() {
 		when(models.chat(isNull(), anyString())).thenReturn("""
 			{"admissionYear":2026,"batchLimit":900,"semesterCode":"2026-2027-1", 

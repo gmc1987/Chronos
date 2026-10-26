@@ -139,6 +139,14 @@ public class OperationAgentController {
 		return ok(service.approve(id, command, authentication));
 	}
 
+	@PostMapping("/runs/{id}/approval-evidence/refresh")
+	@PreAuthorize("hasAuthority('education:operation-agent:review')")
+	public ResultData<RunDetail> refreshApprovalEvidence(
+			@PathVariable String id,
+			Authentication authentication) {
+		return ok(service.refreshApprovalEvidence(id, authentication));
+	}
+
 	@PostMapping("/runs/{id}/reject")
 	@PreAuthorize("hasAuthority('education:operation-agent:review')")
 	public ResultData<RunView> reject(

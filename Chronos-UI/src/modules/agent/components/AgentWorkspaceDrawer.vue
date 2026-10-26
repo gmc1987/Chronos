@@ -93,6 +93,7 @@
 			  <el-input v-model="reviewComment" type="textarea" :rows="2" resize="none"
 				placeholder="审核意见（确认时可选，驳回时必填）" />
 			  <div class="agent-approval-card__actions">
+				<el-button :loading="reviewing" @click="refreshApprovalEvidence">刷新候选结果</el-button>
 				<el-button type="success" :loading="reviewing" :disabled="approvalHasErrors" @click="approve">确认并继续</el-button>
 				<el-button type="danger" plain :loading="reviewing" @click="rejectApproval">驳回</el-button>
 			  </div>
@@ -287,7 +288,7 @@ import {
   createOperationAgentPlan, deleteOperationAgentPlan, draftOperationAgentPlan, fetchOperationAgentEvents,
   fetchOperationAgentPlans, fetchOperationAgentRun, fetchOperationAgentRuns,
   fetchOperationAgentTools, pauseOperationAgentRun, resumeOperationAgentRun,
-  promoteOperationAgentCandidate, rejectOperationAgentStep, retryOperationAgentRun, startOperationAgentRun, supplyOperationAgentInput, updateOperationAgentPlan,
+  promoteOperationAgentCandidate, refreshOperationAgentApprovalEvidence, rejectOperationAgentStep, retryOperationAgentRun, startOperationAgentRun, supplyOperationAgentInput, updateOperationAgentPlan,
   uploadOperationAgentAdmissionRoster,
 } from '../api'
 import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
@@ -632,6 +633,14 @@ async function approve() {
 	  reviewComment.value = ''
 	  await loadRun()
 	  ElMessage.success('审核已通过，智能体将从当前检查点继续执行')
+	} finally { reviewing.value = false }
+}
+async function refreshApprovalEvidence() {
+	reviewing.value = true
+	try {
+		await refreshOperationAgentApprovalEvidence(selectedRunId.value)
+		await loadRun()
+		ElMessage.success('候选结果已按当前业务数据刷新')
 	} finally { reviewing.value = false }
 }
 async function rejectApproval() {
