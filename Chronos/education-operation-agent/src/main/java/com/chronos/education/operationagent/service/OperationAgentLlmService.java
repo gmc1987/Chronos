@@ -97,6 +97,10 @@ public class OperationAgentLlmService {
 			String toolCode = require(node.path("toolCode").asText(null), "大模型返回了缺少工具编码的步骤");
 			if (authorized.contains(toolCode)) continue;
 			OperationAgentToolCatalog.ToolDefinition definition = tools.require(toolCode);
+			// 已有可用开课任务时，排课目标应直接复用现状。模型偶尔会额外生成
+			// “教师分工/开课”步骤并要求用户重新提供映射，这会把本可自动完成的
+			// 排课候选流程错误地停在待补充状态。只有用户明确要求重做这些基础数据时才保留。
+			if (redundantPreparationStep(toolCode, request, readiness)) continue;
 			Map<String, Object> config = objectMap(node.path("toolConfig"));
 			if (command.semesterCode() != null && !command.semesterCode().isBlank()
 					&& !config.containsKey("semesterCode")) {
@@ -222,6 +226,12 @@ public class OperationAgentLlmService {
 			selected.add("student.account.provision.batch");
 			selected.add("account.binding.check");
 		}
+		if (containsAny(goal, "住宿", "宿舍", "床位")) {
+			selected.add("admission.accommodation.resource.check");
+			if (containsAny(goal, "维护", "导入", "补齐", "创建")) selected.add("admission.accommodation.resource.maintain");
+			selected.add("admission.accommodation.check");
+			selected.add("admission.accommodation.plan");
+		}
 		if (containsAny(goal, "教师入职", "教师账号", "教师档案")) selected.add("teacher.onboarding.batch");
 		if (containsAny(goal, "教师分工", "任课", "教学任务")) selected.add("teaching.assignment.generate");
 		if (containsAny(goal, "开课", "教学班", "选课")) selected.add("teaching.offering.generate");
@@ -235,7 +245,11 @@ public class OperationAgentLlmService {
 				selected.add("scheduling.publish");
 			}
 		}
-		if (containsAny(goal, "期末", "成绩收口")) selected.add("term.end.check");
+		if (containsAny(goal, "期末", "成绩收口")) selected.addAll(List.of(
+				"term.end.check", "term.end.exam.check", "term.end.grade.check", "term.end.archive.check"));
+		if (containsAny(goal, "考试收口", "考试安排", "监考")) selected.add("term.end.exam.check");
+		if (containsAny(goal, "成绩发布", "成绩归档")) selected.add("term.end.grade.check");
+		if (containsAny(goal, "归档", "学期交接")) selected.add("term.end.archive.check");
 		if (containsAny(goal, "毕业")) selected.add("term.graduation.prepare");
 		// 用户明确要求完成新生建档、账号生成或账号绑定时，无论 DeepSeek
 		// 如何失败，安全规划器都必须补齐整条依赖链。不能仅依赖“分班”一词，
@@ -292,6 +306,27 @@ public class OperationAgentLlmService {
 	private boolean containsAny(String source, String... values) {
 		for (String value : values) if (source.contains(value)) return true;
 		return false;
+	}
+
+	private boolean redundantPreparationStep(String toolCode, String request, Map<String, Object> readiness) {
+		if (number(readiness.get("courseOfferingCount")) <= 0) return false;
+		String goal = request == null ? "" : request.toLowerCase(java.util.Locale.ROOT);
+		if ("teaching.assignment.generate".equals(toolCode)) {
+			return !containsAny(goal, "教师分工", "任课安排", "教学任务", "重新分工", "重做分工");
+		}
+		if ("teaching.offering.generate".equals(toolCode)) {
+			return !containsAny(goal, "开课", "教学班", "选课", "重新开课", "重建教学班");
+		}
+		return false;
+	}
+
+	private long number(Object value) {
+		if (value instanceof Number number) return number.longValue();
+		try {
+			return value == null ? 0L : Long.parseLong(String.valueOf(value));
+		} catch (NumberFormatException ignored) {
+			return 0L;
+		}
 	}
 
 	private boolean requiresCompletedAdmission(String request) {

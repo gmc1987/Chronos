@@ -31,6 +31,7 @@ public class OperationAgentService {
 	private final OperationAgentRunner runner;
 	private final OperationAgentLlmService llm;
 	private final OperationAgentNotificationService notifications;
+	private final OperationAgentSemesterResolver semesterResolver;
 	private final ObjectMapper mapper;
 	private final IAuditLogService audit;
 
@@ -46,6 +47,7 @@ public class OperationAgentService {
 			OperationAgentRunner runner,
 			OperationAgentLlmService llm,
 			OperationAgentNotificationService notifications,
+			OperationAgentSemesterResolver semesterResolver,
 			ObjectMapper mapper,
 			IAuditLogService audit) {
 		this.plans = plans;
@@ -59,6 +61,7 @@ public class OperationAgentService {
 		this.runner = runner;
 		this.llm = llm;
 		this.notifications = notifications;
+		this.semesterResolver = semesterResolver;
 		this.mapper = mapper;
 		this.audit = audit;
 	}
@@ -70,6 +73,33 @@ public class OperationAgentService {
 		audit.log(authentication.getName(), "OPERATION_AGENT_LLM_DRAFT",
 				"stepCount=" + result.plan().steps().size());
 		return result;
+	}
+
+	/**
+	 * Conversational entry point: the user provides an outcome, while the agent
+	 * creates the internal plan snapshot and starts a candidate run atomically.
+	 * The plan remains an auditable implementation detail and is not a form the
+	 * user has to design manually.
+	 */
+	@Transactional
+	public ConversationResult converse(ConversationCommand command,
+			Authentication authentication) {
+		OperationAgentSemesterResolver.Resolution resolution = semesterResolver.resolve(
+				command.request(), command.semesterCode(), Boolean.TRUE.equals(command.confirmNonCurrent()),
+				Boolean.TRUE.equals(command.createMissingTerm()));
+		if (!"READY".equals(resolution.status())) {
+			return new ConversationResult(resolution.status(), null, null, null, resolution);
+		}
+		OperationAgentLlmService.DraftCommand draftCommand = new OperationAgentLlmService.DraftCommand(
+				command.request(), command.knowledgeBaseId(), resolution.termCode(), command.admissionYear(),
+				command.managedFileId(), command.candidateOnly());
+		OperationAgentLlmService.DraftResult draft = draftPlan(draftCommand, authentication);
+		if (!draft.readyToSave()) {
+			return new ConversationResult("NEED_INPUT", draft, null, null, resolution);
+		}
+		PlanView plan = savePlan(null, draft.plan(), authentication);
+		RunView run = start(plan.plan().getId(), authentication);
+		return new ConversationResult("STARTED", draft, plan, run, resolution);
 	}
 
 	@Transactional(readOnly = true)
@@ -862,6 +892,21 @@ public class OperationAgentService {
 			List<OperationAgentPlanStep> steps,
 			List<String> authorizedTools) {}
 	public record RunView(OperationAgentRun run, String planName) {}
+	public record ConversationCommand(
+			String request,
+			String knowledgeBaseId,
+			String semesterCode,
+			Integer admissionYear,
+			String managedFileId,
+			Boolean candidateOnly,
+			Boolean confirmNonCurrent,
+			Boolean createMissingTerm) {}
+	public record ConversationResult(
+			String status,
+			OperationAgentLlmService.DraftResult draft,
+			PlanView plan,
+			RunView run,
+			OperationAgentSemesterResolver.Resolution resolution) {}
 	public record RunDetail(
 			RunView overview,
 			List<OperationAgentStepRun> steps,

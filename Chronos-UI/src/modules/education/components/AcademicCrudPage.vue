@@ -21,7 +21,7 @@
         </el-button>
       </div>
     </header>
-    <el-table :data="rows" border>
+    <el-table v-loading="loading" :data="rows" border>
       <el-table-column
         v-for="column in columns"
         :key="column.prop"
@@ -92,16 +92,21 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictionaryOptions } from '../../../api/admin'
 
 const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, rowActions: { type: Array, default: () => [] }, permissionPrefix: String, lookups: { type: Array, default: () => [] }, allowCreate: { type: Boolean, default: true } })
-const rows = ref([]); const dialog = ref(false); const form = reactive({}); const lookupData = reactive({}); const dictionaryData = reactive({})
+const rows = ref([]); const loading = ref(false); const dialog = ref(false); const form = reactive({}); const lookupData = reactive({}); const dictionaryData = reactive({})
 const page = ref(1); const pageSize = ref(10); const total = ref(0)
 const createPermissions = computed(() => [`${props.permissionPrefix}:create`, `${props.permissionPrefix}:manage`])
 const updatePermissions = computed(() => [`${props.permissionPrefix}:update`, `${props.permissionPrefix}:manage`])
 const actionColumnWidth = computed(() => 72 + props.rowActions.length * 92 + (props.deleter ? 62 : 0))
 const reset = value => { Object.keys(form).forEach(key => delete form[key]); Object.assign(form, value) }
 const load = async () => {
-  const response = await props.loader({ page: page.value - 1, size: pageSize.value })
-  rows.value = response.data?.content || response.data || []
-  total.value = response.data?.totalElements ?? rows.value.length
+  loading.value = true
+  try {
+    const response = await props.loader({ page: page.value - 1, size: pageSize.value })
+    rows.value = response.data?.content || response.data || []
+    total.value = response.data?.totalElements ?? rows.value.length
+  } finally {
+    loading.value = false
+  }
 }
 const changePageSize = () => { page.value = 1; load() }
 const lookupVersions = {}
@@ -151,7 +156,9 @@ const remove = async row => {
   if (!rows.value.length && page.value > 1) page.value -= 1
   await load()
 }
-onMounted(async () => { await Promise.all([loadLookups(), loadDictionaries()]); await load() })
+// 列表与表单下拉数据互不依赖，首次进入时并行加载；大规模教职工数据下
+// 不再先等待全量下拉项，避免教师档案页面长时间显示为“0 条”。
+onMounted(async () => { await Promise.all([load(), loadLookups(), loadDictionaries()]) })
 </script>
 
 <style scoped>

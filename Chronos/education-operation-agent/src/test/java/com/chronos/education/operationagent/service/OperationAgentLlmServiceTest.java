@@ -135,6 +135,31 @@ class OperationAgentLlmServiceTest {
 	}
 
 	@Test
+	void reusesExistingCourseOfferingsForSchedulingInsteadOfRequestingTeacherMappings() {
+		when(planningContext.inspect("2026-2027-1", null)).thenReturn(Map.of(
+				"courseOfferingCount", 531L,
+				"teachingAssignmentCount", 3L));
+		when(models.chat(isNull(), anyString())).thenReturn("""
+			{"planName":"排课候选","objective":"生成全量候选","ruleText":"只生成候选","steps":[
+			 {"stepName":"重做教师分工","toolCode":"teaching.assignment.generate","toolConfig":{}},
+			 {"stepName":"重建开课任务","toolCode":"teaching.offering.generate","toolConfig":{}},
+			 {"stepName":"检查排课准备度","toolCode":"teaching.readiness.check","toolConfig":{}},
+			 {"stepName":"生成排课候选","toolCode":"scheduling.generate.full","toolConfig":{}}]}
+			""");
+
+		var result = service.draft(
+				new OperationAgentLlmService.DraftCommand(
+						"检查当前学期基础数据并生成全量排课预选方案",
+						null, "2026-2027-1", null, null, true),
+				new UsernamePasswordAuthenticationToken("admin", "", List.of()));
+
+		assertThat(result.readyToSave()).isTrue();
+		assertThat(result.requiredInputs()).isEmpty();
+		assertThat(result.plan().steps()).extracting(OperationAgentService.StepCommand::toolCode)
+				.containsExactly("teaching.readiness.check", "scheduling.generate.full");
+	}
+
+	@Test
 	void fallsBackToExecutableControlledPlanWhenDeepSeekIsUnavailable() {
 		when(planningContext.inspect("2026-2027-1", 2026)).thenReturn(Map.of("termExists", true));
 		doThrow(new IllegalStateException("provider timeout")).when(models).chat(isNull(), anyString());

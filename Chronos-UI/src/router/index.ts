@@ -75,6 +75,7 @@ const PortalTeachingCenter = () => import('../modules/education/pages/PortalTeac
 const AdminCourseware = () => import('../modules/education/pages/AdminCourseware.vue')
 const AdminMaterials = () => import('../modules/education/pages/AdminMaterials.vue')
 const AdminScoreCenter = () => import('../modules/education/pages/AdminScoreCenter.vue')
+const AdminAccommodation = () => import('../modules/education/pages/AdminAccommodation.vue')
 const AdminScoreClassAnalysis = () => import('../modules/education/pages/AdminScoreClassAnalysis.vue')
 const AdminScoreGradeAnalysis = () => import('../modules/education/pages/AdminScoreGradeAnalysis.vue')
 const AdminScoreSubjectAnalysis = () => import('../modules/education/pages/AdminScoreSubjectAnalysis.vue')
@@ -215,6 +216,8 @@ const router = createRouter({
         { path: 'education/teaching-center/material', name: 'admin-education-material', component: AdminMaterials },
         { path: 'education/teaching-center/materials', redirect: { name: 'admin-education-material' } },
         { path: 'education/score-center', name: 'admin-education-score-center', component: AdminScoreCenter },
+        { path: 'education/accommodations', name: 'admin-education-accommodations', component: AdminAccommodation,
+          meta: { requiredPermissions: ['education:accommodation:view', 'education:accommodation:manage'] } },
         { path: 'education/score-center/class-analysis', name: 'admin-education-score-class-analysis', component: AdminScoreClassAnalysis },
         { path: 'education/score-center/grade-analysis', name: 'admin-education-score-grade-analysis', component: AdminScoreGradeAnalysis },
         { path: 'education/score-center/subject-analysis', name: 'admin-education-score-subject-analysis', component: AdminScoreSubjectAnalysis },

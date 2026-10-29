@@ -30,7 +30,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping(value = "/files/admission-rosters", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-	@PreAuthorize("hasAuthority('education:operation-agent:manage')")
+	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<ManagedFileView> uploadAdmissionRoster(
 			@RequestPart("file") MultipartFile file,
 			Authentication authentication) {
@@ -50,11 +50,20 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/plans/draft")
-	@PreAuthorize("hasAuthority('education:operation-agent:manage')")
+	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<DraftResult> draft(
 			@RequestBody DraftCommand command,
 			Authentication authentication) {
 		return ok(service.draftPlan(command, authentication));
+	}
+
+	/** Conversational entry point; internal plan details are returned only as audit data. */
+	@PostMapping("/conversation")
+	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	public ResultData<ConversationResult> conversation(
+			@RequestBody ConversationCommand command,
+			Authentication authentication) {
+		return ok(service.converse(command, authentication));
 	}
 
 	@PostMapping("/plans")

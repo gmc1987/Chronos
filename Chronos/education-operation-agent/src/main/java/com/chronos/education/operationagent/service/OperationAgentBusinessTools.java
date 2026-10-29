@@ -34,6 +34,8 @@ import com.chronos.education.scheduling.model.dto.AdmissionDtos.EnrollmentComman
 import com.chronos.education.scheduling.model.dto.AdmissionDtos.ReviewCommand;
 import com.chronos.education.scheduling.model.dto.StudentStatusChangeCommand;
 import com.chronos.education.scheduling.service.AcademicDataService;
+import com.chronos.education.scheduling.service.AccommodationService;
+import com.chronos.education.scheduling.service.AccommodationImportService;
 import com.chronos.education.scheduling.service.AdmissionImportService;
 import com.chronos.education.scheduling.service.AdmissionService;
 import com.chronos.education.scheduling.service.AutoSchedulingService;
@@ -74,6 +76,8 @@ public class OperationAgentBusinessTools {
 	private final StudentStatusChangeService studentChanges;
 	private final SemesterPreparationExecutionService preparationExecutions;
 	private final SubjectRepository subjects;
+	private final AccommodationService accommodations;
+	private final AccommodationImportService accommodationImports;
 
 	public OperationAgentBusinessTools(
 			JdbcTemplate jdbc,
@@ -98,7 +102,9 @@ public class OperationAgentBusinessTools {
 			SchedulePlanVersionService scheduleVersions,
 			StudentStatusChangeService studentChanges,
 			SemesterPreparationExecutionService preparationExecutions,
-			SubjectRepository subjects) {
+			SubjectRepository subjects,
+			AccommodationService accommodations,
+			AccommodationImportService accommodationImports) {
 		this.jdbc = jdbc;
 		this.admissions = admissions;
 		this.admissionImports = admissionImports;
@@ -122,6 +128,8 @@ public class OperationAgentBusinessTools {
 		this.studentChanges = studentChanges;
 		this.preparationExecutions = preparationExecutions;
 		this.subjects = subjects;
+		this.accommodations = accommodations;
+		this.accommodationImports = accommodationImports;
 	}
 
 	public Map<String, Object> execute(
@@ -139,6 +147,11 @@ public class OperationAgentBusinessTools {
 			case "admission.review.batch" -> reviewAdmissions(config, actor);
 			case "admission.enroll.batch" -> enrollAdmissions(config);
 			case "account.binding.check" -> accountBindingCheck();
+			case "admission.accommodation.check" -> accommodationCheck(config);
+			case "admission.accommodation.resource.check" -> accommodationResourceCheck();
+			case "admission.accommodation.resource.maintain" -> accommodationResourceMaintain(config);
+			case "admission.accommodation.plan" -> accommodationPlan(config);
+			case "admission.accommodation.assign.batch" -> accommodationAssign(config, actor);
 			case "student.account.provision.batch" -> provisionStudentAccounts(config);
 			case "teacher.onboarding.batch" -> onboardTeachers(config);
 			case "teaching.assignment.generate" -> generateTeachingAssignments(config);
@@ -150,7 +163,10 @@ public class OperationAgentBusinessTools {
 			case "scheduling.apply.approved" -> applyApprovedSchedule(config, actor);
 			case "scheduling.publish" -> publishSchedule(config, actor);
 			case "term.end.check" -> termEndCheck(config);
+			case "term.end.exam.check" -> termEndExamCheck(config);
+			case "term.end.grade.check" -> termEndGradeCheck(config);
 			case "term.graduation.prepare" -> prepareGraduation(config, actor);
+			case "term.end.archive.check" -> termEndArchiveCheck(config);
 			default -> throw new IllegalArgumentException("未注册的业务工具：" + toolCode);
 		};
 	}
@@ -223,6 +239,114 @@ public class OperationAgentBusinessTools {
 		result.put("missingMajor", count("select count(*) from edu_admission_candidate where admission_year=? and admitted_major_id is null", year));
 		result.put("missingPlannedClass", count("select count(*) from edu_admission_candidate where admission_year=? and planned_class_id is null", year));
 		return result;
+	}
+
+	/** 只读返回住宿容量和未分配清单，正式分配仍由住宿管理人工确认。 */
+	private Map<String, Object> accommodationCheck(Map<String, Object> config) {
+		String semester = required(config.get("semesterCode"), "学期编码");
+		int year = number(config.get("admissionYear"), Year.now().getValue());
+		long students = count("select count(*) from edu_student_profile where enrollment_status='ACTIVE' and grade_year=?", year);
+		long assigned = count("select count(*) from edu_student_accommodation where semester_code=? and status='ACTIVE'", semester);
+		long beds = count("select count(*) from edu_dorm_bed where status='AVAILABLE'");
+		List<Map<String, Object>> unassigned = jdbc.queryForList("""
+				select student.id, student.student_no, student.student_name
+				from edu_student_profile student
+				where student.enrollment_status='ACTIVE' and student.grade_year=?
+				  and not exists (select 1 from edu_student_accommodation assignment
+				                  where assignment.student_id=student.id and assignment.semester_code=? and assignment.status='ACTIVE')
+				order by student.student_no limit 100
+				""", year, semester);
+		return Map.of("semesterCode", semester, "admissionYear", year, "activeStudents", students,
+				"assignedStudents", assigned, "unassignedStudents", Math.max(0, students - assigned),
+				"availableBeds", beds, "capacityEnough", beds >= Math.max(0, students - assigned),
+				"manualEntryRoute", "/admin/education/accommodations", "unassignedPreview", unassigned);
+	}
+
+	private Map<String, Object> accommodationResourceCheck() {
+		List<Map<String, Object>> rooms = jdbc.queryForList("""
+				select building.building_code as "buildingCode", building.building_name as "buildingName",
+				       room.room_no as "roomNo", room.floor_no as "floorNo", room.capacity,
+				       count(bed.id) as "bedCount", room.capacity - count(bed.id) as "missingBedCount"
+				from edu_dorm_room room
+				join edu_dorm_building building on building.id = room.building_id
+				left join edu_dorm_bed bed on bed.room_id = room.id
+				group by building.building_code, building.building_name, room.room_no, room.floor_no, room.capacity
+				having count(bed.id) <> room.capacity
+				order by building.building_code, room.floor_no, room.room_no
+				""");
+		return Map.of("valid", rooms.isEmpty(), "issueCount", rooms.size(), "issues", rooms,
+				"manualEntryRoute", "/admin/education/accommodations",
+				"message", rooms.isEmpty() ? "宿舍房间容量与床位数据一致" : "发现房间容量与床位数量不一致，可执行资源维护补齐床位");
+	}
+
+	private Map<String, Object> accommodationResourceMaintain(Map<String, Object> config) {
+		Object value = config.get("resources");
+		if (!(value instanceof List<?> values) || values.isEmpty()) throw new IllegalArgumentException("宿舍资源维护必须提供 resources 候选");
+		List<Map<?, ?>> rows = new java.util.ArrayList<>();
+		for (Object item : values) {
+			if (!(item instanceof Map<?, ?> row)) throw new IllegalArgumentException("宿舍资源候选格式不正确");
+			rows.add(row);
+		}
+		int count = accommodationImports.maintainRows(rows, bool(config.get("dryRun"), false));
+		return Map.of("dryRun", bool(config.get("dryRun"), false), "processedCount", count,
+				"requiresConfirmation", true, "manualEntryRoute", "/admin/education/accommodations");
+	}
+
+	private Map<String, Object> accommodationPlan(Map<String, Object> config) {
+		String semester = required(config.get("semesterCode"), "学期编码");
+		int year = number(config.get("admissionYear"), Year.now().getValue());
+		int limit = bounded(config.get("batchLimit"), 100, 500);
+		List<Map<String, Object>> students = jdbc.queryForList("""
+				select student.id student_id, student.student_no, student.student_name
+				from edu_student_profile student
+				where student.enrollment_status='ACTIVE' and student.grade_year=?
+				  and not exists (select 1 from edu_student_accommodation assignment
+				                  where assignment.student_id=student.id and assignment.semester_code=? and assignment.status='ACTIVE')
+				order by student.student_no limit ?
+				""", year, semester, limit);
+		List<Map<String, Object>> beds = jdbc.queryForList("""
+				select bed.id bed_id, building.building_name, room.room_no, bed.bed_no
+				from edu_dorm_bed bed
+				join edu_dorm_room room on room.id=bed.room_id
+				join edu_dorm_building building on building.id=room.building_id
+				where bed.status='AVAILABLE'
+				  and not exists (select 1 from edu_student_accommodation assignment
+				                  where assignment.bed_id=bed.id and assignment.semester_code=? and assignment.status='ACTIVE')
+				order by building.building_code, room.floor_no, room.room_no, bed.bed_no limit ?
+				""", semester, limit);
+		List<Map<String, Object>> assignments = new java.util.ArrayList<>();
+		int pairs = Math.min(students.size(), beds.size());
+		for (int index = 0; index < pairs; index++) {
+			Map<String, Object> student = students.get(index);
+			Map<String, Object> bed = beds.get(index);
+			Map<String, Object> pair = new LinkedHashMap<>();
+			pair.put("studentId", student.get("student_id"));
+			pair.put("studentNo", student.get("student_no"));
+			pair.put("studentName", student.get("student_name"));
+			pair.put("bedId", bed.get("bed_id"));
+			pair.put("bedLabel", bed.get("building_name") + " / " + bed.get("room_no") + " / " + bed.get("bed_no"));
+			assignments.add(pair);
+		}
+		return Map.of("semesterCode", semester, "admissionYear", year, "candidateCount", assignments.size(),
+				"unassignedStudentCount", students.size() - pairs, "availableBedCount", beds.size() - pairs,
+				"assignments", assignments, "requiresConfirmation", true,
+				"manualEntryRoute", "/admin/education/accommodations");
+	}
+
+	private Map<String, Object> accommodationAssign(Map<String, Object> config, String actor) {
+		String semester = required(config.get("semesterCode"), "学期编码");
+		Object value = config.get("assignments");
+		if (!(value instanceof List<?> values) || values.isEmpty()) throw new IllegalArgumentException("住宿分配必须提供已确认的 assignments 候选");
+		if (bool(config.get("dryRun"), false)) return Map.of("semesterCode", semester, "dryRun", true, "candidateCount", values.size(), "message", "候选模式未写入正式住宿关系");
+		int assigned = 0;
+		for (Object item : values) {
+			if (!(item instanceof Map<?, ?> pair)) throw new IllegalArgumentException("住宿分配候选格式不正确");
+			String studentId = text(pair.get("studentId"));
+			String bedId = text(pair.get("bedId"));
+			accommodations.assign(new AccommodationService.AssignmentCommand(semester, studentId, bedId), actor);
+			assigned++;
+		}
+		return Map.of("semesterCode", semester, "assignedCount", assigned, "candidateCount", values.size());
 	}
 
 	private Map<String, Object> assignAdmissionClasses(Map<String, Object> config) {
@@ -485,6 +609,49 @@ public class OperationAgentBusinessTools {
 				"pendingStudentChanges", pendingChanges, "deadDomainEvents", deadOutbox,
 				"readyToClose", offeringCount > 0 && gradebooks > 0 && gradebooks == published
 						&& pendingChanges == 0 && deadOutbox == 0);
+	}
+
+	/**
+	 * 考试收口只读检查。考试计划、场次、考场和监考是独立业务表，不能用“有考试计划”
+	 * 代替“考试已经具备执行条件”，因此把每一层数量和未完成数量都返回给候选结果。
+	 */
+	private Map<String, Object> termEndExamCheck(Map<String, Object> config) {
+		String semester = required(config.get("semesterCode"), "学期编码");
+		long plans = count("select count(*) from edu_exam_plan where semester_code=?", semester);
+		long publishedPlans = count("select count(*) from edu_exam_plan where semester_code=? and status='PUBLISHED'", semester);
+		long sessions = count("select count(*) from edu_exam_session session join edu_exam_plan plan on plan.id=session.plan_id where plan.semester_code=?", semester);
+		long rooms = count("select count(*) from edu_exam_room room join edu_exam_session session on session.id=room.session_id join edu_exam_plan plan on plan.id=session.plan_id where plan.semester_code=?", semester);
+		long assignedInvigilations = count("select count(*) from edu_exam_invigilation assignment join edu_exam_room room on room.id=assignment.room_id join edu_exam_session session on session.id=room.session_id join edu_exam_plan plan on plan.id=session.plan_id where plan.semester_code=? and assignment.status='ASSIGNED'", semester);
+		long pendingChanges = count("select count(*) from edu_exam_invigilation_change change join edu_exam_invigilation assignment on assignment.id=change.assignment_id join edu_exam_room room on room.id=assignment.room_id join edu_exam_session session on session.id=room.session_id join edu_exam_plan plan on plan.id=session.plan_id where plan.semester_code=? and change.status='PENDING'", semester);
+		return Map.of("semesterCode", semester, "examPlans", plans, "publishedExamPlans", publishedPlans,
+				"examSessions", sessions, "examRooms", rooms, "assignedInvigilations", assignedInvigilations,
+				"pendingInvigilationChanges", pendingChanges,
+				"readyForExamClose", plans > 0 && plans == publishedPlans && sessions > 0 && rooms > 0
+						&& assignedInvigilations > 0 && pendingChanges == 0);
+	}
+
+	/** 成绩收口检查单独暴露，便于 Agent 在发现未发布成绩时停在可解释的人工处理节点。 */
+	private Map<String, Object> termEndGradeCheck(Map<String, Object> config) {
+		String semester = required(config.get("semesterCode"), "学期编码");
+		long total = count("select count(*) from edu_gradebook gradebook join edu_course_offering offering on offering.id=gradebook.offering_id where offering.semester_code=?", semester);
+		long confirmed = count("select count(*) from edu_gradebook gradebook join edu_course_offering offering on offering.id=gradebook.offering_id where offering.semester_code=? and gradebook.status in ('CONFIRMED','PUBLISHED')", semester);
+		long published = count("select count(*) from edu_gradebook gradebook join edu_course_offering offering on offering.id=gradebook.offering_id where offering.semester_code=? and gradebook.status='PUBLISHED'", semester);
+		return Map.of("semesterCode", semester, "gradebooks", total, "confirmedGradebooks", confirmed,
+				"publishedGradebooks", published, "unconfirmedGradebooks", Math.max(0, total - confirmed),
+				"unpublishedGradebooks", Math.max(0, total - published),
+				"readyForGradeClose", total > 0 && total == published);
+	}
+
+	/** 归档前检查不执行归档写入，避免 Agent 越权改变历史数据。 */
+	private Map<String, Object> termEndArchiveCheck(Map<String, Object> config) {
+		String semester = required(config.get("semesterCode"), "学期编码");
+		long pendingStatusChanges = count("select count(*) from edu_student_status_change where status in ('PENDING','APPROVED_PENDING')");
+		long deadEvents = count("select count(*) from edu_domain_event_outbox where status='DEAD'");
+		long activeOfferings = count("select count(*) from edu_course_offering where semester_code=? and status='ACTIVE'", semester);
+		return Map.of("semesterCode", semester, "activeOfferings", activeOfferings,
+				"pendingStudentStatusChanges", pendingStatusChanges, "deadDomainEvents", deadEvents,
+				"readyForArchive", activeOfferings > 0 && pendingStatusChanges == 0 && deadEvents == 0,
+				"message", "归档写入由教务管理员在归档菜单确认后执行");
 	}
 
 	private Map<String, Object> prepareGraduation(Map<String, Object> config, String actor) {

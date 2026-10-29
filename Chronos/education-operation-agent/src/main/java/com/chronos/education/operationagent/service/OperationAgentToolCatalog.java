@@ -25,6 +25,18 @@ public class OperationAgentToolCatalog {
 		add(values, "admission.enroll.batch", "按拟分班批量报到建档并开通账号", "CRITICAL", true, true, 1, "幂等重试", false);
 		add(values, "student.account.provision.batch", "批量补开学生账号", "HIGH", true, true, 1, "幂等重试", false);
 		add(values, "account.binding.check", "学生与教师账号绑定完整性检查", "LOW", false, false, 2, "自动重试", false);
+		add(values, "admission.accommodation.check", "新生住宿与床位容量检查", "LOW", false, false, 2, "维护宿舍床位后重试", false,
+				required("semesterCode", "学期", "请指定住宿分配所属学期"),
+				required("admissionYear", "入学年份", "请指定需要安排住宿的入学年份"));
+		add(values, "admission.accommodation.resource.check", "宿舍楼房间床位数据核验", "LOW", false, false, 2, "修正宿舍资源后重试", false);
+		add(values, "admission.accommodation.resource.maintain", "按候选维护宿舍资源并补齐床位", "HIGH", true, true, 1, "核查资源候选后重试", false,
+				required("resources", "宿舍资源候选", "请提供楼栋、房间、楼层和床位数"));
+		add(values, "admission.accommodation.plan", "生成新生住宿分配候选", "LOW", false, false, 2, "维护宿舍床位后重试", false,
+				required("semesterCode", "学期", "请指定住宿分配所属学期"),
+				required("admissionYear", "入学年份", "请指定需要安排住宿的入学年份"));
+		add(values, "admission.accommodation.assign.batch", "确认并批量分配新生住宿", "HIGH", true, true, 1, "核查学生和床位冲突后重试", false,
+				required("semesterCode", "学期", "请指定住宿分配所属学期"),
+				required("assignments", "住宿分配候选", "请先确认学生与床位的分配候选"));
 		add(values, "teaching.assignment.generate", "按确认映射生成教师分工", "HIGH", true, true, 1, "补充教师、学科和行政班映射后重试", false,
 				required("semesterCode", "学期", "请指定教师分工所属学期"),
 				required("assignments", "教师分工映射", "请提供教师工号、学科编码、行政班编码和周课时"));
@@ -44,7 +56,13 @@ public class OperationAgentToolCatalog {
 				required("semesterCode", "学期", "请指定需要发布的学期"));
 		add(values, "term.end.check", "期末成绩与学籍状态检查", "LOW", false, false, 2, "自动重试", false,
 				required("semesterCode", "学期", "请指定需要检查的学期"));
+		add(values, "term.end.exam.check", "期末考试计划与监考收口检查", "LOW", false, false, 2, "自动重试", false,
+				required("semesterCode", "学期", "请指定需要检查的学期"));
+		add(values, "term.end.grade.check", "期末成绩发布收口检查", "LOW", false, false, 2, "自动重试", false,
+				required("semesterCode", "学期", "请指定需要检查的学期"));
 		add(values, "term.graduation.prepare", "生成毕业学籍变更待办", "CRITICAL", true, true, 1, "幂等重试", false);
+		add(values, "term.end.archive.check", "学期归档前置条件检查", "LOW", false, false, 2, "自动重试", false,
+				required("semesterCode", "学期", "请指定需要检查的学期"));
 		return Map.copyOf(values);
 	}
 
@@ -77,7 +95,7 @@ public class OperationAgentToolCatalog {
 			return new StageDefinition(2, "ADMISSION_IMPORT", "新生数据接入");
 		if ("admission.class.assign.batch".equals(toolCode))
 			return new StageDefinition(3, "CLASS_ASSIGNMENT", "行政班分班");
-		if (Set.of("admission.review.batch", "admission.enroll.batch", "student.account.provision.batch", "account.binding.check").contains(toolCode))
+		if (Set.of("admission.review.batch", "admission.enroll.batch", "student.account.provision.batch", "account.binding.check", "admission.accommodation.check", "admission.accommodation.plan", "admission.accommodation.assign.batch", "admission.accommodation.resource.check", "admission.accommodation.resource.maintain").contains(toolCode))
 			return new StageDefinition(4, "ENROLLMENT_ACCOUNT", "报到、学籍、学号及账号");
 		if ("teaching.assignment.generate".equals(toolCode))
 			return new StageDefinition(5, "TEACHING_ASSIGNMENT", "教学任务与教师安排");
@@ -85,6 +103,12 @@ public class OperationAgentToolCatalog {
 			return new StageDefinition(6, "TEACHING_CLASS", "教学班与选课关系");
 		if (toolCode.startsWith("scheduling."))
 			return new StageDefinition(7, "SCHEDULING", "自动排课、审核与发布");
+		if (Set.of("term.end.check", "term.end.exam.check", "term.end.grade.check").contains(toolCode))
+			return new StageDefinition(8, "TERM_END_CLOSE", "期末考试、成绩与学籍收口");
+		if ("term.graduation.prepare".equals(toolCode))
+			return new StageDefinition(9, "GRADUATION_STATUS", "毕业学籍变更");
+		if ("term.end.archive.check".equals(toolCode))
+			return new StageDefinition(10, "ARCHIVE_READINESS", "归档与下学期交接");
 		return null;
 	}
 

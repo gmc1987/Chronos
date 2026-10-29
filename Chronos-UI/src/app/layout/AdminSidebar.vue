@@ -132,7 +132,9 @@ onMounted(async () => {
   topLinks.value = normalized.rootLinks
   groups.value = normalized.menuGroups.map((group) => ({
     ...group,
-    open: true,
+    // 后台导航默认全部收起，避免首次进入页面时展开过多菜单占满侧栏。
+    // 用户仍可通过点击一级菜单按需展开，切换路由不会强制改变其手动状态。
+    open: false,
     bubble: false,
     children: group.children || [],
   }))

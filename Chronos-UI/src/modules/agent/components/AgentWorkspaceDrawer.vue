@@ -9,31 +9,37 @@
     </header>
 
     <el-tabs v-model="tab" class="agent-workspace__tabs">
-      <el-tab-pane label="执行计划" name="plans">
-        <div class="agent-toolbar">
-          <span>{{ plans.length }} 个计划</span>
-          <div v-if="canManage" class="agent-toolbar__actions">
-            <el-button size="small" @click="draftDialog = true">AI 生成计划</el-button>
-            <el-button type="primary" size="small" :icon="Plus" @click="editPlan()">新增计划</el-button>
+      <el-tab-pane label="智能体对话" name="chat">
+        <div class="agent-chat">
+          <div class="agent-chat__intro">
+            <strong>告诉我你希望完成什么</strong>
+            <p>你不需要填写执行计划。智能体会先读取业务现状，说明准备执行的步骤；遇到缺少资料或正式写入时，会停下来请你确认。</p>
           </div>
-        </div>
-        <div class="agent-scroll">
-          <article v-for="item in plans" :key="item.plan.id" class="agent-plan-card">
-            <div class="agent-plan-card__title">
-              <strong>{{ item.plan.planName }}</strong>
-              <el-tag size="small" :type="item.plan.enabled ? 'success' : 'info'">{{ item.plan.enabled ? '启用' : '停用' }}</el-tag>
+          <div class="agent-chat__messages" aria-live="polite">
+            <article v-for="(message, index) in chatMessages" :key="index" class="agent-chat__message" :class="`is-${message.role}`">
+              <span>{{ message.role === 'user' ? '你' : '智能体' }}</span>
+              <p>{{ message.text }}</p>
+            </article>
+            <el-empty v-if="!chatMessages.length" description="例如：检查本学期排课准备度并生成候选方案" :image-size="64" />
+          </div>
+          <el-input v-model="chatText" type="textarea" :rows="4" resize="none" :disabled="chatSending"
+            placeholder="例如：检查 2026-2027-1 学期的排课数据，生成一个候选课表，不要直接发布" />
+          <div class="agent-chat__options">
+            <div class="agent-chat__semester-hint">学期由智能体从你的描述中识别；未指定时使用当前启用学期。</div>
+            <div class="agent-chat__mode">
+              <span>处理方式</span>
+              <el-radio-group v-model="chatCandidateOnly">
+                <el-radio :value="true">仅生成候选结果</el-radio>
+                <el-radio :value="false">允许执行正式步骤</el-radio>
+              </el-radio-group>
             </div>
-            <p>{{ item.plan.objective }}</p>
-            <div class="agent-plan-meta">
-              <span>{{ cycleLabel(item.plan) }}</span><span>V{{ item.plan.planVersion }}</span><span>{{ stageCount(item.steps) }} 阶段 / {{ item.steps.length }} 子步骤</span>
-            </div>
-            <div class="agent-plan-actions">
-              <el-button v-if="canExecute" size="small" type="primary" @click="start(item)">执行</el-button>
-              <el-button v-if="canManage" size="small" @click="editPlan(item)">编辑</el-button>
-              <el-button v-if="canManage && item.plan.ownerUsername !== 'SYSTEM'" size="small" type="danger" text @click="removePlan(item)">删除</el-button>
-            </div>
-          </article>
-          <el-empty v-if="!loading && !plans.length" description="尚未配置执行计划" />
+          </div>
+          <el-upload ref="chatUploadRef" :auto-upload="false" :limit="1" accept=".xlsx,.XLSX,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            :on-change="selectChatAdmissionFile" :on-remove="clearChatAdmissionFile">
+            <el-button size="small">附加新生名册（可选）</el-button>
+          </el-upload>
+          <small class="agent-chat__tip">文件和消息会绑定到本次运行；智能体不会绕过权限、校验或人工审核。</small>
+          <el-button type="primary" :loading="chatSending" :disabled="!canExecute" @click="sendChat">发送给智能体</el-button>
         </div>
       </el-tab-pane>
 
@@ -154,115 +160,9 @@
             <el-button type="primary" :loading="interactionSending" @click="submitInteraction">发送给智能体</el-button>
           </section>
         </template>
-        <el-empty v-else description="选择或发起一个执行计划" />
+        <el-empty v-else description="先在智能体对话中告诉我你希望完成的工作" />
       </el-tab-pane>
     </el-tabs>
-
-    <el-dialog v-model="planDialog" :title="editingId ? '编辑执行计划' : (draftAnalysis ? '确认 DeepSeek 生成的执行计划' : '新增执行计划')" width="820px" append-to-body destroy-on-close>
-      <el-form label-position="top">
-		<section v-if="draftAnalysis" class="agent-draft-analysis">
-		  <strong>智能体识别结果</strong>
-		  <el-alert v-if="draftAnalysis.modelGenerated === false" type="warning" :closable="false"
-		    title="DeepSeek 本次调用未完成，平台已生成安全降级计划；该计划仍会实际调用受控业务工具" />
-		  <p>{{ draftAnalysis.intentSummary || '已根据目标和当前业务数据生成计划' }}</p>
-		  <small>{{ draftAnalysis.rationale }}</small>
-		  <div v-if="Object.keys(draftAnalysis.readiness || {}).length" class="agent-readiness">
-			<span v-for="(value, key) in draftAnalysis.readiness" :key="key">{{ readinessLabel(key) }}：{{ value ?? '未指定' }}</span>
-		  </div>
-		  <el-alert v-if="planMissingInputs.length" type="warning" :closable="false" title="保存前还需要补充资料">
-			<template #default><div v-for="item in planMissingInputs" :key="`${item.toolCode}-${item.key}`">{{ item.stepName }}：{{ item.prompt }}</div></template>
-		  </el-alert>
-		</section>
-        <div class="agent-form-grid">
-          <el-form-item label="计划名称"><el-input v-model="form.planName" /></el-form-item>
-          <el-form-item label="执行周期">
-            <el-select v-model="form.cycleType"><el-option label="手动执行" value="MANUAL" /><el-option label="Cron 周期" value="CRON" /></el-select>
-          </el-form-item>
-        </div>
-        <el-form-item label="计划状态">
-          <el-switch v-model="form.enabled" inline-prompt active-text="启用" inactive-text="停用" />
-        </el-form-item>
-        <el-form-item v-if="form.cycleType === 'CRON'" label="Cron 表达式"><el-input v-model="form.cronExpression" placeholder="例如：0 0 8 * * MON-FRI" /></el-form-item>
-        <div class="agent-form-grid">
-          <el-form-item label="规划开始日期"><el-date-picker v-model="form.periodStart" value-format="YYYY-MM-DD" /></el-form-item>
-          <el-form-item label="规划结束日期"><el-date-picker v-model="form.periodEnd" value-format="YYYY-MM-DD" /></el-form-item>
-        </div>
-        <el-form-item label="计划目标"><el-input v-model="form.objective" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="执行规则"><el-input v-model="form.ruleText" type="textarea" :rows="3" placeholder="描述范围、前置条件、异常处理和完成标准" /></el-form-item>
-        <el-form-item label="知识库 ID（可选）"><el-input v-model="form.knowledgeBaseId" placeholder="绑定后，知识检索步骤会保留政策引用" /></el-form-item>
-        <el-form-item label="授权业务工具">
-          <el-checkbox-group v-model="form.authorizedTools">
-            <el-checkbox v-for="tool in tools" :key="tool.code" :value="tool.code">{{ tool.name }}（{{ tool.riskLevel }}）</el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
-        <div class="agent-step-editor__header"><strong>执行步骤</strong><el-button size="small" @click="addStep">增加步骤</el-button></div>
-        <div v-for="(step, index) in form.steps" :key="index" class="agent-step-editor">
-          <span>{{ index + 1 }}</span>
-          <el-input v-model="step.stepName" placeholder="步骤名称" />
-          <el-select v-model="step.toolCode" placeholder="业务工具" @change="syncTool(step)">
-            <el-option v-for="tool in tools" :key="tool.code" :label="tool.name" :value="tool.code" />
-          </el-select>
-		  <el-checkbox v-model="step.approvalRequired">执行前需审批</el-checkbox>
-          <el-button type="danger" text @click="form.steps.splice(index, 1)">移除</el-button>
-		  <small class="agent-step-editor__stage">{{ toolStageLabel(step.toolCode) }}</small>
-          <el-input v-model="step.description" class="agent-step-editor__detail" type="textarea" :rows="2" placeholder="步骤说明" />
-          <el-input v-model="step.successCriteria" class="agent-step-editor__detail" type="textarea" :rows="2" placeholder="完成标准" />
-          <el-input v-model="step.toolConfigText" class="agent-step-editor__config" placeholder='工具参数 JSON，例如 {"semesterCode":"2026-2027-1"}' />
-        </div>
-      </el-form>
-      <template #footer>
-        <el-button @click="planDialog = false">取消</el-button>
-        <el-button :loading="saving" @click="savePlan(false)">{{ draftAnalysis && !editingId ? '仅保存计划' : '保存计划' }}</el-button>
-        <el-button v-if="draftAnalysis && !editingId" type="primary" :loading="saving" @click="savePlan(true)">确认并开始执行</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="draftDialog" title="DeepSeek 生成执行计划" width="600px" append-to-body destroy-on-close
-      :close-on-click-modal="!drafting" :close-on-press-escape="!drafting" :show-close="!drafting">
-      <el-form label-position="top">
-        <el-form-item label="希望智能体完成什么工作">
-          <el-input v-model="draftForm.request" type="textarea" :rows="5" placeholder="例如：检查 2026-2027-1 学期开学准备度，引用校内政策，只做检查，不写入正式数据" />
-        </el-form-item>
-        <div class="agent-form-grid">
-          <el-form-item label="学期（可选）"><el-input v-model="draftForm.semesterCode" placeholder="2026-2027-1" /></el-form-item>
-          <el-form-item label="入学年份（可选）"><el-input-number v-model="draftForm.admissionYear" :min="2000" :max="2100" /></el-form-item>
-        </div>
-		<el-form-item label="知识库 ID（可选）"><el-input v-model="draftForm.knowledgeBaseId" /></el-form-item>
-		<el-form-item label="结果边界">
-		  <el-switch v-model="draftForm.candidateOnly" active-text="先生成候选结果，由用户确认后再进入正式写入" />
-		</el-form-item>
-        <el-form-item label="新生名册（可选）">
-          <el-upload
-            ref="draftUploadRef"
-            :auto-upload="false"
-            :limit="1"
-            accept=".xlsx,.XLSX,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            :on-change="selectDraftAdmissionFile"
-            :on-remove="clearDraftAdmissionFile"
-          >
-            <el-button>选择 XLSX 名册</el-button>
-          </el-upload>
-          <small class="agent-upload-tip">支持 .xlsx 和 .XLSX。文件会先进入受管文件中心，再把可信文件 ID 注入“新生数据接入”步骤。</small>
-        </el-form-item>
-        <section v-if="draftProgress.length" class="agent-planning-progress" aria-live="polite">
-          <div class="agent-planning-progress__header">
-            <strong>{{ drafting ? '正在生成执行计划' : (draftProgressFailed ? '执行计划生成失败' : '规划过程已完成') }}</strong>
-            <span>{{ formatElapsed(draftElapsed) }}</span>
-          </div>
-          <p>{{ draftProgressMessage }}</p>
-          <div class="agent-planning-progress__steps">
-            <div v-for="item in draftProgress" :key="item.key" class="agent-planning-progress__step" :class="`is-${item.status}`">
-              <i></i><div><strong>{{ item.name }}</strong><small>{{ item.detail }}</small></div>
-              <em>{{ planningStatusLabel(item.status) }}</em>
-            </div>
-          </div>
-        </section>
-      </el-form>
-      <template #footer>
-        <el-button :disabled="drafting" @click="draftDialog = false">取消</el-button>
-        <el-button type="primary" :loading="drafting" @click="generateDraft">{{ draftProgressFailed ? '重新调用 DeepSeek' : '调用 DeepSeek' }}</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog v-model="conditionDialog" title="增加附加条件" width="520px" append-to-body>
       <p class="agent-condition-tip">附加条件只影响尚未开始的步骤。已完成且已生效的数据不会被静默覆盖。</p>
@@ -281,11 +181,11 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Close, Plus } from '@element-plus/icons-vue'
+import { Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   addOperationAgentCondition, approveOperationAgentStep, cancelOperationAgentRun,
-  createOperationAgentPlan, deleteOperationAgentPlan, draftOperationAgentPlan, fetchOperationAgentEvents,
+  createOperationAgentPlan, deleteOperationAgentPlan, draftOperationAgentPlan, converseWithOperationAgent, fetchOperationAgentEvents,
   fetchOperationAgentPlans, fetchOperationAgentRun, fetchOperationAgentRuns,
   fetchOperationAgentTools, pauseOperationAgentRun, resumeOperationAgentRun,
   promoteOperationAgentCandidate, refreshOperationAgentApprovalEvidence, rejectOperationAgentStep, retryOperationAgentRun, startOperationAgentRun, supplyOperationAgentInput, updateOperationAgentPlan,
@@ -296,7 +196,7 @@ import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
 const props = defineProps({ open: Boolean })
 const router = useRouter()
 defineEmits(['close'])
-const tab = ref('plans')
+const tab = ref('chat')
 const loading = ref(false)
 const saving = ref(false)
 const tools = ref([])
@@ -324,6 +224,14 @@ const stepInputDialog = ref(false)
 const stepInputText = ref('{}')
 const interactionText = ref('')
 const interactionSending = ref(false)
+const chatText = ref('')
+const chatCandidateOnly = ref(true)
+const chatSending = ref(false)
+const chatMessages = ref([])
+const chatAdmissionFile = ref(null)
+const chatUploadRef = ref(null)
+const pendingSemesterCode = ref('')
+const pendingSemesterAction = ref('')
 const reviewComment = ref('')
 const reviewing = ref(false)
 let poller
@@ -472,6 +380,94 @@ async function selectDraftAdmissionFile(file) {
 }
 function clearDraftAdmissionFile() {
   draftAdmissionFile.value = null
+}
+async function selectChatAdmissionFile(file) {
+  const filename = String(file?.name || file?.raw?.name || '')
+  if (!filename.toLocaleLowerCase().endsWith('.xlsx')) {
+    chatAdmissionFile.value = null
+    await nextTick()
+    chatUploadRef.value?.clearFiles()
+    return ElMessage.warning('新生名册仅支持 XLSX 文件，文件扩展名大小写均可')
+  }
+  chatAdmissionFile.value = file.raw
+}
+function clearChatAdmissionFile() {
+  chatAdmissionFile.value = null
+}
+async function sendChat() {
+  const request = chatText.value.trim()
+  if (!request) return ElMessage.warning('请先告诉智能体希望完成的工作')
+  let semesterCode = null
+  let confirmNonCurrent = false
+  let createMissingTerm = false
+  if (pendingSemesterCode.value) {
+    if (pendingSemesterAction.value === 'CREATE_TERM_INPUT_REQUIRED') {
+      semesterCode = pendingSemesterCode.value
+      createMissingTerm = true
+    } else if (/(创建|新建|建立)/.test(request)) {
+      semesterCode = pendingSemesterCode.value
+      createMissingTerm = true
+    } else if (/(继续|确认|是的|可以|处理)/.test(request)) {
+      semesterCode = pendingSemesterCode.value
+      confirmNonCurrent = pendingSemesterAction.value === 'CONFIRM_NON_CURRENT'
+    } else if (/(当前学期|取消|不用|换回)/.test(request)) {
+      pendingSemesterCode.value = ''
+      pendingSemesterAction.value = ''
+    }
+  }
+  chatSending.value = true
+  chatMessages.value.push({ role: 'user', text: request })
+  chatText.value = ''
+  try {
+    let managedFileId = ''
+    if (chatAdmissionFile.value) {
+      const uploaded = await uploadOperationAgentAdmissionRoster(chatAdmissionFile.value)
+      managedFileId = uploaded.data?.id || uploaded.data?.fileId || ''
+      if (!managedFileId) throw new Error('新生名册上传后未返回文件标识')
+    }
+    const result = await converseWithOperationAgent({
+      request,
+      semesterCode,
+      admissionYear: null,
+      managedFileId: managedFileId || null,
+      candidateOnly: chatCandidateOnly.value,
+      confirmNonCurrent,
+      createMissingTerm,
+    })
+    const response = result.data || {}
+    if (['CONFIRM_NON_CURRENT', 'CONFIRM_CREATE', 'CREATE_TERM_INPUT_REQUIRED', 'NEED_CURRENT_TERM', 'CONFLICT'].includes(response.status)) {
+      const resolution = response.resolution || {}
+      if (resolution.termCode) {
+        pendingSemesterCode.value = resolution.termCode
+        pendingSemesterAction.value = response.status
+      }
+      chatMessages.value.push({ role: 'agent', text: resolution.message || '请先确认本次处理的学期。' })
+      return
+    }
+    if (response.status === 'NEED_INPUT') {
+      const required = response.draft?.requiredInputs || []
+      const detailText = required.length
+        ? `我还需要你补充：${required.map(item => `${item.label}（${item.prompt}）`).join('；')}`
+        : '我还需要更多业务资料才能安全开始，请补充目标范围或相关数据。'
+      chatMessages.value.push({ role: 'agent', text: detailText })
+      return
+    }
+    const runId = response.run?.run?.id
+    if (!runId) throw new Error('智能体已规划，但未返回运行实例')
+    chatMessages.value.push({ role: 'agent', text: '我已读取当前业务现状并开始执行。接下来会在每个阶段展示进度，遇到需要确认的步骤会暂停等待你处理。' })
+    pendingSemesterCode.value = ''
+    pendingSemesterAction.value = ''
+    selectedRunId.value = runId
+    tab.value = 'runs'
+    chatAdmissionFile.value = null
+    chatUploadRef.value?.clearFiles()
+    await loadBase()
+    await loadRun()
+  } catch (error) {
+    chatMessages.value.push({ role: 'agent', text: error?.message || '智能体暂时无法开始，请检查服务端返回信息。' })
+  } finally {
+    chatSending.value = false
+  }
 }
 function parseEvidence(value) {
   if (!value) return null
@@ -733,6 +729,7 @@ const formatTime = value => value ? String(value).replace('T', ' ').slice(5, 19)
 .agent-workspace__tabs{min-height:0;flex:1;display:flex;flex-direction:column}.agent-workspace__tabs :deep(.el-tabs__header){margin:0;padding:0 16px;background:#fff}.agent-workspace__tabs :deep(.el-tabs__content){min-height:0;flex:1}.agent-workspace__tabs :deep(.el-tab-pane){height:100%;display:flex;flex-direction:column}
 .agent-toolbar{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#758690}
 .agent-toolbar__actions{display:flex;gap:6px}.agent-toolbar__actions :deep(.el-button+.el-button){margin-left:0}
+.agent-chat{min-height:0;overflow:auto;padding:16px 14px 18px;display:grid;align-content:start;gap:10px}.agent-chat__intro{padding:14px;border:1px solid #cfe4df;border-radius:14px;background:linear-gradient(135deg,#eef9f6,#fff)}.agent-chat__intro strong{font-size:13px}.agent-chat__intro p{margin:7px 0 0;color:#60747d;font-size:11px;line-height:1.6}.agent-chat__messages{min-height:150px;display:grid;align-content:start;gap:8px}.agent-chat__message{max-width:94%;padding:9px 11px;border-radius:12px;background:#fff;border:1px solid #e0e8eb}.agent-chat__message.is-user{justify-self:end;background:#e8f4f1;border-color:#c9e4dd}.agent-chat__message span{display:block;color:#74858b;font-size:9px}.agent-chat__message p{margin:4px 0 0;color:#344c55;font-size:11px;line-height:1.55;white-space:pre-wrap}.agent-chat__options{display:grid;grid-template-columns:1fr;gap:8px}.agent-chat__mode{display:grid;gap:5px;padding:9px 10px;border:1px solid #e0e8eb;border-radius:10px;background:#fff}.agent-chat__mode>span{color:#74858b;font-size:10px}.agent-chat__mode :deep(.el-radio-group){display:flex;flex-wrap:wrap;gap:8px}.agent-chat__mode :deep(.el-radio){height:auto;margin-right:0;font-size:10px}.agent-chat__tip{color:#788990;font-size:10px;line-height:1.45}
 .agent-scroll{min-height:0;overflow:auto;padding:0 12px 18px;display:grid;align-content:start;gap:10px}.agent-scroll--run{padding-top:12px}
 .agent-plan-card{padding:13px;border:1px solid #e0e8eb;border-radius:14px;background:#fff;box-shadow:0 6px 18px rgba(40,61,71,.04)}.agent-plan-card__title{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.agent-plan-card p{margin:8px 0;color:#6d7c84;font-size:12px;line-height:1.55}.agent-plan-meta{display:flex;gap:10px;color:#94a0a6;font-size:10px}.agent-plan-actions{display:flex;margin-top:11px}
 .agent-run-select{width:calc(100% - 24px);margin:12px}.agent-run-summary{margin:0 12px;padding:13px;border-radius:14px;background:linear-gradient(135deg,#e7f5f1,#f6fbfa);border:1px solid #d2e9e3}.agent-run-summary__top{display:flex;justify-content:space-between;gap:8px}.agent-run-summary p{margin:8px 0 5px;font-size:12px}.agent-run-summary small{color:#687a81;font-size:10px;line-height:1.5}.agent-run-actions{padding:10px 12px;display:flex;flex-wrap:wrap;gap:5px}.agent-run-actions :deep(.el-button+.el-button){margin-left:0}
@@ -744,6 +741,7 @@ const formatTime = value => value ? String(value).replace('T', ' ').slice(5, 19)
 .agent-events{display:grid;gap:8px}.agent-events article{padding:9px 10px;border-left:3px solid #9eb0b8;border-radius:0 10px 10px 0;background:#fff}.agent-events article.is-success{border-color:#0f8b72}.agent-events article.is-warn{border-color:#d99028}.agent-events article.is-error{border-color:#cf5353}.agent-events time{display:block;color:#9aa6ab;font-size:9px}.agent-events strong{display:block;margin-top:3px;font-size:11px}.agent-events p{margin:4px 0 0;color:#6f7f86;font-size:10px;line-height:1.45}
 .agent-interaction{margin:0 12px 12px;padding:12px;display:grid;gap:8px;border:1px solid #cfe0e5;border-radius:14px;background:#fff;box-shadow:0 8px 20px rgba(34,66,78,.06)}.agent-interaction>div{display:grid;gap:3px}.agent-interaction strong{font-size:12px}.agent-interaction small{color:#71838b;font-size:10px;line-height:1.45}.agent-interaction :deep(.el-button){width:100%}
 .agent-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.agent-step-editor__header{display:flex;justify-content:space-between;margin:12px 0}.agent-step-editor{display:grid;grid-template-columns:24px 1fr 1fr auto auto;gap:8px;align-items:center;margin-bottom:8px;padding:10px;border:1px solid #e1e8eb;border-radius:10px}.agent-step-editor__stage{grid-column:2/-1;color:#55717a}.agent-step-editor__detail,.agent-step-editor__config{grid-column:2/-1}.agent-condition-tip{color:#697a82;font-size:12px;line-height:1.6}
+.agent-chat__semester-hint{padding:8px 10px;border-radius:9px;background:#f2f7f7;color:#637a81;font-size:10px;line-height:1.45}
 .agent-draft-analysis{display:grid;gap:8px;margin-bottom:16px;padding:14px;border:1px solid #cfe4df;border-radius:12px;background:#f4faf8}.agent-draft-analysis p,.agent-draft-analysis small{margin:0}.agent-draft-analysis small{color:#667b82;line-height:1.5}.agent-readiness{display:flex;flex-wrap:wrap;gap:6px}.agent-readiness span{padding:4px 7px;border-radius:7px;background:#fff;color:#536970;font-size:11px}
 .agent-planning-progress{display:grid;gap:10px;margin-top:6px;padding:14px;border:1px solid #cfe0e5;border-radius:12px;background:#f7fafb}.agent-planning-progress__header{display:flex;justify-content:space-between;gap:12px}.agent-planning-progress__header span{color:#71838b;font-size:11px}.agent-planning-progress>p{margin:0;color:#60747d;font-size:12px;line-height:1.5}.agent-planning-progress__steps{display:grid;gap:7px}.agent-planning-progress__step{display:grid;grid-template-columns:12px 1fr auto;align-items:start;gap:8px}.agent-planning-progress__step i{width:10px;height:10px;margin-top:3px;border:2px solid #aebdc3;border-radius:50%;background:#fff}.agent-planning-progress__step div{display:grid;gap:2px}.agent-planning-progress__step strong{font-size:11px}.agent-planning-progress__step small,.agent-planning-progress__step em{color:#7b8c93;font-size:10px;font-style:normal}.agent-planning-progress__step.is-running i{border-color:#2f7f91;box-shadow:0 0 0 4px rgba(47,127,145,.12)}.agent-planning-progress__step.is-completed i{border-color:#14836d;background:#14836d}.agent-planning-progress__step.is-skipped i{border-color:#aebdc3;background:#e8edef}.agent-planning-progress__step.is-failed i{border-color:#c84d4d;background:#c84d4d}.agent-planning-progress__step.is-failed em{color:#c84d4d}
 @media(max-width:720px){.agent-workspace{width:100%}.agent-form-grid{grid-template-columns:1fr}.agent-step-editor{grid-template-columns:24px 1fr}.agent-step-editor__config{grid-column:1/-1}}

@@ -455,6 +455,8 @@ export const listAcademicTerms = (params) => http.get(`/admin/education/terms?${
 export const importAcademicHolidays = (payload) => http.post('/admin/education/holidays/import', payload)
 export const createAcademicTerm = (payload) => http.post('/admin/education/terms', payload)
 export const updateAcademicTerm = (id, payload) => http.put(`/admin/education/terms/${id}`, payload)
+export const academicTermArchiveReadiness = (id) => http.get(`/admin/education/terms/${id}/archive-readiness`)
+export const archiveAcademicTerm = (id) => http.post(`/admin/education/terms/${id}/archive`)
 export const listAcademicCalendarDays = (termId) => http.get(`/admin/education/calendar-days?${qs({ termId })}`)
 export const createAcademicCalendarDay = (payload) => http.post('/admin/education/calendar-days', payload)
 export const updateAcademicCalendarDay = (id, payload) => http.put(`/admin/education/calendar-days/${id}`, payload)

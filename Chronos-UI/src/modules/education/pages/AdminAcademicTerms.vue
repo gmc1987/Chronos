@@ -14,7 +14,8 @@
           <el-table-column prop="endDate" label="结束日期" width="120" />
           <el-table-column prop="weekCount" label="教学周" width="80" />
           <el-table-column label="当前" width="70"><template #default="s"><el-tag v-if="s.row.currentTerm" type="success">是</el-tag><span v-else>否</span></template></el-table-column>
-          <AdaptiveActionColumn label="操作" width="80"><template #default="s"><el-button link type="primary" @click.stop="openTerm(s.row)">编辑</el-button></template></AdaptiveActionColumn>
+          <el-table-column label="状态" width="90"><template #default="s"><el-tag :type="s.row.status === 'ARCHIVED' ? 'info' : 'success'">{{ s.row.status === 'ARCHIVED' ? '已归档' : '启用' }}</el-tag></template></el-table-column>
+          <AdaptiveActionColumn label="操作" width="150"><template #default="s"><el-button link type="primary" :disabled="s.row.status === 'ARCHIVED'" @click.stop="openTerm(s.row)">编辑</el-button><el-button link type="warning" :disabled="s.row.status === 'ARCHIVED'" @click.stop="archiveTerm(s.row)">归档</el-button></template></AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="教学日历" name="calendar">
@@ -47,7 +48,7 @@
 <script setup>
 import { h, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
-import { createAcademicCalendarDay, createAcademicTerm, createBellPeriod, createBellSchedule, deleteAcademicCalendarDay, deleteBellPeriod, deleteBellSchedule, listAcademicCalendarDays, listAcademicTerms, listBellSchedules, orgList, updateAcademicCalendarDay, updateAcademicTerm, updateBellPeriod, updateBellSchedule } from '../../../api/admin'
+import { academicTermArchiveReadiness, archiveAcademicTerm, createAcademicCalendarDay, createAcademicTerm, createBellPeriod, createBellSchedule, deleteAcademicCalendarDay, deleteBellPeriod, deleteBellSchedule, listAcademicCalendarDays, listAcademicTerms, listBellSchedules, orgList, updateAcademicCalendarDay, updateAcademicTerm, updateBellPeriod, updateBellSchedule } from '../../../api/admin'
 
 const TermSelect = (props, context) => h(ElSelect, { modelValue: props.modelValue, 'onUpdate:modelValue': value => context.emit('update:modelValue', value), onChange: () => context.emit('change'), placeholder: '请选择学期' }, () => props.terms.map(item => h(ElOption, { key: item.id, label: item.termName, value: item.id })))
 TermSelect.props = ['modelValue', 'terms']; TermSelect.emits = ['update:modelValue', 'change']
@@ -61,6 +62,18 @@ const loadCampuses = async () => { const rows = unwrap(await orgList({ page: 0, 
 const loadDetails = async () => { if (!selectedTermId.value) return; const [dayResult, bellResult] = await Promise.all([listAcademicCalendarDays(selectedTermId.value), listBellSchedules(selectedTermId.value)]); days.value = dayResult.data || []; bells.value = bellResult.data || [] }
 const openTerm = row => { reset(termForm, row ? { ...row } : { termNo: 1, weekCount: 20, currentTerm: false, status: 'ACTIVE' }); termDialog.value = true }
 const saveTerm = async () => { await (termForm.id ? updateAcademicTerm(termForm.id, termForm) : createAcademicTerm(termForm)); termDialog.value = false; ElMessage.success('学期保存成功'); await loadTerms(); await loadDetails() }
+const archiveTerm = async row => {
+  const response = await academicTermArchiveReadiness(row.id)
+  const readiness = response.data || {}
+  if (!readiness.readyForArchive) {
+    ElMessage.warning(readiness.message || '当前学期尚不满足归档条件')
+    return
+  }
+  await ElMessageBox.confirm(`确认归档“${row.termName}”？归档后学期历史数据将进入只读状态。`, '学期归档确认', { type: 'warning' })
+  await archiveAcademicTerm(row.id)
+  ElMessage.success('学期归档成功')
+  await loadTerms()
+}
 const openDay = row => { reset(dayForm, row ? { ...row } : { academicTermId: selectedTermId.value, dayType: 'HOLIDAY', teachingDay: false }); dayDialog.value = true }
 const saveDay = async () => { const payload = { ...dayForm, scheduleDate: dayForm.teachingDay ? dayForm.scheduleDate || null : null }; await (dayForm.id ? updateAcademicCalendarDay(dayForm.id, payload) : createAcademicCalendarDay(payload)); dayDialog.value = false; ElMessage.success('教学日历保存成功'); await loadDetails() }
 const removeDay = async row => { await confirmDelete(`特殊日期“${row.dayName}”`); await deleteAcademicCalendarDay(row.id); await loadDetails() }

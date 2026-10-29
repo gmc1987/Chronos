@@ -17,13 +17,19 @@ import com.chronos.ai.model.AiModel;
 /** Creates a fully configured, database-backed DeepSeek client. */
 @Component
 public class DeepSeekChatModelFactory {
+	/**
+	 * 管理后台的模型配置允许较长超时，但同步交互入口不能无限继承该值。
+	 * 超过一分钟后由上层智能体切换到确定性规划器，避免页面长时间停在“发送中”。
+	 */
+	static final int MAX_INTERACTIVE_READ_TIMEOUT_MS = 60_000;
+
 	public ChatModel create(AiModel model) {
 		int connectTimeout = model.getConnectTimeoutMs() == null ? 10_000 : model.getConnectTimeoutMs();
-		int readTimeout = model.getReadTimeoutMs() == null ? 60_000 : model.getReadTimeoutMs();
 		int callTimeout = model.getCallTimeoutMs() == null ? 120_000 : model.getCallTimeoutMs();
+		int readTimeout = effectiveReadTimeoutMs(model, callTimeout);
 		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
 		requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeout));
-		requestFactory.setReadTimeout(Duration.ofMillis(Math.min(readTimeout, callTimeout)));
+		requestFactory.setReadTimeout(Duration.ofMillis(readTimeout));
 
 		DeepSeekApi api = DeepSeekApi.builder()
 				.apiKey(model.getApiKey().trim())
@@ -48,5 +54,13 @@ public class DeepSeekChatModelFactory {
 				// 60-second read timeout into a two-to-three minute opaque wait.
 				.retryTemplate(new RetryTemplate(RetryPolicy.withMaxRetries(0)))
 				.build();
+	}
+
+	static int effectiveReadTimeoutMs(AiModel model, int callTimeout) {
+		int configuredReadTimeout = model.getReadTimeoutMs() == null
+				? MAX_INTERACTIVE_READ_TIMEOUT_MS
+				: model.getReadTimeoutMs();
+		return Math.min(configuredReadTimeout,
+				Math.min(callTimeout, MAX_INTERACTIVE_READ_TIMEOUT_MS));
 	}
 }

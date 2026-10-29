@@ -3,6 +3,7 @@ import { http } from '../../api/http'
 export const fetchOperationAgentTools = () => http.get('/agent/operations/tools')
 export const fetchOperationAgentPlans = () => http.get('/agent/operations/plans')
 export const draftOperationAgentPlan = payload => http.post('/agent/operations/plans/draft', payload)
+export const converseWithOperationAgent = payload => http.post('/agent/operations/conversation', payload)
 export const uploadOperationAgentAdmissionRoster = file => {
   const data = new FormData()
   data.append('file', file)

@@ -37,6 +37,7 @@ import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.education.scheduling.service.AcademicDataService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.StudentProfileExportService;
+import com.chronos.education.scheduling.service.SemesterArchiveService;
 import com.chronos.security.IamAuthorization;
 
 @RestController
@@ -45,16 +46,19 @@ public class AcademicDataController {
 	private final StudentProfileExportService studentExports;
 	private final IamAuthorization authorization;
 	private final EducationDataScopeService dataScopes;
+	private final SemesterArchiveService semesterArchives;
 
 	public AcademicDataController(
 			AcademicDataService service,
 			StudentProfileExportService studentExports,
 			IamAuthorization authorization,
-			EducationDataScopeService dataScopes) {
+			EducationDataScopeService dataScopes,
+			SemesterArchiveService semesterArchives) {
 		this.service = service;
 		this.studentExports = studentExports;
 		this.authorization = authorization;
 		this.dataScopes = dataScopes;
+		this.semesterArchives = semesterArchives;
 	}
 
 	@GetMapping("/admin/education/terms")
@@ -79,6 +83,20 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
 	public ResultData<AcademicTerm> updateTerm(@PathVariable String id, @RequestBody AcademicTerm command) {
 		return ok(service.saveTerm(id, command));
+	}
+
+	@GetMapping("/admin/education/terms/{id}/archive-readiness")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
+	public ResultData<SemesterArchiveService.ArchiveReadiness> archiveReadiness(@PathVariable String id) {
+		return ok(semesterArchives.readiness(id));
+	}
+
+	@PostMapping("/admin/education/terms/{id}/archive")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
+	public ResultData<AcademicTerm> archiveTerm(
+			@PathVariable String id,
+			Authentication authentication) {
+		return ok(semesterArchives.archive(id, authentication.getName()));
 	}
 
 	@GetMapping("/admin/education/grades")

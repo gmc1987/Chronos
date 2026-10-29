@@ -124,6 +124,14 @@ public class AcademicDataService {
 				|| !command.getStartDate().isBefore(command.getEndDate())) {
 			throw new IllegalArgumentException("学期开始日期必须早于结束日期");
 		}
+		if (id != null && terms.findById(id)
+				.map(AcademicTerm::getStatus)
+				.filter("ARCHIVED"::equals)
+				.isPresent()) {
+			throw new IllegalStateException("已归档学期不能直接修改");
+		}
+		// 归档只能走带准备度检查和审计的专用接口，禁止普通编辑绕过归档边界。
+		command.setStatus("ACTIVE");
 		AcademicTerm value = entity(id, command, terms);
 		if (Boolean.TRUE.equals(command.getCurrentTerm())) {
 			terms.findAll().stream().filter(item -> !item.getId().equals(value.getId())).forEach(item -> {
