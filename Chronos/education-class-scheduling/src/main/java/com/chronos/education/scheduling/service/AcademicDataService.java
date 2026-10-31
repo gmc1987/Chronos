@@ -634,7 +634,81 @@ public class AcademicDataService {
 						throw new IllegalStateException("每名学生只能有一名主监护人");
 					});
 		}
-		return guardians.save(entity(id, command, guardians));
+		StudentGuardianRelation value = entity(id, command, guardians);
+		if (id == null) {
+			// 新建关系必须经过独立核验，不能因为已建档就直接获得学生数据访问权。
+			value.setVerificationStatus("PENDING");
+			value.setVerifiedBy(null);
+			value.setVerifiedAt(null);
+		}
+		return guardians.save(value);
+	}
+
+	@Transactional
+	public StudentGuardianRelation verifyGuardian(
+			String id,
+			boolean approved,
+			String note,
+			String actor) {
+		StudentGuardianRelation value = guardians.findForUpdate(id)
+				.orElseThrow(() -> new IllegalArgumentException("监护关系不存在"));
+		if (!"PENDING".equals(value.getVerificationStatus())) {
+			throw new IllegalStateException("当前监护关系不可核验");
+		}
+		if (actor.equals(value.getCreateBy())) {
+			throw new org.springframework.security.access.AccessDeniedException("监护关系创建人不能核验自己的关系");
+		}
+		if (!approved && (note == null || note.isBlank())) {
+			throw new IllegalArgumentException("驳回原因不能为空");
+		}
+		value.setVerificationStatus(approved ? "VERIFIED" : "REJECTED");
+		value.setVerificationNote(note == null || note.isBlank() ? null : note.trim());
+		value.setVerifiedBy(actor);
+		value.setVerifiedAt(LocalDateTime.now());
+		return guardians.save(value);
+	}
+
+	@Transactional
+	public StudentGuardianRelation restrictGuardian(
+			String id,
+			String level,
+			String reason,
+			java.time.LocalDate from,
+			java.time.LocalDate to) {
+		StudentGuardianRelation value = guardians.findForUpdate(id)
+				.orElseThrow(() -> new IllegalArgumentException("监护关系不存在"));
+		String normalized = level == null ? "NONE" : level.trim().toUpperCase(java.util.Locale.ROOT);
+		if (!java.util.Set.of("NONE", "CONTACT_ONLY", "NO_ACCESS").contains(normalized)) {
+			throw new IllegalArgumentException("监护限制级别无效");
+		}
+		if (!"NONE".equals(normalized) && (reason == null || reason.isBlank())) {
+			throw new IllegalArgumentException("设置监护限制时必须填写原因");
+		}
+		if (from != null && to != null && to.isBefore(from)) {
+			throw new IllegalArgumentException("监护限制结束日期不能早于开始日期");
+		}
+		value.setRestrictionLevel(normalized);
+		value.setRestrictionReason(reason == null || reason.isBlank() ? null : reason.trim());
+		value.setRestrictionFrom(from);
+		value.setRestrictionTo(to);
+		return guardians.save(value);
+	}
+
+	@Transactional
+	public StudentGuardianRelation consentGuardian(
+			String id,
+			String status,
+			LocalDateTime expiresAt) {
+		StudentGuardianRelation value = guardians.findForUpdate(id)
+				.orElseThrow(() -> new IllegalArgumentException("监护关系不存在"));
+		String normalized = status == null ? "" : status.trim().toUpperCase(java.util.Locale.ROOT);
+		if (!java.util.Set.of("NOT_REQUIRED", "PENDING", "GRANTED", "DENIED", "REVOKED").contains(normalized)) {
+			throw new IllegalArgumentException("学生授权状态无效");
+		}
+		value.setStudentConsentStatus(normalized);
+		value.setStudentConsentedAt("GRANTED".equals(normalized) ? LocalDateTime.now() : null);
+		value.setConsentExpiresAt("GRANTED".equals(normalized) ? expiresAt : null);
+		return guardians.save(value);
 	}
 
 	@Transactional

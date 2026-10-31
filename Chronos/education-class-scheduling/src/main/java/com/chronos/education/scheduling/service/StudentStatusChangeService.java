@@ -1,5 +1,6 @@
 package com.chronos.education.scheduling.service;
 
+import com.chronos.education.academic.dao.GraduationAuditRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CombinedOfferingSourceClassRepository;
@@ -31,6 +32,7 @@ public class StudentStatusChangeService {
 			"TRANSFER_OUT", "TRANSFERRED",
 			"WITHDRAW", "WITHDRAWN",
 			"GRADUATE", "GRADUATED",
+			"DEFER_GRADUATION", "ACTIVE",
 			"TRANSFER_CLASS", "ACTIVE",
 			"RETAIN_GRADE", "ACTIVE");
 
@@ -43,6 +45,7 @@ public class StudentStatusChangeService {
 	private final AcademicDataService academicData;
 	private final CourseOfferingRepository offerings;
 	private final AcademicTermRepository terms;
+	private final GraduationAuditRepository graduationAudits;
 	private final IAuditLogService audit;
 
 	public StudentStatusChangeService(
@@ -55,6 +58,7 @@ public class StudentStatusChangeService {
 			AcademicDataService academicData,
 			CourseOfferingRepository offerings,
 			AcademicTermRepository terms,
+			GraduationAuditRepository graduationAudits,
 			IAuditLogService audit) {
 		this.changes = changes;
 		this.students = students;
@@ -65,6 +69,7 @@ public class StudentStatusChangeService {
 		this.academicData = academicData;
 		this.offerings = offerings;
 		this.terms = terms;
+		this.graduationAudits = graduationAudits;
 		this.audit = audit;
 	}
 
@@ -90,6 +95,7 @@ public class StudentStatusChangeService {
 		StudentProfile student = requireStudentForUpdate(studentId);
 		String type = normalizeType(command.changeType());
 		validateTransition(student.getEnrollmentStatus(), type);
+		assertGraduationReady(studentId, type);
 		if (changes.existsByStudentIdAndStatus(studentId, "PENDING")
 				|| changes.existsByStudentIdAndStatus(studentId, "APPROVED_PENDING")) {
 			throw new IllegalStateException("学生已有待审批或待生效的学籍异动");
@@ -119,6 +125,7 @@ public class StudentStatusChangeService {
 	@Transactional
 	public StudentStatusChange approve(String id, String comment, String username) {
 		StudentStatusChange change = requirePending(id);
+		assertDifferentDecisionMaker(change, username);
 		change.setStatus("APPROVED_PENDING");
 		change.setDecisionComment(comment);
 		change.setDecidedBy(username);
@@ -157,6 +164,7 @@ public class StudentStatusChangeService {
 
 	private StudentStatusChange applyApproved(StudentStatusChange change, String operator) {
 		StudentProfile student = requireStudentForUpdate(change.getStudentId());
+		assertGraduationReady(student.getId(), change.getChangeType());
 		// 审批期间如果学生主档已经变化，拒绝使用过期快照覆盖最新数据。
 		if (!change.getFromStatus().equals(student.getEnrollmentStatus())
 				|| !change.getFromClassId().equals(student.getAdministrativeClassId())
@@ -201,6 +209,7 @@ public class StudentStatusChangeService {
 	@Transactional
 	public StudentStatusChange reject(String id, String comment, String username) {
 		StudentStatusChange change = requirePending(id);
+		assertDifferentDecisionMaker(change, username);
 		change.setStatus("REJECTED");
 		change.setDecisionComment(requireText(comment, "驳回原因不能为空"));
 		change.setDecidedBy(username);
@@ -356,7 +365,8 @@ public class StudentStatusChangeService {
 	private void validateTransition(String currentStatus, String type) {
 		boolean allowed = switch (type) {
 			case "RESUME" -> "SUSPENDED".equals(currentStatus);
-			case "SUSPEND", "TRANSFER_OUT", "WITHDRAW", "GRADUATE", "TRANSFER_CLASS", "RETAIN_GRADE" ->
+			case "SUSPEND", "TRANSFER_OUT", "WITHDRAW", "GRADUATE", "DEFER_GRADUATION",
+					"TRANSFER_CLASS", "RETAIN_GRADE" ->
 					"ACTIVE".equals(currentStatus);
 			default -> false;
 		};
@@ -378,5 +388,19 @@ public class StudentStatusChangeService {
 			throw new IllegalArgumentException(message);
 		}
 		return value.trim();
+	}
+
+	private void assertDifferentDecisionMaker(StudentStatusChange change, String username) {
+		if (username.equals(change.getRequestedBy())) {
+			throw new org.springframework.security.access.AccessDeniedException(
+					"学籍异动申请人不能审批自己的申请");
+		}
+	}
+
+	private void assertGraduationReady(String studentId, String changeType) {
+		if ("GRADUATE".equals(changeType)
+				&& !graduationAudits.existsByStudentIdAndStatus(studentId, "APPROVED")) {
+			throw new IllegalStateException("学生尚未通过毕业资格审核，不能办理毕业异动");
+		}
 	}
 }

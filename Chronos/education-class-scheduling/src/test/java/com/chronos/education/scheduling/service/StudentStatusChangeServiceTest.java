@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.chronos.education.academic.dao.GraduationAuditRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CombinedOfferingSourceClassRepository;
@@ -39,6 +40,7 @@ class StudentStatusChangeServiceTest {
 	private CourseOfferingRepository offerings;
 	private AcademicTermRepository terms;
 	private TeachingClassMemberRepository members;
+	private GraduationAuditRepository graduationAudits;
 	private StudentStatusChangeService service;
 
 	@BeforeEach
@@ -52,6 +54,7 @@ class StudentStatusChangeServiceTest {
 		offerings = mock(CourseOfferingRepository.class);
 		terms = mock(AcademicTermRepository.class);
 		members = mock(TeachingClassMemberRepository.class);
+		graduationAudits = mock(GraduationAuditRepository.class);
 		service = new StudentStatusChangeService(
 				changes,
 				students,
@@ -62,6 +65,7 @@ class StudentStatusChangeServiceTest {
 				academicData,
 				offerings,
 				terms,
+				graduationAudits,
 				mock(IAuditLogService.class));
 		when(changes.save(any(StudentStatusChange.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
@@ -298,6 +302,49 @@ class StudentStatusChangeServiceTest {
 		service.approve("change-1", "同意", "registrar-manager");
 
 		verify(academicData).enrollFromAdministrativeClass("target-offering", "student-1");
+	}
+
+	@Test
+	void requesterCannotApproveOwnStatusChange() {
+		StudentStatusChange change = pendingChange("SUSPEND", "SUSPENDED");
+		change.setRequestedBy("registrar");
+		when(changes.findLockedById("change-1")).thenReturn(Optional.of(change));
+
+		assertThatThrownBy(() -> service.approve("change-1", "同意", "registrar"))
+				.isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+				.hasMessage("学籍异动申请人不能审批自己的申请");
+	}
+
+	@Test
+	void graduationRequiresApprovedGraduationAudit() {
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(activeStudent()));
+		when(graduationAudits.existsByStudentIdAndStatus("student-1", "APPROVED"))
+				.thenReturn(false);
+
+		assertThatThrownBy(() -> service.request(
+				"student-1",
+				new StudentStatusChangeCommand("GRADUATE", null, LocalDate.now(), "完成学业"),
+				"registrar"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("学生尚未通过毕业资格审核，不能办理毕业异动");
+	}
+
+	@Test
+	void deferGraduationKeepsStudentActiveAndRecordsHistory() {
+		StudentProfile student = activeStudent();
+		when(students.findLockedById("student-1")).thenReturn(Optional.of(student));
+		StudentStatusChange change = service.request(
+				"student-1",
+				new StudentStatusChangeCommand(
+						"DEFER_GRADUATION", null, LocalDate.now(), "继续修读未完成课程"),
+				"registrar");
+		change.setId("change-1");
+		when(changes.findLockedById("change-1")).thenReturn(Optional.of(change));
+
+		service.approve("change-1", "同意延期", "registrar-manager");
+
+		assertThat(student.getEnrollmentStatus()).isEqualTo("ACTIVE");
+		assertThat(change.getStatus()).isEqualTo("APPROVED");
 	}
 
 	private StudentProfile activeStudent() {

@@ -222,6 +222,10 @@ public class MiniProgramIdentityService {
 		relation.setRelationship(invitation.getRelationship());
 		relation.setPrimaryGuardian(invitation.getPrimaryGuardian());
 		relation.setEmergencyContact(invitation.getEmergencyContact());
+		// 微信邀请仅证明持有二维码和手机号，仍由学校进行监护关系核验。
+		relation.setVerificationStatus("PENDING");
+		relation.setVerifiedBy(null);
+		relation.setVerifiedAt(null);
 		guardians.save(relation);
 
 		invitation.setStatus("CONSUMED");

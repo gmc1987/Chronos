@@ -183,6 +183,7 @@ public class FamilyEngagementService {
 		if (parent) {
 			String parentId = activeParent(username).getProfileId();
 			Set<String> studentIds = guardians.findByParentIdOrderByCreateTime(parentId).stream()
+					.filter(StudentGuardianRelation::isAccessAllowed)
 					.map(StudentGuardianRelation::getStudentId).collect(Collectors.toSet());
 			values = communications.findByStudentIdInOrderByOccurredAtDesc(studentIds);
 		} else {
@@ -239,6 +240,7 @@ public class FamilyEngagementService {
 
 	private StudentProfile studentForParent(String parentId, String studentId) {
 		if (!guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.filter(StudentGuardianRelation::isAccessAllowed)
 				.anyMatch(relation -> studentId.equals(relation.getStudentId())))
 			throw new AccessDeniedException("该学生不是当前家长的被监护人");
 		return students.findById(studentId).orElseThrow(() -> new IllegalArgumentException("学生不存在"));

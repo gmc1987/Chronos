@@ -97,6 +97,7 @@ class HomeSchoolServiceTest {
 		StudentGuardianRelation relation = new StudentGuardianRelation();
 		relation.setStudentId("student-1");
 		relation.setParentId("parent-1");
+		relation.setVerificationStatus("VERIFIED");
 		when(notices.findById("notice-1")).thenReturn(java.util.Optional.of(notice));
 		when(scopes.resolve("teacher")).thenReturn(new EducationDataScope(true, java.util.Set.of(),
 				java.util.Set.of(), java.util.Set.of(), java.util.Set.of(), java.util.Set.of()));
@@ -125,6 +126,7 @@ class HomeSchoolServiceTest {
 		StudentGuardianRelation relation = new StudentGuardianRelation();
 		relation.setParentId("parent-1");
 		relation.setStudentId("student-1");
+		relation.setVerificationStatus("VERIFIED");
 		StudentProfile student = new StudentProfile();
 		student.setId("student-1");
 		student.setEnrollmentStatus("ACTIVE");
@@ -153,6 +155,7 @@ class HomeSchoolServiceTest {
 		StudentGuardianRelation relation = new StudentGuardianRelation();
 		relation.setParentId("parent-1");
 		relation.setStudentId("student-1");
+		relation.setVerificationStatus("VERIFIED");
 		StudentProfile student = new StudentProfile();
 		student.setId("student-1");
 		student.setEnrollmentStatus("WITHDRAWN");

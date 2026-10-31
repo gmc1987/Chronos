@@ -27,6 +27,7 @@ import com.chronos.facility.dao.MaterialRequestItemRepository;
 import com.chronos.facility.dao.MaterialRequestRepository;
 import com.chronos.facility.dao.RepairOrderEventRepository;
 import com.chronos.facility.dao.RepairOrderRepository;
+import com.chronos.facility.dao.InventoryTransactionRepository;
 import com.chronos.facility.model.MaintenanceTechnician;
 import com.chronos.facility.model.RepairOrder;
 import com.chronos.facility.model.dto.FacilityDtos.CreateRepairOrder;
@@ -46,6 +47,7 @@ class FacilityMaintenanceServiceTest {
 	private final MaterialRequestItemRepository requestItems = mock(MaterialRequestItemRepository.class);
 	private final MaintenanceLedgerRepository ledger = mock(MaintenanceLedgerRepository.class);
 	private final RepairOrderEventRepository events = mock(RepairOrderEventRepository.class);
+	private final InventoryTransactionRepository inventoryTransactions = mock(InventoryTransactionRepository.class);
 	private final IEmployeeRepository employees = mock(IEmployeeRepository.class);
 	private final IOrganizationRepository organizations = mock(IOrganizationRepository.class);
 	private final IAdminUserRepository users = mock(IAdminUserRepository.class);
@@ -58,7 +60,7 @@ class FacilityMaintenanceServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new FacilityMaintenanceService(orders, technicians, materials, requests, requestItems,
-				ledger, events, employees, organizations, users, roles, files, fileService, audit);
+				ledger, events, inventoryTransactions, employees, organizations, users, roles, files, fileService, audit);
 		when(orders.nextOrderSequence()).thenReturn(12L);
 		when(orders.save(any(RepairOrder.class))).thenAnswer(invocation -> {
 			RepairOrder value = invocation.getArgument(0);

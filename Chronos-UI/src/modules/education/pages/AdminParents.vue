@@ -41,7 +41,7 @@
         <el-table-column prop="username" label="登录账号" />
         <el-table-column prop="status" label="状态" />
         <el-table-column label="账号可用性" width="120"><template #default="{ row }"><el-tag :type="row.accountAvailable ? 'success' : 'danger'">{{ row.accountAvailable ? '可邀请' : '不可用' }}</el-tag></template></el-table-column>
-        <el-table-column prop="verifiedAt" label="核验时间" />
+        <el-table-column label="核验时间"><template #default="{ row }">{{ formatDateTime(row.verifiedAt) }}</template></el-table-column>
         <AdaptiveActionColumn label="操作" width="100"><template #default="{ row }"><el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="invalidateBinding(row)">解绑</el-button></template></AdaptiveActionColumn>
       </el-table>
       <el-pagination v-model:current-page="bindingPage" v-model:page-size="bindingPageSize"
@@ -82,6 +82,10 @@
         </el-select>
         <el-checkbox v-model="relationForm.primaryGuardian">主监护人</el-checkbox>
         <el-checkbox v-model="relationForm.emergencyContact">紧急联系人</el-checkbox>
+        <el-select v-model="relationForm.studentConsentStatus" placeholder="成年人授权">
+          <el-option label="无需授权" value="NOT_REQUIRED" />
+          <el-option label="待学生授权" value="PENDING" />
+        </el-select>
         <el-button type="primary" @click="saveRelation">添加关联</el-button>
       </div>
       <el-table :data="relations" border>
@@ -97,8 +101,16 @@
         <el-table-column label="紧急联系人" width="110">
           <template #default="scope">{{ scope.row.emergencyContact ? '是' : '否' }}</template>
         </el-table-column>
-        <AdaptiveActionColumn label="操作" width="80">
-          <template #default="scope"><el-button link type="danger" @click="removeRelation(scope.row)">移除</el-button></template>
+        <el-table-column prop="verificationStatus" label="核验状态" width="110" />
+        <el-table-column prop="restrictionLevel" label="监护限制" width="120" />
+        <el-table-column prop="studentConsentStatus" label="学生授权" width="120" />
+        <AdaptiveActionColumn label="操作" width="300">
+          <template #default="scope">
+            <template v-if="scope.row.verificationStatus === 'PENDING'"><el-button link type="success" @click="verifyRelation(scope.row, true)">核验通过</el-button><el-button link type="danger" @click="verifyRelation(scope.row, false)">驳回</el-button></template>
+            <el-button link @click="configureRestriction(scope.row)">限制</el-button>
+            <el-button link @click="configureConsent(scope.row)">授权</el-button>
+            <el-button link type="danger" @click="removeRelation(scope.row)">移除</el-button>
+          </template>
         </AdaptiveActionColumn>
       </el-table>
     </el-dialog>
@@ -121,6 +133,9 @@ import {
   listStudentGuardians,
   updateEducationParent,
   invalidateHomeSchoolBinding,
+  verifyStudentGuardian,
+  restrictStudentGuardian,
+  consentStudentGuardian,
 } from '../../../api/admin'
 
 const parents = ref([])
@@ -153,6 +168,7 @@ const options = response => (response?.data || []).map(item => ({
   value: item.dictValue,
 }))
 const label = (items, value) => items.find(item => item.value === value)?.label || value || '-'
+const formatDateTime = value => value ? String(value).replace('T', ' ').replace(/\.\d+/, '').replace(/Z$/, '') : '-'
 const studentName = id => {
   const student = students.value.find(item => item.id === id)
   return student ? `${student.studentName}（${student.studentNo}）` : id
@@ -223,6 +239,7 @@ const openRelations = async parent => {
     relationship: relationships.value[0]?.value || '',
     primaryGuardian: false,
     emergencyContact: false,
+    studentConsentStatus: 'NOT_REQUIRED',
   }
   const response = await listStudentGuardians({ parentId: parent.id })
   relations.value = response?.data || []
@@ -235,6 +252,28 @@ const saveRelation = async () => {
 }
 const removeRelation = async row => {
   await deleteStudentGuardian(row.id)
+  await openRelations(activeParent.value)
+}
+const verifyRelation = async (row, approved) => {
+  let note = ''
+  if (!approved) note = (await ElMessageBox.prompt('填写驳回原因', '监护关系核验')).value
+  await verifyStudentGuardian(row.id, { approved, note })
+  ElMessage.success(approved ? '监护关系已核验' : '监护关系已驳回')
+  await openRelations(activeParent.value)
+}
+const configureRestriction = async row => {
+  const result = await ElMessageBox.prompt('填写限制级别：NONE、CONTACT_ONLY 或 NO_ACCESS；非 NONE 时在下一步填写原因', '监护限制', { inputValue: row.restrictionLevel || 'NONE' })
+  const level = result.value.trim().toUpperCase()
+  let reason = ''
+  if (level !== 'NONE') reason = (await ElMessageBox.prompt('填写监护限制原因', '限制依据')).value
+  await restrictStudentGuardian(row.id, { level, reason, from: null, to: null })
+  ElMessage.success('监护限制已更新')
+  await openRelations(activeParent.value)
+}
+const configureConsent = async row => {
+  const status = (await ElMessageBox.prompt('填写授权状态：NOT_REQUIRED、PENDING、GRANTED、DENIED 或 REVOKED', '成年人授权', { inputValue: row.studentConsentStatus || 'NOT_REQUIRED' })).value.trim().toUpperCase()
+  await consentStudentGuardian(row.id, { status, expiresAt: null })
+  ElMessage.success('学生授权状态已更新')
   await openRelations(activeParent.value)
 }
 

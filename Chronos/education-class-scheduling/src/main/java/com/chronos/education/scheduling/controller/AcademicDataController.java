@@ -496,6 +496,38 @@ public class AcademicDataController {
 		return ok(service.saveGuardian(null, command));
 	}
 
+	@PostMapping("/admin/education/student-guardians/{id}/verification")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:home-school:guardian:review','education:home-school:parent:manage','education:student:manage')")
+	public ResultData<StudentGuardianRelation> verifyGuardian(
+			@PathVariable String id,
+			@RequestBody GuardianVerificationCommand command,
+			Authentication authentication) {
+		dataScopes.assertGuardianAccess(dataScopes.resolve(authentication.getName()), id);
+		return ok(service.verifyGuardian(
+				id, command.approved(), command.note(), authentication.getName()));
+	}
+
+	@PostMapping("/admin/education/student-guardians/{id}/restriction")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:home-school:guardian:review','education:home-school:parent:manage','education:student:manage')")
+	public ResultData<StudentGuardianRelation> restrictGuardian(
+			@PathVariable String id,
+			@RequestBody GuardianRestrictionCommand command,
+			Authentication authentication) {
+		dataScopes.assertGuardianAccess(dataScopes.resolve(authentication.getName()), id);
+		return ok(service.restrictGuardian(
+				id, command.level(), command.reason(), command.from(), command.to()));
+	}
+
+	@PostMapping("/admin/education/student-guardians/{id}/consent")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:home-school:guardian:review','education:home-school:parent:manage','education:student:manage')")
+	public ResultData<StudentGuardianRelation> consentGuardian(
+			@PathVariable String id,
+			@RequestBody GuardianConsentCommand command,
+			Authentication authentication) {
+		dataScopes.assertGuardianAccess(dataScopes.resolve(authentication.getName()), id);
+		return ok(service.consentGuardian(id, command.status(), command.expiresAt()));
+	}
+
 	@PutMapping("/admin/education/student-guardians/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:student:update','education:student:manage')")
 	public ResultData<StudentGuardianRelation> updateGuardian(
@@ -516,6 +548,19 @@ public class AcademicDataController {
 		dataScopes.assertGuardianAccess(dataScopes.resolve(authentication.getName()), id);
 		service.deleteGuardian(id);
 		return ok(null);
+	}
+
+	public record GuardianVerificationCommand(boolean approved, String note) {
+	}
+
+	public record GuardianRestrictionCommand(
+			String level,
+			String reason,
+			java.time.LocalDate from,
+			java.time.LocalDate to) {
+	}
+
+	public record GuardianConsentCommand(String status, java.time.LocalDateTime expiresAt) {
 	}
 
 	@GetMapping("/admin/education/teaching-assignments")

@@ -52,8 +52,15 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(AccessDeniedException.class)
 	public ResponseEntity<ResultData<String>> handleAccessDenied(
 			AccessDeniedException exception) {
+		// AccessDeniedException is also used for explicit business separation rules
+		// such as "submitter cannot approve". Returning only a generic message makes
+		// the UI look unresponsive and prevents users from correcting the operation.
+		String message = exception.getMessage();
+		if (message == null || message.isBlank()) {
+			message = "无权访问该资源";
+		}
 		return ResponseEntity.status(HttpStatus.FORBIDDEN)
-				.body(error("403", "无权访问该资源"));
+				.body(error("403", message));
 	}
 
 	@ExceptionHandler(AuthenticationException.class)

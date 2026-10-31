@@ -81,6 +81,7 @@ const statusLabel = {
   REJECTED: '已驳回',
   PUBLISHED: '已发布',
 }
+const formatDateTime = value => value ? String(value).replace('T', ' ').replace(/\.\d+/, '').replace(/Z$/, '') : '—'
 const specialStatusOptions = ref([])
 
 const selectedStatus = computed(() => statusLabel[selected.value?.status] || selected.value?.status || '')
@@ -582,7 +583,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             <template #default="{ row }">{{ statusLabel[row.status] || row.status }}</template>
           </el-table-column>
           <el-table-column label="更新时间" width="180">
-            <template #default="{ row }">{{ row.lastUpdateTime || row.createTime || '—' }}</template>
+            <template #default="{ row }">{{ formatDateTime(row.lastUpdateTime || row.createTime) }}</template>
           </el-table-column>
         </el-table>
 

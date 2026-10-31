@@ -21,6 +21,8 @@ const AdminKnowledgeBases = () => import('../../modules/education/pages/AdminKno
 const AdminEducationAgents = () => import('../../modules/education/pages/AdminEducationAgents.vue')
 const AdminTeachingClassMembers = () => import('../../modules/education/pages/AdminTeachingClassMembers.vue')
 const AdminTeachingCenter = () => import('../../modules/education/pages/AdminTeachingCenter.vue')
+const AdminAcademicLifecycle = () => import('../../modules/education/pages/AdminAcademicLifecycle.vue')
+const AdminInternships = () => import('../../modules/education/pages/AdminInternships.vue')
 const AdminTeachingPlan = () => import('../../modules/education/pages/AdminTeachingPlan.vue')
 const AdminLessonPlans = () => import('../../modules/education/pages/AdminLessonPlans.vue')
 const AdminPreparation = () => import('../../modules/education/pages/AdminPreparation.vue')
@@ -59,6 +61,10 @@ export const educationIndustry = {
     { path: '/admin/education/agents', name: 'admin-education-agents', component: AdminEducationAgents },
     { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },
     { path: '/admin/education/teaching-center', name: 'admin-education-teaching-center', component: AdminTeachingCenter },
+    { path: '/admin/education/academic-lifecycle', name: 'admin-education-academic-lifecycle', component: AdminAcademicLifecycle,
+      meta: { requiredPermissions: ['education:academic-program:view', 'education:term-registration:view', 'education:course-enrollment:view', 'education:graduation-audit:view'] } },
+    { path: '/admin/education/internships', name: 'admin-education-internships', component: AdminInternships,
+      meta: { requiredPermissions: ['education:internship:view'] } },
     {
       path: '/admin/education/scheduling',
       name: 'admin-education-class-scheduling',

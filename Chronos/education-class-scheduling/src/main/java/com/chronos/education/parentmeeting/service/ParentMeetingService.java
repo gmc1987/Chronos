@@ -58,7 +58,9 @@ public class ParentMeetingService {
 		EducationDataScope scope = dataScope.resolve(organizer);
 		List<StudentProfile> targets = resolveStudents(scopeType, command.scopeId(), scope);
 		Set<String> studentIds = targets.stream().map(StudentProfile::getId).collect(Collectors.toSet());
-		List<StudentGuardianRelation> relations = guardians.findByStudentIdIn(studentIds.stream().toList());
+		List<StudentGuardianRelation> relations = guardians.findByStudentIdIn(studentIds.stream().toList()).stream()
+				.filter(StudentGuardianRelation::isAccessAllowed)
+				.toList();
 		List<String> parentIds = relations.stream().map(StudentGuardianRelation::getParentId).distinct().toList();
 		List<String> boundUsernames = bindings.findByProfileTypeAndProfileIdInAndStatus("PARENT", parentIds, "ACTIVE").stream()
 				.map(EducationUserBinding::getUsername).distinct().toList();
@@ -129,6 +131,7 @@ public class ParentMeetingService {
 	private boolean hasCurrentGuardianship(String meetingId, String parentId) {
 		List<ParentMeetingScope> meetingScopes = scopes.findByMeetingId(meetingId);
 		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.filter(StudentGuardianRelation::isAccessAllowed)
 				.map(relation -> students.findById(relation.getStudentId()).orElse(null))
 				.filter(student -> student != null && active(student))
 				.anyMatch(student -> meetingScopes.stream().anyMatch(scope ->

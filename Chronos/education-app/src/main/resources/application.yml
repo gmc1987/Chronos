@@ -50,7 +50,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
@@ -64,7 +64,7 @@ management:
   prometheus:
     metrics:
       export:
-        enabled: ${CHRONOS_METRICS_PROMETHEUS_ENABLED:false}
+        enabled: ${CHRONOS_METRICS_PROMETHEUS_ENABLED:true}
   data:
     redis:
       host: ${CHRONOS_REDIS_HOST:127.0.0.1}

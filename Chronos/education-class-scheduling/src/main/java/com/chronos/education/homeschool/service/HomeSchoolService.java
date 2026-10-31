@@ -168,6 +168,7 @@ public class HomeSchoolService {
 				.filter(s -> "ACTIVE".equals(s.getEnrollmentStatus())).map(StudentProfile::getId).toList();
 		List<StudentGuardianRelation> relations = studentIds.stream()
 				.flatMap(studentId -> guardians.findByStudentIdOrderByCreateTime(studentId).stream())
+				.filter(StudentGuardianRelation::isAccessAllowed)
 				.toList();
 		Set<String> parentIds = relations.stream().map(StudentGuardianRelation::getParentId).collect(Collectors.toSet());
 		Set<String> bound = bindings.findByProfileTypeAndProfileIdInAndStatus("PARENT", new ArrayList<>(parentIds), "ACTIVE").stream()
@@ -208,6 +209,7 @@ public class HomeSchoolService {
 	public List<ChildResponse> children(String username) {
 		String parentId = activeParent(username).getProfileId();
 		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.filter(StudentGuardianRelation::isAccessAllowed)
 				.map(r -> students.findById(r.getStudentId()).map(s ->
 						new ChildResponse(s.getId(), s.getStudentNo(), s.getStudentName(),
 								s.getAdministrativeClassId(), r.getRelationship(), r.getPrimaryGuardian())).orElse(null))
@@ -218,6 +220,7 @@ public class HomeSchoolService {
 	public List<CourseGrade> familyGrades(String username) {
 		String parentId = activeParent(username).getProfileId();
 		List<String> activeChildren = guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.filter(StudentGuardianRelation::isAccessAllowed)
 				.map(StudentGuardianRelation::getStudentId)
 				.map(students::findById)
 				.flatMap(Optional::stream)
@@ -236,6 +239,7 @@ public class HomeSchoolService {
 	public List<FamilyNoticeResponse> familyNotices(String username) {
 		String parentId = activeParent(username).getProfileId();
 		Set<String> currentStudents = guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.filter(StudentGuardianRelation::isAccessAllowed)
 				.map(StudentGuardianRelation::getStudentId).collect(Collectors.toSet());
 		List<FamilyNoticeResponse> result = new ArrayList<>();
 		for (HomeNoticeTarget target : targets.findByParentIdOrderByCreateTimeDesc(parentId)) {
@@ -285,6 +289,7 @@ public class HomeSchoolService {
 
 	private Set<String> studentIdsFor(String parentId) {
 		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.filter(StudentGuardianRelation::isAccessAllowed)
 				.map(StudentGuardianRelation::getStudentId).collect(Collectors.toSet());
 	}
 	private EducationUserBinding activeParent(String username) {

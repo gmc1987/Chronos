@@ -33,6 +33,7 @@ import com.chronos.facility.dao.MaterialRequestItemRepository;
 import com.chronos.facility.dao.MaterialRequestRepository;
 import com.chronos.facility.dao.RepairOrderEventRepository;
 import com.chronos.facility.dao.RepairOrderRepository;
+import com.chronos.facility.dao.InventoryTransactionRepository;
 import com.chronos.facility.model.MaintenanceLedgerEntry;
 import com.chronos.facility.model.MaintenanceMaterial;
 import com.chronos.facility.model.MaintenanceTechnician;
@@ -40,6 +41,7 @@ import com.chronos.facility.model.MaterialRequest;
 import com.chronos.facility.model.MaterialRequestItem;
 import com.chronos.facility.model.RepairOrder;
 import com.chronos.facility.model.RepairOrderEvent;
+import com.chronos.facility.model.InventoryTransaction;
 import com.chronos.facility.model.dto.FacilityDtos.ActionCommand;
 import com.chronos.facility.model.dto.FacilityDtos.ApprovalLine;
 import com.chronos.facility.model.dto.FacilityDtos.CloseCommand;
@@ -80,6 +82,7 @@ public class FacilityMaintenanceService {
 	private final MaterialRequestItemRepository requestItems;
 	private final MaintenanceLedgerRepository ledger;
 	private final RepairOrderEventRepository events;
+	private final InventoryTransactionRepository inventoryTransactions;
 	private final IEmployeeRepository employees;
 	private final IOrganizationRepository organizations;
 	private final IAdminUserRepository users;
@@ -108,6 +111,7 @@ public class FacilityMaintenanceService {
 			MaterialRequestItemRepository requestItems,
 			MaintenanceLedgerRepository ledger,
 			RepairOrderEventRepository events,
+			InventoryTransactionRepository inventoryTransactions,
 			IEmployeeRepository employees,
 			IOrganizationRepository organizations,
 			IAdminUserRepository users,
@@ -122,6 +126,7 @@ public class FacilityMaintenanceService {
 		this.requestItems = requestItems;
 		this.ledger = ledger;
 		this.events = events;
+		this.inventoryTransactions = inventoryTransactions;
 		this.employees = employees;
 		this.organizations = organizations;
 		this.users = users;
@@ -384,8 +389,11 @@ public class FacilityMaintenanceService {
 	public MaterialView restock(String id, StockCommand command, String actor) {
 		MaintenanceMaterial material = material(id);
 		BigDecimal quantity = positive(command == null ? null : command.quantity(), "入库数量必须大于0");
+		BigDecimal before = material.getStockQuantity();
 		material.setStockQuantity(material.getStockQuantity().add(quantity));
 		material = materials.save(material);
+		inventoryTransaction(material, "IN", quantity, before, null, null, actor,
+				"物料入库" + suffix(command.remark()), "RESTOCK:" + material.getId() + ":" + System.nanoTime());
 		ledger(null, material.getId(), "MATERIAL_IN", quantity, quantity.multiply(material.getUnitCost()), actor,
 				"物料入库" + suffix(command.remark()));
 		return MaterialView.from(material);
@@ -468,11 +476,14 @@ public class FacilityMaintenanceService {
 			BigDecimal quantity = item.getApprovedQuantity();
 			require(quantity != null && material.getStockQuantity().compareTo(quantity) >= 0,
 					material.getMaterialName() + "库存不足");
+			BigDecimal before = material.getStockQuantity();
 			material.setStockQuantity(material.getStockQuantity().subtract(quantity));
 			material.setReservedQuantity(material.getReservedQuantity().subtract(quantity));
 			materials.save(material);
 			item.setIssuedQuantity(quantity);
 			requestItems.save(item);
+			inventoryTransaction(material, "OUT", quantity.negate(), before, "MATERIAL_REQUEST", request.getId(), actor,
+					"维修领料，申请单" + request.getRequestNo(), "ISSUE:" + request.getId() + ":" + item.getId());
 			ledger(request.getRepairOrderId(), material.getId(), "MATERIAL_OUT", quantity.negate(),
 					quantity.multiply(material.getUnitCost()), actor,
 					"维修领料，申请单" + request.getRequestNo());
@@ -489,6 +500,33 @@ public class FacilityMaintenanceService {
 			recordEvent(order, "MATERIAL_ISSUED", old, "IN_PROGRESS", actor, "物料已出库");
 		}
 		return requestView(request);
+	}
+
+	private void inventoryTransaction(
+			MaintenanceMaterial material,
+			String type,
+			BigDecimal quantity,
+			BigDecimal before,
+			String referenceType,
+			String referenceId,
+			String actor,
+			String reason,
+			String idempotencyKey) {
+		if (inventoryTransactions.findByIdempotencyKey(idempotencyKey).isPresent()) {
+			return;
+		}
+		InventoryTransaction value = new InventoryTransaction();
+		value.setMaterialId(material.getId());
+		value.setTransactionType(type);
+		value.setQuantity(quantity);
+		value.setBeforeQuantity(before);
+		value.setAfterQuantity(material.getStockQuantity());
+		value.setReferenceType(referenceType);
+		value.setReferenceId(referenceId);
+		value.setOperatorUsername(actor);
+		value.setReason(reason);
+		value.setIdempotencyKey(idempotencyKey);
+		inventoryTransactions.save(value);
 	}
 
 	@Transactional(readOnly = true)

@@ -103,6 +103,7 @@ const AdminTechnicians = () => import('../modules/facility/pages/AdminTechnician
 const AdminMaintenanceMaterials = () => import('../modules/facility/pages/AdminMaintenanceMaterials.vue')
 const AdminMaterialRequests = () => import('../modules/facility/pages/AdminMaterialRequests.vue')
 const AdminMaintenanceLedger = () => import('../modules/facility/pages/AdminMaintenanceLedger.vue')
+const AdminFacilityAssets = () => import('../modules/facility/pages/AdminFacilityAssets.vue')
 const PortalRepairOrders = () => import('../modules/facility/pages/PortalRepairOrders.vue')
 
 const router = createRouter({
@@ -204,6 +205,8 @@ const router = createRouter({
           meta: { requiredPermissions: ['facility:material-request:view', 'facility:material-request:manage'] } },
         { path: 'facility/ledger', name: 'admin-facility-ledger', component: AdminMaintenanceLedger,
           meta: { requiredPermissions: ['facility:ledger:view', 'facility:repair:manage'] } },
+        { path: 'facility/assets', name: 'admin-facility-assets', component: AdminFacilityAssets,
+          meta: { requiredPermissions: ['facility:asset:view'] } },
         { path: 'education/meeting/recurring', name: 'admin-education-recurring-meetings', component: AdminRecurringMeetings },
         { path: 'education/teaching-center/plan', name: 'admin-education-teaching-plan', component: AdminTeachingPlan },
         { path: 'education/teaching-center/lesson-plan', name: 'admin-education-lesson-plan', component: AdminLessonPlans },
