@@ -2,7 +2,13 @@ import { readFile } from 'node:fs/promises'
 
 const routerSource = await readFile(new URL('../src/router/index.ts', import.meta.url), 'utf8')
 const industrySource = await readFile(new URL('../src/industries/education/index.js', import.meta.url), 'utf8')
+const industryCoreSource = await readFile(new URL('../src/industries/core/index.js', import.meta.url), 'utf8')
 const routeSource = `${routerSource}\n${industrySource}`
+
+if (!/packagedIndustries\.values\(\)/.test(industryCoreSource)
+    || !/flatMap\(industry => industry\.routes/.test(industryCoreSource)) {
+  throw new Error('行业路由必须注册所有已打包行业，不能依赖构建期默认行业')
+}
 
 const menuRoutes = {
   '/admin/education/teaching-center': 'AdminTeachingCenter',
