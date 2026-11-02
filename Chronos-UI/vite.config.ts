@@ -4,33 +4,9 @@ import vue from '@vitejs/plugin-vue'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
-  build: {
-    rolldownOptions: {
-      output: {
-        // 将大型框架依赖从业务入口拆出，降低登录页和门户首屏下载体积。
-        codeSplitting: {
-          maxSize: 450 * 1024,
-          groups: [
-            {
-              name: 'element-plus',
-              test: /node_modules[\\/]element-plus/,
-              priority: 30,
-            },
-            {
-              name: 'vue-vendor',
-              test: /node_modules[\\/](?:vue|@vue|vue-router|pinia)[\\/]/,
-              priority: 20,
-            },
-            {
-              name: 'vendor',
-              test: /node_modules/,
-              priority: 10,
-            },
-          ],
-        },
-      },
-    },
-  },
+  // 不强制按体积继续拆分 Element Plus。组件库内部存在相互引用，按 maxSize
+  // 二次切块会在生产构建中形成跨 chunk 初始化环，导致登录页加载时报
+  // “Qe is not a function”。交由 Vite/Rolldown 根据真实模块图安全分包。
   server: {
     // Native Android/iOS shells load the portal from devices on the same LAN.
     // Listening only on localhost makes the configured host IP unreachable.
