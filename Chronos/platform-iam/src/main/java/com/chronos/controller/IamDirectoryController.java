@@ -36,6 +36,11 @@ import com.chronos.model.vo.OrganizationUnitVO;
 import com.chronos.service.iService.IIamDirectoryService;
 import com.chronos.service.impl.DirectoryImportService;
 import com.chronos.service.impl.BusinessNumberService;
+import com.chronos.service.impl.EmployeeImportService;
+import com.chronos.service.impl.PositionRoleMappingService;
+import com.chronos.model.pojo.PositionRoleMapping;
+import com.chronos.security.IamAuthorization;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import jakarta.validation.Valid;
 
@@ -46,14 +51,20 @@ public class IamDirectoryController {
     private final IIamDirectoryService service;
     private final DirectoryImportService importService;
     private final BusinessNumberService businessNumbers;
+    private final PositionRoleMappingService positionRoleMappings;
+    private final IamAuthorization iamAuthorization;
 
     public IamDirectoryController(
             IIamDirectoryService service,
             DirectoryImportService importService,
-            BusinessNumberService businessNumbers) {
+            BusinessNumberService businessNumbers,
+            PositionRoleMappingService positionRoleMappings,
+            IamAuthorization iamAuthorization) {
         this.service = service;
         this.importService = importService;
         this.businessNumbers = businessNumbers;
+        this.positionRoleMappings = positionRoleMappings;
+        this.iamAuthorization = iamAuthorization;
     }
 
     @GetMapping("/organization-units")
@@ -250,8 +261,51 @@ public class IamDirectoryController {
     public ResultData<Map<String, Object>> importData(
             @PathVariable String type,
             @RequestPart("file") MultipartFile file,
-            @RequestParam(defaultValue = "false") boolean dryRun) {
-        return ok(importService.importFile(type, file, dryRun));
+            @RequestParam(defaultValue = "false") boolean dryRun,
+            @RequestParam(defaultValue = "false") boolean syncAccounts,
+            @RequestParam(defaultValue = "true") boolean syncRoles,
+            @RequestParam(defaultValue = "true") boolean disableInactiveAccounts,
+            @RequestParam(defaultValue = "EXCEL") String sourceSystem) {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (syncAccounts && !iamAuthorization.any(authentication,
+                "iam:directory:account-provision", "iam:directory:manage")) {
+            throw new org.springframework.security.access.AccessDeniedException("缺少批量开通账号权限");
+        }
+        if (syncRoles && !iamAuthorization.any(authentication,
+                "iam:directory:role-sync", "iam:directory:manage")) {
+            throw new org.springframework.security.access.AccessDeniedException("缺少岗位角色同步权限");
+        }
+        return ok(importService.importFile(type, file, dryRun,
+                new EmployeeImportService.ImportOptions(syncAccounts, syncRoles,
+                        disableInactiveAccounts, sourceSystem, dryRun)));
+    }
+
+    @GetMapping("/position-role-mappings")
+    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage','iam:role:authorize')")
+    public ResultData<List<PositionRoleMapping>> positionRoleMappings(@RequestParam String positionId) {
+        return ok(positionRoleMappings.list(positionId));
+    }
+
+    @PostMapping("/position-role-mappings")
+    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:role-sync','iam:directory:manage','iam:role:authorize')")
+    public ResultData<PositionRoleMapping> createPositionRoleMapping(@RequestBody PositionRoleMapping value) {
+        value.setId(null);
+        return ok(positionRoleMappings.save(value));
+    }
+
+    @PutMapping("/position-role-mappings/{id}")
+    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:role-sync','iam:directory:manage','iam:role:authorize')")
+    public ResultData<PositionRoleMapping> updatePositionRoleMapping(
+            @PathVariable String id, @RequestBody PositionRoleMapping value) {
+        value.setId(id);
+        return ok(positionRoleMappings.save(value));
+    }
+
+    @DeleteMapping("/position-role-mappings/{id}")
+    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:role-sync','iam:directory:manage','iam:role:authorize')")
+    public ResultData<Void> deletePositionRoleMapping(@PathVariable String id) {
+        positionRoleMappings.delete(id);
+        return ok(null);
     }
 
     @GetMapping("/assignments")

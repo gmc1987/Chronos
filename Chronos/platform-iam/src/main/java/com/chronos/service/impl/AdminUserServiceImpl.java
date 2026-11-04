@@ -18,11 +18,13 @@ import org.springframework.transaction.annotation.Transactional;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IRoleRepository;
 import com.chronos.Idao.IEmployeeRepository;
+import com.chronos.Idao.IUserRoleAssignmentSourceRepository;
 import com.chronos.commons.utils.BeanCopyUtil;
 import com.chronos.model.dto.AdminUserDTO;
 import com.chronos.model.dto.TeacherAccountProvisioning;
 import com.chronos.model.pojo.AdminUser;
 import com.chronos.model.pojo.Role;
+import com.chronos.model.pojo.UserRoleAssignmentSource;
 import com.chronos.model.vo.AdminUserVO;
 import com.chronos.model.vo.RoleVO;
 import com.chronos.service.iService.IAdminUserService;
@@ -40,6 +42,7 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 	@Autowired private IRefreshTokenService refreshTokenService;
+	@Autowired private IUserRoleAssignmentSourceRepository roleAssignmentSources;
 
 	public Page<AdminUser> pageUsers(AdminUserDTO dto, Pageable pageable) {
 		return this.adminUserRepository.findAll(pageable);
@@ -109,6 +112,7 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 			user.setRoles(roles);
 		}
 		this.adminUserRepository.save(user);
+		syncManualRoleSources(user, dto.getRoleIds());
 	}
 
 	@Override
@@ -214,6 +218,7 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 			refreshTokenService.revokeAll(user.getUsername());
 		}
 		this.adminUserRepository.save(user);
+		if (dto.getRoleIds() != null) syncManualRoleSources(user, dto.getRoleIds());
 	}
 
 	@Transactional
@@ -241,6 +246,19 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		if (password == null || password.length() < 10 || !password.matches(".*[A-Z].*")
 				|| !password.matches(".*[a-z].*") || !password.matches(".*\\d.*")) {
 			throw new IllegalArgumentException("password must be at least 10 characters and contain upper-case, lower-case and digit");
+		}
+	}
+
+	private void syncManualRoleSources(AdminUser user, java.util.Collection<String> roleIds) {
+		roleAssignmentSources.deleteByUserIdAndSourceType(user.getId(), "MANUAL");
+		if (roleIds == null) return;
+		for (String roleId : roleIds) {
+			UserRoleAssignmentSource source = new UserRoleAssignmentSource();
+			source.setUserId(user.getId());
+			source.setRoleId(roleId);
+			source.setSourceType("MANUAL");
+			source.setSourceKey("MANUAL");
+			roleAssignmentSources.save(source);
 		}
 	}
 }

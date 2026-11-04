@@ -72,11 +72,16 @@ export const employeeAssignments = (employeeId) => http.get(`/admin/iam/assignme
 export const saveEmployeeAssignment = (payload) => (payload.id ? http.put(`/admin/iam/assignments/${payload.id}`, payload) : http.post('/admin/iam/assignments', payload))
 export const deleteEmployeeAssignment = (id) => http.delete(`/admin/iam/assignments/${id}`)
 export const downloadDirectoryImportTemplate = (type) => http.download(`/admin/iam/import/templates/${type}`)
-export const importDirectoryData = (type, file, dryRun = false) => {
+export const importDirectoryData = (type, file, options = {}) => {
   const data = new FormData()
   data.append('file', file)
-  return http.upload(`/admin/iam/import/${type}?${qs({ dryRun })}`, data)
+  return http.upload(`/admin/iam/import/${type}?${qs(options)}`, data)
 }
+export const positionRoleMappings = (positionId) => http.get(`/admin/iam/position-role-mappings?${qs({ positionId })}`)
+export const savePositionRoleMapping = (payload) => payload.id
+  ? http.put(`/admin/iam/position-role-mappings/${payload.id}`, payload)
+  : http.post('/admin/iam/position-role-mappings', payload)
+export const deletePositionRoleMapping = (id) => http.delete(`/admin/iam/position-role-mappings/${id}`)
 
 export const dictTree = () => http.get('/admin/dicts/tree')
 export const dictListByCode = (dictCode) => http.get(`/admin/dicts/list?${qs({ dictCode })}`)

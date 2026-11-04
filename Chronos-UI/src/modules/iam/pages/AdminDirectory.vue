@@ -39,6 +39,7 @@
           <AdaptiveActionColumn label="操作" width="250">
             <template #default="s">
               <el-button v-permission="['iam:directory:update','iam:directory:manage']" @click="editPosition(s.row)">编辑</el-button>
+              <el-button v-permission="['iam:directory:role-sync','iam:role:authorize','iam:directory:manage']" type="primary" plain @click="managePositionRoles(s.row)">角色映射</el-button>
               <el-button v-permission="['iam:directory:delete','iam:directory:manage']" type="danger" @click="removePosition(s.row.id)">删除</el-button>
             </template>
           </AdaptiveActionColumn>
@@ -67,7 +68,7 @@
         <div class="pager"><el-pagination background layout="total, sizes, prev, pager, next" :total="levelTotal" :current-page="levelPage" :page-size="levelSize" :page-sizes="[10, 20, 50]" @current-change="onLevelPageChange" @size-change="onLevelSizeChange"/></div>
       </el-tab-pane>
       <el-tab-pane :label="`${branding.employeeLabel}与任职`" name="employees">
-        <div class="toolbar"><el-input v-model="employeeKeyword" clearable placeholder="搜索工号、姓名或手机号" @keyup.enter="searchEmployees" @clear="searchEmployees"/><el-button v-permission="['iam:directory:manage']" @click="openNumberRules">编号规则</el-button><el-button v-permission="['iam:directory:template','iam:directory:manage']" @click="downloadTemplate('employees')">下载模板</el-button><el-upload v-permission="['iam:directory:import','iam:directory:manage']" :show-file-list="false" accept=".xlsx" :http-request="o=>uploadImport('employees',o.file)"><el-button>批量导入</el-button></el-upload><el-button v-permission="['iam:directory:create','iam:directory:manage']" type="primary" @click="editEmployee()">新增员工</el-button></div>
+        <div class="toolbar"><el-input v-model="employeeKeyword" clearable placeholder="搜索工号、姓名或手机号" @keyup.enter="searchEmployees" @clear="searchEmployees"/><el-button v-permission="['iam:directory:manage']" @click="openNumberRules">编号规则</el-button><el-button v-permission="['iam:directory:template','iam:directory:manage']" @click="downloadTemplate('employees')">下载模板</el-button><el-upload v-permission="['iam:directory:import','iam:directory:manage']" :show-file-list="false" accept=".xlsx" :http-request="o=>prepareEmployeeImport(o.file)"><el-button>批量导入并开通账号</el-button></el-upload><el-button v-permission="['iam:directory:create','iam:directory:manage']" type="primary" @click="editEmployee()">新增员工</el-button></div>
         <el-table :data="filteredEmployees" border>
           <el-table-column prop="employeeCode" label="工号"/>
           <el-table-column prop="employeeName" label="姓名"/>
@@ -118,6 +119,26 @@
       </el-form>
       <template #footer><el-button @click="positionDialog=false">取消</el-button><el-button type="primary" @click="submitPosition">保存</el-button></template>
     </el-dialog>
+    <el-dialog v-model="positionRoleDialog" :title="`${activePosition.positionName||''} · 角色映射`" width="860px">
+      <el-alert title="账号同步会汇总全部有效任职的岗位角色；删除映射只撤销岗位来源角色，不影响其他既有授权。" type="info" :closable="false"/>
+      <el-table :data="positionRoleRows" border class="mapping-table">
+        <el-table-column label="机构范围" min-width="150"><template #default="s">{{organizationName(s.row.organizationId||'GLOBAL')}}</template></el-table-column>
+        <el-table-column label="部门范围" min-width="150"><template #default="s">{{departmentName(s.row.organizationUnitId)}}</template></el-table-column>
+        <el-table-column label="角色" min-width="170"><template #default="s">{{roleName(s.row.roleId)}}</template></el-table-column>
+        <el-table-column label="限制" min-width="180"><template #default="s">{{[s.row.primaryAssignmentOnly?'仅主任职':'',s.row.departmentLeaderOnly?'仅部门负责人':''].filter(Boolean).join('、')||'全部任职'}}</template></el-table-column>
+        <AdaptiveActionColumn label="操作" width="140"><template #default="s"><el-button @click="editPositionRole(s.row)">编辑</el-button><el-button type="danger" @click="removePositionRole(s.row.id)">删除</el-button></template></AdaptiveActionColumn>
+      </el-table>
+      <el-divider>新增或编辑映射</el-divider>
+      <el-form label-width="100px" class="form-grid">
+        <el-form-item label="机构范围"><el-select v-model="positionRoleForm.organizationId" clearable @change="loadPositionRoleDepartments"><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id"/></el-select></el-form-item>
+        <el-form-item label="部门范围"><el-tree-select v-model="positionRoleForm.organizationUnitId" clearable :data="positionRoleDepartmentOptions" check-strictly/></el-form-item>
+        <el-form-item label="角色"><el-select v-model="positionRoleForm.roleId" filterable><el-option v-for="role in roleRows" :key="role.id" :label="`${role.roleName}（${role.roleCode}）`" :value="role.id"/></el-select></el-form-item>
+        <el-form-item label="优先级"><el-input-number v-model="positionRoleForm.priority" :min="0"/></el-form-item>
+        <el-form-item label="仅主任职"><el-switch v-model="positionRoleForm.primaryAssignmentOnly"/></el-form-item>
+        <el-form-item label="仅部门负责人"><el-switch v-model="positionRoleForm.departmentLeaderOnly"/></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="positionRoleDialog=false">关闭</el-button><el-button @click="editPositionRole()">清空</el-button><el-button type="primary" @click="submitPositionRole">保存映射</el-button></template>
+    </el-dialog>
     <el-dialog v-model="levelDialog" :title="levelForm.id?'编辑职级':'新增职级'" width="560px"><el-form label-width="90px"><el-form-item label="职级编码"><el-input v-model="levelForm.levelCode"/></el-form-item><el-form-item label="职级名称"><el-input v-model="levelForm.levelName"/></el-form-item><el-form-item label="职级序列"><el-select v-model="levelForm.levelCategory"><el-option v-for="item in levelCategories" :key="item.value" :label="item.label" :value="item.value"/></el-select></el-form-item><el-form-item label="等级值"><el-input-number v-model="levelForm.levelSequence" :min="0"/></el-form-item><el-form-item label="排序"><el-input-number v-model="levelForm.sortOrder" :min="0"/></el-form-item><el-form-item label="状态"><el-switch v-model="levelEnabled"/></el-form-item><el-form-item label="说明"><el-input v-model="levelForm.description" type="textarea"/></el-form-item></el-form><template #footer><el-button @click="levelDialog=false">取消</el-button><el-button type="primary" @click="submitLevel">保存</el-button></template></el-dialog>
     <el-dialog v-model="employeeDialog" :title="employeeForm.id?'编辑员工':'新增员工'" width="620px"><el-form label-width="100px"><div class="form-grid"><el-form-item label="工号"><el-input v-model="employeeForm.employeeCode" disabled placeholder="保存后自动生成"/></el-form-item><el-form-item v-if="!employeeForm.id" label="编号所属学校"><el-select v-model="employeeForm.numberingOrganizationId" filterable><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id"/></el-select></el-form-item><el-form-item label="姓名"><el-input v-model="employeeForm.employeeName"/></el-form-item><el-form-item label="性别"><el-select v-model="employeeForm.gender"><el-option v-for="item in genderOptions" :key="item.value" :label="item.label" :value="item.value"/></el-select></el-form-item><el-form-item label="员工类型"><el-select v-model="employeeForm.employeeType"><el-option v-for="item in employeeTypes" :key="item.value" :label="item.label" :value="item.value"/></el-select></el-form-item><el-form-item label="手机"><el-input v-model="employeeForm.phone"/></el-form-item><el-form-item label="邮箱"><el-input v-model="employeeForm.email"/></el-form-item><el-form-item label="入职日期"><el-date-picker v-model="employeeForm.hireDate" value-format="YYYY-MM-DD"/></el-form-item><el-form-item label="在职状态"><el-select v-model="employeeForm.employmentStatus"><el-option v-for="item in employmentStatuses" :key="item.value" :label="item.label" :value="item.value"/></el-select></el-form-item></div></el-form><template #footer><el-button @click="employeeDialog=false">取消</el-button><el-button type="primary" @click="submitEmployee">保存</el-button></template></el-dialog>
     <el-dialog v-model="numberRuleDialog" title="工号与学号生成规则" width="780px">
@@ -126,6 +147,16 @@
       <el-divider>新增或覆盖学校规则</el-divider>
       <el-form label-width="100px" class="form-grid"><el-form-item label="编号类型"><el-select v-model="numberRuleForm.businessType"><el-option label="工号" value="EMPLOYEE"/><el-option label="学号" value="STUDENT"/></el-select></el-form-item><el-form-item label="学校范围"><el-select v-model="numberRuleForm.organizationId" filterable><el-option label="全局默认" value="GLOBAL"/><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id"/></el-select></el-form-item><el-form-item label="规则模板"><el-input v-model="numberRuleForm.pattern"/></el-form-item><el-form-item label="流水位数"><el-input-number v-model="numberRuleForm.sequenceLength" :min="3" :max="12"/></el-form-item><el-form-item label="重置周期"><el-select v-model="numberRuleForm.resetPeriod"><el-option label="按年重置" value="YEAR"/><el-option label="永不重置" value="NEVER"/></el-select></el-form-item><el-form-item label="启用"><el-switch v-model="numberRuleForm.enabled"/></el-form-item></el-form>
       <template #footer><el-button @click="numberRuleDialog=false">关闭</el-button><el-button type="primary" @click="submitNumberRule">保存规则</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="employeeImportDialog" title="批量导入教职工与任职" width="620px">
+      <el-alert title="新员工工号按编号规则生成；重复导入通过导入标识匹配，已有账号不会重置密码。" type="info" :closable="false" class="account-alert"/>
+      <el-form label-width="160px">
+        <el-form-item label="同时开通/同步账号"><el-switch v-model="employeeImportOptions.syncAccounts"/></el-form-item>
+        <el-form-item label="按岗位同步角色"><el-switch v-model="employeeImportOptions.syncRoles" :disabled="!employeeImportOptions.syncAccounts"/></el-form-item>
+        <el-form-item label="停离职自动停用账号"><el-switch v-model="employeeImportOptions.disableInactiveAccounts" :disabled="!employeeImportOptions.syncAccounts"/></el-form-item>
+        <el-form-item label="导入来源"><el-input v-model="employeeImportOptions.sourceSystem" placeholder="例如 EXCEL、HR_SYSTEM"/></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="employeeImportDialog=false">取消</el-button><el-button type="primary" @click="executeEmployeeImport">预检并导入</el-button></template>
     </el-dialog>
     <el-dialog v-model="accountDialog" :title="`${activeAccountEmployee.employeeName||''} · 账号管理`" width="620px">
       <el-alert v-if="activeAccountEmployee.employmentStatus!=='ACTIVE'" title="停职或离职员工不能启用门户账号" type="warning" :closable="false" class="account-alert"/>
@@ -151,7 +182,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { orgList, organizationUnits, saveOrganizationUnit, deleteOrganizationUnit, positions, savePosition, deletePosition, jobLevels, saveJobLevel, deleteJobLevel, employees, saveEmployee, deleteEmployee, employeeAssignments, saveEmployeeAssignment, deleteEmployeeAssignment, userByEmployee, createUser, updateUser, listRoles, unlockUser, forceLogoutUser, resetUserPassword, downloadDirectoryImportTemplate, importDirectoryData, dictionaryOptions, listBusinessNumberRules, saveBusinessNumberRule } from '../api'
+import { orgList, organizationUnits, saveOrganizationUnit, deleteOrganizationUnit, positions, savePosition, deletePosition, jobLevels, saveJobLevel, deleteJobLevel, employees, saveEmployee, deleteEmployee, employeeAssignments, saveEmployeeAssignment, deleteEmployeeAssignment, userByEmployee, createUser, updateUser, listRoles, unlockUser, forceLogoutUser, resetUserPassword, downloadDirectoryImportTemplate, importDirectoryData, dictionaryOptions, listBusinessNumberRules, saveBusinessNumberRule, positionRoleMappings, savePositionRoleMapping, deletePositionRoleMapping } from '../api'
 import { industryBranding } from '../../../industries/core'
 const branding=industryBranding
 const toOptions=response=>(response?.data||[]).map(item=>({label:item.dictName,value:item.dictValue}))
@@ -161,10 +192,13 @@ const positionPage=ref(1),positionSize=ref(10),positionTotal=ref(0),levelPage=re
 const departmentDialog=ref(false),positionDialog=ref(false),levelDialog=ref(false),employeeDialog=ref(false),assignmentDialog=ref(false),assignmentEditDialog=ref(false)
 const numberRuleDialog=ref(false),numberRules=ref([]),numberRuleForm=ref({})
 const accountDialog=ref(false),activeAccountEmployee=ref({}),accountForm=ref({}),accountEnabled=ref(true),roleRows=ref([]),resetPasswordValue=ref('')
+const positionRoleDialog=ref(false),positionRoleRows=ref([]),positionRoleForm=ref({}),activePosition=ref({}),positionRoleDepartmentRows=ref([])
+const employeeImportDialog=ref(false),employeeImportFile=ref(null),employeeImportOptions=ref({syncAccounts:true,syncRoles:true,disableInactiveAccounts:true,sourceSystem:'EXCEL'})
 const departmentForm=ref({}),positionForm=ref({}),levelForm=ref({}),employeeForm=ref({}),assignmentForm=ref({}),activeEmployee=ref({})
 const departmentEnabled=ref(true),positionEnabled=ref(true),levelEnabled=ref(true),assignmentDepartmentRows=ref([])
 const treeOptions=(rows,exclude)=>rows.filter(x=>x.id!==exclude).map(x=>({value:x.id,label:x.departmentName,children:treeOptions(x.children||[],exclude)}))
 const departmentOptions=computed(()=>treeOptions(departmentRows.value,departmentForm.value.id)),assignmentDepartmentOptions=computed(()=>treeOptions(assignmentDepartmentRows.value))
+const positionRoleDepartmentOptions=computed(()=>treeOptions(positionRoleDepartmentRows.value))
 const filteredEmployees=computed(()=>employeeRows.value)
 const pageData=(response)=>response?.data?.content||[]
 const pageTotal=(response)=>response?.data?.totalElements||0
@@ -187,6 +221,14 @@ const removeDepartment=async id=>{await confirmDelete();await deleteOrganization
 const editPosition=(row={})=>{positionForm.value={management:false,status:1,sortOrder:0,positionCategory:positionCategories.value[0]?.value||'',...row};positionEnabled.value=positionForm.value.status!==0;positionDialog.value=true}
 const submitPosition=async()=>{positionForm.value.status=positionEnabled.value?1:0;await savePosition(positionForm.value);positionDialog.value=false;await loadAll();ElMessage.success('岗位已保存')}
 const removePosition=async id=>{await confirmDelete();await deletePosition(id);await loadAll()}
+const managePositionRoles=async row=>{activePosition.value=row;const [mappings,roles]=await Promise.all([positionRoleMappings(row.id),listRoles({page:0,size:500})]);positionRoleRows.value=mappings?.data||[];roleRows.value=roles?.data?.content||[];positionRoleDepartmentRows.value=[];editPositionRole();positionRoleDialog.value=true}
+const editPositionRole=async(row={})=>{positionRoleForm.value={positionId:activePosition.value.id,organizationId:'',organizationUnitId:'',roleId:'',primaryAssignmentOnly:false,departmentLeaderOnly:false,priority:0,status:1,...row};if(positionRoleForm.value.organizationId)positionRoleDepartmentRows.value=(await organizationUnits(positionRoleForm.value.organizationId))?.data||[]}
+const loadPositionRoleDepartments=async()=>{positionRoleForm.value.organizationUnitId='';positionRoleDepartmentRows.value=positionRoleForm.value.organizationId?(await organizationUnits(positionRoleForm.value.organizationId))?.data||[]:[]}
+const submitPositionRole=async()=>{if(!positionRoleForm.value.roleId)return ElMessage.warning('请选择角色');await savePositionRoleMapping(positionRoleForm.value);await managePositionRoles(activePosition.value);ElMessage.success('岗位角色映射已保存')}
+const removePositionRole=async id=>{await confirmDelete();await deletePositionRoleMapping(id);await managePositionRoles(activePosition.value)}
+const flattenDepartments=rows=>rows.flatMap(row=>[row,...flattenDepartments(row.children||[])])
+const departmentName=id=>id?flattenDepartments(positionRoleDepartmentRows.value).find(row=>row.id===id)?.departmentName||id:'全部部门'
+const roleName=id=>{const role=roleRows.value.find(row=>row.id===id);return role?`${role.roleName}（${role.roleCode}）`:id}
 const editLevel=(row={})=>{levelForm.value={levelSequence:0,status:1,sortOrder:0,levelCategory:levelCategories.value[0]?.value||'',...row};levelEnabled.value=levelForm.value.status!==0;levelDialog.value=true}
 const submitLevel=async()=>{levelForm.value.status=levelEnabled.value?1:0;await saveJobLevel(levelForm.value);levelDialog.value=false;await loadAll();ElMessage.success('职级已保存')}
 const removeLevel=async id=>{await confirmDelete();await deleteJobLevel(id);await loadAll()}
@@ -211,7 +253,10 @@ const confirmDelete=()=>ElMessageBox.confirm('删除后不可恢复，确认继�
 const importNames={departments:'组织架构',positions:'岗位', 'job-levels':'职级',employees:'员工与任职'}
 const downloadTemplate=async type=>{const blob=await downloadDirectoryImportTemplate(type);const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`Chronos-${importNames[type]}批量导入模板.xlsx`;a.click();URL.revokeObjectURL(url)}
 const downloadImportErrors=(type,errors=[])=>{const rows=errors.map((e,i)=>`<tr><td>${i+1}</td><td>${String(e).replaceAll('&','&amp;').replaceAll('<','&lt;')}</td></tr>`).join('');const blob=new Blob([`<html><meta charset="UTF-8"><table><tr><th>序号</th><th>错误原因</th></tr>${rows}</table></html>`],{type:'application/vnd.ms-excel'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`Chronos-${importNames[type]}导入错误报告.xls`;a.click();URL.revokeObjectURL(url)}
-const uploadImport=async(type,file)=>{try{const preview=await importDirectoryData(type,file,true);if(preview?.data?.valid===false){downloadImportErrors(type,preview.data.errors);ElMessage.error('校验失败，已下载错误报告');return}await ElMessageBox.confirm(`校验通过，将新增或更新 ${preview?.data?.successCount||0} 条数据。确认正式导入？`,'导入确认',{type:'warning'});const result=await importDirectoryData(type,file,false);ElMessage.success(`${importNames[type]}导入成功，共处理 ${result?.data?.successCount||0} 条`);await loadAll()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e instanceof Error?e.message:'批量导入已取消');throw e}}
+const uploadImport=async(type,file,options={})=>{try{const preview=await importDirectoryData(type,file,{...options,dryRun:true});if(preview?.data?.valid===false){downloadImportErrors(type,preview.data.errors);ElMessage.error('校验失败，已下载错误报告');return null}const details=preview?.data?.employees?`员工新增 ${preview.data.employees.created}、更新 ${preview.data.employees.updated}；账号新增 ${preview.data.accounts.created}、同步 ${preview.data.accounts.updated}`:`共处理 ${preview?.data?.successCount||0} 条`;await ElMessageBox.confirm(`校验通过：${details}。确认正式导入？`,'导入确认',{type:'warning'});const result=await importDirectoryData(type,file,{...options,dryRun:false});ElMessage.success(`${importNames[type]}导入成功，共处理 ${result?.data?.successCount||0} 条`);await loadAll();return result}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e instanceof Error?e.message:'批量导入已取消');throw e}}
+const prepareEmployeeImport=file=>{employeeImportFile.value=file;employeeImportDialog.value=true}
+const downloadAccountResults=results=>{if(!results?.length)return;const escape=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');const rows=results.map(row=>`<tr><td>${escape(row.employeeCode)}</td><td>${escape(row.employeeName)}</td><td>${escape(row.username)}</td><td>${row.created?'新建':'同步'}</td><td>${escape(row.temporaryPassword||'')}</td><td>${escape([...(row.roleCodes||[])].join(','))}</td><td>${escape((row.warnings||[]).join('；'))}</td></tr>`).join('');const blob=new Blob([`<html><meta charset="UTF-8"><table><tr><th>工号</th><th>姓名</th><th>登录账号</th><th>处理结果</th><th>临时密码（仅新账号）</th><th>岗位角色</th><th>提示</th></tr>${rows}</table></html>`],{type:'application/vnd.ms-excel'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Chronos-教职工账号开通结果.xls';a.click();URL.revokeObjectURL(url)}
+const executeEmployeeImport=async()=>{const file=employeeImportFile.value;employeeImportDialog.value=false;const result=await uploadImport('employees',file,employeeImportOptions.value);if(result?.data?.accountResults?.some(row=>row.created)){downloadAccountResults(result.data.accountResults);ElMessage.warning('新账号临时密码已下载一次，请妥善保管并安全交付')}}
 const dictionaryLabel=(options,value)=>options.find(item=>item.value===value)?.label||value||'-'
 const statusName=value=>dictionaryLabel(employmentStatuses.value,value)
 loadAll()

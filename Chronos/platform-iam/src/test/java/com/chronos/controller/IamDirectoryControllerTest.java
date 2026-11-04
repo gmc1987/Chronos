@@ -19,6 +19,8 @@ import com.chronos.model.pojo.Position;
 import com.chronos.service.iService.IIamDirectoryService;
 import com.chronos.service.impl.DirectoryImportService;
 import com.chronos.service.impl.BusinessNumberService;
+import com.chronos.service.impl.PositionRoleMappingService;
+import com.chronos.security.IamAuthorization;
 
 class IamDirectoryControllerTest {
 
@@ -31,7 +33,9 @@ class IamDirectoryControllerTest {
         controller = new IamDirectoryController(
                 service,
                 mock(DirectoryImportService.class),
-                mock(BusinessNumberService.class));
+                mock(BusinessNumberService.class),
+                mock(PositionRoleMappingService.class),
+                mock(IamAuthorization.class));
     }
 
     @Test
