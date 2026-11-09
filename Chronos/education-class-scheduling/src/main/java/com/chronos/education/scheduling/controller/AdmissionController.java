@@ -115,13 +115,7 @@ public class AdmissionController {
 	}
 
 	private String resolveOrganization(Authentication authentication, String requested) {
-		if (requested != null && !requested.isBlank()) {
-			dataScopes.requireOrganization(authentication, requested);
-			return requested;
-		}
-		var visible = dataScopes.visibleOrganizationIds(authentication);
-		if (visible != null && visible.size() == 1) return visible.iterator().next();
-		throw new IllegalArgumentException("请选择招生数据所属机构");
+		return dataScopes.resolveOrganization(authentication, requested);
 	}
 
 	private <T> ResultData<T> ok(T data) { ResultData<T> result = new ResultData<>(); result.setCode("200"); result.setMsg("success"); result.setData(data); return result; }

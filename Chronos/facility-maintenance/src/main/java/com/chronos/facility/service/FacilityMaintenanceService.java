@@ -26,6 +26,7 @@ import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeRepository;
 import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.Idao.IRoleRepository;
+import com.chronos.model.pojo.Organization;
 import com.chronos.facility.dao.MaintenanceLedgerRepository;
 import com.chronos.facility.dao.MaintenanceMaterialRepository;
 import com.chronos.facility.dao.MaintenanceTechnicianRepository;
@@ -316,9 +317,22 @@ public class FacilityMaintenanceService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<OrganizationOption> organizationOptions() {
-		return organizations.findAll(Sort.by("sortOrder").ascending().and(Sort.by("organizationName"))).stream()
+	public List<TechnicianView> technicians(Collection<String> organizationIds) {
+		if (organizationIds == null) return technicians();
+		return technicians.findAll(Sort.by("technicianName")).stream()
+				.filter(value -> organizationIds.stream().anyMatch(id -> coversOrganization(value, id)))
+				.map(TechnicianView::from)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<OrganizationOption> organizationOptions(Collection<String> organizationIds) {
+		var values = organizationIds == null
+				? organizations.findAll(Sort.by("sortOrder").ascending().and(Sort.by("organizationName")))
+				: organizations.findAllById(organizationIds);
+		return values.stream()
 				.filter(value -> Integer.valueOf(1).equals(value.getStatus()))
+				.sorted(java.util.Comparator.comparing(Organization::getOrganizationName))
 				.map(value -> new OrganizationOption(value.getId(), value.getOrganizationName(), value.getOrganizationType()))
 				.toList();
 	}
@@ -453,6 +467,7 @@ public class FacilityMaintenanceService {
 		request = requests.save(request);
 		for (var line : command.items()) {
 			MaintenanceMaterial material = material(line.materialId());
+			require(order.getOrganizationId().equals(material.getOrganizationId()), "维修物料不属于工单机构");
 			MaterialRequestItem item = new MaterialRequestItem();
 			item.setRequestId(request.getId());
 			item.setMaterialId(material.getId());
@@ -469,12 +484,24 @@ public class FacilityMaintenanceService {
 	}
 
 	@Transactional(readOnly = true)
-	public Page<MaterialRequestView> materialRequests(String status, int page, int size) {
-		Specification<MaterialRequest> specification = (root, query, builder) -> builder.conjunction();
+	public Page<MaterialRequestView> materialRequests(
+			Collection<String> organizationIds, String status, int page, int size) {
+		Specification<MaterialRequest> specification = (root, query, builder) -> {
+			if (organizationIds == null) return builder.conjunction();
+			var orderIds = query.subquery(String.class);
+			var order = orderIds.from(RepairOrder.class);
+			orderIds.select(order.get("id")).where(order.get("organizationId").in(organizationIds));
+			return root.get("repairOrderId").in(orderIds);
+		};
 		if (status != null && !status.isBlank()) {
 			specification = specification.and((root, query, builder) -> builder.equal(root.get("status"), status));
 		}
 		return requests.findAll(specification, page(page, size)).map(this::requestView);
+	}
+
+	@Transactional(readOnly = true)
+	public String materialRequestOrganization(String id) {
+		return order(request(id).getRepairOrderId()).getOrganizationId();
 	}
 
 	@Transactional
@@ -570,8 +597,20 @@ public class FacilityMaintenanceService {
 	}
 
 	@Transactional(readOnly = true)
-	public Page<LedgerView> ledger(int page, int size) {
-		return ledger.findAll(page(page, size)).map(LedgerView::from);
+	public Page<LedgerView> ledger(Collection<String> organizationIds, int page, int size) {
+		Specification<MaintenanceLedgerEntry> specification = (root, query, builder) -> {
+			if (organizationIds == null) return builder.conjunction();
+			var orderIds = query.subquery(String.class);
+			var order = orderIds.from(RepairOrder.class);
+			orderIds.select(order.get("id")).where(order.get("organizationId").in(organizationIds));
+			var materialIds = query.subquery(String.class);
+			var material = materialIds.from(MaintenanceMaterial.class);
+			materialIds.select(material.get("id")).where(material.get("organizationId").in(organizationIds));
+			return builder.and(
+					builder.or(builder.isNull(root.get("repairOrderId")), root.get("repairOrderId").in(orderIds)),
+					builder.or(builder.isNull(root.get("materialId")), root.get("materialId").in(materialIds)));
+		};
+		return ledger.findAll(specification, page(page, size)).map(LedgerView::from);
 	}
 
 	private void autoDispatch(RepairOrder order, String actor) {

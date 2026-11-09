@@ -2,11 +2,11 @@
   <div class="page">
     <header>
       <div><h2>学年学期与校历</h2><p>统一维护学期、特殊教学日期以及各校区作息节次。</p></div>
-      <el-button type="primary" @click="openTerm()">新增学期</el-button>
+      <el-button type="primary" :disabled="!organizationId" @click="openTerm()">新增学期</el-button>
     </header>
     <el-tabs v-model="activeTab">
       <el-tab-pane label="学年学期" name="terms">
-		<div class="toolbar"><el-select v-model="organizationId" clearable filterable placeholder="全部可管理机构" @change="changeOrganization"><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></div>
+		<div class="toolbar"><OrganizationSelect v-model="organizationId" context-key="education-academic-terms" school-or-campus-only style="width:260px" /></div>
         <el-table :data="terms" border highlight-current-row @current-change="row => selectedTermId = row?.id || selectedTermId">
 		  <el-table-column prop="organizationId" label="所属机构" min-width="170"><template #default="s">{{ campusName(s.row.organizationId) }}</template></el-table-column>
 		  <el-table-column prop="localTermCode" label="校内学期编码" min-width="140" />
@@ -23,9 +23,7 @@
       </el-tab-pane>
       <el-tab-pane label="教学日历" name="calendar">
         <div class="toolbar">
-          <el-select v-model="organizationId" filterable placeholder="选择校历所属机构" @change="changeOrganization">
-            <el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" />
-          </el-select>
+          <OrganizationSelect v-model="organizationId" context-key="education-academic-terms" school-or-campus-only style="width:260px" />
           <TermSelect v-model="selectedTermId" :terms="organizationId ? terms : []" @change="loadDetails" />
           <el-button type="primary" :disabled="!organizationId || !selectedTermId" @click="openDay()">新增特殊日期</el-button>
           <el-button :disabled="!organizationId || !selectedTermId" @click="openCalendarImport">批量导入</el-button>
@@ -71,8 +69,9 @@
 </template>
 
 <script setup>
-import { h, onMounted, reactive, ref } from 'vue'
+import { h, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { academicTermArchiveReadiness, archiveAcademicTerm, createAcademicCalendarDay, createAcademicTerm, createBellPeriod, createBellSchedule, deleteAcademicCalendarDay, deleteBellPeriod, deleteBellSchedule, importAcademicCalendarDays, listAcademicCalendarDays, listAcademicTerms, listBellSchedules, orgOptions, updateAcademicCalendarDay, updateAcademicTerm, updateBellPeriod, updateBellSchedule } from '../../../api/admin'
 
 const TermSelect = (props, context) => h(ElSelect, { modelValue: props.modelValue, 'onUpdate:modelValue': value => context.emit('update:modelValue', value), onChange: () => context.emit('change'), placeholder: '请选择学期' }, () => props.terms.map(item => h(ElOption, { key: item.id, label: item.termName, value: item.id })))
@@ -196,10 +195,8 @@ const orgName = item => item.organizationName || item.orgName || item.name || it
 const campusName = id => orgName(campuses.value.find(item => item.id === id) || { id })
 onMounted(async () => {
   await loadCampuses()
-  if (campuses.value.length === 1) organizationId.value = campuses.value[0].id
-  await loadTerms()
-  await loadDetails()
 })
+watch(organizationId, changeOrganization)
 </script>
 
 <style scoped>

@@ -89,19 +89,23 @@ public class AdminFacilityMaintenanceController {
 
 	@GetMapping("/technicians")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:technician:view','facility:technician:manage')")
-	public ResultData<List<TechnicianView>> technicians() {
-		return ok(service.technicians());
+	public ResultData<List<TechnicianView>> technicians(
+			@RequestParam(required = false) String organizationId,
+			Authentication authentication) {
+		return ok(service.technicians(queryOrganizations(authentication, organizationId)));
 	}
 
 	@GetMapping("/organization-options")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:technician:view','facility:technician:manage')")
-	public ResultData<List<OrganizationOption>> organizationOptions() {
-		return ok(service.organizationOptions());
+	public ResultData<List<OrganizationOption>> organizationOptions(Authentication authentication) {
+		return ok(service.organizationOptions(dataScopes.visibleOrganizationIds(authentication)));
 	}
 
 	@PostMapping("/technicians")
 	@PreAuthorize("@iamAuthorization.has(authentication,'facility:technician:manage')")
-	public ResultData<TechnicianView> createTechnician(@RequestBody TechnicianCommand command) {
+	public ResultData<TechnicianView> createTechnician(
+			@RequestBody TechnicianCommand command, Authentication authentication) {
+		validateTechnicianScope(authentication, command);
 		return ok(service.saveTechnician(null, command));
 	}
 
@@ -109,7 +113,9 @@ public class AdminFacilityMaintenanceController {
 	@PreAuthorize("@iamAuthorization.has(authentication,'facility:technician:manage')")
 	public ResultData<TechnicianView> updateTechnician(
 			@PathVariable String id,
-			@RequestBody TechnicianCommand command) {
+			@RequestBody TechnicianCommand command,
+			Authentication authentication) {
+		validateTechnicianScope(authentication, command);
 		return ok(service.saveTechnician(id, command));
 	}
 
@@ -152,10 +158,13 @@ public class AdminFacilityMaintenanceController {
 	@GetMapping("/material-requests")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:material-request:view','facility:material-request:manage')")
 	public ResultData<PageView<MaterialRequestView>> materialRequests(
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) String status,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
-		return ok(PageView.from(service.materialRequests(status, page, size)));
+			@RequestParam(defaultValue = "20") int size,
+			Authentication authentication) {
+		return ok(PageView.from(service.materialRequests(
+				queryOrganizations(authentication, organizationId), status, page, size)));
 	}
 
 	@PostMapping("/material-requests/{id}/review")
@@ -164,21 +173,26 @@ public class AdminFacilityMaintenanceController {
 			@PathVariable String id,
 			@RequestBody ReviewMaterialRequest command,
 			Principal principal) {
+		dataScopes.requireOrganization(auth(principal), service.materialRequestOrganization(id));
 		return ok(service.reviewMaterialRequest(id, command, principal.getName()));
 	}
 
 	@PostMapping("/material-requests/{id}/issue")
 	@PreAuthorize("@iamAuthorization.has(authentication,'facility:material-request:manage')")
 	public ResultData<MaterialRequestView> issue(@PathVariable String id, Principal principal) {
+		dataScopes.requireOrganization(auth(principal), service.materialRequestOrganization(id));
 		return ok(service.issueMaterialRequest(id, principal.getName()));
 	}
 
 	@GetMapping("/ledger")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:ledger:view','facility:repair:manage')")
 	public ResultData<PageView<LedgerView>> ledger(
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
-		return ok(PageView.from(service.ledger(page, size)));
+			@RequestParam(defaultValue = "20") int size,
+			Authentication authentication) {
+		return ok(PageView.from(service.ledger(
+				queryOrganizations(authentication, organizationId), page, size)));
 	}
 
 	private Authentication auth(Principal principal) {
@@ -187,18 +201,25 @@ public class AdminFacilityMaintenanceController {
 	}
 
 	private java.util.Set<String> queryOrganizations(Authentication authentication, String organizationId) {
-		if (organizationId == null || organizationId.isBlank()) {
-			return dataScopes.visibleOrganizationIds(authentication);
-		}
-		dataScopes.requireOrganization(authentication, organizationId);
-		return java.util.Set.of(organizationId);
+		return dataScopes.resolveQueryOrganizations(authentication, organizationId);
 	}
 
 	private String resolveOrganization(Authentication authentication, String requested) {
-		if (requested != null && !requested.isBlank()) { dataScopes.requireOrganization(authentication, requested); return requested; }
-		var visible = dataScopes.visibleOrganizationIds(authentication);
-		if (visible != null && visible.size() == 1) return visible.iterator().next();
-		throw new IllegalArgumentException("请选择维修物料所属机构");
+		return dataScopes.resolveOrganization(authentication, requested);
+	}
+
+	private void validateTechnicianScope(Authentication authentication, TechnicianCommand command) {
+		dataScopes.requireEmployee(authentication, command.employeeId());
+		var values = command.responsibilityOrganizationIds() == null
+				? java.util.Set.<String>of()
+				: java.util.Arrays.stream(command.responsibilityOrganizationIds().split(","))
+						.map(String::trim).filter(value -> !value.isBlank()).collect(java.util.stream.Collectors.toSet());
+		if (values.contains("ALL")) {
+			dataScopes.requireFullAccess(authentication);
+			return;
+		}
+		if (values.isEmpty()) throw new IllegalArgumentException("请选择维修人员责任机构");
+		values.forEach(value -> dataScopes.requireOrganization(authentication, value));
 	}
 
 	private <T> ResultData<T> ok(T data) {

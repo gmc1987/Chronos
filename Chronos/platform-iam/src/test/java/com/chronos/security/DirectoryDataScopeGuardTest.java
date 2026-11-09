@@ -55,5 +55,36 @@ class DirectoryDataScopeGuardTest {
 
 		assertThat(guard.visibleOrganizationIds(authentication)).isNull();
 		guard.requireOrganization(authentication, "any-organization");
+		assertThatThrownBy(() -> guard.resolveOrganization(authentication, null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("请选择机构");
+	}
+
+	@Test
+	void resolvesOnlyOrganizationButRejectsMissingOrAmbiguousScope() {
+		IDataScopeService dataScopes = mock(IDataScopeService.class);
+		IEmployeeAssignmentRepository assignments = mock(IEmployeeAssignmentRepository.class);
+		DirectoryDataScopeGuard guard = new DirectoryDataScopeGuard(dataScopes, assignments);
+		var authentication = new UsernamePasswordAuthenticationToken("manager", "", List.of());
+		when(assignments.findCurrentAssignments(
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+				.thenReturn(List.of());
+
+		when(dataScopes.resolve("manager")).thenReturn(new DataScopeContext(
+				false, null, Set.of("org-only"), Set.of(), Set.of(), Set.of("ORGANIZATION"), Map.of()));
+		assertThat(guard.resolveOrganization(authentication, null)).isEqualTo("org-only");
+		assertThat(guard.resolveQueryOrganizations(authentication, null)).containsExactly("org-only");
+
+		when(dataScopes.resolve("manager")).thenReturn(new DataScopeContext(
+				false, null, Set.of("org-a", "org-b"), Set.of(), Set.of(), Set.of("ORGANIZATION"), Map.of()));
+		assertThatThrownBy(() -> guard.resolveOrganization(authentication, null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("请选择机构");
+
+		when(dataScopes.resolve("manager")).thenReturn(new DataScopeContext(
+				false, null, Set.of(), Set.of(), Set.of(), Set.of("ORGANIZATION"), Map.of()));
+		assertThatThrownBy(() -> guard.resolveOrganization(authentication, null))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("当前账号没有可访问的机构");
 	}
 }

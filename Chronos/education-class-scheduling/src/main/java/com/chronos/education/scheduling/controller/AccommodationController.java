@@ -28,6 +28,7 @@ import com.chronos.education.scheduling.service.AccommodationService.BedCommand;
 import com.chronos.education.scheduling.service.AccommodationService.BuildingCommand;
 import com.chronos.education.scheduling.service.AccommodationService.RoomCommand;
 import com.chronos.education.scheduling.service.AccommodationImportService;
+import com.chronos.education.scheduling.service.AccommodationAssignmentImportService;
 import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
@@ -35,10 +36,16 @@ import com.chronos.security.DirectoryDataScopeGuard;
 public class AccommodationController {
 	private final AccommodationService service;
 	private final AccommodationImportService imports;
+	private final AccommodationAssignmentImportService assignmentImports;
 	private final DirectoryDataScopeGuard dataScopes;
 
 	public AccommodationController(AccommodationService service, AccommodationImportService imports,
-			DirectoryDataScopeGuard dataScopes) { this.service = service; this.imports = imports; this.dataScopes = dataScopes; }
+			AccommodationAssignmentImportService assignmentImports, DirectoryDataScopeGuard dataScopes) {
+		this.service = service;
+		this.imports = imports;
+		this.assignmentImports = assignmentImports;
+		this.dataScopes = dataScopes;
+	}
 
 	@GetMapping(value = "/import-template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
@@ -56,6 +63,45 @@ public class AccommodationController {
 			@RequestParam(required = false) String organizationId, Authentication authentication) {
 		String resolved = resolveOrganization(authentication, organizationId);
 		return ok(imports.importFile(file, dryRun, resolved));
+	}
+
+	@GetMapping(value = "/assignment-import/template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
+	public ResponseEntity<byte[]> assignmentImportTemplate(@RequestParam String organizationId,
+			@RequestParam String termId, Authentication authentication) {
+		String resolved = resolveOrganization(authentication, organizationId);
+		if (!resolved.equals(assignmentImports.termOrganization(termId)))
+			throw new IllegalArgumentException("学期不存在或不属于所选机构");
+		String filename = java.net.URLEncoder.encode("Chronos-住宿人工分配批量导入模板.xlsx", StandardCharsets.UTF_8);
+		return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + filename)
+				.header("X-Template-Version", AccommodationAssignmentImportService.TEMPLATE_VERSION)
+				.contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+				.body(assignmentImports.template());
+	}
+
+	@PostMapping(value = "/assignment-import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
+	public ResultData<?> assignmentImportPreview(@RequestPart("file") MultipartFile file,
+			@RequestParam String organizationId, @RequestParam String termId,
+			@RequestParam String templateVersion, Authentication authentication) {
+		String resolved = resolveOrganization(authentication, organizationId);
+		return ok(assignmentImports.preview(file, resolved, termId, templateVersion, authentication.getName()));
+	}
+
+	@PostMapping("/assignment-import/commit")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
+	public ResultData<?> assignmentImportCommit(@RequestBody AssignmentImportCommit command,
+			Authentication authentication) {
+		String resolved = resolveOrganization(authentication, command.organizationId());
+		return ok(assignmentImports.commit(command.previewId(), resolved, command.termId(), command.templateVersion(),
+				command.idempotencyKey(), authentication.getName()));
+	}
+
+	@GetMapping("/assignment-import/batches/{batchId}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:view','education:accommodation:manage')")
+	public ResultData<?> assignmentImportBatch(@PathVariable String batchId, Authentication authentication) {
+		requireOrganization(authentication, assignmentImports.batchOrganization(batchId));
+		return ok(assignmentImports.batch(batchId, authentication.getName()));
 	}
 
 	@GetMapping("/buildings")
@@ -128,9 +174,12 @@ public class AccommodationController {
 	@PostMapping("/assign")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
 	public ResultData<Map<String, Object>> assign(@RequestBody AssignmentCommand command, Authentication authentication) {
-		requireOrganization(authentication, service.bedOrganization(command.bedId()));
-		requireOrganization(authentication, service.studentOrganization(command.studentId()));
-		return ok(service.assign(command, authentication.getName()));
+		String bedOrganization = service.bedOrganization(command.bedId());
+		String studentOrganization = service.studentOrganization(command.studentId());
+		requireOrganization(authentication, bedOrganization);
+		requireOrganization(authentication, studentOrganization);
+		if (!bedOrganization.equals(studentOrganization)) throw new IllegalArgumentException("学生与床位不属于同一机构");
+		return ok(service.assign(command, authentication.getName(), bedOrganization));
 	}
 
 	@DeleteMapping("/assignments/{id}")
@@ -144,18 +193,13 @@ public class AccommodationController {
 		dataScopes.requireOrganization(authentication, organizationId);
 	}
 	private String resolveOrganization(Authentication authentication, String requested) {
-		if (requested != null && !requested.isBlank()) { requireOrganization(authentication, requested); return requested; }
-		var visible = dataScopes.visibleOrganizationIds(authentication);
-		if (visible != null && visible.size() == 1) return visible.iterator().next();
-		throw new IllegalArgumentException("请选择宿舍资源所属机构");
+		return dataScopes.resolveOrganization(authentication, requested);
 	}
 	private java.util.Collection<String> selectedOrganizations(Authentication authentication, String requested) {
-		if (requested != null && !requested.isBlank()) {
-			requireOrganization(authentication, requested);
-			return java.util.Set.of(requested);
-		}
-		return dataScopes.visibleOrganizationIds(authentication);
+		return dataScopes.resolveQueryOrganizations(authentication, requested);
 	}
 
 	private <T> ResultData<T> ok(T data) { ResultData<T> result = new ResultData<>(); result.setCode("200"); result.setMsg("success"); result.setData(data); return result; }
+	public record AssignmentImportCommit(String previewId, String organizationId, String termId,
+			String templateVersion, String idempotencyKey) {}
 }

@@ -2,8 +2,11 @@
   <section class="page">
     <header>
       <div><h2>维修人员管理</h2><p>维护维修技能、责任范围、值班时间和自动派单负载上限。</p></div>
-      <el-button type="primary" @click="open()">新增维修人员</el-button>
+      <el-button type="primary" :disabled="!employeeOrganizationId" @click="open()">新增维修人员</el-button>
     </header>
+    <div class="organization-filter">
+      <OrganizationSelect v-model="employeeOrganizationId" context-key="facility-technicians" />
+    </div>
     <el-table :data="rows" border>
       <el-table-column prop="employeeCode" label="工号" width="130" />
       <el-table-column prop="technicianName" label="姓名" width="120" />
@@ -66,9 +69,10 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import EmployeeOrganizationSelect from '../../../components/EmployeeOrganizationSelect.vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { useOrganizationEmployees } from '../../iam/useOrganizationEmployees'
 import { createTechnician, facilityOrganizationOptions, technicians, updateTechnician } from '../api'
 import { categoryLabels } from '../labels'
@@ -85,7 +89,14 @@ const weekOptions = [
 ].map(([value, label]) => ({ value, label }))
 const form = reactive({ id: '', employeeId: '', workStatus: 'AVAILABLE', maxConcurrent: 5, active: true, autoDispatch: true, responsibilityAreas: 'ALL' })
 const split = value => (value || '').split(',').map(item => item.trim()).filter(Boolean)
-const load = async () => { rows.value = (await technicians()).data || [] }
+let loadVersion = 0
+const load = async () => {
+  const version = ++loadVersion
+  rows.value = []
+  if (!employeeOrganizationId.value) return
+  const response = await technicians({ organizationId: employeeOrganizationId.value })
+  if (version === loadVersion) rows.value = response.data || []
+}
 const open = row => {
   Object.assign(form, row || { id: '', employeeId: '', workStatus: 'AVAILABLE', maxConcurrent: 5, active: true, autoDispatch: true, responsibilityAreas: 'ALL' })
   skills.value = split(row?.skillCategories)
@@ -114,16 +125,20 @@ const dutyText = row => {
 }
 onMounted(async () => {
   await Promise.allSettled([
-    load(),
     loadEmployeeOrganizations(),
     facilityOrganizationOptions().then(result => { organizations.value = result.data || [] }),
   ])
+})
+watch(employeeOrganizationId, () => {
+  dialog.value = false
+  load()
 })
 </script>
 
 <style scoped>
 .page { padding: 24px }
 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px }
+.organization-filter { width: 280px; margin-bottom: 14px }
 h2 { margin: 0 0 6px }
 p, .hint { margin: 0; color: #84909a }
 .hint { margin-left: 12px; font-size: 12px }

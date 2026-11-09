@@ -312,6 +312,11 @@ public class AcademicCalendarService {
 				|| !command.getStartTime().isBefore(command.getEndTime())) {
 			throw new IllegalArgumentException("节次开始时间必须早于结束时间");
 		}
+		boolean overlaps = bellPeriods.findByBellScheduleIdOrderByPeriodNo(command.getBellScheduleId()).stream()
+				.filter(period -> id == null || !period.getId().equals(id))
+				.anyMatch(period -> command.getStartTime().isBefore(period.getEndTime())
+						&& command.getEndTime().isAfter(period.getStartTime()));
+		if (overlaps) throw new IllegalArgumentException("节次时间与现有节次重叠");
 		BellPeriod value = id == null
 				? new BellPeriod()
 				: bellPeriods.findById(id)
@@ -339,6 +344,18 @@ public class AcademicCalendarService {
 		return calendarDays.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("校历日期不存在"))
 				.getAcademicTermId();
+	}
+
+	public String bellScheduleTermId(String id) {
+		return bellSchedules.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("作息方案不存在"))
+				.getAcademicTermId();
+	}
+
+	public String bellPeriodScheduleId(String id) {
+		return bellPeriods.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("节次不存在"))
+				.getBellScheduleId();
 	}
 
 	private AcademicTerm requireTerm(String id) {
