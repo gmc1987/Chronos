@@ -6,14 +6,27 @@
         <p>按教学班安排教师、教室、星期、节次和授课周次，保存时自动检查冲突。</p>
       </div>
       <div class="scheduling-header-actions">
+        <el-select
+          v-if="showOrganizationSelector"
+          v-model="organizationId"
+          aria-label="课表机构"
+          placeholder="选择课表机构"
+          style="width: 210px"
+          filterable
+          @change="changeOrganization"
+        >
+          <el-option v-for="org in scheduleOrganizations" :key="org.id" :label="org.organizationName" :value="org.id" />
+        </el-select>
+        <el-tag v-else-if="scheduleOrganizations.length === 1" effect="plain">{{ scheduleOrganizations[0].organizationName }}</el-tag>
         <SchedulingModeSwitch :semester-code="semesterCode" />
-        <el-select v-model="semesterCode" placeholder="选择学期" @change="loadAll">
+        <el-select v-model="semesterCode" placeholder="选择学期" :disabled="!terms.length" @change="loadAll">
           <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
         </el-select>
       </div>
     </header>
 
-    <el-tabs v-model="activeTab">
+    <el-empty v-if="organizationId && !semesterCode" description="所选机构暂无可用学期" />
+    <el-tabs v-else v-model="activeTab">
       <el-tab-pane v-if="!reviewOnly" label="周课表" name="schedule">
         <div class="schedule-toolbar">
           <div class="dimension-filter">
@@ -706,7 +719,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ScheduleGrid from '../components/ScheduleGrid.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
+import { getAdminRoles, getAdminUsername, hasAdminPermission } from '../../../store/auth'
 import { todayLocalDate } from '../../../utils/localDate'
 import {
   applyScheduleCandidate,
@@ -769,6 +782,7 @@ import {
   cancelScheduleDateException,
   restoreScheduleDateException,
   orgList,
+  orgOptions,
   updateTeacherTimeConstraint,
   updateClassroomUnavailableSlot,
 } from '../../../api/admin'
@@ -786,6 +800,18 @@ const classrooms = ref([])
 const offeringOptions = ref([])
 const classroomOptions = ref([])
 const terms = ref([])
+const scheduleOrganizations = ref([])
+const organizationId = ref('')
+const superAdmin = getAdminRoles().some(role =>
+  (typeof role === 'string' ? role : role?.roleCode)?.toUpperCase() === 'SUPER_ADMIN')
+const showOrganizationSelector = computed(() =>
+  scheduleOrganizations.value.length > 1 || (superAdmin && scheduleOrganizations.value.length === 1))
+const changeOrganization = () => {
+  semesterCode.value = ''
+  terms.value = []
+  clearSemesterData()
+  return loadAll()
+}
 const courses = ref([])
 const teachers = ref([])
 const students = ref([])
@@ -957,6 +983,7 @@ const loadStudentOptions = async () => {
   try {
     const response = await listScheduleStudentOptions({
       keyword: studentKeyword.value,
+      organizationId: organizationId.value || undefined,
       page: studentPage.value - 1,
       size: 10,
     })
@@ -1024,7 +1051,7 @@ const loadDimensionOptions = async () => {
   dimensionOptionsLoading.value = true
   dimensionOptionsError.value = false
   try {
-    const response = await listScheduleDimensionOptions(semester)
+    const response = await listScheduleDimensionOptions(semester, organizationId.value || undefined)
     if (sequence !== dimensionOptionsSequence || semester !== semesterCode.value) return
     const dimensions = responseData(response) || {}
     if (!['teachers', 'administrativeClasses', 'teachingClasses', 'classrooms']
@@ -1065,7 +1092,21 @@ const loadAll = async () => {
   scheduleScopeFullAccess.value = false
   let termResponse
   try {
-    termResponse = await listAcademicTerms()
+    if (!scheduleOrganizations.value.length) {
+      const [termResult, orgResult] = await Promise.all([listAcademicTerms(), orgOptions()])
+      if (sequence !== loadSequence) return
+      const availableTerms = responseList(termResult)
+      const termOrganization = (availableTerms.find(item => item.termCode === semesterCode.value)
+        || availableTerms.find(item => item.currentTerm) || availableTerms[0])?.organizationId
+      scheduleOrganizations.value = responseList(orgResult).filter(org =>
+        ['SCHOOL', 'CAMPUS'].includes(org.organizationType)
+        || availableTerms.some(term => term.organizationId === org.id))
+      organizationId.value = scheduleOrganizations.value.find(org => org.id === termOrganization)?.id
+        || scheduleOrganizations.value[0]?.id || ''
+      termResponse = { data: availableTerms.filter(term => !organizationId.value || term.organizationId === organizationId.value) }
+    } else {
+      termResponse = await listAcademicTerms({ organizationId: organizationId.value || undefined })
+    }
   } catch (error) {
     if (sequence !== loadSequence) return
     terms.value = []
@@ -1165,6 +1206,7 @@ const loadSchedule = async () => {
     semester,
     dimension,
     target || undefined,
+    organizationId.value || undefined,
   )
   if (sequence === scheduleSequence && semester === semesterCode.value
     && dimension === scheduleDimension.value && target === scheduleTargetId.value) {
@@ -1277,6 +1319,7 @@ const exportSchedule = async () => saveBlob(
     semesterCode.value,
     scheduleDimension.value,
     scheduleTargetId.value || undefined,
+    organizationId.value || undefined,
   ),
   `课表-${semesterCode.value}.xlsx`,
 )

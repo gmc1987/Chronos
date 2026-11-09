@@ -19,8 +19,12 @@
 
     <el-dialog v-model="dialog" :title="form.id ? '编辑维修人员' : '新增维修人员'" width="720px">
       <el-form label-width="120px">
+        <el-form-item v-if="!form.id && employeeOrganizations.length > 1" label="员工所属机构">
+          <EmployeeOrganizationSelect v-model="employeeOrganizationId" :organizations="employeeOrganizations"
+            @update:model-value="form.employeeId = ''" />
+        </el-form-item>
         <el-form-item label="员工">
-          <el-select v-model="form.employeeId" filterable :disabled="!!form.id" style="width:100%">
+          <el-select v-model="form.employeeId" filterable :disabled="!!form.id || !employeeOrganizationId" style="width:100%">
             <el-option v-for="item in employees" :key="item.id" :value="item.id" :label="`${item.employeeName}（${item.employeeCode}）`" />
           </el-select>
         </el-form-item>
@@ -64,11 +68,14 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { employees as loadEmployees } from '../../iam/api'
+import EmployeeOrganizationSelect from '../../../components/EmployeeOrganizationSelect.vue'
+import { useOrganizationEmployees } from '../../iam/useOrganizationEmployees'
 import { createTechnician, facilityOrganizationOptions, technicians, updateTechnician } from '../api'
 import { categoryLabels } from '../labels'
 
-const rows = ref([]), employees = ref([]), organizations = ref([]), dialog = ref(false)
+const { organizationId: employeeOrganizationId, organizations: employeeOrganizations,
+  employeeOptions: employees, loadOrganizations: loadEmployeeOrganizations } = useOrganizationEmployees()
+const rows = ref([]), organizations = ref([]), dialog = ref(false)
 const skills = ref([]), responsibilityOrganizations = ref(['ALL']), dutyDays = ref(['ALL'])
 const dutyRange = ref(['00:00:00', '23:59:59'])
 const workLabels = { AVAILABLE: '可接单', BUSY: '忙碌', OFFLINE: '离线' }
@@ -106,10 +113,11 @@ const dutyText = row => {
   return `${dayText} ${row.dutyStartTime?.slice(0, 5)}-${row.dutyEndTime?.slice(0, 5)}`
 }
 onMounted(async () => {
-  const [employeeResult, organizationResult] = await Promise.all([loadEmployees({ page: 0, size: 100 }), facilityOrganizationOptions()])
-  employees.value = employeeResult.data?.content || employeeResult.data || []
-  organizations.value = organizationResult.data || []
-  await load()
+  await Promise.allSettled([
+    load(),
+    loadEmployeeOrganizations(),
+    facilityOrganizationOptions().then(result => { organizations.value = result.data || [] }),
+  ])
 })
 </script>
 

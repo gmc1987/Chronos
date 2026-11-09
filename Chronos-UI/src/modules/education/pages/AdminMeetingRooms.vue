@@ -1,4 +1,5 @@
 <script setup>
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -45,6 +46,7 @@ async function load() {
 }
 
 async function save() {
+  if (!form.campusId) return ElMessage.warning('请选择会议室所属机构')
   if (!form.roomCode || !form.roomName || !form.capacity) {
     return ElMessage.warning('请填写会议室编码、名称和容量')
   }
@@ -138,6 +140,7 @@ onMounted(load)
 
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑会议室' : '新增会议室'" width="640px">
       <el-form label-width="110px">
+        <el-form-item label="所属机构"><OrganizationSelect v-model="form.campusId" /></el-form-item>
         <el-form-item label="会议室编码"><el-input v-model="form.roomCode" maxlength="64" /></el-form-item>
         <el-form-item label="会议室名称"><el-input v-model="form.roomName" maxlength="128" /></el-form-item>
         <el-form-item label="楼宇"><el-input v-model="form.buildingName" maxlength="128" /></el-form-item>

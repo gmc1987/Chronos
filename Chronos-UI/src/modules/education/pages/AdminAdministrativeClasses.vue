@@ -1,5 +1,5 @@
 <template>
-  <AcademicCrudPage title="班级管理" description="维护行政班、年级、专业和班主任关系" entity-label="行政班" :columns="columns" :fields="fields" :defaults="defaults" :lookups="lookups" :loader="listAdministrativeClasses" :creator="createAdministrativeClass" :updater="updateAdministrativeClass" :deleter="deleteAdministrativeClass" />
+  <AcademicCrudPage campus-scoped title="班级管理" description="维护行政班、年级、专业和班主任关系" entity-label="行政班" :columns="columns" :fields="fields" :defaults="defaults" :lookups="lookups" :loader="listAdministrativeClasses" :creator="createAdministrativeClass" :updater="updateAdministrativeClass" :deleter="deleteAdministrativeClass" />
 </template>
 <script setup>
 import AcademicCrudPage from '../components/AcademicCrudPage.vue'
@@ -18,7 +18,6 @@ const fields = [
   { prop: 'gradeId', label: '所属年级', lookup: 'grades', labelProp: 'gradeName' },
   { prop: 'majorId', label: '所属专业', lookup: 'majors', labelProp: 'majorName' },
   { prop: 'headTeacherId', label: '班主任', lookup: 'teachers', labelProp: 'teacherName' },
-  { prop: 'campusId', label: '校区 ID' },
 ]
 const defaults = { status: 'ACTIVE' }
 const lookups = [

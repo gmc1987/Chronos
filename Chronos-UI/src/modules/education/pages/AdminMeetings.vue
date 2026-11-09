@@ -1,4 +1,5 @@
 <script setup>
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -181,6 +182,7 @@ async function save() {
   if (!form.title || !form.startTime || !form.endTime) {
     return ElMessage.warning('请填写会议主题和起止时间')
   }
+  if (!form.id && !needsRoom.value && !form.organizationId) return ElMessage.warning('请选择会议所属机构')
   if (needsRoom.value && !form.roomId) return ElMessage.warning('请选择会议室')
   if (needsOnline.value && !form.joinUrl) return ElMessage.warning('请填写线上会议加入链接')
   busy.value = true
@@ -333,6 +335,7 @@ onMounted(load)
             <el-radio value="ONSITE">线下</el-radio><el-radio value="ONLINE">线上</el-radio><el-radio value="HYBRID">混合</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item v-if="!form.id && !needsRoom" label="所属机构"><OrganizationSelect v-model="form.organizationId" /></el-form-item>
         <el-form-item label="开始时间"><el-date-picker v-model="form.startTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <el-form-item label="结束时间"><el-date-picker v-model="form.endTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <el-form-item v-if="needsRoom" label="会议室">

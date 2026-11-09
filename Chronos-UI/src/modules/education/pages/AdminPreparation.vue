@@ -48,9 +48,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { dictionaryOptions, employees } from '../../iam/api'
+import { dictionaryOptions } from '../../iam/api'
+import { useOrganizationEmployees } from '../../iam/useOrganizationEmployees'
 import { collaborationPreparationDetail, concludePreparation, createCoursewareFromPreparation, createPreparation, createPreparationChild, invitePreparationMember, myPreparationInvitations, offeringLessons, preparationMembers, preparationPage, publishedScheduleEntries, respondPreparationInvitation, revokePreparationMember, submitPreparation, teachingCenterOfferings, updatePreparation, uploadTeachingFile } from '../api/teachingCenter'
-const offerings=ref([]), teachers=ref([]), lessons=ref([]), schedules=ref([]), types=ref([]), rows=ref([]), total=ref(0), page=ref(1), size=ref(20), loading=ref(false), dialog=ref(false), editing=ref(''), formRef=ref()
+const offerings=ref([]), lessons=ref([]), schedules=ref([]), types=ref([]), rows=ref([]), total=ref(0), page=ref(1), size=ref(20), loading=ref(false), dialog=ref(false), editing=ref(''), formRef=ref()
 const invitations=ref([])
 const invitationDetailDialog=ref(false), invitationDetail=ref(null)
 const viewInvitation=async row=>{try{invitationDetail.value=(await collaborationPreparationDetail(row.preparationId))?.data||null;invitationDetailDialog.value=true}catch(e){ElMessage.error(e.message)}}
@@ -63,7 +64,8 @@ const respondInvitation=async(row,response)=>{try{await respondPreparationInvita
 const filters=reactive({offeringId:''}); const form=reactive({offeringId:'',title:'',preparationType:'',scheduledAt:'',ownerTeacherId:'',scheduleEntryId:'',location:'',agenda:'',outcomeLessonPlanId:'',memberIds:[],discussion:'',conclusion:''}); const discussionDialog=ref(false); const discussion=reactive({preparationId:'',content:'',fileName:''})
 const rules={offeringId:[{required:true,message:'请选择教学班'}],title:[{required:true,message:'请输入主题'}],preparationType:[{required:true,message:'请选择类型'}],scheduledAt:[{required:true,message:'请选择时间'}]}
 const isCollective=computed(()=>types.value.find(item=>item.value===form.preparationType)?.label?.includes('集体')); const unwrap=r=>r?.data?.content||r?.data||[]; const labelOf=(a,v)=>a.find(x=>x.value===v)?.label||v||'-'; const offeringLabel=i=>`${i.semesterCode||''} · ${i.courseName||''} · ${i.teachingClassName||''}`; const personLabel=i=>i.name||i.employeeName||i.realName||i.id; const scheduleLabel=i=>`${i.startTime||i.date||''} · ${i.courseName||i.location||''}`
-const selectedOffering=computed(()=>offerings.value.find(item=>item.id===form.offeringId)); const ownerLabel=computed(()=>{const item=selectedOffering.value; return item?.teacherName||item?.teacherId||'由教学班任课教师主持'})
+const selectedOffering=computed(()=>offerings.value.find(item=>item.id===form.offeringId)); const { employeeOptions: teachers } = useOrganizationEmployees(computed(() => selectedOffering.value?.campusId || ''))
+const ownerLabel=computed(()=>{const item=selectedOffering.value; return item?.teacherName||item?.teacherId||'由教学班任课教师主持'})
 const load=async()=>{loading.value=true;try{const r=await preparationPage({...filters,page:page.value-1,size:size.value});rows.value=unwrap(r);total.value=r?.data?.totalElements||rows.value.length}catch(e){ElMessage.error(e.message)}finally{loading.value=false}}
 const loadSchedule=async()=>{if(!form.offeringId||schedules.value.length)return;try{schedules.value=unwrap(await publishedScheduleEntries(form.offeringId, selectedOffering.value?.semesterCode))}catch(e){ElMessage.error(e.message)}}
 const openCreate=()=>{editing.value='';Object.assign(form,{offeringId:filters.offeringId,title:'',preparationType:types.value[0]?.value||'',scheduledAt:'',ownerTeacherId:'',scheduleEntryId:'',location:'',agenda:'',outcomeLessonPlanId:'',memberIds:[],discussion:'',conclusion:''});schedules.value=[];dialog.value=true}
@@ -75,7 +77,7 @@ const generateCourseware=async row=>{try{const title=`${row.title}课件`;await 
 const openDiscussion=row=>{Object.assign(discussion,{preparationId:row.id,content:row.discussion||'',fileName:''});discussionDialog.value=true}
 const uploadMaterial=async file=>{try{const uploaded=await uploadTeachingFile(file);const fileId=uploaded?.data?.id||uploaded?.data?.fileId;if(!fileId)throw new Error('文件上传未返回 fileId');await createPreparationChild(discussion.preparationId,'materials',{title:file.name,fileId});discussion.fileName=file.name;ElMessage.success('资料已上传')}catch(e){ElMessage.error(e.message)}return false}
 const saveDiscussion=async()=>{try{await createPreparationChild(discussion.preparationId,'comments',{content:discussion.content});discussionDialog.value=false;ElMessage.success('已保存')}catch(e){ElMessage.error(e.message)}}
-watch(()=>form.offeringId,async id=>{if(id)try{lessons.value=unwrap(await offeringLessons(id))}catch(e){ElMessage.error(e.message)}})
-onMounted(async()=>{loadInvitations();try{const[o,t,d]=await Promise.all([teachingCenterOfferings(),employees({page:0,size:100}),dictionaryOptions('EDU_PREPARATION_TYPE')]);offerings.value=unwrap(o);teachers.value=unwrap(t);types.value=(d?.data||[]).map(i=>({value:i.dictValue,label:i.dictName}));if(!filters.offeringId&&offerings.value[0])filters.offeringId=offerings.value[0].id;await load()}catch(e){ElMessage.error(e.message)}})
+watch(()=>form.offeringId,async id=>{form.memberIds=[];if(id)try{lessons.value=unwrap(await offeringLessons(id))}catch(e){ElMessage.error(e.message)}})
+onMounted(async()=>{loadInvitations();try{const[o,d]=await Promise.all([teachingCenterOfferings(),dictionaryOptions('EDU_PREPARATION_TYPE')]);offerings.value=unwrap(o);types.value=(d?.data||[]).map(i=>({value:i.dictValue,label:i.dictName}));if(!filters.offeringId&&offerings.value[0])filters.offeringId=offerings.value[0].id;await load()}catch(e){ElMessage.error(e.message)}})
 </script>
 <style scoped>.workbench{padding:24px}.head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head h1{margin:0 0 6px}.head p{margin:0;color:#7b8794}.invitation-section{margin:0 0 22px}.invitation-section h2{font-size:18px;margin:0 0 10px}.el-pagination{margin-top:18px;justify-content:flex-end}.file-name{margin-left:12px;color:#667085}</style>

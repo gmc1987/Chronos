@@ -118,6 +118,10 @@
               <el-option label="紧急" value="URGENT" />
             </el-select>
           </el-form-item>
+          <el-form-item label="所属机构">
+            <OrganizationSelect v-if="!form.id" v-model="form.ownerOrganizationId" />
+            <span v-else>{{ directory.organizations.find(item => item.id === form.ownerOrganizationId)?.organizationName || form.ownerOrganizationId || '未登记' }}</span>
+          </el-form-item>
           <el-form-item class="full" label="标题">
             <el-input v-model="form.title" :disabled="readonly" maxlength="300" show-word-limit />
           </el-form-item>
@@ -191,8 +195,8 @@
         </div>
 
         <el-divider content-position="left">可见范围</el-divider>
-        <div v-for="(audience, index) in form.audiences" :key="index" class="audience-row">
-          <el-select v-model="audience.subjectType" :disabled="readonly" @change="audience.subjectId = ''">
+        <div v-for="(audience, index) in form.audiences" :key="index" class="audience-row" :class="{ scoped: isScopedAudience(audience) }">
+          <el-select v-model="audience.subjectType" :disabled="readonly" @change="changeAudienceType(audience)">
             <el-option label="全部用户" value="ALL" />
             <el-option label="机构" value="ORGANIZATION" />
             <el-option label="部门" value="DEPARTMENT" />
@@ -201,14 +205,26 @@
             <el-option label="指定用户" value="USER" />
           </el-select>
           <el-select
-            v-if="audience.subjectType !== 'ALL'"
-            v-model="audience.subjectId"
+            v-if="isScopedAudience(audience)"
+            v-model="audience.organizationId"
             :disabled="readonly"
             filterable
-            placeholder="选择对象"
+            placeholder="先选择机构"
+            @change="changeAudienceOrganization(audience)"
+          >
+            <el-option v-for="item in directory.organizations" :key="item.id" :label="item.organizationName" :value="item.id" />
+          </el-select>
+          <el-select
+            v-if="audience.subjectType !== 'ALL'"
+            v-model="audience.subjectId"
+            :disabled="readonly || (isScopedAudience(audience) && !audience.organizationId)"
+            :loading="scopedAudienceLoading.has(audienceKey(audience))"
+            filterable
+            :placeholder="isScopedAudience(audience) && !audience.organizationId ? '请先选择机构' : '选择对象'"
+            @visible-change="visible => visible && loadScopedAudience(audience)"
           >
             <el-option
-              v-for="item in audienceOptions(audience.subjectType)"
+              v-for="item in audienceOptions(audience)"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -298,6 +314,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PublicationRichTextEditor from '../components/PublicationRichTextEditor.vue'
 import {
@@ -311,7 +328,7 @@ import {
   listRoles,
   listUsers,
   organizationUnits,
-  orgList,
+  orgOptions,
   positions,
   publicationDetail,
   publicationStatistics,
@@ -354,9 +371,10 @@ const versionDialog = ref(false)
 const versionRows = ref([])
 const versionPublicationId = ref('')
 const workflows = ref([])
-const directory = reactive({ organizations: [], departments: [], positions: [], roles: [], users: [] })
+const directory = reactive({ organizations: [], roles: [], users: [] })
 const emptyForm = () => ({
   id: '',
+  ownerOrganizationId: '',
   publicationType: 'NOTICE',
   contentType: 'RICH_TEXT',
   title: '',
@@ -391,23 +409,34 @@ const load = async () => {
 }
 
 const loadDirectory = async () => {
-  const [organizationsResponse, positionsResponse, rolesResponse, usersResponse, workflowsResponse] = await Promise.all([
-    orgList({ page: 0, size: 500 }),
-    positions(),
-    listRoles({ page: 0, size: 500 }),
-    listUsers({ page: 0, size: 500 }),
-    listAvailableWorkflows().catch(() => ({ data: [] })),
+  const failed = new Set()
+  const loadOptions = async (label, request, read) => {
+    try {
+      return read(await request()) || []
+    } catch {
+      failed.add(label)
+      return []
+    }
+  }
+  const data = response => response.data
+  const page = response => response.data?.content
+  await Promise.all([
+    loadOptions('机构', orgOptions, data).then(items => {
+      directory.organizations = items
+      if (!form.value.id && items.length === 1) {
+        form.value.audiences.filter(isScopedAudience).forEach(item => {
+          if (!item.organizationId) changeAudienceType(item)
+        })
+      }
+    }),
+    loadOptions('角色', () => listRoles({ page: 0, size: 500 }), page)
+      .then(items => { directory.roles = items }),
+    loadOptions('指定用户', () => listUsers({ page: 0, size: 500 }), page)
+      .then(items => { directory.users = items }),
+    loadOptions('审批流程', listAvailableWorkflows, data)
+      .then(items => { workflows.value = items }),
   ])
-  directory.organizations = organizationsResponse.data.content || []
-  directory.positions = positionsResponse.data || []
-  directory.roles = rolesResponse.data.content || []
-  directory.users = usersResponse.data.content || []
-  workflows.value = workflowsResponse.data || []
-  const unitResponses = await Promise.all(directory.organizations.map(item => organizationUnits(item.id)))
-  directory.departments = unitResponses.flatMap((response, index) => flattenDepartments(
-    response.data || [],
-    directory.organizations[index]?.organizationName,
-  ))
+  if (failed.size) ElMessage.warning(`${[...failed].join('、')}选项加载失败，请刷新后重试或检查权限`)
 }
 
 // 部门接口返回树形结构；转换成平铺选项并保留机构名称，避免同名科室无法区分。
@@ -419,13 +448,61 @@ const flattenDepartments = (items, organizationName, parentPath = '') => items.f
   ]
 })
 
-const audienceOptions = type => ({
-  ORGANIZATION: directory.organizations.map(item => ({ label: item.organizationName, value: item.id })),
-  DEPARTMENT: directory.departments.map(item => ({ label: item.displayName, value: item.id })),
-  POSITION: directory.positions.map(item => ({ label: item.positionName, value: item.id })),
-  ROLE: directory.roles.map(item => ({ label: item.roleName, value: item.id })),
-  USER: directory.users.map(item => ({ label: item.displayName || item.username, value: item.username })),
-}[type] || [])
+const scopedAudienceOptions = reactive(new Map())
+const scopedAudienceLoading = reactive(new Set())
+const pendingAudienceRequests = new Map()
+const isScopedAudience = audience => ['DEPARTMENT', 'POSITION'].includes(audience.subjectType)
+const audienceKey = audience => `${audience.subjectType}:${audience.organizationId || ''}`
+const loadScopedAudience = (audience, quiet = false) => {
+  if (!isScopedAudience(audience) || !audience.organizationId) return Promise.resolve([])
+  const key = audienceKey(audience)
+  if (scopedAudienceOptions.has(key)) return Promise.resolve(scopedAudienceOptions.get(key))
+  if (pendingAudienceRequests.has(key)) return pendingAudienceRequests.get(key)
+
+  const { organizationId, subjectType } = audience
+  const organizationName = directory.organizations.find(item => item.id === organizationId)?.organizationName
+  scopedAudienceLoading.add(key)
+  const request = (subjectType === 'DEPARTMENT' ? organizationUnits(organizationId) : positions({ organizationId }))
+    .then(response => {
+      const rows = response.data || []
+      const options = subjectType === 'DEPARTMENT'
+        ? flattenDepartments(rows, organizationName).map(item => ({ label: item.displayName, value: item.id }))
+        : rows.map(item => ({ label: item.positionName, value: item.id }))
+      scopedAudienceOptions.set(key, options)
+      return options
+    })
+    .catch(error => {
+      if (!quiet) ElMessage.error(error?.response?.data?.msg || error.message || '范围选项加载失败')
+      return []
+    })
+    .finally(() => {
+      scopedAudienceLoading.delete(key)
+      pendingAudienceRequests.delete(key)
+    })
+  pendingAudienceRequests.set(key, request)
+  return request
+}
+
+const audienceOptions = audience => {
+  if (isScopedAudience(audience)) return scopedAudienceOptions.get(audienceKey(audience)) || []
+  return {
+    ORGANIZATION: directory.organizations.map(item => ({ label: item.organizationName, value: item.id })),
+    ROLE: directory.roles.map(item => ({ label: item.roleName, value: item.id })),
+    USER: directory.users.map(item => ({ label: item.displayName || item.username, value: item.username })),
+  }[audience.subjectType] || []
+}
+
+const changeAudienceOrganization = audience => {
+  audience.subjectId = ''
+  return loadScopedAudience(audience)
+}
+
+const changeAudienceType = audience => {
+  audience.organizationId = isScopedAudience(audience) && directory.organizations.length === 1
+    ? directory.organizations[0].id
+    : ''
+  return changeAudienceOrganization(audience)
+}
 
 const openCreate = () => {
   form.value = emptyForm()
@@ -433,16 +510,30 @@ const openCreate = () => {
 }
 const openEdit = async row => {
   const response = await publicationDetail(row.id)
-  form.value = { ...emptyForm(), ...response.data }
+  const record = { ...emptyForm(), ...response.data }
+  // 已保存的受众仅保存对象 ID，编辑时从有权访问的机构反查其归属。
+  await Promise.all(record.audiences.filter(isScopedAudience).map(async audience => {
+    const matches = await Promise.all(directory.organizations.map(async organization => {
+      const options = await loadScopedAudience({ ...audience, organizationId: organization.id }, true)
+      return options.some(item => item.value === audience.subjectId) ? organization.id : ''
+    }))
+    audience.organizationId = matches.find(Boolean) || ''
+  }))
+  form.value = record
   dialog.value = true
 }
-const addAudience = () => form.value.audiences.push({
-  subjectType: 'DEPARTMENT',
-  subjectId: '',
-  includeChildren: true,
-  excluded: false,
-})
+const addAudience = () => {
+  form.value.audiences.push({
+    subjectType: 'DEPARTMENT',
+    subjectId: '',
+    organizationId: '',
+    includeChildren: true,
+    excluded: false,
+  })
+  changeAudienceType(form.value.audiences.at(-1))
+}
 const payload = () => ({
+  ownerOrganizationId: form.value.ownerOrganizationId || null,
   publicationType: form.value.publicationType,
   contentType: form.value.contentType,
   title: form.value.title,
@@ -458,17 +549,24 @@ const payload = () => ({
   sortOrder: form.value.sortOrder,
   publishAt: form.value.publishAt || null,
   expireAt: form.value.expireAt || null,
-  audiences: form.value.audiences,
+  audiences: form.value.audiences.map(({ subjectType, subjectId, includeChildren, excluded }) => ({
+    subjectType, subjectId, includeChildren, excluded,
+  })),
 })
 const save = async () => {
+  if (!form.value.id && !form.value.ownerOrganizationId) return ElMessage.warning('请选择通知公告所属机构')
   if (!form.value.title.trim()) return ElMessage.warning('请输入标题')
   if (!form.value.audiences.some(item => !item.excluded)) return ElMessage.warning('至少配置一个正向可见范围')
+  if (form.value.audiences.some(item => item.subjectType !== 'ALL' && !item.subjectId)) {
+    return ElMessage.warning('请为每条可见范围选择对象')
+  }
   saving.value = true
   try {
     const response = form.value.id
       ? await updatePublication(form.value.id, payload())
       : await createPublication(payload())
-    form.value = { ...emptyForm(), ...response.data }
+    const audienceRows = form.value.audiences
+    form.value = { ...emptyForm(), ...response.data, audiences: audienceRows }
     ElMessage.success('草稿已保存')
     await load()
   } finally {
@@ -555,7 +653,14 @@ const archive = async row => {
 }
 const uploadDocument = async uploadFile => {
   const response = await uploadPublicationAttachment(form.value.id, uploadFile.raw, true)
-  form.value = { ...emptyForm(), ...response.data }
+  const previousAudiences = form.value.audiences
+  const audiences = (response.data.audiences || []).map(item => ({
+    ...item,
+    organizationId: previousAudiences.find(previous =>
+      previous.subjectType === item.subjectType && previous.subjectId === item.subjectId
+    )?.organizationId || '',
+  }))
+  form.value = { ...emptyForm(), ...response.data, audiences }
   ElMessage.success('文档已导入，正文已提取')
 }
 const downloadAttachment = async item => {
@@ -594,5 +699,6 @@ onMounted(async () => {
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
 .form-grid .full { grid-column: 1 / -1; }
 .audience-row { display: grid; grid-template-columns: 150px minmax(220px, 1fr) auto auto auto; gap: 10px; align-items: center; margin-bottom: 10px; }
+.audience-row.scoped { grid-template-columns: 120px minmax(140px, 1fr) minmax(180px, 1fr) auto auto auto; }
 .attachment { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eef0f2; }
 </style>

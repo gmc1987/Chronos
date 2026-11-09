@@ -1,4 +1,5 @@
 <script setup>
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -133,6 +134,7 @@ const openEditBase = () => {
 }
 
 const saveBase = async () => {
+  if (!baseForm.id && !baseForm.organizationId) return ElMessage.warning('请选择知识库所属机构')
   if (baseForm.id) {
     await updateKnowledgeBase(baseForm.id, baseForm)
   } else {
@@ -434,6 +436,7 @@ onMounted(async () => {
 
     <el-dialog v-model="baseDialog" :title="baseForm.id ? '编辑知识库' : '新建知识库'" width="560px">
       <el-form label-width="100px">
+        <el-form-item v-if="!baseForm.id" label="所属机构"><OrganizationSelect v-model="baseForm.organizationId" /></el-form-item>
         <el-form-item label="知识库编码"><el-input v-model="baseForm.baseCode" /></el-form-item>
         <el-form-item label="知识库名称"><el-input v-model="baseForm.baseName" /></el-form-item>
         <el-form-item label="说明"><el-input v-model="baseForm.description" type="textarea" :rows="3" /></el-form-item>

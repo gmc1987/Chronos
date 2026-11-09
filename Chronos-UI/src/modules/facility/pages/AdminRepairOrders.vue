@@ -2,6 +2,7 @@
   <section class="page">
     <header><div><h2>报修单管理</h2><p>统一受理、自动派单、人工兜底和维修闭环。</p></div></header>
     <el-form class="filters" inline>
+      <el-form-item label="机构" style="width:260px"><OrganizationSelect v-model="filters.organizationId" auto-select-single /></el-form-item>
       <el-form-item label="关键词"><el-input v-model="filters.keyword" clearable placeholder="单号、标题、位置或人员" /></el-form-item>
       <el-form-item label="状态"><el-select v-model="filters.status" clearable style="width:160px"><el-option v-for="(label,value) in statusLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
       <el-form-item><el-button type="primary" @click="search">查询</el-button></el-form-item>
@@ -23,18 +24,40 @@
   </section>
 </template>
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { autoDispatchRepairOrder, dispatchRepairOrder, repairOrderDetail, repairOrders, technicians } from '../api'
 import { categoryLabels, dateTime, statusLabels, urgencyLabels } from '../labels'
 const rows=ref([]), total=ref(0), page=ref(1), size=ref(20), loading=ref(false), dispatchDialog=ref(false), detailDialog=ref(false), detail=ref(null), selected=ref(null), technicianRows=ref([])
-const filters=reactive({keyword:'',status:''}), dispatchForm=reactive({technicianId:'',remark:''})
+const filters=reactive({organizationId:'',keyword:'',status:''}), dispatchForm=reactive({technicianId:'',remark:''})
 const activeTechnicians=computed(()=>technicianRows.value.filter(x=>x.active&&x.workStatus!=='OFFLINE'&&x.currentLoad<x.maxConcurrent))
-const load=async()=>{loading.value=true;try{const r=await repairOrders({...filters,page:page.value-1,size:size.value});rows.value=r.data.content;total.value=r.data.totalElements}finally{loading.value=false}}
-const search=()=>{page.value=1;load()}; const openDispatch=row=>{selected.value=row;Object.assign(dispatchForm,{technicianId:'',remark:''});dispatchDialog.value=true}
+let loadSequence = 0
+const load = async () => {
+  const sequence = ++loadSequence
+  if (!filters.organizationId) return
+  loading.value = true
+  try {
+    const response = await repairOrders({ ...filters, page: page.value - 1, size: size.value })
+    if (sequence !== loadSequence) return
+    rows.value = response.data.content
+    total.value = response.data.totalElements
+  } finally {
+    if (sequence === loadSequence) loading.value = false
+  }
+}
+const search = () => { page.value = 1; return load() }
+watch(() => filters.organizationId, () => {
+  rows.value = []
+  total.value = 0
+  detailDialog.value = false
+  dispatchDialog.value = false
+  search()
+})
+ const openDispatch=row=>{selected.value=row;Object.assign(dispatchForm,{technicianId:'',remark:''});dispatchDialog.value=true}
 const submitDispatch=async()=>{if(!dispatchForm.technicianId)return ElMessage.warning('请选择维修人员');await dispatchRepairOrder(selected.value.id,{...dispatchForm});ElMessage.success('派单成功');dispatchDialog.value=false;load()}
 const autoDispatch=async row=>{await autoDispatchRepairOrder(row.id);ElMessage.success('已执行自动派单');load()}
 const openDetail=async row=>{detail.value=(await repairOrderDetail(row.id)).data;detailDialog.value=true}
-onMounted(async()=>{technicianRows.value=(await technicians()).data||[];await load()})
+onMounted(async()=>{technicianRows.value=(await technicians()).data||[]})
 </script>
 <style scoped>.page{padding:24px}header{margin-bottom:18px}h2{margin:0 0 6px}p{margin:0;color:#84909a}.filters{margin-bottom:10px}.el-pagination{margin-top:10px;justify-content:flex-end}.actions{display:flex;flex-wrap:nowrap;white-space:nowrap}</style>

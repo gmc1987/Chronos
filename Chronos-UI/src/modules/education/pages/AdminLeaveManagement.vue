@@ -23,8 +23,11 @@
         <div class="card-title">
           <strong>员工年度假期额度</strong>
           <div>
+            <EmployeeOrganizationSelect v-model="employeeOrganizationId" :organizations="employeeOrganizations"
+              @update:model-value="selectedEmployeeId = ''; loadBalances()" />
             <el-select
               v-model="selectedEmployeeId"
+              :disabled="!employeeOrganizationId"
               filterable
               placeholder="选择教职工"
               style="width: 220px"
@@ -110,12 +113,13 @@
 </template>
 
 <script setup>
+import EmployeeOrganizationSelect from '../../../components/EmployeeOrganizationSelect.vue'
+import { useOrganizationEmployees } from '../../iam/useOrganizationEmployees'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   adjustStaffLeaveBalance,
   decideLeaveCancellation,
-  employees,
   leaveStatistics,
   pendingLeaveCancellations,
   staffLeaveBalanceAdjustments,
@@ -140,7 +144,8 @@ const format = (value) =>
 const range = ref([format(first), format(today)])
 const statistics = ref({})
 const rows = ref([])
-const employeeOptions = ref([])
+const { organizationId: employeeOrganizationId, organizations: employeeOrganizations,
+  employeeOptions, loadOrganizations } = useOrganizationEmployees()
 const selectedEmployeeId = ref('')
 const balanceYear = ref(today.getFullYear())
 const balances = ref([])
@@ -209,9 +214,7 @@ const decide = async (row, approved) => {
 }
 
 onMounted(async () => {
-  const employeeResult = await employees({ page: 0, size: 500 })
-  employeeOptions.value = employeeResult?.data?.content || employeeResult?.data || []
-  await load()
+  await Promise.all([loadOrganizations(), load()])
 })
 </script>
 

@@ -22,7 +22,7 @@
               <el-form-item label="数据范围"><el-select v-model="dataScopeType" style="width:360px"><el-option v-for="item in dataScopeTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
               <el-form-item v-if="dataScopeType === 'CUSTOM_ORGANIZATION'" label="指定机构"><el-select v-model="customOrganizationIds" multiple filterable style="width:100%" placeholder="请选择机构"><el-option v-for="item in organizations" :key="item.id" :label="item.organizationName || item.name" :value="item.id" /></el-select></el-form-item>
               <el-form-item v-if="dataScopeType === 'CUSTOM_DEPARTMENT'" label="指定部门"><el-select v-model="customDepartmentIds" multiple filterable style="width:100%" placeholder="请选择部门"><el-option v-for="item in departments" :key="item.id" :label="item.organizationUnitName || item.unitName || item.name" :value="item.id" /></el-select></el-form-item>
-              <el-form-item v-if="dataScopeType === 'CUSTOM_EMPLOYEE'" label="指定员工"><el-select v-model="customEmployeeIds" multiple filterable style="width:100%" placeholder="请选择员工"><el-option v-for="item in employeeRows" :key="item.id" :label="item.employeeName || item.name" :value="item.id" /></el-select></el-form-item>
+              <el-form-item v-if="dataScopeType === 'CUSTOM_EMPLOYEE'" label="指定员工"><EmployeeOrganizationSelect v-model="employeeOrganizationId" :organizations="employeeOrganizations" /><el-select :disabled="!employeeOrganizationId" v-model="customEmployeeIds" multiple filterable style="width:100%" placeholder="请选择员工"><el-option v-for="item in employeeRows" :key="item.id" :label="item.employeeName || item.name" :value="item.id" /></el-select></el-form-item>
               <el-form-item v-if="dataScopeType === 'CUSTOM_EDUCATION_CLASS'" label="指定班级">
                 <el-select v-model="customClassIds" multiple filterable style="width:100%" placeholder="请选择班级">
                   <el-option v-for="item in educationClasses" :key="item.id" :label="item.className" :value="item.id" />
@@ -42,14 +42,18 @@
 </template>
 
 <script setup>
+import EmployeeOrganizationSelect from '../../../components/EmployeeOrganizationSelect.vue'
+import { useOrganizationEmployees } from '../useOrganizationEmployees'
 import { nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { listRoles, roleDetail, menuTree, permissions, updateRole, orgList, organizationUnits, employees } from '../api'
+import { listRoles, roleDetail, menuTree, permissions, updateRole, orgList, organizationUnits } from '../api'
 import { listAdministrativeClasses, listEducationGrades } from '../../../api/admin'
 
 const roles = ref([]), roleTotal = ref(0), rolePage = ref(1), roleSize = ref(10), currentRoleId = ref(''), activeTab = ref('menu'), menuTreeRef = ref(null), menuTreeData = ref([])
 const actionPermissionIds = ref(new Set()), workflowPermissions = ref([]), workflowPermissionIds = ref([])
-const organizations = ref([]), departments = ref([]), employeeRows = ref([]), dataScopeType = ref('SELF')
+const { organizationId: employeeOrganizationId, organizations: employeeOrganizations,
+  employeeOptions: employeeRows, loadOrganizations: loadEmployeeOrganizations } = useOrganizationEmployees()
+const organizations = ref([]), departments = ref([]), dataScopeType = ref('SELF')
 const customOrganizationIds = ref([]), customDepartmentIds = ref([]), customEmployeeIds = ref([])
 const customClassIds = ref([]), customGradeIds = ref([])
 const educationClasses = ref([]), educationGrades = ref([])
@@ -62,13 +66,12 @@ const mapMenus = (nodes, actions) => nodes.map((menu) => {
 })
 
 const loadCatalogs = async () => {
-  const [menusRes, actionsRes, workflowsRes, dataRes, orgRes, employeeRes] = await Promise.all([
+  const [menusRes, actionsRes, workflowsRes, dataRes, orgRes] = await Promise.all([
     menuTree(),
     permissions({ page: 0, size: 500, permissionType: 'MENU_ACTION' }),
     permissions({ page: 0, size: 500, permissionType: 'WORKFLOW' }),
     permissions({ page: 0, size: 500, permissionType: 'DATA' }),
-    orgList({ page: 0, size: 500 }),
-    employees()
+    orgList({ page: 0, size: 500 })
   ])
   // 班级、年级属于教育行业扩展资源。医院模板没有对应接口时，
   // 不能因此阻断菜单权限、流程权限和通用数据权限的授权页面。
@@ -79,7 +82,7 @@ const loadCatalogs = async () => {
   const actions = (actionsRes?.data?.content || []).filter((item) => item.status === 1)
   actionPermissionIds.value = new Set(actions.map((item) => item.id)); workflowPermissions.value = (workflowsRes?.data?.content || []).filter((item) => item.status === 1)
   dataScopeTypes.value = (dataRes?.data?.content || []).filter((item) => item.status === 1).map((item) => ({ label: item.permissionName, value: item.scopeType }))
-  organizations.value = orgRes?.data?.content || orgRes?.data || []; employeeRows.value = employeeRes?.data || []
+  organizations.value = orgRes?.data?.content || orgRes?.data || []
   educationClasses.value = classResult.status === 'fulfilled'
     ? classResult.value?.data?.content || classResult.value?.data || []
     : []
@@ -137,7 +140,7 @@ const buildDataScopes = () => {
   if (dataScopeType.value === 'CUSTOM_EDUCATION_GRADE') return customGradeIds.value.map((resourceId) => ({ scopeType: dataScopeType.value, resourceType: 'EDUCATION_GRADE', resourceId }))
   return [{ scopeType: dataScopeType.value }]
 }
-const init = async () => { await loadCatalogs(); await loadRoles() }
+const init = async () => { void loadEmployeeOrganizations(); await loadCatalogs(); await loadRoles() }
 init()
 </script>
 

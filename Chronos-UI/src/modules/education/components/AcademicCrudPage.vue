@@ -7,6 +7,7 @@
         <el-button
           v-if="allowCreate && !permissionPrefix"
           type="primary"
+           :disabled="campusScoped && !campusId"
           @click="openCreate"
         >
           新增{{ entityLabel }}
@@ -15,12 +16,16 @@
           v-else-if="allowCreate"
           v-permission="createPermissions"
           type="primary"
+           :disabled="campusScoped && !campusId"
           @click="openCreate"
         >
           新增{{ entityLabel }}
         </el-button>
       </div>
     </header>
+    <div v-if="campusScoped" style="width:260px;margin-bottom:10px">
+      <OrganizationSelect v-model="campusId" auto-select-single school-or-campus-only />
+    </div>
     <el-table v-loading="loading" :data="rows" border>
       <el-table-column
         v-for="column in columns"
@@ -89,25 +94,38 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { dictionaryOptions } from '../../../api/admin'
 
-const props = defineProps({ title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, rowActions: { type: Array, default: () => [] }, permissionPrefix: String, lookups: { type: Array, default: () => [] }, allowCreate: { type: Boolean, default: true } })
+const props = defineProps({ campusScoped: Boolean, title: String, description: String, entityLabel: String, columns: Array, fields: Array, defaults: Object, loader: Function, creator: Function, updater: Function, deleter: Function, rowActions: { type: Array, default: () => [] }, permissionPrefix: String, lookups: { type: Array, default: () => [] }, allowCreate: { type: Boolean, default: true } })
 const rows = ref([]); const loading = ref(false); const dialog = ref(false); const form = reactive({}); const lookupData = reactive({}); const dictionaryData = reactive({})
+const campusId = ref('')
 const page = ref(1); const pageSize = ref(10); const total = ref(0)
 const createPermissions = computed(() => [`${props.permissionPrefix}:create`, `${props.permissionPrefix}:manage`])
 const updatePermissions = computed(() => [`${props.permissionPrefix}:update`, `${props.permissionPrefix}:manage`])
 const actionColumnWidth = computed(() => 72 + props.rowActions.length * 92 + (props.deleter ? 62 : 0))
 const reset = value => { Object.keys(form).forEach(key => delete form[key]); Object.assign(form, value) }
+let loadSequence = 0
 const load = async () => {
+  const sequence = ++loadSequence
+  if (props.campusScoped && !campusId.value) return
   loading.value = true
   try {
-    const response = await props.loader({ page: page.value - 1, size: pageSize.value })
+    const response = await props.loader({ page: page.value - 1, size: pageSize.value, ...(props.campusScoped ? { campusId: campusId.value } : {}) })
+    if (sequence !== loadSequence) return
     rows.value = response.data?.content || response.data || []
     total.value = response.data?.totalElements ?? rows.value.length
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
+watch(campusId, () => {
+  rows.value = []
+  total.value = 0
+  page.value = 1
+  dialog.value = false
+  load()
+})
 const changePageSize = () => { page.value = 1; load() }
 const lookupVersions = {}
 const loadLookup = async item => {
@@ -129,7 +147,7 @@ const loadDictionaries = async () => {
     dictionaryData[code] = (response?.data || []).map(item => ({ label: item.dictName, value: item.dictValue }))
   }))
 }
-const openCreate = () => { reset({ ...(props.defaults || {}) }); dialog.value = true }
+const openCreate = () => { reset({ ...(props.defaults || {}), ...(props.campusScoped ? { campusId: campusId.value } : {}) }); dialog.value = true }
 const openEdit = row => { reset({ ...row }); dialog.value = true }
 const save = async () => { await (form.id ? props.updater(form.id, form) : props.creator(form)); dialog.value = false; ElMessage.success('保存成功'); await load(); await loadLookups() }
 const runRowAction = async (action, row) => {
