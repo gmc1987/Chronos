@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Optional;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,8 +30,11 @@ import com.chronos.facility.dao.RepairOrderEventRepository;
 import com.chronos.facility.dao.RepairOrderRepository;
 import com.chronos.facility.dao.InventoryTransactionRepository;
 import com.chronos.facility.model.MaintenanceTechnician;
+import com.chronos.facility.model.MaintenanceMaterial;
 import com.chronos.facility.model.RepairOrder;
+import com.chronos.facility.model.dto.FacilityDtos.CreateMaterialRequest;
 import com.chronos.facility.model.dto.FacilityDtos.CreateRepairOrder;
+import com.chronos.facility.model.dto.FacilityDtos.MaterialRequestLine;
 import com.chronos.facility.model.dto.FacilityDtos.TechnicianCommand;
 import com.chronos.file.dao.ManagedFileRepository;
 import com.chronos.file.service.ManagedFileService;
@@ -62,6 +66,7 @@ class FacilityMaintenanceServiceTest {
 		service = new FacilityMaintenanceService(orders, technicians, materials, requests, requestItems,
 				ledger, events, inventoryTransactions, employees, organizations, users, roles, files, fileService, audit);
 		when(orders.nextOrderSequence()).thenReturn(12L);
+		when(requests.nextRequestSequence()).thenReturn(3L);
 		when(orders.save(any(RepairOrder.class))).thenAnswer(invocation -> {
 			RepairOrder value = invocation.getArgument(0);
 			if (value.getId() == null) value.setId("repair-1");
@@ -206,6 +211,35 @@ class FacilityMaintenanceServiceTest {
 		assertThat(account.getRoles()).containsExactly(technicianRole);
 		assertThat(account.getTokenVersion()).isEqualTo(4);
 		verify(users).save(account);
+	}
+
+	@Test
+	void rejectsMaterialFromAnotherOrganizationForRepairOrder() {
+		RepairOrder order = new RepairOrder();
+		order.setId("repair-1");
+		order.setOrganizationId("org-1");
+		order.setTechnicianUsername("repair-user");
+		order.setTechnicianName("维修人员");
+		order.setStatus("IN_PROGRESS");
+		MaintenanceMaterial material = new MaintenanceMaterial();
+		material.setId("material-1");
+		material.setOrganizationId("org-2");
+		material.setMaterialCode("M-001");
+		material.setMaterialName("跨机构物料");
+		when(orders.findById("repair-1")).thenReturn(Optional.of(order));
+		when(materials.findById("material-1")).thenReturn(Optional.of(material));
+		when(requests.save(any())).thenAnswer(invocation -> {
+			var value = invocation.getArgument(0, com.chronos.facility.model.MaterialRequest.class);
+			value.setId("request-1");
+			return value;
+		});
+
+		assertThatThrownBy(() -> service.requestMaterials(
+				new CreateMaterialRequest("repair-1", null,
+						List.of(new MaterialRequestLine("material-1", BigDecimal.ONE))),
+				"repair-user"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("维修物料不属于工单机构");
 	}
 
 	private CreateRepairOrder command(List<String> photoIds) {

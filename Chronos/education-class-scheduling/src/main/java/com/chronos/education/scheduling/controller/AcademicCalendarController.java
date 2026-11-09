@@ -105,7 +105,7 @@ public class AcademicCalendarController {
 	public ResultData<?> importHolidays(
 			@RequestBody HolidayImportCommand command,
 			Authentication authentication) {
-		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		requireCalendarTerm(authentication, command.termId());
 		return ok("MANUAL".equals(command.mode())
 				? holidayImports.importManual(command.termId(), command.year(), command.content())
 				: holidayImports.importOfficial(command.termId(), command.year()));
@@ -115,13 +115,15 @@ public class AcademicCalendarController {
 
 	@GetMapping("/admin/education/bell-schedules")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
-	public ResultData<?> bellSchedules(@RequestParam String termId) {
+	public ResultData<?> bellSchedules(@RequestParam String termId, Authentication authentication) {
+		requireCalendarTerm(authentication, termId);
 		return ok(service.bellSchedules(termId));
 	}
 
 	@PostMapping("/admin/education/bell-schedules")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
-	public ResultData<?> createBellSchedule(@RequestBody BellSchedule command) {
+	public ResultData<?> createBellSchedule(@RequestBody BellSchedule command, Authentication authentication) {
+		requireBellScheduleTarget(authentication, command);
 		return ok(service.saveBellSchedule(null, command));
 	}
 
@@ -129,20 +131,28 @@ public class AcademicCalendarController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
 	public ResultData<?> updateBellSchedule(
 			@PathVariable String id,
-			@RequestBody BellSchedule command) {
+			@RequestBody BellSchedule command,
+			Authentication authentication) {
+		String originalTermId = service.bellScheduleTermId(id);
+		requireCalendarTerm(authentication, originalTermId);
+		if (!originalTermId.equals(command.getAcademicTermId()))
+			throw new IllegalArgumentException("作息方案不能转移到其他学期");
+		requireBellScheduleTarget(authentication, command);
 		return ok(service.saveBellSchedule(id, command));
 	}
 
 	@DeleteMapping("/admin/education/bell-schedules/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
-	public ResultData<?> deleteBellSchedule(@PathVariable String id) {
+	public ResultData<?> deleteBellSchedule(@PathVariable String id, Authentication authentication) {
+		requireCalendarTerm(authentication, service.bellScheduleTermId(id));
 		service.deleteBellSchedule(id);
 		return ok(null);
 	}
 
 	@PostMapping("/admin/education/bell-periods")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
-	public ResultData<?> createBellPeriod(@RequestBody BellPeriod command) {
+	public ResultData<?> createBellPeriod(@RequestBody BellPeriod command, Authentication authentication) {
+		requireCalendarTerm(authentication, service.bellScheduleTermId(command.getBellScheduleId()));
 		return ok(service.saveBellPeriod(null, command));
 	}
 
@@ -150,13 +160,20 @@ public class AcademicCalendarController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
 	public ResultData<?> updateBellPeriod(
 			@PathVariable String id,
-			@RequestBody BellPeriod command) {
+			@RequestBody BellPeriod command,
+			Authentication authentication) {
+		String originalScheduleId = service.bellPeriodScheduleId(id);
+		requireCalendarTerm(authentication, service.bellScheduleTermId(originalScheduleId));
+		if (!originalScheduleId.equals(command.getBellScheduleId()))
+			throw new IllegalArgumentException("节次不能转移到其他作息方案");
 		return ok(service.saveBellPeriod(id, command));
 	}
 
 	@DeleteMapping("/admin/education/bell-periods/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
-	public ResultData<?> deleteBellPeriod(@PathVariable String id) {
+	public ResultData<?> deleteBellPeriod(@PathVariable String id, Authentication authentication) {
+		String scheduleId = service.bellPeriodScheduleId(id);
+		requireCalendarTerm(authentication, service.bellScheduleTermId(scheduleId));
 		service.deleteBellPeriod(id);
 		return ok(null);
 	}
@@ -165,6 +182,14 @@ public class AcademicCalendarController {
 		String organizationId = service.termOrganization(termId);
 		directoryScope.requireOrganization(authentication, organizationId);
 		return organizationId;
+	}
+
+	private void requireBellScheduleTarget(Authentication authentication, BellSchedule command) {
+		String schoolId = requireCalendarTerm(authentication, command.getAcademicTermId());
+		String campusSchoolId = dataScopes.requireSchoolForCampus(
+				dataScopes.resolve(authentication.getName()), command.getCampusId());
+		if (!schoolId.equals(campusSchoolId))
+			throw new IllegalArgumentException("作息校区不属于所选学期机构");
 	}
 
 	private <T> ResultData<T> ok(T data) {

@@ -7,6 +7,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -64,5 +66,24 @@ class AccommodationServiceTest {
 		assertThatThrownBy(() -> service.cancelAssignment("missing", "admin"))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("住宿分配不存在");
+	}
+
+	@Test
+	void assignmentRejectsBuildingGenderMismatchThroughSharedValidation() {
+		when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("edu_academic_term"), org.mockito.ArgumentMatchers.eq(Long.class),
+				org.mockito.ArgumentMatchers.eq("ORG:2026-1"), org.mockito.ArgumentMatchers.eq("org-1"))).thenReturn(1L);
+		when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("edu_student_profile student"), org.mockito.ArgumentMatchers.eq(Long.class),
+				org.mockito.ArgumentMatchers.eq("student-1"), org.mockito.ArgumentMatchers.eq("org-1"))).thenReturn(1L);
+		when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("edu_dorm_bed bed"), org.mockito.ArgumentMatchers.eq(Long.class),
+				org.mockito.ArgumentMatchers.eq("bed-1"), org.mockito.ArgumentMatchers.eq("org-1"))).thenReturn(1L);
+		when(jdbc.queryForMap(org.mockito.ArgumentMatchers.contains("select student.gender"), org.mockito.ArgumentMatchers.eq("student-1"),
+				org.mockito.ArgumentMatchers.eq("bed-1")))
+				.thenReturn(Map.of("gender", "FEMALE", "gender_policy", "MALE"));
+
+		assertThatThrownBy(() -> service.assign(
+				new AccommodationService.AssignmentCommand("ORG:2026-1", "student-1", "bed-1"),
+				"operator", "org-1"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("学生性别不符合楼栋性别规则");
 	}
 }

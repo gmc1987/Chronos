@@ -52,6 +52,32 @@ public class DirectoryDataScopeGuard {
 			throw new AccessDeniedException("无权访问该机构数据");
 	}
 
+	/**
+	 * Resolves the organization context shared by management endpoints.
+	 * Explicit values are always validated. A restricted single-organization
+	 * session may omit the parameter; multi-organization and global sessions may not.
+	 */
+	public String resolveOrganization(Authentication authentication, String requestedOrganizationId) {
+		if (requestedOrganizationId != null && !requestedOrganizationId.isBlank()) {
+			requireOrganization(authentication, requestedOrganizationId);
+			return requestedOrganizationId;
+		}
+		Set<String> allowed = visibleOrganizationIds(authentication);
+		if (allowed == null || allowed.size() > 1)
+			throw new IllegalArgumentException("请选择机构");
+		if (allowed.isEmpty())
+			throw new AccessDeniedException("当前账号没有可访问的机构");
+		return allowed.iterator().next();
+	}
+
+	/**
+	 * Returns the exact query scope. Management lists intentionally do not aggregate
+	 * across organizations when the caller can access more than one organization.
+	 */
+	public Set<String> resolveQueryOrganizations(Authentication authentication, String requestedOrganizationId) {
+		return Set.of(resolveOrganization(authentication, requestedOrganizationId));
+	}
+
 	public void requireEmployee(Authentication authentication, String employeeId) {
 		var context = context(authentication);
 		if (context.fullAccess() || context.employeeIds().contains(employeeId)) return;

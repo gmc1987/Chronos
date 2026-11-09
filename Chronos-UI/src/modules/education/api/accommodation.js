@@ -26,3 +26,23 @@ export const importAccommodationResources = (file, dryRun = true, organizationId
   data.append('file', file)
   return http.upload(`/admin/education/accommodations/import?dryRun=${dryRun}&organizationId=${encodeURIComponent(organizationId || '')}`, data)
 }
+export const downloadAccommodationAssignmentImportTemplate = (organizationId, termId) => http.download(query(
+  '/admin/education/accommodations/assignment-import/template',
+  { organizationId, termId },
+))
+export const previewAccommodationAssignments = (file, organizationId, termId, templateVersion = '1.0') => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload(query('/admin/education/accommodations/assignment-import/preview', {
+    organizationId,
+    termId,
+    templateVersion,
+  }), data)
+}
+export const commitAccommodationAssignments = payload => http.post(
+  '/admin/education/accommodations/assignment-import/commit',
+  payload,
+)
+export const accommodationAssignmentImportBatch = batchId => http.get(
+  `/admin/education/accommodations/assignment-import/batches/${batchId}`,
+)

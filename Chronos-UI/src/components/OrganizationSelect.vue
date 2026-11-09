@@ -1,36 +1,64 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { orgOptions } from '../api/admin'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { useOrganizationContext } from '../composables/useOrganizationContext'
 
 const organizationId = defineModel(String)
-const props = defineProps({ autoSelectSingle: Boolean, schoolOrCampusOnly: Boolean })
-const options = ref([])
-const loading = ref(false)
+const props = defineProps({
+  autoSelectSingle: { type: Boolean, default: true },
+  schoolOrCampusOnly: Boolean,
+  contextKey: { type: String, default: '' },
+  placeholder: { type: String, default: '请选择所属机构' },
+})
+const route = useRoute()
+const contextKey = computed(() => props.contextKey || String(route.name || route.path || 'default'))
+const {
+  options,
+  loading,
+  hasNoAccess,
+  singleOrganization,
+  selectedOrganization,
+  selectionDisabled,
+  reloadOrganizations,
+} = useOrganizationContext({
+  organizationId,
+  contextKey,
+  autoSelectSingle: props.autoSelectSingle,
+  filter: item => !props.schoolOrCampusOnly
+    || ['SCHOOL', 'CAMPUS'].includes(item.organizationType),
+})
 
-async function load() {
-  loading.value = true
-  try {
-    const response = await orgOptions()
-    const rows = response.data || []
-    options.value = props.schoolOrCampusOnly
-      ? rows.filter(item => ['SCHOOL', 'CAMPUS'].includes(item.organizationType))
-      : rows
-    if (props.autoSelectSingle && !organizationId.value && options.value.length === 1) {
-      organizationId.value = options.value[0].id
-    }
-  } catch (error) {
-    ElMessage.error(error?.response?.data?.msg || error.message || '加载机构失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
+defineExpose({ options, reloadOrganizations })
 </script>
 
 <template>
-  <el-select v-model="organizationId" :loading="loading" filterable placeholder="请选择所属机构" style="width: 100%">
-    <el-option v-for="item in options" :key="item.id" :label="item.organizationName" :value="item.id" />
-  </el-select>
+  <div class="organization-select">
+    <el-alert
+      v-if="hasNoAccess"
+      type="warning"
+      :closable="false"
+      title="当前账号没有可访问的机构"
+    />
+    <el-input
+      v-else-if="singleOrganization"
+      :model-value="selectedOrganization?.organizationName || ''"
+      disabled
+      aria-label="当前机构"
+    />
+    <el-select
+      v-else
+      v-model="organizationId"
+      :loading="loading"
+      :disabled="selectionDisabled"
+      filterable
+      :placeholder="placeholder"
+      style="width: 100%"
+    >
+      <el-option v-for="item in options" :key="item.id" :label="item.organizationName" :value="item.id" />
+    </el-select>
+  </div>
 </template>
+
+<style scoped>
+.organization-select { width: 100%; }
+</style>

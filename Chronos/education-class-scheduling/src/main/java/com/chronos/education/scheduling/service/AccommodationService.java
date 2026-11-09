@@ -90,7 +90,8 @@ public class AccommodationService {
 		return jdbc.queryForList("""
 				select assignment.id, assignment.semester_code as "semesterCode", assignment.student_id as "studentId", student.student_no as "studentNo",
 				       student.student_name as "studentName", assignment.bed_id as "bedId", bed.bed_no as "bedNo", room.room_no as "roomNo",
-				       building.building_name as "buildingName", assignment.status, assignment.assigned_at as "assignedAt", assignment.assigned_by as "assignedBy"
+				       building.building_name as "buildingName", assignment.remark, assignment.status,
+				       assignment.assigned_at as "assignedAt", assignment.assigned_by as "assignedBy"
 				from edu_student_accommodation assignment
 				join edu_student_profile student on student.id = assignment.student_id
 				join edu_dorm_bed bed on bed.id = assignment.bed_id
@@ -205,20 +206,60 @@ public class AccommodationService {
 
 	@Transactional
 	public Map<String, Object> assign(AssignmentCommand command, String actor) {
+		String organizationId = bedOrganization(required(command.bedId(), "床位"));
+		if (!organizationId.equals(studentOrganization(required(command.studentId(), "学生"))))
+			throw new IllegalArgumentException("学生与床位不属于同一机构");
+		return assign(command, actor, organizationId);
+	}
+
+	@Transactional
+	public Map<String, Object> assign(AssignmentCommand command, String actor, String organizationId) {
 		String semester = required(command.semesterCode(), "学期编码");
 		String studentId = required(command.studentId(), "学生");
 		String bedId = required(command.bedId(), "床位");
-		ensureExists("select count(*) from edu_student_profile where id = ? and enrollment_status = 'ACTIVE'", studentId, "学生不存在或未启用");
-		ensureExists("select count(*) from edu_dorm_bed where id = ? and status = 'AVAILABLE'", bedId, "床位不存在或不可用");
+		String targetOrganization = required(organizationId, "所属机构");
+		ensureExists("select count(*) from edu_academic_term where term_code = ? and organization_id = ? and status = 'ACTIVE'",
+				semester, targetOrganization, "学期不存在、不属于所选机构或未启用");
+		ensureExists("""
+				select count(*) from edu_student_profile student
+				join edu_administrative_class class on class.id = student.administrative_class_id
+				where student.id = ? and student.enrollment_status = 'ACTIVE' and class.campus_id = ?
+				""", studentId, targetOrganization, "学生不存在、不属于所选机构或不具备住宿资格");
+		ensureExists("""
+				select count(*) from edu_dorm_bed bed
+				join edu_dorm_room room on room.id = bed.room_id
+				join edu_dorm_building building on building.id = room.building_id
+				where bed.id = ? and building.organization_id = ? and bed.status = 'AVAILABLE'
+				  and room.status = 'ACTIVE' and building.status = 'ACTIVE'
+				""", bedId, targetOrganization, "床位不存在、不属于所选机构或不可用");
+		validateGenderPolicy(studentId, bedId);
 		if (jdbc.queryForObject("select count(*) from edu_student_accommodation where semester_code = ? and student_id = ? and status = 'ACTIVE'", Long.class, semester, studentId) > 0)
 			throw new IllegalStateException("该学生本学期已有住宿分配");
 		if (jdbc.queryForObject("select count(*) from edu_student_accommodation where semester_code = ? and bed_id = ? and status = 'ACTIVE'", Long.class, semester, bedId) > 0)
 			throw new IllegalStateException("该床位本学期已被占用");
 		String id = id();
-		jdbc.update("insert into edu_student_accommodation(id, semester_code, student_id, bed_id, status, assigned_at, assigned_by) values (?, ?, ?, ?, 'ACTIVE', ?, ?)",
-				id, semester, studentId, bedId, LocalDateTime.now(), actor);
+		jdbc.update("insert into edu_student_accommodation(id, semester_code, student_id, bed_id, status, assigned_at, assigned_by, remark) values (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)",
+				id, semester, studentId, bedId, LocalDateTime.now(), actor, blankToNull(command.remark()));
 		auditLogs.log("ACCOMMODATION_ASSIGN", "STUDENT_ACCOMMODATION", id);
 		return jdbc.queryForMap("select * from edu_student_accommodation where id = ?", id);
+	}
+
+	private void validateGenderPolicy(String studentId, String bedId) {
+		Map<String, Object> values = jdbc.queryForMap("""
+				select student.gender, building.gender_policy
+				from edu_student_profile student
+				cross join edu_dorm_bed bed
+				join edu_dorm_room room on room.id = bed.room_id
+				join edu_dorm_building building on building.id = room.building_id
+				where student.id = ? and bed.id = ?
+				""", studentId, bedId);
+		String policy = String.valueOf(values.getOrDefault("gender_policy", "MIXED")).trim().toUpperCase();
+		if ("MIXED".equals(policy)) return;
+		String gender = String.valueOf(values.getOrDefault("gender", "")).trim().toUpperCase();
+		boolean male = "MALE".equals(gender) || "M".equals(gender) || "男".equals(gender);
+		boolean female = "FEMALE".equals(gender) || "F".equals(gender) || "女".equals(gender);
+		if (("MALE".equals(policy) && !male) || ("FEMALE".equals(policy) && !female))
+			throw new IllegalArgumentException("学生性别不符合楼栋性别规则");
 	}
 
 	@Transactional
@@ -240,13 +281,22 @@ public class AccommodationService {
 		if (jdbc.queryForObject(sql, Long.class, value) == 0) throw new IllegalArgumentException(message);
 	}
 
+	private void ensureExists(String sql, String first, String second, String message) {
+		if (jdbc.queryForObject(sql, Long.class, first, second) == 0) throw new IllegalArgumentException(message);
+	}
+
 	private String id() { return UUID.randomUUID().toString(); }
 	private String required(String value, String label) { if (value == null || value.isBlank()) throw new IllegalArgumentException(label + "不能为空"); return value.trim(); }
 	private int positive(Integer value, String label) { if (value == null || value < 1) throw new IllegalArgumentException(label + "必须大于0"); return value; }
 	private String blankToDefault(String value, String fallback) { return value == null || value.isBlank() ? fallback : value.trim(); }
+	private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
 
 	public record BuildingCommand(String buildingCode, String buildingName, String genderPolicy, String status, String organizationId) {}
 	public record RoomCommand(String roomNo, Integer floorNo, Integer capacity, String status) {}
 	public record BedCommand(String bedNo, String status) {}
-	public record AssignmentCommand(String semesterCode, String studentId, String bedId) {}
+	public record AssignmentCommand(String semesterCode, String studentId, String bedId, String remark) {
+		public AssignmentCommand(String semesterCode, String studentId, String bedId) {
+			this(semesterCode, studentId, bedId, null);
+		}
+	}
 }

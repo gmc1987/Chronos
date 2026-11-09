@@ -72,11 +72,7 @@ public class AcademicDataController {
 			@RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String organizationId,
 			Authentication authentication) {
-		var organizationIds = directoryScopes.visibleOrganizationIds(authentication);
-		if (organizationId != null && !organizationId.isBlank()) {
-			directoryScopes.requireOrganization(authentication, organizationId);
-			organizationIds = java.util.Set.of(organizationId);
-		}
+		var organizationIds = directoryScopes.resolveQueryOrganizations(authentication, organizationId);
 		return page == null && size == null
 				? ok(service.terms(organizationIds))
 				: ok(PageView.from(service.terms(
@@ -127,13 +123,7 @@ public class AcademicDataController {
 	}
 
 	private String resolveOrganization(Authentication authentication, String requested) {
-		if (requested != null && !requested.isBlank()) {
-			directoryScopes.requireOrganization(authentication, requested);
-			return requested;
-		}
-		var visible = directoryScopes.visibleOrganizationIds(authentication);
-		if (visible != null && visible.size() == 1) return visible.iterator().next();
-		throw new IllegalArgumentException("请选择学期所属机构");
+		return directoryScopes.resolveOrganization(authentication, requested);
 	}
 
 	@GetMapping("/admin/education/grades")

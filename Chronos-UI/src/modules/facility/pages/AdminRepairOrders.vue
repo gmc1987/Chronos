@@ -47,17 +47,22 @@ const load = async () => {
   }
 }
 const search = () => { page.value = 1; return load() }
-watch(() => filters.organizationId, () => {
+watch(() => filters.organizationId, async () => {
   rows.value = []
   total.value = 0
+  technicianRows.value = []
   detailDialog.value = false
   dispatchDialog.value = false
-  search()
+  if (!filters.organizationId) return
+  const [, technicianResult] = await Promise.all([
+    search(),
+    technicians({ organizationId: filters.organizationId }),
+  ])
+  technicianRows.value = technicianResult.data || []
 })
  const openDispatch=row=>{selected.value=row;Object.assign(dispatchForm,{technicianId:'',remark:''});dispatchDialog.value=true}
 const submitDispatch=async()=>{if(!dispatchForm.technicianId)return ElMessage.warning('请选择维修人员');await dispatchRepairOrder(selected.value.id,{...dispatchForm});ElMessage.success('派单成功');dispatchDialog.value=false;load()}
 const autoDispatch=async row=>{await autoDispatchRepairOrder(row.id);ElMessage.success('已执行自动派单');load()}
 const openDetail=async row=>{detail.value=(await repairOrderDetail(row.id)).data;detailDialog.value=true}
-onMounted(async()=>{technicianRows.value=(await technicians()).data||[]})
 </script>
 <style scoped>.page{padding:24px}header{margin-bottom:18px}h2{margin:0 0 6px}p{margin:0;color:#84909a}.filters{margin-bottom:10px}.el-pagination{margin-top:10px;justify-content:flex-end}.actions{display:flex;flex-wrap:nowrap;white-space:nowrap}</style>

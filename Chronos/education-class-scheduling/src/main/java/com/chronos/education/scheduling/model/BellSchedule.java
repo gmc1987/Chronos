@@ -16,7 +16,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_bell_schedule")
 public class BellSchedule extends BaseEntity {
-	@Column(name = "schedule_code", length = 48, nullable = false, unique = true)
+	@Column(name = "schedule_code", length = 48, nullable = false)
 	private String scheduleCode;
 
 	@Column(name = "schedule_name", length = 128, nullable = false)
