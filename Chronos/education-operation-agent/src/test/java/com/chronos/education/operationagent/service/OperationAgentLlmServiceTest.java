@@ -55,13 +55,15 @@ class OperationAgentLlmServiceTest {
 		var auth = new UsernamePasswordAuthenticationToken("admin", "", List.of());
 		var intent = service.recognizeConversation("帮我安排后半学年的校历和铃声\n日期已经告诉你了\n20", auth);
 		var result = service.academicIntentDraft(intent, new OperationAgentLlmService.DraftCommand(
-				"用户多轮目标", null, "2026-2027-2", null, null, List.of(), true, "school-1"));
+				"用户多轮目标", null, "2026-2027-2", null, null, List.of(), true, "school-1"), null, true);
 		assertThat(result.modelGenerated()).isTrue();
 		assertThat(result.plan().authorizedTools()).containsExactly(
 				"academic.term.create", "academic.calendar.prepare", "academic.bell.configure");
 		assertThat(result.requiredInputs()).extracting(OperationAgentLlmService.RequiredInput::key)
-				.containsExactly("campusId", "scheduleName", "periods");
+				.containsExactly("campusId");
 		assertThat(result.plan().steps().getFirst().toolConfig()).containsEntry("weekCount", 20);
+		assertThat(result.plan().steps().getLast().toolConfig())
+				.containsEntry("termId", "${academic.term.create.termId}");
 	}
 
 	@Test
@@ -76,9 +78,58 @@ class OperationAgentLlmServiceTest {
 		assertThat(intent.path("semesterCode").asText()).isEqualTo("2093-2094-1");
 		String fullConversation = "长对话".repeat(800);
 		var draft = service.academicIntentDraft(intent, new OperationAgentLlmService.DraftCommand(
-				fullConversation, null, "2093-2094-1", null, null, List.of(), true, "school-1"));
+				fullConversation, null, "2093-2094-1", null, null, List.of(), true, "school-1"), null, true);
 		assertThat(draft.plan().objective()).hasSizeLessThan(1000);
 		assertThat(draft.plan().ruleText()).contains(fullConversation);
+	}
+
+	@Test
+	void bellDraftCalculatesEightPeriodsFromTheUsersTimeWindow() throws Exception {
+		var intent = new ObjectMapper().readTree("""
+				{"toolConfigs":{"academic.bell.configure":{"campusId":"school-1",
+				"scheduleCode":"model-generated-code","periodRules":{"periodCount":8,"morningCount":4,
+				"startTime":"09:00","endTime":"17:30","breakMinutes":10}}}}
+				""");
+		var draft = service.academicIntentDraft(intent, new OperationAgentLlmService.DraftCommand(
+				"上午下午各四节", null, "SCHOOL:2026-2027-1", null, null, List.of(), true, "school-1"),
+				"existing-term-id", false);
+		assertThat(draft.requiredInputs()).isEmpty();
+		var config = draft.plan().steps().getFirst().toolConfig();
+		assertThat(config).doesNotContainKey("scheduleCode").containsEntry("scheduleName", "2026-2027-1 校区作息");
+		var periods = new ObjectMapper().valueToTree(config.get("periods"));
+		assertThat(periods.size()).isEqualTo(8);
+		assertThat(periods.get(0).path("endTime").asText()).isEqualTo("09:45");
+		assertThat(periods.get(4).path("startTime").asText()).isEqualTo("14:00");
+		assertThat(periods.get(7).path("endTime").asText()).isEqualTo("17:30");
+	}
+
+	@Test
+	void conflictingRulesAskForOneCorrectionInsteadOfEveryPeriod() throws Exception {
+		var intent = new ObjectMapper().readTree("""
+				{"toolConfigs":{"academic.bell.configure":{"campusId":"school-1","periodRules":{
+				"startTime":"09:00","endTime":"17:30","periodMinutes":60}}}}
+				""");
+		var draft = service.academicIntentDraft(intent, new OperationAgentLlmService.DraftCommand(
+				"配置作息", null, "2026-2027-1", null, null, List.of(), true, "school-1"), "term", false);
+		assertThat(draft.readyToSave()).isFalse();
+		assertThat(draft.requiredInputs()).singleElement()
+				.satisfies(input -> assertThat(input.prompt()).contains("不一致"));
+	}
+
+	@Test
+	void bellDraftUsesResolvedTermEvenIfModelSuggestsCreatingItAgain() throws Exception {
+		var intent = new ObjectMapper().readTree("""
+				{"toolConfigs":{"academic.term.create":{},"academic.bell.configure":{
+				"termId":"model-invented-id","campusId":"school-1","scheduleName":"秋季作息","periods":[
+				{"periodNo":1,"periodName":"第1节","daySegment":"MORNING","startTime":"09:00","endTime":"09:45"}
+				]}}}
+				""");
+		var draft = service.academicIntentDraft(intent, new OperationAgentLlmService.DraftCommand(
+				"创建已有学期的作息", null, "SCHOOL:2026-2027-1", null, null, List.of(), true, "school-1"),
+				"existing-term-id", false);
+		assertThat(draft.requiredInputs()).isEmpty();
+		assertThat(draft.plan().authorizedTools()).containsExactly("academic.bell.configure");
+		assertThat(draft.plan().steps().getFirst().toolConfig()).containsEntry("termId", "existing-term-id");
 	}
 
 	@Test

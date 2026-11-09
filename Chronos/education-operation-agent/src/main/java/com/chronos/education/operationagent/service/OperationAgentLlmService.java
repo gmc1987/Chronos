@@ -93,11 +93,15 @@ public class OperationAgentLlmService {
 			2026年度第二学期按2026-2027-2理解；存在歧义不要猜测。
 			toolConfigs 仅为学期维护返回用户要求的工具键 academic.term.create、academic.calendar.prepare、academic.bell.configure。
 			创建工具参数为 localTermCode,academicYear,termNo,termName,startDate,endDate,weekCount；
-			作息工具参数为 campusId,scheduleName,periods（每节包含 periodNo,periodName,daySegment,startTime,endTime；daySegment为MORNING/AFTERNOON/EVENING）。
+			作息工具参数为 campusId、scheduleName，以及 periods 或 periodRules。只有用户逐节提供完整时间时才输出 periods（每节包含 periodNo,periodName,daySegment,startTime,endTime；daySegment为MORNING/AFTERNOON/EVENING）。
+			用户提供节数、起止时间、课长、课间或午休规则时，使用 periodRules，字段为 periodCount、morningCount、startTime、endTime、periodMinutes、breakMinutes、lunchMinutes（午休是最后一节上午课到第一节下午课的完整间隔）。只填已明确的字段，平台计算节次；未知的可选字段省略。方案编码由平台生成；方案名称缺省时平台自动命名，不要追问。
 			campusId也接受用户明确给出的校区编码或准确名称，由平台查询解析；不要因不知道UUID而反复追问已提供的校区。只说“主校区”但无法确定具体名称时才询问。
 			保留早先已给出的字段，用户更正时以最新消息为准。“是的”承接之前确认，单独数字承接缺失周数。
 			缺失字段省略，禁止编造日期、机构、校区ID或节次。当前消息取消时 cancelled=true。
 			识别到教学日历和作息等多个目标时必须全部保留。
+			仅维护已有学期的作息或校历时，createTerm=false，禁止返回 academic.term.create；补充学期编码只是指定归属，不代表要创建学期。已有学期的日历日期由平台读取，不要追问起止日期。
+			只要业务目标明确，即使缺少日期或节次，也返回对应的工具键及已知参数，交由平台追问缺项。
+			用户要求创建作息且没有指定节次规则时，也返回作息工具键，平台会生成供确认的标准作息候选。
 			平台的候选模式通过同一个业务工具的dryRun=true实现，不需要独立“候选工具”。
 			教职工文件导入、账号开通、教师建档等技能可使用候选模式；用户要求先预览不是目标不明确，不得据此追问是否改为正式写入。
 			平台在生成候选后负责正式写入、提交和发布的确认。用户已明确业务目标并补齐资料时，直接进入候选规划，needsClarification=false，不要在识别阶段再询问“是否提交或送审”。
@@ -135,13 +139,14 @@ public class OperationAgentLlmService {
 		return intent;
 	}
 
-	public DraftResult academicIntentDraft(JsonNode intent, DraftCommand command) {
+	public DraftResult academicIntentDraft(JsonNode intent, DraftCommand command, String termId, boolean createTerm) {
 		List<StepCommand> steps = new ArrayList<>();
 		Set<String> authorized = new LinkedHashSet<>();
+		List<RequiredInput> corrections = new ArrayList<>();
 		for (String code : List.of("academic.term.create", "academic.calendar.prepare", "academic.bell.configure")) {
-			if (!intent.path("toolConfigs").has(code)) continue;
+			if (code.equals("academic.term.create") ? !createTerm : !intent.path("toolConfigs").has(code)) continue;
 			var definition = tools.require(code);
-			Map<String, Object> config = objectMap(intent.path("toolConfigs").path(code));
+			Map<String, Object> config = new LinkedHashMap<>(objectMap(intent.path("toolConfigs").path(code)));
 			if (code.equals("academic.calendar.prepare")) {
 				JsonNode termInput = intent.path("toolConfigs").path("academic.term.create");
 				for (String field : List.of("startDate", "endDate")) {
@@ -149,7 +154,7 @@ public class OperationAgentLlmService {
 				}
 			}
 			if (code.equals("academic.term.create")) {
-				String localCode = localTermCode(intent.path("semesterCode").asText(command.semesterCode()));
+				String localCode = localTermCode(command.semesterCode());
 				// 这里只规范模型已识别的编码，未读取或匹配用户自然语言。
 				if (localCode != null && localCode.matches("20\\d{2}-20\\d{2}-[12]")) {
 					String year = localCode.substring(0, 9);
@@ -160,18 +165,38 @@ public class OperationAgentLlmService {
 					config.putIfAbsent("termName", year + "学年第" + (termNo == 1 ? "一" : "二") + "学期");
 				}
 			}
+			String stepCode = "AI_STEP_" + (steps.size() + 1);
+			if (code.equals("academic.bell.configure")) {
+				config.putIfAbsent("scheduleName", localTermCode(command.semesterCode()) + " 校区作息");
+				config.remove("scheduleCode");
+				if (!(config.get("periods") instanceof List<?> periods) || periods.isEmpty()) {
+					try {
+						config.put("periods", OperationAgentBellPeriods.generate(
+								objectMap(intent.path("toolConfigs").path(code).path("periodRules"))));
+						config.put("generatedPeriods", true);
+					} catch (IllegalArgumentException exception) {
+						corrections.add(new RequiredInput(stepCode, definition.name(), code,
+								"periods", "节次规则", exception.getMessage()));
+					}
+				}
+			}
 			config.put("organizationId", command.organizationId());
 			config.put("dryRun", !Boolean.FALSE.equals(command.candidateOnly()));
 			if (!code.equals("academic.term.create")) {
-				config.put("termId", intent.path("toolConfigs").has("academic.term.create")
-						? "${academic.term.create.termId}" : intent.path("toolConfigs").path(code).path("termId").asText(""));
+				config.put("termId", createTerm && authorized.contains("academic.term.create")
+						? "${academic.term.create.termId}" : termId);
 			}
 			authorized.add(code);
-			steps.add(new StepCommand("AI_STEP_" + (steps.size() + 1), definition.name(),
+			steps.add(new StepCommand(stepCode, definition.name(),
 					"按模型识别的业务目标执行", code, false, "业务校验通过并保存结果", config));
 		}
 		if (steps.isEmpty()) throw new IllegalStateException("模型未返回学期维护业务目标，请补充说明");
-		List<RequiredInput> missing = requiredInputs(steps);
+		List<RequiredInput> missing = new ArrayList<>(requiredInputs(steps));
+		if (!corrections.isEmpty()) {
+			missing.removeIf(input -> corrections.stream().anyMatch(correction ->
+					correction.stepCode().equals(input.stepCode()) && correction.key().equals(input.key())));
+			missing.addAll(corrections);
+		}
 		// objective 是业务摘要（数据库上限1000字），完整多轮输入和结构化意图放入text审计字段。
 		String objective = "学期 " + intent.path("semesterCode").asText(command.semesterCode()) + "："
 				+ steps.stream().map(StepCommand::stepName).collect(Collectors.joining("、"));

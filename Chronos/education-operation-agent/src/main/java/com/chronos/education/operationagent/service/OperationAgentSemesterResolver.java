@@ -34,7 +34,7 @@ public class OperationAgentSemesterResolver {
 		String text = request == null ? "" : request.trim();
 		Term current = currentTerm(organizationId);
 		String requestedCode = normalize(suppliedCode);
-		String mentionedCode = mentionedTermCode(text, organizationId);
+		String mentionedCode = text.isEmpty() ? null : mentionedTermCode(text, organizationId);
 		if (requestedCode != null && mentionedCode != null && !sameReference(requestedCode, mentionedCode)) {
 			return new Resolution("CONFLICT", requestedCode, null,
 					current == null ? null : current.code(),
@@ -57,7 +57,8 @@ public class OperationAgentSemesterResolver {
 						true, false);
 			}
 			return new Resolution("READY", current.code(), current.name(), current.code(),
-					"未指定学期，将按当前启用学期处理：" + current.code(), false, false);
+					"未指定学期，将按当前启用学期处理：" + current.code(), false, false,
+					current.id(), current.organizationId());
 		}
 
 		List<Term> matches = findTerms(requestedCode, organizationId);
@@ -84,12 +85,13 @@ public class OperationAgentSemesterResolver {
 		}
 		return new Resolution("READY", requested.code(), requested.name(),
 				current == null ? null : current.code(),
-				"已确定按学期 " + requested.code() + " 处理。", false, false);
+				"已确定按学期 " + requested.code() + " 处理。", false, false,
+				requested.id(), requested.organizationId());
 	}
 
 	private Term currentTerm(String organizationId) {
 		List<Term> terms = jdbc.query("""
-				select term_code, local_term_code, term_name, organization_id
+				select id, term_code, local_term_code, term_name, organization_id
 				from edu_academic_term
 				where current_term=true and status='ACTIVE'
 				  and (cast(? as varchar) is null or organization_id = ?)
@@ -101,7 +103,7 @@ public class OperationAgentSemesterResolver {
 
 	private List<Term> findTerms(String code, String organizationId) {
 		return jdbc.query("""
-				select term_code, local_term_code, term_name, organization_id
+				select id, term_code, local_term_code, term_name, organization_id
 				from edu_academic_term
 				where (term_code=? or local_term_code=?)
 				  and (cast(? as varchar) is null or organization_id=?)
@@ -157,8 +159,10 @@ public class OperationAgentSemesterResolver {
 		return orgCode.trim() + ":" + code;
 	}
 
-	private boolean sameReference(String left, String right) {
-		return left.equals(right) || localPart(left).equals(localPart(right));
+	boolean sameReference(String left, String right) {
+		if (left == null || right == null) return false;
+		return left.equals(right) || ((!left.contains(":") || !right.contains(":"))
+				&& localPart(left).equals(localPart(right)));
 	}
 
 	private String localPart(String value) {
@@ -167,13 +171,18 @@ public class OperationAgentSemesterResolver {
 	}
 
 	private Term term(java.sql.ResultSet rs) throws java.sql.SQLException {
-		return new Term(rs.getString("term_code"), rs.getString("local_term_code"),
+		return new Term(rs.getString("id"), rs.getString("term_code"), rs.getString("local_term_code"),
 				rs.getString("term_name"), rs.getString("organization_id"));
 	}
 
-	private record Term(String code, String localCode, String name, String organizationId) {}
+	private record Term(String id, String code, String localCode, String name, String organizationId) {}
 
 	public record Resolution(String status, String termCode, String termName,
 			String currentTermCode, String message, boolean confirmationRequired,
-			boolean creationRequested) {}
+			boolean creationRequested, String termId, String organizationId) {
+		public Resolution(String status, String termCode, String termName, String currentTermCode,
+				String message, boolean confirmationRequired, boolean creationRequested) {
+			this(status, termCode, termName, currentTermCode, message, confirmationRequired, creationRequested, null, null);
+		}
+	}
 }

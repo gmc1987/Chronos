@@ -9,6 +9,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -18,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -32,14 +36,17 @@ public class OfficialHolidayImportService {
 	private final ObjectMapper mapper;
 	private final AcademicTermRepository terms;
 	private final AcademicCalendarService calendar;
+	private final Path localDataDirectory;
 
 	public OfficialHolidayImportService(
 			ObjectMapper mapper,
 			AcademicTermRepository terms,
-			AcademicCalendarService calendar) {
+			AcademicCalendarService calendar,
+			@Value("${chronos.holiday.data-dir:}") String localDataDirectory) {
 		this.mapper = mapper;
 		this.terms = terms;
 		this.calendar = calendar;
+		this.localDataDirectory = localDataDirectory.isBlank() ? null : Path.of(localDataDirectory);
 	}
 
 	public record HolidayDate(LocalDate date, String name, boolean offDay) { }
@@ -48,8 +55,29 @@ public class OfficialHolidayImportService {
 
 	public ImportResult importOfficial(String termId, int year) {
 		assertYear(year);
+		String body = readLocalData(year);
+		if (body == null) body = downloadYear(year);
+		Parsed parsed = parse(body, year, true);
+		return new ImportResult(year, parsed.sourceUrl(),
+				calendar.importHolidays(termId, parsed.days(), "AUTO", parsed.sourceUrl()));
+	}
+
+	private String readLocalData(int year) {
+		if (localDataDirectory == null) return null;
+		Path file = localDataDirectory.resolve(year + ".json");
+		try (var input = Files.newInputStream(file)) {
+			byte[] content = input.readNBytes(200001);
+			if (content.length > 200000) throw new IllegalArgumentException("本地节假日 JSON 超过大小限制");
+			return new String(content, StandardCharsets.UTF_8);
+		} catch (java.nio.file.NoSuchFileException exception) {
+			return null;
+		} catch (IOException exception) {
+			throw new IllegalStateException("无法读取本地节假日文件 " + file.getFileName(), exception);
+		}
+	}
+
+	private String downloadYear(int year) {
 		String url = DATA_URL.formatted(year);
-		String body;
 		try {
 			HttpRequest request = HttpRequest.newBuilder(URI.create(url))
 					.timeout(Duration.ofSeconds(10)).GET().build();
@@ -58,14 +86,14 @@ public class OfficialHolidayImportService {
 			if (response.statusCode() != 200) {
 				throw new IllegalStateException("年度节假日数据获取失败：HTTP " + response.statusCode());
 			}
-			body = response.body();
-		} catch (IOException | InterruptedException exception) {
-			if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
-			throw new IllegalStateException("年度节假日数据获取失败", exception);
+			return response.body();
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("年度节假日下载已中断", exception);
+		} catch (IOException exception) {
+			throw new IllegalStateException("无法从 raw.githubusercontent.com 下载年度节假日数据（"
+					+ exception.getClass().getSimpleName() + "）", exception);
 		}
-		Parsed parsed = parse(body, year, true);
-		return new ImportResult(year, parsed.sourceUrl(),
-				calendar.importHolidays(termId, parsed.days(), "AUTO", parsed.sourceUrl()));
 	}
 
 	public ImportResult importManual(String termId, int year, String content) {

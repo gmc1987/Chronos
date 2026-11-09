@@ -261,9 +261,12 @@ public class OperationAgentBusinessTools {
 	}
 
 	private Map<String, Object> prepareAcademicCalendar(Map<String, Object> config) {
-		String termId = required(config.get("termId"), "目标学期");
-		LocalDate startDate = requiredDate(config.get("startDate"), "开始日期");
-		LocalDate endDate = requiredDate(config.get("endDate"), "结束日期");
+		String termId = academicTermId(config);
+		// 现有学期以业务记录为准。只有尚未写入的学期候选才使用计划里的日期。
+		AcademicTerm term = termId.startsWith("candidate:") ? null : requireAcademicTerm(termId, config);
+		LocalDate startDate = term == null ? requiredDate(config.get("startDate"), "开始日期") : term.getStartDate();
+		LocalDate endDate = term == null ? requiredDate(config.get("endDate"), "结束日期") : term.getEndDate();
+		if (startDate == null || endDate == null) throw new IllegalArgumentException("目标学期的起止日期未维护");
 		if (startDate.isAfter(endDate)) throw new IllegalArgumentException("教学日历开始日期不能晚于结束日期");
 		List<Integer> years = java.util.stream.IntStream.rangeClosed(startDate.getYear(), endDate.getYear())
 				.boxed().toList();
@@ -286,16 +289,21 @@ public class OperationAgentBusinessTools {
 				warnings.add(year + " 年节假日暂未同步：" + exception.getMessage());
 			}
 		}
+		if (imported.isEmpty()) {
+			throw new IllegalStateException("教学日历同步失败，所有目标年度均未导入。"
+					+ String.join("。", warnings));
+		}
 		return Map.of(
 				"dryRun", false,
 				"termId", termId,
 				"imported", imported,
 				"warnings", warnings,
-				"message", warnings.isEmpty() ? "教学日历已同步" : "教学日历已同步已公布年度，仍有待维护年度");
+				"message", warnings.isEmpty() ? "教学日历已同步" : "部分年度已同步，未同步年度见警告");
 	}
 
 	private Map<String, Object> configureBellSchedule(Map<String, Object> config, String actor) {
-		String termId = required(config.get("termId"), "目标学期");
+		String termId = academicTermId(config);
+		AcademicTerm term = termId.startsWith("candidate:") ? null : requireAcademicTerm(termId, config);
 		String organizationId = required(config.get("organizationId"), "目标机构");
 		String campusReference = required(config.get("campusId"), "适用校区");
 		String scheduleName = required(config.get("scheduleName"), "作息方案名称");
@@ -303,7 +311,8 @@ public class OperationAgentBusinessTools {
 		List<Map<String, Object>> periods = periodCommands(config.get("periods"));
 		String scheduleCode = text(config.get("scheduleCode"));
 		if (scheduleCode.isBlank()) {
-			scheduleCode = "AGENT-" + Integer.toUnsignedString((termId + ':' + campusId + ':' + scheduleName).hashCode(), 36);
+			String termCode = term == null ? termId.substring("candidate:".length()) : term.getTermCode();
+			scheduleCode = "AGENT-" + Integer.toUnsignedString((termCode + ':' + campusId + ':' + scheduleName).hashCode(), 36);
 		}
 		List<Map<String, Object>> rows = periods.stream().map(value -> Map.<String, Object>of(
 				"periodNo", value.get("periodNo"), "periodName", value.get("periodName"),
@@ -312,7 +321,9 @@ public class OperationAgentBusinessTools {
 		if (bool(config.get("dryRun"), false) || termId.startsWith("candidate:")) {
 			return Map.of("dryRun", true, "valid", true, "termId", termId, "campusId", campusId,
 					"scheduleCode", scheduleCode, "scheduleName", scheduleName, "rows", rows,
-					"message", "校区作息候选已生成，等待发起人确认写入");
+					"message", bool(config.get("generatedPeriods"), false)
+							? "已根据提供的规则和缺省设置计算节次，请核对各节起止时间后确认"
+							: "校区作息候选已生成，等待发起人确认写入");
 		}
 		BellSchedule schedule = new BellSchedule();
 		schedule.setAcademicTermId(termId);
@@ -336,6 +347,25 @@ public class OperationAgentBusinessTools {
 		return Map.of("dryRun", false, "created", true, "termId", termId, "campusId", campusId,
 				"scheduleId", created.getId(), "scheduleCode", created.getScheduleCode(),
 				"periodCount", periods.size(), "message", "校区作息方案创建成功");
+	}
+
+	private String academicTermId(Map<String, Object> config) {
+		String termId = required(config.get("termId"), "目标学期");
+		if (termId.startsWith("candidate:")) {
+			if (!bool(config.get("dryRun"), false)) {
+				throw new IllegalArgumentException("正式处理需要已创建的学期，请先完成学期创建步骤");
+			}
+		}
+		return termId;
+	}
+
+	private AcademicTerm requireAcademicTerm(String termId, Map<String, Object> config) {
+		String organizationId = required(config.get("organizationId"), "目标机构");
+		var term = terms.findById(termId).orElseThrow(() -> new IllegalArgumentException("目标学期不存在"));
+		if (!organizationId.equals(term.getOrganizationId())) {
+			throw new IllegalArgumentException("目标学期不属于所选机构");
+		}
+		return term;
 	}
 
 	private List<Map<String, Object>> periodCommands(Object value) {

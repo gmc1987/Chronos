@@ -113,7 +113,10 @@ public class OperationAgentService {
 		if (command.organizationId() != null && !command.organizationId().isBlank()) {
 			dataScopes.requireOrganization(authentication, command.organizationId());
 		}
-		var intent = llm.recognizeConversation(conversationRequest, authentication);
+		String intentContext = command.semesterCode() == null || command.semesterCode().isBlank()
+				? conversationRequest
+				: "上轮已确定或待确认的学期编码：" + command.semesterCode() + "\n" + conversationRequest;
+		var intent = llm.recognizeConversation(intentContext, authentication);
 		if (intent.path("cancelled").asBoolean()) {
 			return new ConversationResult("CANCELLED", null, null, null, null);
 		}
@@ -122,18 +125,50 @@ public class OperationAgentService {
 					new OperationAgentSemesterResolver.Resolution("NEED_INTENT", null, null, null,
 							intent.path("question").asText("请补充本次要完成的具体业务目标。"), false, false));
 		}
+		boolean academicOnly = intent.path("skillCodes").size() == 1
+				&& "academic.term-setup".equals(intent.path("skillCodes").get(0).asText());
 		boolean termCreationRequested = intent.path("createTerm").asBoolean()
 				|| (Boolean.TRUE.equals(command.createMissingTerm()) && intent.path("confirmed").asBoolean());
 		String recognizedTerm = intent.path("semesterCode").asText(null);
-		if (recognizedTerm == null) recognizedTerm = command.semesterCode();
-		OperationAgentSemesterResolver.Resolution resolution = intent.path("requiresSemester").asBoolean()
+		if (recognizedTerm == null || recognizedTerm.isBlank()) recognizedTerm = command.semesterCode();
+		String targetOrganization = command.organizationId();
+		if (academicOnly && (targetOrganization == null || targetOrganization.isBlank())) {
+			Set<String> visible = dataScopes.visibleOrganizationIds(authentication);
+			if (visible != null && visible.size() == 1) targetOrganization = visible.iterator().next();
+			if (targetOrganization == null || targetOrganization.isBlank()) {
+				var missing = new OperationAgentSemesterResolver.Resolution(
+						"NEED_ORGANIZATION", recognizedTerm, null, null,
+						"请选择目标机构后继续维护学期或作息方案。", false, false);
+				return new ConversationResult(missing.status(), null, null, null, missing);
+			}
+		}
+		OperationAgentSemesterResolver.Resolution resolution = (academicOnly || intent.path("requiresSemester").asBoolean())
 				? semesterResolver.resolve(
-						"", recognizedTerm, intent.path("confirmed").asBoolean(),
-						termCreationRequested, command.organizationId())
+						"", recognizedTerm, intent.path("confirmed").asBoolean()
+								|| (Boolean.TRUE.equals(command.confirmNonCurrent()) && semesterResolver.sameReference(recognizedTerm, command.semesterCode())),
+						termCreationRequested, targetOrganization)
 				: new OperationAgentSemesterResolver.Resolution(
 						"READY", null, null, null, "本次业务不依赖学期，按通用业务流程处理。", false, false);
+		if (academicOnly && "CONFIRM_CREATE".equals(resolution.status())) {
+			var missing = new OperationAgentSemesterResolver.Resolution(
+					"NEED_EXISTING_TERM", resolution.termCode(), null, resolution.currentTermCode(),
+					"未找到已正式创建的学期 " + resolution.termCode()
+							+ "。请核对目标机构，或先确认并完成学期候选的正式写入；也可以明确要求一起创建学期和作息。",
+					false, false);
+			return new ConversationResult(missing.status(), null, null, null, missing);
+		}
 		if (!"READY".equals(resolution.status())) {
 			return new ConversationResult(resolution.status(), null, null, null, resolution);
+		}
+		if (academicOnly) {
+			dataScopes.requireOrganization(authentication, targetOrganization);
+			if (resolution.termId() != null && intent.path("toolConfigs").size() == 1
+					&& intent.path("toolConfigs").has("academic.term.create")) {
+				var existing = new OperationAgentSemesterResolver.Resolution(
+						"TERM_EXISTS", resolution.termCode(), resolution.termName(), resolution.currentTermCode(),
+						"学期 " + resolution.termCode() + " 已存在。可继续指定要维护的教学日历或作息方案。", false, false);
+				return new ConversationResult(existing.status(), null, null, null, existing);
+			}
 		}
 		String planningRequest = resolution.creationRequested()
 				? "创建学年学期数据。" + conversationRequest
@@ -141,11 +176,9 @@ public class OperationAgentService {
 		planningRequest += "\nLLM已识别的结构化意图：" + intent.toString();
 		OperationAgentLlmService.DraftCommand draftCommand = new OperationAgentLlmService.DraftCommand(
 				planningRequest, command.knowledgeBaseId(), resolution.termCode(), command.admissionYear(),
-				command.managedFileId(), command.managedFileIds(), command.candidateOnly(), command.organizationId());
-		boolean academicOnly = intent.path("skillCodes").size() == 1
-				&& "academic.term-setup".equals(intent.path("skillCodes").get(0).asText());
+				command.managedFileId(), command.managedFileIds(), command.candidateOnly(), targetOrganization);
 		OperationAgentLlmService.DraftResult draft = academicOnly
-				? llm.academicIntentDraft(intent, draftCommand) : draftPlan(draftCommand, authentication, intent);
+				? llm.academicIntentDraft(intent, draftCommand, resolution.termId(), resolution.creationRequested()) : draftPlan(draftCommand, authentication, intent);
 		llm.validateIntentTools(intent, draft);
 		if (!draft.readyToSave()) {
 			return new ConversationResult("NEED_INPUT", draft, null, null, resolution);
