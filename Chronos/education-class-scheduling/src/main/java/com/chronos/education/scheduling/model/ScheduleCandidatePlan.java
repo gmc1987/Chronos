@@ -21,7 +21,7 @@ public class ScheduleCandidatePlan extends BaseEntity {
 	@Column(name = "lock_version", nullable = false)
 	private Long lockVersion = 0L;
 
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "plan_name", length = 128, nullable = false)

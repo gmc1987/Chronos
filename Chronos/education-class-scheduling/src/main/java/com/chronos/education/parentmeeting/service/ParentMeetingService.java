@@ -70,10 +70,14 @@ public class ParentMeetingService {
 				.map(AdminUser::getUsername).toList();
 		if (usernames.isEmpty()) throw new IllegalStateException(
 				"范围内没有可邀请的有效家长账号；请在家长管理核对监护关系、门户账号绑定及账号可用性");
+		String organizationId = "ONLINE".equalsIgnoreCase(command.meetingType())
+				? dataScope.requireSingleClassCampus(targets.stream()
+						.map(StudentProfile::getAdministrativeClassId).collect(Collectors.toSet()))
+				: null;
 		MeetingCommands.Save save = new MeetingCommands.Save(command.title(), command.agenda(),
 				command.meetingType(), command.startTime(), command.endTime(), command.roomId(),
 				command.meetingProvider(), command.externalMeetingId(), command.joinUrl(),
-				command.onlineAccessCode(), usernames, null);
+				command.onlineAccessCode(), usernames, null, organizationId);
 		MeetingView view = meetings.saveMeeting(null, save, organizer);
 		ParentMeetingScope association = new ParentMeetingScope();
 		association.setMeetingId(view.meeting().getId());

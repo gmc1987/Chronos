@@ -54,22 +54,29 @@ public class HomeSchoolService {
 		this.accounts = accounts;
 	}
 
-	public List<ParentBindingResponse> listBindings() {
-		return bindingResponses(bindings.findAllByProfileTypeOrderByCreateTimeDesc("PARENT"));
+	public List<ParentBindingResponse> listBindings(String username) {
+		EducationDataScope scope = scopeService.resolve(username);
+		return bindingResponses(bindings.findAllByProfileTypeOrderByCreateTimeDesc("PARENT")).stream()
+				.filter(value -> scope.fullAccess() || value.organizationId() != null
+						&& scope.campusIds().contains(value.organizationId()))
+				.toList();
 	}
 
-	public Page<ParentBindingResponse> listBindings(int page, int size) {
+	public Page<ParentBindingResponse> listBindings(String username, int page, int size) {
 		PageRequest request = PageRequest.of(Math.max(0, page), boundedSize(size));
-		Page<EducationUserBinding> result = bindings.findByProfileType("PARENT", request);
-		return new PageImpl<>(bindingResponses(result.getContent()), request, result.getTotalElements());
+		List<ParentBindingResponse> visible = listBindings(username);
+		int from = Math.min((int) request.getOffset(), visible.size());
+		int to = Math.min(from + request.getPageSize(), visible.size());
+		return new PageImpl<>(visible.subList(from, to), request, visible.size());
 	}
 
 	@Transactional
-	public ParentBindingResponse bind(ParentBindingCommand command) {
+	public ParentBindingResponse bind(ParentBindingCommand command, String operator) {
 		if (command == null || command.parentId() == null || command.username() == null
 				|| command.username().isBlank()) throw new IllegalArgumentException("家长和账号不能为空");
 		ParentProfile parent = parents.findById(command.parentId())
 				.orElseThrow(() -> new IllegalArgumentException("家长档案不存在"));
+		assertParentAccess(operator, parent.getId());
 		if (!"ACTIVE".equals(parent.getStatus())) throw new IllegalStateException("家长档案已失效");
 		AdminUser account = accounts.findByUsername(command.username().trim());
 		if (account == null || !Integer.valueOf(1).equals(account.getStatus())
@@ -104,10 +111,11 @@ public class HomeSchoolService {
 	}
 
 	@Transactional
-	public ParentBindingResponse invalidate(String id) {
+	public ParentBindingResponse invalidate(String id, String operator) {
 		EducationUserBinding value = bindings.findById(id)
 				.filter(binding -> "PARENT".equals(binding.getProfileType()))
 				.orElseThrow(() -> new IllegalArgumentException("家长账号绑定不存在"));
+		assertParentAccess(operator, value.getProfileId());
 		value.setStatus("INVALIDATED"); value.setInvalidatedAt(LocalDateTime.now());
 		ParentBindingResponse response = binding(bindings.save(value));
 		if (audit != null) audit.log(value.getUsername(), "EDU_HOME_PARENT_BINDING_INVALIDATE",
@@ -321,10 +329,24 @@ public class HomeSchoolService {
 			AdminUser account = accountByUsername.get(value.getUsername());
 			boolean accountAvailable = account != null && Integer.valueOf(1).equals(account.getStatus())
 					&& !Boolean.TRUE.equals(account.getAccountLocked());
-			return new ParentBindingResponse(value.getId(), value.getProfileId(),
+			return new ParentBindingResponse(value.getId(), value.getProfileId(), parentOrganization(value.getProfileId()),
 					parent == null ? null : parent.getParentName(), value.getUsername(), value.getStatus(),
 					value.getVerifiedAt(), value.getInvalidatedAt(), accountAvailable);
 		}).toList();
+	}
+	private String parentOrganization(String parentId) {
+		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
+				.map(StudentGuardianRelation::getStudentId).map(students::findById)
+				.flatMap(Optional::stream).map(StudentProfile::getAdministrativeClassId)
+				.map(classes::findById).flatMap(Optional::stream)
+				.map(AdministrativeClass::getCampusId).filter(Objects::nonNull).findFirst().orElse(null);
+	}
+	private void assertParentAccess(String username, String parentId) {
+		EducationDataScope scope = scopeService.resolve(username);
+		if (scope.fullAccess()) return;
+		String organizationId = parentOrganization(parentId);
+		if (organizationId == null || !scope.campusIds().contains(organizationId))
+			throw new AccessDeniedException("无权访问该家长档案");
 	}
 	private NoticeResponse notice(HomeNotice v) {
 		String className = classes.findById(v.getClassId()).map(AdministrativeClass::getClassName).orElse(null);

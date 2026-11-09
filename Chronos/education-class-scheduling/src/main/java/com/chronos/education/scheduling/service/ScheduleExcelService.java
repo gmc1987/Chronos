@@ -166,7 +166,13 @@ public class ScheduleExcelService {
 			String dimension,
 			String targetId,
 			String actor) {
-		List<ScheduleEntryView> values = scheduling.schedule(semesterCode, dimension, targetId);
+		return export(semesterCode, dimension, targetId, actor, null);
+	}
+
+	@Transactional
+	public byte[] export(
+			String semesterCode, String dimension, String targetId, String actor, java.util.Set<String> campusIds) {
+		List<ScheduleEntryView> values = scheduling.schedule(semesterCode, dimension, targetId, campusIds);
 		try (SXSSFWorkbook workbook = new SXSSFWorkbook(100);
 				ByteArrayOutputStream output = new ByteArrayOutputStream()) {
 			try {

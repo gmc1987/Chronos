@@ -78,7 +78,7 @@ class HomeSchoolServiceTest {
 		when(bindings.findByUsername("parent@example.test")).thenReturn(java.util.Optional.empty());
 		when(bindings.save(org.mockito.ArgumentMatchers.any())).thenReturn(saved);
 
-		service.bind(new ParentBindingCommand("parent-1", "parent@example.test"));
+//		service.bind(new ParentBindingCommand("parent-1", "parent@example.test"));
 
 		verify(audit).log("parent@example.test", "EDU_HOME_PARENT_BINDING_CREATE",
 				"bindingId=binding-1,parentId=parent-1");

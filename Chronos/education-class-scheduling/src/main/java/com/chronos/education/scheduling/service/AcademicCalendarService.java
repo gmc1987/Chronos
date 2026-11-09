@@ -111,7 +111,53 @@ public class AcademicCalendarService {
 
 	@Transactional
 	public AcademicCalendarDay saveCalendarDay(String id, AcademicCalendarDay command) {
-		AcademicTerm term = requireTerm(command.getAcademicTermId());
+		validateCalendarDay(requireTerm(command.getAcademicTermId()), id, command);
+		return persistCalendarDay(id, command);
+	}
+
+	@Transactional
+	public CalendarImportResult importCalendarDays(String termId, List<AcademicCalendarDay> rows, boolean preview) {
+		if (rows == null || rows.isEmpty() || rows.size() > 366) {
+			throw new IllegalArgumentException("每次请导入 1 至 366 条特殊日期");
+		}
+		AcademicTerm term = requireTerm(termId);
+		var dates = new java.util.HashSet<LocalDate>();
+		var errors = new java.util.ArrayList<String>();
+		for (int index = 0; index < rows.size(); index++) {
+			AcademicCalendarDay row = rows.get(index);
+			try {
+				if (row == null) {
+					throw new IllegalArgumentException("记录不能为空");
+				}
+				row.setAcademicTermId(termId);
+				if (!java.util.Set.of("HOLIDAY", "MAKEUP_WORKDAY", "MAKEUP", "EXAM", "EVENT")
+						.contains(required(row.getDayType(), "日期类型不能为空"))) {
+					throw new IllegalArgumentException("不支持的日期类型");
+				}
+				if ((row.getDayName() != null && row.getDayName().length() > 128)
+						|| (row.getRemark() != null && row.getRemark().length() > 500)) {
+					throw new IllegalArgumentException("名称或备注超过长度限制");
+				}
+				validateCalendarDay(term, null, row);
+				if (!dates.add(row.getCalendarDate())) {
+					throw new IllegalArgumentException("文件中日期重复");
+				}
+			} catch (IllegalArgumentException exception) {
+				errors.add("第 " + (index + 1) + " 条：" + exception.getMessage());
+			}
+		}
+		if (preview || !errors.isEmpty()) {
+			return new CalendarImportResult(rows.size(), 0, errors);
+		}
+		for (AcademicCalendarDay row : rows) {
+			persistCalendarDay(null, row);
+		}
+		return new CalendarImportResult(rows.size(), rows.size(), List.of());
+	}
+
+	public record CalendarImportResult(int total, int imported, List<String> errors) { }
+
+	private void validateCalendarDay(AcademicTerm term, String id, AcademicCalendarDay command) {
 		if (command.getCalendarDate() == null
 				|| command.getCalendarDate().isBefore(term.getStartDate())
 				|| command.getCalendarDate().isAfter(term.getEndDate())) {
@@ -139,16 +185,21 @@ public class AcademicCalendarService {
 				&& scheduleDate == null) {
 			throw new IllegalArgumentException("周末补课日必须指定参照课表日期");
 		}
+		required(command.getDayType(), "日期类型不能为空");
+		required(command.getDayName(), "日期名称不能为空");
+	}
+
+	private AcademicCalendarDay persistCalendarDay(String id, AcademicCalendarDay command) {
 		AcademicCalendarDay value = id == null
 				? new AcademicCalendarDay()
 				: calendarDays.findById(id)
 						.orElseThrow(() -> new IllegalArgumentException("校历日期不存在"));
 		value.setAcademicTermId(command.getAcademicTermId());
 		value.setCalendarDate(command.getCalendarDate());
-		value.setDayType(required(command.getDayType(), "日期类型不能为空"));
-		value.setDayName(required(command.getDayName(), "日期名称不能为空"));
+		value.setDayType(command.getDayType().trim());
+		value.setDayName(command.getDayName().trim());
 		value.setTeachingDay(Boolean.TRUE.equals(command.getTeachingDay()));
-		value.setScheduleDate(scheduleDate);
+		value.setScheduleDate(command.getScheduleDate());
 		value.setRemark(command.getRemark());
 		value.setSourceType("MANUAL");
 		return calendarDays.save(value);
@@ -278,6 +329,16 @@ public class AcademicCalendarService {
 	@Transactional
 	public void deleteBellPeriod(String id) {
 		bellPeriods.deleteById(id);
+	}
+
+	public String termOrganization(String termId) {
+		return requireTerm(termId).getOrganizationId();
+	}
+
+	public String calendarDayTermId(String id) {
+		return calendarDays.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("校历日期不存在"))
+				.getAcademicTermId();
 	}
 
 	private AcademicTerm requireTerm(String id) {

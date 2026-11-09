@@ -35,42 +35,42 @@ public class MeetingCenterController {
 
 	@GetMapping("/admin/education/meeting/rooms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:room:view','education:meeting:room:manage','education:meeting:view','education:meeting:manage','education:parent-meeting:create','education:parent-meeting:manage')")
-	public ResultData<List<MeetingRoom>> rooms() {
-		return ok(service.rooms());
+	public ResultData<List<MeetingRoom>> rooms(Authentication authentication) {
+		return ok(service.rooms(authentication.getName()));
 	}
 
 	@GetMapping("/admin/education/meeting/participant-options")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:view','education:meeting:create','education:meeting:update','education:meeting:manage','education:meeting:room:manage')")
 	public ResultData<List<MeetingCommands.ParticipantOption>> participantOptions(
-			@RequestParam(defaultValue = "") String keyword) {
-		return ok(service.participantOptions(keyword));
+			@RequestParam(defaultValue = "") String keyword, Authentication authentication) {
+		return ok(service.participantOptions(keyword, authentication.getName()));
 	}
 
 	@PostMapping("/admin/education/meeting/rooms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:room:create','education:meeting:room:manage')")
-	public ResultData<MeetingRoom> createRoom(@RequestBody MeetingCommands.Room command) {
-		return ok(service.saveRoom(null, command));
+	public ResultData<MeetingRoom> createRoom(@RequestBody MeetingCommands.Room command, Authentication authentication) {
+		return ok(service.saveRoom(null, command, authentication.getName()));
 	}
 
 	@PutMapping("/admin/education/meeting/rooms/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:room:update','education:meeting:room:manage')")
 	public ResultData<MeetingRoom> updateRoom(
 			@PathVariable String id,
-			@RequestBody MeetingCommands.Room command) {
-		return ok(service.saveRoom(id, command));
+			@RequestBody MeetingCommands.Room command, Authentication authentication) {
+		return ok(service.saveRoom(id, command, authentication.getName()));
 	}
 
 	@DeleteMapping("/admin/education/meeting/rooms/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:room:delete','education:meeting:room:manage')")
-	public ResultData<Void> deleteRoom(@PathVariable String id) {
-		service.deleteRoom(id);
+	public ResultData<Void> deleteRoom(@PathVariable String id, Authentication authentication) {
+		service.deleteRoom(id, authentication.getName());
 		return ok(null);
 	}
 
 	@GetMapping("/admin/education/meetings")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:meeting:view','education:meeting:manage')")
-	public ResultData<List<MeetingView>> meetings() {
-		return ok(service.allMeetings());
+	public ResultData<List<MeetingView>> meetings(Authentication authentication) {
+		return ok(service.allMeetings(authentication.getName()));
 	}
 
 	@GetMapping("/admin/education/meetings/page")
@@ -79,12 +79,12 @@ public class MeetingCenterController {
 			@RequestParam(defaultValue = "") String keyword,
 			@RequestParam(defaultValue = "") String status,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
+			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
 		return ok(PageView.from(service.meetingPage(
 				keyword,
 				status,
 				page,
-				size)));
+				size, authentication.getName())));
 	}
 
 	@PostMapping("/admin/education/meetings")

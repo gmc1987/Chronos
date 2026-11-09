@@ -1,0 +1,36 @@
+$kind: http-request
+name: Operation agent accumulates term details across turns
+order: 10000
+method: POST
+url: '{{base_url}}/agent/operations/conversation'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request":"开始日期：2093-09-01；结束日期：2094-01-30；教学周数：20",
+      "contextMessages":["请帮我创建2093年度第二学期，同时完成教学日历和校区作息方案"],
+      "semesterCode":"2093-2094-2",
+      "organizationId":"{{hv_org_id}}",
+      "candidateOnly":false,
+      "createMissingTerm":true
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const required = body.data.draft.requiredInputs.map(item => item.key);
+      const term = body.data.draft.plan.steps.find(item => item.toolCode === 'academic.term.create');
+      pm.test('second turn retains prior intent and consumes all term fields', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.data.status).to.eql('NEED_INPUT');
+        pm.expect(required).to.eql(['campusId', 'scheduleName', 'periods']);
+        pm.expect(term.toolConfig).to.include({
+          startDate: '2093-09-01',
+          endDate: '2094-01-30',
+          weekCount: 20
+        });
+      });
+

@@ -518,7 +518,10 @@ public class ExamCenterController {
 	}
 
 	private void requireFullAccess(Authentication authentication) {
-		scopes.assertFullAccess(scopes.resolve(authentication.getName()));
+		var scope = scopes.resolve(authentication.getName());
+		if (!scope.fullAccess() && scope.schoolIds().isEmpty() && scope.campusIds().isEmpty()) {
+			throw new org.springframework.security.access.AccessDeniedException("当前账号未配置考试业务机构范围");
+		}
 	}
 
 	private <T> ResultData<T> ok(T data) {

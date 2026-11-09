@@ -21,7 +21,7 @@ import lombok.Setter;
 				name = "uk_edu_course_offering_code",
 				columnNames = { "semester_code", "offering_code" }))
 public class CourseOffering extends BaseEntity {
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "offering_code", length = 64, nullable = false)

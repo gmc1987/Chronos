@@ -19,27 +19,27 @@ public class HomeSchoolController {
 
 	@GetMapping("/admin/education/home-school/parent-bindings")
 	@PreAuthorize("hasAuthority('education:home-school:parent:view')")
-	public ResultData<List<ParentBindingResponse>> bindings() {
-		return ok(service.listBindings());
+	public ResultData<List<ParentBindingResponse>> bindings(Authentication authentication) {
+		return ok(service.listBindings(authentication.getName()));
 	}
 
 	@GetMapping("/admin/education/home-school/parent-bindings/page")
 	@PreAuthorize("hasAuthority('education:home-school:parent:view')")
 	public ResultData<Page<ParentBindingResponse>> bindingPage(@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
-		return ok(service.listBindings(page, size));
+			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
+		return ok(service.listBindings(authentication.getName(), page, size));
 	}
 
 	@PostMapping("/admin/education/home-school/parent-bindings")
 	@PreAuthorize("hasAuthority('education:home-school:parent:create')")
-	public ResultData<ParentBindingResponse> bind(@RequestBody ParentBindingCommand command) {
-		return ok(service.bind(command));
+	public ResultData<ParentBindingResponse> bind(@RequestBody ParentBindingCommand command, Authentication authentication) {
+		return ok(service.bind(command, authentication.getName()));
 	}
 
 	@PostMapping("/admin/education/home-school/parent-bindings/{id}/invalidate")
 	@PreAuthorize("hasAuthority('education:home-school:parent:update')")
-	public ResultData<ParentBindingResponse> invalidate(@PathVariable String id) {
-		return ok(service.invalidate(id));
+	public ResultData<ParentBindingResponse> invalidate(@PathVariable String id, Authentication authentication) {
+		return ok(service.invalidate(id, authentication.getName()));
 	}
 
 	@GetMapping("/admin/education/home-school/notices")

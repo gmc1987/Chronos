@@ -83,6 +83,7 @@ public class ClassSchedulingController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
 	public ResultData<Map<String, ?>> scheduleDimensionOptions(
 			@RequestParam String semesterCode,
+			@RequestParam(required = false) String organizationId,
 			Authentication authentication) {
 		var scope = dataScopes.resolve(authentication.getName());
 
@@ -91,16 +92,20 @@ public class ClassSchedulingController {
 		 * 轻量查询对象仍按当前用户数据范围返回；学生数量较大，改走独立分页接口，
 		 * 避免加载课表时一次查询和序列化全部学生档案。
 		 */
-		return ok(Map.of(
-				"fullAccess", scope.fullAccess(),
-				"teachers", academicData.teachers(scope),
-				"teachingClasses", dataScopes.visibleOfferings(
-						scope,
-						service.offerings(semesterCode)),
-				"administrativeClasses", academicData.administrativeClasses(scope),
-				"classrooms", dataScopes.visibleClassrooms(
-						scope,
-						service.classrooms())));
+		var campusIds = dataScopes.scheduleOrganizationCampuses(scope, organizationId);
+		var offerings = dataScopes.visibleOfferings(scope, service.offerings(semesterCode));
+		var teachers = academicData.teachers(scope);
+		var classes = academicData.administrativeClasses(scope);
+		var classrooms = dataScopes.visibleClassrooms(scope, service.classrooms());
+		if (campusIds != null) {
+			offerings = offerings.stream().filter(item -> campusIds.contains(item.getCampusId())).toList();
+			var teacherIds = offerings.stream().map(CourseOffering::getTeacherId).collect(java.util.stream.Collectors.toSet());
+			teachers = teachers.stream().filter(item -> teacherIds.contains(item.getId())).toList();
+			classes = classes.stream().filter(item -> campusIds.contains(item.getCampusId())).toList();
+			classrooms = classrooms.stream().filter(item -> campusIds.contains(item.getCampusId())).toList();
+		}
+		return ok(Map.of("fullAccess", scope.fullAccess(), "teachers", teachers, "teachingClasses", offerings,
+				"administrativeClasses", classes, "classrooms", classrooms));
 	}
 
 	@GetMapping("/admin/education/schedule-student-options")
@@ -109,9 +114,11 @@ public class ClassSchedulingController {
 			@RequestParam(required = false, defaultValue = "") String keyword,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "10") int size,
+			@RequestParam(required = false) String organizationId,
 			Authentication authentication) {
 		var scope = dataScopes.resolve(authentication.getName());
-		return ok(PageView.from(academicData.scheduleStudentOptions(scope, keyword, page, size)
+		return ok(PageView.from(academicData.scheduleStudentOptions(scope, keyword, page, size,
+				dataScopes.scheduleOrganizationCampuses(scope, organizationId))
 				.map(student -> new StudentScheduleOption(
 						student.getId(), student.getStudentNo(), student.getStudentName()))));
 	}
@@ -207,18 +214,18 @@ public class ClassSchedulingController {
 			@RequestParam String semesterCode,
 			@RequestParam(defaultValue = "ALL") String dimension,
 			@RequestParam(required = false) String targetId,
+			@RequestParam(required = false) String organizationId,
 			Authentication authentication) {
-		dataScopes.assertScheduleDimensionAccess(
-				dataScopes.resolve(authentication.getName()),
-				dimension,
-				targetId);
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertScheduleDimensionAccess(scope, dimension, targetId);
+		var campusIds = dataScopes.scheduleOrganizationCampuses(scope, organizationId);
 		return excel(
 				"课表-" + semesterCode + ".xlsx",
 				scheduleExcel.export(
 						semesterCode,
 						dimension,
 						targetId,
-						authentication.getName()));
+						authentication.getName(), campusIds));
 	}
 
 	private ResponseEntity<byte[]> excel(String filename, byte[] content) {
@@ -474,12 +481,12 @@ public class ClassSchedulingController {
 			@RequestParam String semesterCode,
 			@RequestParam(defaultValue = "ALL") String dimension,
 			@RequestParam(required = false) String targetId,
+			@RequestParam(required = false) String organizationId,
 			Authentication authentication) {
-		dataScopes.assertScheduleDimensionAccess(
-				dataScopes.resolve(authentication.getName()),
-				dimension,
-				targetId);
-		return ok(service.schedule(semesterCode, dimension, targetId));
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertScheduleDimensionAccess(scope, dimension, targetId);
+		var campusIds = dataScopes.scheduleOrganizationCampuses(scope, organizationId);
+		return ok(service.schedule(semesterCode, dimension, targetId, campusIds));
 	}
 
 	@PostMapping("/admin/education/schedules")

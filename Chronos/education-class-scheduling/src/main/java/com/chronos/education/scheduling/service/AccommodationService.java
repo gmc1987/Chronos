@@ -28,7 +28,7 @@ public class AccommodationService {
 
 	public List<Map<String, Object>> buildings() {
 		return jdbc.queryForList("""
-				select building.id, building.building_code as "buildingCode", building.building_name as "buildingName",
+				select building.id, building.organization_id as "organizationId", building.building_code as "buildingCode", building.building_name as "buildingName",
 				       building.gender_policy as "genderPolicy", building.status,
 				       count(distinct room.id) as "roomCount",
 				       count(bed.id) as "bedCount",
@@ -39,6 +39,18 @@ public class AccommodationService {
 				group by building.id
 				order by building.building_code
 				""");
+	}
+	public List<Map<String, Object>> buildings(java.util.Collection<String> organizationIds) {
+		if (organizationIds == null) return buildings();
+		if (organizationIds.isEmpty()) return List.of();
+		String placeholders = String.join(",", java.util.Collections.nCopies(organizationIds.size(), "?"));
+		return jdbc.queryForList("""
+				select building.id, building.organization_id as "organizationId", building.building_code as "buildingCode", building.building_name as "buildingName",
+				       building.gender_policy as "genderPolicy", building.status,
+				       count(distinct room.id) as "roomCount", count(bed.id) as "bedCount",
+				       count(bed.id) filter (where bed.status = 'AVAILABLE') as "availableBedCount"
+				from edu_dorm_building building left join edu_dorm_room room on room.building_id=building.id
+				left join edu_dorm_bed bed on bed.room_id=room.id where building.organization_id in (""" + placeholders + ") group by building.id order by building.building_code", organizationIds.toArray());
 	}
 
 	public List<Map<String, Object>> rooms(String buildingId) {
@@ -69,6 +81,10 @@ public class AccommodationService {
 				where 1 = 1
 				""" + availability + " order by building.building_code, room.floor_no, room.room_no, bed.bed_no", semesterCode);
 	}
+	public List<Map<String, Object>> beds(String semesterCode, boolean availableOnly, java.util.Collection<String> organizationIds) {
+		if (organizationIds == null) return beds(semesterCode, availableOnly);
+		return beds(semesterCode, availableOnly).stream().filter(row -> organizationIds.contains(buildingOrganization(String.valueOf(row.get("buildingId"))))).toList();
+	}
 
 	public List<Map<String, Object>> assignments(String semesterCode) {
 		return jdbc.queryForList("""
@@ -84,6 +100,10 @@ public class AccommodationService {
 				order by student.student_no
 				""", semesterCode);
 	}
+	public List<Map<String, Object>> assignments(String semesterCode, java.util.Collection<String> organizationIds) {
+		if (organizationIds == null) return assignments(semesterCode);
+		return assignments(semesterCode).stream().filter(row -> organizationIds.contains(assignmentOrganization(String.valueOf(row.get("id"))))).toList();
+	}
 
 	public List<Map<String, Object>> studentOptions(String keyword) {
 		String value = keyword == null ? "" : keyword.trim();
@@ -95,16 +115,30 @@ public class AccommodationService {
 				order by student_no limit 50
 				""", value, "%" + value + "%", "%" + value + "%");
 	}
+	public List<Map<String, Object>> studentOptions(String keyword, java.util.Collection<String> organizationIds) {
+		if (organizationIds == null) return studentOptions(keyword);
+		return studentOptions(keyword).stream().filter(row -> organizationIds.contains(studentOrganization(String.valueOf(row.get("id"))))).toList();
+	}
 
 	@Transactional
 	public Map<String, Object> createBuilding(BuildingCommand command) {
+		return createBuilding(command, command.organizationId());
+	}
+	@Transactional
+	public Map<String, Object> createBuilding(BuildingCommand command, String organizationId) {
 		String id = id();
-		jdbc.update("insert into edu_dorm_building(id, building_code, building_name, gender_policy, status) values (?, ?, ?, ?, ?)",
-				id, required(command.buildingCode(), "楼栋编码"), required(command.buildingName(), "楼栋名称"),
+		jdbc.update("insert into edu_dorm_building(id, organization_id, building_code, building_name, gender_policy, status) values (?, ?, ?, ?, ?, ?)",
+				id, required(organizationId, "所属机构"), required(command.buildingCode(), "楼栋编码"), required(command.buildingName(), "楼栋名称"),
 				blankToDefault(command.genderPolicy(), "MIXED"), blankToDefault(command.status(), "ACTIVE"));
 		auditLogs.log("ACCOMMODATION_BUILDING_CREATE", "DORM_BUILDING", id);
 		return jdbc.queryForMap("select * from edu_dorm_building where id = ?", id);
 	}
+	public String buildingOrganization(String id) { return scalar("select organization_id from edu_dorm_building where id=?", id, "宿舍楼不存在"); }
+	public String roomOrganization(String id) { return scalar("select building.organization_id from edu_dorm_room room join edu_dorm_building building on building.id=room.building_id where room.id=?", id, "宿舍房间不存在"); }
+	public String bedOrganization(String id) { return scalar("select building.organization_id from edu_dorm_bed bed join edu_dorm_room room on room.id=bed.room_id join edu_dorm_building building on building.id=room.building_id where bed.id=?", id, "床位不存在"); }
+	public String assignmentOrganization(String id) { return scalar("select building.organization_id from edu_student_accommodation assignment join edu_dorm_bed bed on bed.id=assignment.bed_id join edu_dorm_room room on room.id=bed.room_id join edu_dorm_building building on building.id=room.building_id where assignment.id=?", id, "住宿分配不存在"); }
+	public String studentOrganization(String id) { return scalar("select class.campus_id from edu_student_profile student join edu_administrative_class class on class.id=student.administrative_class_id where student.id=?", id, "学生不存在"); }
+	private String scalar(String sql, String id, String message) { try { return jdbc.queryForObject(sql, String.class, id); } catch (org.springframework.dao.EmptyResultDataAccessException exception) { throw new IllegalArgumentException(message); } }
 
 	@Transactional
 	public Map<String, Object> createRoom(String buildingId, RoomCommand command) {
@@ -211,7 +245,7 @@ public class AccommodationService {
 	private int positive(Integer value, String label) { if (value == null || value < 1) throw new IllegalArgumentException(label + "必须大于0"); return value; }
 	private String blankToDefault(String value, String fallback) { return value == null || value.isBlank() ? fallback : value.trim(); }
 
-	public record BuildingCommand(String buildingCode, String buildingName, String genderPolicy, String status) {}
+	public record BuildingCommand(String buildingCode, String buildingName, String genderPolicy, String status, String organizationId) {}
 	public record RoomCommand(String roomNo, Integer floorNo, Integer capacity, String status) {}
 	public record BedCommand(String bedNo, String status) {}
 	public record AssignmentCommand(String semesterCode, String studentId, String bedId) {}

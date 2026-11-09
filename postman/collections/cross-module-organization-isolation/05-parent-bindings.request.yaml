@@ -1,0 +1,19 @@
+$kind: http-request
+name: Parent bindings expose an organization boundary
+order: 5000
+method: GET
+url: '{{base_url}}/admin/education/home-school/parent-bindings/page?page=0&size=100'
+queryParams:
+  - key: page
+    value: '0'
+  - key: size
+    value: '100'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const rows = body.data.content;
+      pm.test('parent bindings are provably limited to the allowed school', () => {
+        pm.response.to.have.status(200);
+        rows.forEach(row => pm.expect(row.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

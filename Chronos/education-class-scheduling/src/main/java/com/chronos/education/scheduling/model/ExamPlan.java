@@ -15,7 +15,10 @@ import lombok.Setter;
 @Setter
 @Table(name = "edu_exam_plan")
 public class ExamPlan extends BaseEntity {
-	@Column(name = "semester_code", nullable = false, length = 32)
+	@Column(name = "organization_id", nullable = false, length = 64)
+	private String organizationId;
+
+	@Column(name = "semester_code", nullable = false, length = 128)
 	private String semesterCode;
 
 	@Column(name = "plan_name", nullable = false, length = 128)

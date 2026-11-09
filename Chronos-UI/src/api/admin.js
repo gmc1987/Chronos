@@ -45,6 +45,7 @@ export const createPermission = (payload) => http.post('/admin/permissions/creat
 export const updatePermission = (payload) => http.put('/admin/permissions/update', payload)
 export const deletePermission = (id) => http.delete(`/admin/permissions/${id}`)
 export const orgList = (params) => http.get(`/admin/organizations/list?${qs(params)}`)
+export const orgOptions = () => http.get('/admin/organizations/options')
 export const orgDetail = (id) => http.get(`/admin/organizations/${id}`)
 export const createOrg = (payload) => http.post('/admin/organizations', payload)
 export const updateOrg = (payload) => http.put('/admin/organizations', payload)
@@ -77,12 +78,6 @@ export const importDirectoryData = (type, file, options = {}) => {
   data.append('file', file)
   return http.upload(`/admin/iam/import/${type}?${qs(options)}`, data)
 }
-export const positionRoleMappings = (positionId) => http.get(`/admin/iam/position-role-mappings?${qs({ positionId })}`)
-export const savePositionRoleMapping = (payload) => payload.id
-  ? http.put(`/admin/iam/position-role-mappings/${payload.id}`, payload)
-  : http.post('/admin/iam/position-role-mappings', payload)
-export const deletePositionRoleMapping = (id) => http.delete(`/admin/iam/position-role-mappings/${id}`)
-
 export const dictTree = () => http.get('/admin/dicts/tree')
 export const dictListByCode = (dictCode) => http.get(`/admin/dicts/list?${qs({ dictCode })}`)
 // 业务页面只读取已配置字典，统一复用无需字典管理权限的只读接口。
@@ -421,14 +416,14 @@ export const configureCombinedOffering = (id, administrativeClassIds) =>
 export const syncCombinedOffering = (id) => http.post(`/admin/education/course-offerings/${id}/combined-classes/sync`)
 export const deleteCombinedOffering = (id) => http.delete(`/admin/education/course-offerings/${id}/combined-classes`)
 export const listClassrooms = (params) => http.get(`/admin/education/classrooms?${qs(params)}`)
-export const listScheduleDimensionOptions = (semesterCode) =>
-  http.get(`/admin/education/schedule-dimension-options?${qs({ semesterCode })}`)
+export const listScheduleDimensionOptions = (semesterCode, organizationId) =>
+  http.get(`/admin/education/schedule-dimension-options?${qs({ semesterCode, organizationId })}`)
 export const listScheduleStudentOptions = (params) =>
   http.get(`/admin/education/schedule-student-options?${qs(params)}`)
 export const createClassroom = (payload) => http.post('/admin/education/classrooms', payload)
 export const updateClassroom = (id, payload) => http.put(`/admin/education/classrooms/${id}`, payload)
 export const deleteClassroom = (id) => http.delete(`/admin/education/classrooms/${id}`)
-export const listClassSchedule = (semesterCode, dimension = 'ALL', targetId) => http.get(`/admin/education/schedules?${qs({ semesterCode, dimension, targetId })}`)
+export const listClassSchedule = (semesterCode, dimension = 'ALL', targetId, organizationId) => http.get(`/admin/education/schedules?${qs({ semesterCode, dimension, targetId, organizationId })}`)
 export const createScheduleEntry = (payload) => http.post('/admin/education/schedules', payload)
 export const updateScheduleEntry = (id, payload) => http.put(`/admin/education/schedules/${id}`, payload)
 export const deleteScheduleEntry = (id) => http.delete(`/admin/education/schedules/${id}`)
@@ -438,7 +433,7 @@ export const importClassSchedule = (semesterCode, file, dryRun = false) => {
   data.append('file', file)
   return http.upload(`/admin/education/schedules/import?${qs({ semesterCode, dryRun })}`, data)
 }
-export const exportClassSchedule = (semesterCode, dimension = 'ALL', targetId) => http.download(`/admin/education/schedules/export?${qs({ semesterCode, dimension, targetId })}`)
+export const exportClassSchedule = (semesterCode, dimension = 'ALL', targetId, organizationId) => http.download(`/admin/education/schedules/export?${qs({ semesterCode, dimension, targetId, organizationId })}`)
 export const getScheduleQualityAnalysis = (semesterCode) => http.get(`/admin/education/schedules/quality-analysis?${qs({ semesterCode })}`)
 export const listCourseAdjustmentIncidents = (params) => http.get(`/admin/education/course-adjustment-incidents?${qs(params)}`)
 export const retryCourseAdjustmentIncident = (id) => http.post(`/admin/education/course-adjustment-incidents/${id}/retry`)
@@ -462,7 +457,8 @@ export const createAcademicTerm = (payload) => http.post('/admin/education/terms
 export const updateAcademicTerm = (id, payload) => http.put(`/admin/education/terms/${id}`, payload)
 export const academicTermArchiveReadiness = (id) => http.get(`/admin/education/terms/${id}/archive-readiness`)
 export const archiveAcademicTerm = (id) => http.post(`/admin/education/terms/${id}/archive`)
-export const listAcademicCalendarDays = (termId) => http.get(`/admin/education/calendar-days?${qs({ termId })}`)
+export const listAcademicCalendarDays = (termId, organizationId) => http.get(`/admin/education/calendar-days?${qs({ termId, organizationId })}`)
+export const importAcademicCalendarDays = (payload) => http.post('/admin/education/calendar-days/import', payload)
 export const createAcademicCalendarDay = (payload) => http.post('/admin/education/calendar-days', payload)
 export const updateAcademicCalendarDay = (id, payload) => http.put(`/admin/education/calendar-days/${id}`, payload)
 export const deleteAcademicCalendarDay = (id) => http.delete(`/admin/education/calendar-days/${id}`)
@@ -523,7 +519,7 @@ export const reviewAdmissionCandidate = (id, payload) => http.post(`/admin/educa
 export const enrollAdmissionCandidate = (id, payload) => http.post(`/admin/education/admissions/${id}/enroll`, payload)
 export const updateAdmissionRegistration = (id, payload) => http.post(`/admin/education/admissions/${id}/registration`, payload)
 export const downloadAdmissionImportTemplate = () => http.download('/admin/education/admissions/import-template')
-export const importAdmissionCandidates = (file, dryRun = true) => { const data = new FormData(); data.append('file', file); return http.upload(`/admin/education/admissions/import?${qs({ dryRun })}`, data) }
+export const importAdmissionCandidates = (file, dryRun = true, organizationId) => { const data = new FormData(); data.append('file', file); return http.upload(`/admin/education/admissions/import?${qs({ dryRun, organizationId })}`, data) }
 export const batchAssignAdmissionClasses = payload => http.post('/admin/education/admissions/batch/class-assignment', payload)
 export const batchReviewAdmissions = payload => http.post('/admin/education/admissions/batch/review', payload)
 export const batchEnrollAdmissions = payload => http.post('/admin/education/admissions/batch/enroll', payload)

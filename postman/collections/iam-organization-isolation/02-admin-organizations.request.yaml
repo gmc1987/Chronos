@@ -1,0 +1,23 @@
+$kind: http-request
+name: Admin sees all organizations
+order: 2000
+method: GET
+url: '{{base_url}}/admin/organizations/list?page=0&size=100'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{admin_token}}'
+queryParams:
+  - key: page
+    value: '0'
+  - key: size
+    value: '100'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('admin remains unrestricted', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.data.content.length).to.be.above(1);
+      });

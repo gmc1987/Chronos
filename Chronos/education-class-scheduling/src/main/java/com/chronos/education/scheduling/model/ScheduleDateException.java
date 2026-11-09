@@ -18,7 +18,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_schedule_date_exception")
 public class ScheduleDateException extends BaseEntity {
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "source_entry_id", length = 64, nullable = false)

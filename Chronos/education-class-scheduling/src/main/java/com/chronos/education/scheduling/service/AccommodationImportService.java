@@ -44,10 +44,10 @@ public class AccommodationImportService {
 	}
 
 	@Transactional
-	public ImportResult importFile(MultipartFile file, boolean dryRun) {
+	public ImportResult importFile(MultipartFile file, boolean dryRun, String organizationId) {
 		if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择宿舍资源 Excel 文件");
 		try {
-			return importBytes(file.getBytes(), dryRun);
+			return importBytes(file.getBytes(), dryRun, organizationId);
 		} catch (IOException exception) {
 			throw new IllegalArgumentException("无法读取宿舍资源 Excel 文件", exception);
 		}
@@ -55,6 +55,10 @@ public class AccommodationImportService {
 
 	@Transactional
 	public ImportResult importBytes(byte[] content, boolean dryRun) {
+		throw new IllegalArgumentException("导入宿舍资源必须指定所属机构");
+	}
+	@Transactional
+	public ImportResult importBytes(byte[] content, boolean dryRun, String organizationId) {
 		List<ResourceRow> rows = new ArrayList<>();
 		List<String> errors = new ArrayList<>();
 		Set<String> keys = new HashSet<>();
@@ -77,13 +81,18 @@ public class AccommodationImportService {
 			throw new IllegalArgumentException("无法读取宿舍资源 Excel 文件", exception);
 		}
 		if (!errors.isEmpty()) return new ImportResult(rows.size() + errors.size(), 0, errors);
-		if (!dryRun) rows.forEach(this::upsert);
+		if (!dryRun) rows.forEach(row -> upsert(row, organizationId));
 		return new ImportResult(rows.size(), rows.size(), List.of());
 	}
 
 	/** 供智能体在用户确认后维护结构化宿舍资源；与 Excel 导入使用同一幂等规则。 */
 	@Transactional
 	public int maintainRows(List<?> values, boolean dryRun) {
+		throw new IllegalArgumentException("智能体维护宿舍资源必须指定所属机构");
+	}
+
+	@Transactional
+	public int maintainRows(List<?> values, boolean dryRun, String organizationId) {
 		if (values == null || values.isEmpty()) throw new IllegalArgumentException("宿舍资源候选不能为空");
 		List<ResourceRow> rows = new ArrayList<>();
 		for (Object item : values) {
@@ -94,16 +103,17 @@ public class AccommodationImportService {
 					required(text(value.get("roomNo")), "房间号"), number(text(value.get("floorNo")), "楼层"),
 					number(text(value.get("bedCount")), "床位数")));
 		}
-		if (!dryRun) rows.forEach(this::upsert);
+		if (!dryRun) rows.forEach(row -> upsert(row, organizationId));
 		return rows.size();
 	}
 
-	private void upsert(ResourceRow row) {
-		String buildingId = jdbc.query("select id from edu_dorm_building where building_code = ?", rs -> rs.next() ? rs.getString(1) : null, row.buildingCode);
+	private void upsert(ResourceRow row, String organizationId) {
+		if (organizationId == null || organizationId.isBlank()) throw new IllegalArgumentException("所属机构不能为空");
+		String buildingId = jdbc.query("select id from edu_dorm_building where organization_id=? and building_code = ?", rs -> rs.next() ? rs.getString(1) : null, organizationId, row.buildingCode);
 		if (buildingId == null) {
 			buildingId = UUID.randomUUID().toString();
-			jdbc.update("insert into edu_dorm_building(id, building_code, building_name, gender_policy, status) values (?, ?, ?, ?, 'ACTIVE')",
-					buildingId, row.buildingCode, row.buildingName, row.genderPolicy);
+			jdbc.update("insert into edu_dorm_building(id, organization_id, building_code, building_name, gender_policy, status) values (?, ?, ?, ?, ?, 'ACTIVE')",
+					buildingId, organizationId, row.buildingCode, row.buildingName, row.genderPolicy);
 		}
 		String finalBuildingId = buildingId;
 		String roomId = jdbc.query("select id from edu_dorm_room where building_id = ? and room_no = ?", rs -> rs.next() ? rs.getString(1) : null,

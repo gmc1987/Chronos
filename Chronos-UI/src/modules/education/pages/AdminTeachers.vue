@@ -1,4 +1,10 @@
 <template>
+  <el-select v-model="employeeOrganizationId" filterable clearable
+    placeholder="选择新建教师档案的所属机构" style="width: 320px; margin-bottom: 10px"
+    @change="crudRevision++">
+    <el-option v-for="item in organizationOptions" :key="item.id"
+      :label="item.organizationName" :value="item.id" />
+  </el-select>
   <AcademicCrudPage
     :key="crudRevision"
     title="教师档案"
@@ -122,7 +128,10 @@ const fields = [
     max: 10
   }
 ]
-const lookups = [{ key: 'employees', loader: employees, labelProp: 'employeeName' }]
+const employeeOrganizationId = ref('')
+const lookups = [{ key: 'employees', loader: () => employeeOrganizationId.value
+  ? employees({ organizationId: employeeOrganizationId.value })
+  : Promise.resolve({ data: [] }), labelProp: 'employeeName' }]
 const defaults = {
   maxWeeklyLessons: 20,
   maxDailyLessons: 6,

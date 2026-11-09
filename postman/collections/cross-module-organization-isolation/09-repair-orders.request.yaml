@@ -1,0 +1,18 @@
+$kind: http-request
+name: Repair orders stay inside school
+order: 9000
+method: GET
+url: '{{base_url}}/admin/facility/repair-orders?page=0&size=100'
+queryParams:
+  - key: page
+    value: '0'
+  - key: size
+    value: '100'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('repair orders are limited to the allowed school', () => {
+        pm.response.to.have.status(200);
+        body.data.content.forEach(row => pm.expect(row.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

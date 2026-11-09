@@ -1,0 +1,31 @@
+$kind: http-request
+name: Operation agent asks for missing academic term fields
+order: 7000
+method: POST
+url: '{{base_url}}/agent/operations/conversation'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request":"请创建 2096-2097 学年第二学期",
+      "organizationId":"{{hv_org_id}}",
+      "candidateOnly":false
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const required = body.data.draft.requiredInputs.map(item => item.key);
+      const step = body.data.draft.plan.steps[0];
+      pm.test('natural language selects term creation and asks only for missing fields', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data.status).to.eql('NEED_INPUT');
+        pm.expect(body.data.resolution.creationRequested).to.eql(true);
+        pm.expect(step.toolCode).to.eql('academic.term.create');
+        pm.expect(step.toolConfig.localTermCode).to.eql('2096-2097-2');
+        pm.expect(required).to.eql(['startDate', 'endDate', 'weekCount']);
+      });

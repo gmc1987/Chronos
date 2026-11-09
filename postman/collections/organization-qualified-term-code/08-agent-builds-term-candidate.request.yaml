@@ -1,0 +1,40 @@
+$kind: http-request
+name: Operation agent builds academic term candidate from natural language
+order: 8000
+method: POST
+url: '{{base_url}}/agent/operations/conversation'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request":"创建 2096-2097 学年第一学期，从 2096-09-01 到 2097-01-20，共 20 个教学周",
+      "organizationId":"{{hv_org_id}}",
+      "candidateOnly":true
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const step = body.data.draft.plan.steps.find(item => item.toolCode === 'academic.term.create');
+      pm.test('complete natural language creates an executable candidate run', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data.status).to.eql('STARTED');
+        pm.expect(body.data.resolution.creationRequested).to.eql(true);
+        pm.expect(step).to.be.an('object');
+        pm.expect(step.toolConfig).to.include({
+          organizationId: pm.collectionVariables.get('hv_org_id'),
+          localTermCode: '2096-2097-1',
+          academicYear: '2096-2097',
+          termNo: 1,
+          startDate: '2096-09-01',
+          endDate: '2097-01-20',
+          weekCount: 20,
+          dryRun: true
+        });
+        pm.expect(body.data.run.run.id).to.be.a('string').and.not.empty;
+      });
+      pm.collectionVariables.set('term_candidate_run_id', body.data.run.run.id);

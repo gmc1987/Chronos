@@ -18,12 +18,15 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.security.DirectoryDataScopeGuard;
 import com.chronos.Idao.IEmployeeAssignmentRepository;
 import com.chronos.Idao.IOrganizationUnitRepository;
 import com.chronos.commons.utils.DocToMarkdownUtil;
@@ -79,6 +82,8 @@ public class PublicationServiceImpl implements IPublicationService {
 	private final IEmployeeAssignmentRepository assignments;
 	private final IOrganizationUnitRepository units;
 	private final IDataScopeService dataScopes;
+	private final IOrganizationRepository organizations;
+	private final DirectoryDataScopeGuard organizationScope;
 	private final IAuditLogService auditLogs;
 	private final WorkflowService workflows;
 	private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
@@ -99,6 +104,8 @@ public class PublicationServiceImpl implements IPublicationService {
 			IEmployeeAssignmentRepository assignments,
 			IOrganizationUnitRepository units,
 			IDataScopeService dataScopes,
+			IOrganizationRepository organizations,
+			DirectoryDataScopeGuard organizationScope,
 			IAuditLogService auditLogs,
 			WorkflowService workflows,
 			PublicationFileStorage fileStorage,
@@ -116,6 +123,8 @@ public class PublicationServiceImpl implements IPublicationService {
 		this.assignments = assignments;
 		this.units = units;
 		this.dataScopes = dataScopes;
+		this.organizations = organizations;
+		this.organizationScope = organizationScope;
 		this.auditLogs = auditLogs;
 		this.workflows = workflows;
 		this.fileStorage = fileStorage;
@@ -170,7 +179,21 @@ public class PublicationServiceImpl implements IPublicationService {
 		Publication value = new Publication();
 		apply(value, command);
 		AdminUser creator = requiredUser(username);
-		value.setOwnerOrganizationId(creator.getOrganizationId());
+		String organizationId = command.ownerOrganizationId();
+		if (hasText(organizationId)) {
+			organizationId = organizationId.trim();
+			var actor = new UsernamePasswordAuthenticationToken(username, "", List.of());
+			organizationScope.requireOrganization(actor, organizationId);
+			if (organizations.findById(organizationId).filter(org -> Integer.valueOf(1).equals(org.getStatus())).isEmpty()) {
+				throw new IllegalArgumentException("通知公告所属机构不存在或已停用");
+			}
+		} else {
+			organizationId = creator.getOrganizationId();
+		}
+		if (!hasText(organizationId)) {
+			throw new IllegalArgumentException("请选择通知公告所属机构");
+		}
+		value.setOwnerOrganizationId(organizationId);
 		value.setStatus("DRAFT");
 		value = publications.save(value);
 		replaceAudiences(value.getId(), command.audiences());
@@ -917,7 +940,8 @@ public class PublicationServiceImpl implements IPublicationService {
 				administrator ? reads.countByPublicationId(value.getId()) : 0,
 				administrator ? recipientCount(value) : 0,
 				audienceViews,
-				attachmentViews);
+				attachmentViews,
+				administrator ? value.getOwnerOrganizationId() : null);
 	}
 
 	private void assertPortalAccess(Publication value, String username) {

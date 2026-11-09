@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FacilityAssetRepository extends JpaRepository<FacilityAsset, String> {
 	List<FacilityAsset> findAllByOrderByAssetCode();
+	List<FacilityAsset> findByOrganizationIdInOrderByAssetCode(java.util.Collection<String> organizationIds);
 	Optional<FacilityAsset> findByAssetCode(String assetCode);
 	Optional<FacilityAsset> findByQrToken(String qrToken);
 }

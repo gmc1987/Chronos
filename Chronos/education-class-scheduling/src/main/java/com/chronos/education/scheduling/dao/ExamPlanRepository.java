@@ -8,4 +8,6 @@ import com.chronos.education.scheduling.model.ExamPlan;
 
 public interface ExamPlanRepository extends JpaRepository<ExamPlan, String> {
 	List<ExamPlan> findBySemesterCodeOrderByStartDateAsc(String semesterCode);
+	List<ExamPlan> findBySemesterCodeAndOrganizationIdInOrderByStartDateAsc(
+			String semesterCode, java.util.Collection<String> organizationIds);
 }

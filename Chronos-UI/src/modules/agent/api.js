@@ -1,6 +1,7 @@
 import { http } from '../../api/http'
 
 export const fetchOperationAgentTools = () => http.get('/agent/operations/tools')
+export const fetchOperationAgentSkills = () => http.get('/agent/operations/skills')
 export const fetchOperationAgentPlans = () => http.get('/agent/operations/plans')
 export const draftOperationAgentPlan = payload => http.post('/agent/operations/plans/draft', payload)
 export const converseWithOperationAgent = payload => http.post('/agent/operations/conversation', payload)
@@ -8,6 +9,11 @@ export const uploadOperationAgentAdmissionRoster = file => {
   const data = new FormData()
   data.append('file', file)
   return http.upload('/agent/operations/files/admission-rosters', data)
+}
+export const uploadOperationAgentBusinessAttachment = file => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload('/agent/operations/files/business-attachments', data)
 }
 export const createOperationAgentPlan = payload => http.post('/agent/operations/plans', payload)
 export const updateOperationAgentPlan = (id, payload) => http.put(`/agent/operations/plans/${id}`, payload)
@@ -19,6 +25,8 @@ export const fetchOperationAgentEvents = (id, after = 0) => http.get(`/agent/ope
 export const pauseOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/pause`)
 export const resumeOperationAgentRun = id => http.post(`/agent/operations/runs/${id}/resume`)
 export const approveOperationAgentStep = (id, comment = '') => http.post(`/agent/operations/runs/${id}/approve`, { comment })
+export const decideOperationAgentCheckpoint = (id, stepOrder, payload) =>
+  http.post(`/agent/operations/runs/${id}/steps/${stepOrder}/decisions`, payload)
 export const refreshOperationAgentApprovalEvidence = id => http.post(`/agent/operations/runs/${id}/approval-evidence/refresh`)
 export const rejectOperationAgentStep = (id, comment) => http.post(`/agent/operations/runs/${id}/reject`, { comment })
 export const addOperationAgentCondition = (id, conditionText) => http.post(`/agent/operations/runs/${id}/conditions`, { conditionText })

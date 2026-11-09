@@ -25,32 +25,38 @@ import com.chronos.knowledge.service.KnowledgeIndexCoordinator;
 import com.chronos.knowledge.service.KnowledgeService.DocumentCommand;
 import com.chronos.knowledge.service.KnowledgeService.AssistantAnswer;
 import com.chronos.knowledge.service.KnowledgeService.SearchResult;
+import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
 @PreAuthorize("@iamAuthorization.any(authentication,'education:ai:knowledge:view','education:ai:knowledge:manage')")
 public class KnowledgeController {
 	private final KnowledgeService service;
 	private final KnowledgeIndexCoordinator indexes;
+	private final DirectoryDataScopeGuard dataScopes;
 
-	public KnowledgeController(KnowledgeService service, KnowledgeIndexCoordinator indexes) {
+	public KnowledgeController(KnowledgeService service, KnowledgeIndexCoordinator indexes, DirectoryDataScopeGuard dataScopes) {
 		this.service = service;
 		this.indexes = indexes;
+		this.dataScopes = dataScopes;
 	}
 
 	@GetMapping("/admin/knowledge-bases")
 	public ResultData<?> knowledgeBases(
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
+			@RequestParam(required = false) Integer size, Authentication authentication) {
+		var visible = dataScopes.visibleOrganizationIds(authentication);
 		return page == null && size == null
-				? ok(service.knowledgeBases())
+				? ok(service.knowledgeBases(visible))
 				: ok(PageView.from(service.knowledgeBases(
+						visible,
 						page == null ? 0 : page,
 						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/knowledge-bases")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
-	public ResultData<KnowledgeBase> createKnowledgeBase(@RequestBody KnowledgeBase command) {
+	public ResultData<KnowledgeBase> createKnowledgeBase(@RequestBody KnowledgeBase command, Authentication authentication) {
+		command.setOrganizationId(resolveOrganization(authentication, command.getOrganizationId()));
 		return ok(service.saveKnowledgeBase(null, command));
 	}
 
@@ -58,13 +64,15 @@ public class KnowledgeController {
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
 	public ResultData<KnowledgeBase> updateKnowledgeBase(
 			@PathVariable String id,
-			@RequestBody KnowledgeBase command) {
+			@RequestBody KnowledgeBase command, Authentication authentication) {
+		requireBase(authentication, id); command.setOrganizationId(service.knowledgeBaseOrganization(id));
 		return ok(service.saveKnowledgeBase(id, command));
 	}
 
 	@DeleteMapping("/admin/knowledge-bases/{id}")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
-	public ResultData<Void> deleteKnowledgeBase(@PathVariable String id) {
+	public ResultData<Void> deleteKnowledgeBase(@PathVariable String id, Authentication authentication) {
+		requireBase(authentication, id);
 		service.deleteKnowledgeBase(id);
 		return ok(null);
 	}
@@ -73,7 +81,8 @@ public class KnowledgeController {
 	public ResultData<?> documents(
 			@RequestParam String knowledgeBaseId,
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
+			@RequestParam(required = false) Integer size, Authentication authentication) {
+		requireBase(authentication, knowledgeBaseId);
 		return page == null && size == null
 				? ok(service.documents(knowledgeBaseId))
 				: ok(PageView.from(service.documents(
@@ -84,7 +93,8 @@ public class KnowledgeController {
 
 	@PostMapping("/admin/knowledge-documents/text")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
-	public ResultData<KnowledgeDocument> createTextDocument(@RequestBody DocumentCommand command) {
+	public ResultData<KnowledgeDocument> createTextDocument(@RequestBody DocumentCommand command, Authentication authentication) {
+		requireBase(authentication, command.knowledgeBaseId());
 		return ok(service.createTextDocument(command));
 	}
 
@@ -93,7 +103,8 @@ public class KnowledgeController {
 	public ResultData<KnowledgeDocument> importDocument(
 			@RequestParam String knowledgeBaseId,
 			@RequestParam(required = false) String title,
-			@RequestPart("file") MultipartFile file) throws IOException {
+			@RequestPart("file") MultipartFile file, Authentication authentication) throws IOException {
+		requireBase(authentication, knowledgeBaseId);
 		return ok(service.importDocument(knowledgeBaseId, title, file));
 	}
 
@@ -102,12 +113,14 @@ public class KnowledgeController {
 	public ResultData<KnowledgeDocument> rebuildDocument(
 			@PathVariable String id,
 			Authentication authentication) {
+		dataScopes.requireOrganization(authentication, service.documentOrganization(id));
 		return ok(service.rebuildDocument(id, authentication.getName()));
 	}
 
 	@DeleteMapping("/admin/knowledge-documents/{id}")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:delete')")
-	public ResultData<Void> deleteDocument(@PathVariable String id) {
+	public ResultData<Void> deleteDocument(@PathVariable String id, Authentication authentication) {
+		dataScopes.requireOrganization(authentication, service.documentOrganization(id));
 		service.deleteDocument(id);
 		return ok(null);
 	}
@@ -116,18 +129,21 @@ public class KnowledgeController {
 	public ResultData<List<SearchResult>> search(
 			@RequestParam String knowledgeBaseId,
 			@RequestParam String keyword,
-			@RequestParam(required = false) Integer limit) {
+			@RequestParam(required = false) Integer limit, Authentication authentication) {
+		requireBase(authentication, knowledgeBaseId);
 		return ok(service.search(knowledgeBaseId, keyword, limit));
 	}
 
 	@PostMapping("/admin/knowledge-bases/{id}/rebuild-index")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
 	public ResultData<KnowledgeBase> rebuildIndex(@PathVariable String id, Authentication authentication) {
+		requireBase(authentication, id);
 		return ok(service.rebuildBaseIndex(id, authentication.getName()));
 	}
 
 	@GetMapping("/admin/knowledge-bases/{id}/index-consistency")
-	public ResultData<KnowledgeIndexCoordinator.IndexConsistency> indexConsistency(@PathVariable String id) {
+	public ResultData<KnowledgeIndexCoordinator.IndexConsistency> indexConsistency(@PathVariable String id, Authentication authentication) {
+		requireBase(authentication, id);
 		return ok(indexes.consistency(id));
 	}
 
@@ -135,7 +151,8 @@ public class KnowledgeController {
 	public ResultData<PageView<com.chronos.knowledge.model.KnowledgeIndexTask>> indexTasks(
 			@RequestParam String knowledgeBaseId,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
+			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
+		requireBase(authentication, knowledgeBaseId);
 		return ok(PageView.from(indexes.tasks(knowledgeBaseId, page, size)));
 	}
 
@@ -150,10 +167,20 @@ public class KnowledgeController {
 	public ResultData<AssistantAnswer> ask(
 			@RequestBody AssistantCommand command,
 			Authentication authentication) {
+		requireBase(authentication, command.knowledgeBaseId());
 		return ok(service.ask(
 				command.knowledgeBaseId(),
 				command.question(),
 				authentication));
+	}
+	private void requireBase(Authentication authentication, String id) {
+		dataScopes.requireOrganization(authentication, service.knowledgeBaseOrganization(id));
+	}
+	private String resolveOrganization(Authentication authentication, String requested) {
+		if (requested != null && !requested.isBlank()) { dataScopes.requireOrganization(authentication, requested); return requested; }
+		var visible = dataScopes.visibleOrganizationIds(authentication);
+		if (visible != null && visible.size() == 1) return visible.iterator().next();
+		throw new IllegalArgumentException("请选择知识库所属机构");
 	}
 
 	public record AssistantCommand(

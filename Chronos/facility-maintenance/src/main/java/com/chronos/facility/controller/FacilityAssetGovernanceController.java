@@ -21,37 +21,45 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
 @RequestMapping("/admin/facility/governance")
 public class FacilityAssetGovernanceController {
 	private final FacilityAssetGovernanceService service;
+	private final DirectoryDataScopeGuard dataScopes;
 
-	public FacilityAssetGovernanceController(FacilityAssetGovernanceService service) {
+	public FacilityAssetGovernanceController(FacilityAssetGovernanceService service, DirectoryDataScopeGuard dataScopes) {
 		this.service = service;
+		this.dataScopes = dataScopes;
 	}
 
 	@GetMapping("/assets")
 	@PreAuthorize("hasAuthority('facility:asset:view')")
-	public ResultData<List<FacilityAsset>> assets() {
-		return ok(service.assets());
+	public ResultData<List<FacilityAsset>> assets(Authentication authentication) {
+		return ok(service.assets(dataScopes.visibleOrganizationIds(authentication)));
 	}
 
 	@GetMapping("/assets/by-qr")
 	@PreAuthorize("hasAuthority('facility:asset:view')")
-	public ResultData<FacilityAsset> assetByQr(@RequestParam String token) {
-		return ok(service.assetByQr(token));
+	public ResultData<FacilityAsset> assetByQr(@RequestParam String token, Authentication authentication) {
+		FacilityAsset value = service.assetByQr(token);
+		dataScopes.requireOrganization(authentication, value.getOrganizationId());
+		return ok(value);
 	}
 
 	@PostMapping("/assets")
 	@PreAuthorize("hasAuthority('facility:asset:manage')")
-	public ResultData<FacilityAsset> createAsset(@RequestBody AssetCommand command) {
+	public ResultData<FacilityAsset> createAsset(@RequestBody AssetCommand command, Authentication authentication) {
+		dataScopes.requireOrganization(authentication, command.organizationId());
 		return ok(service.saveAsset(null, command));
 	}
 
 	@PutMapping("/assets/{id}")
 	@PreAuthorize("hasAuthority('facility:asset:manage')")
-	public ResultData<FacilityAsset> updateAsset(@PathVariable String id, @RequestBody AssetCommand command) {
+	public ResultData<FacilityAsset> updateAsset(@PathVariable String id, @RequestBody AssetCommand command, Authentication authentication) {
+		dataScopes.requireOrganization(authentication, service.assetOrganization(id));
 		return ok(service.saveAsset(id, command));
 	}
 

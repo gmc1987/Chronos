@@ -175,6 +175,12 @@ public class ClassSchedulingService {
 			String semesterCode,
 			String dimension,
 			String targetId) {
+		return schedule(semesterCode, dimension, targetId, null);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ScheduleEntryView> schedule(
+			String semesterCode, String dimension, String targetId, Set<String> campusIds) {
 		String normalizedSemester = required(semesterCode, "学期编码");
 		String normalizedDimension = dimension == null || dimension.isBlank()
 				? "ALL"
@@ -214,6 +220,10 @@ public class ClassSchedulingService {
 
 		return semesterEntries.stream()
 				.filter(filter)
+				.filter(item -> {
+					CourseOffering offering = offeringById.get(item.getOfferingId());
+					return campusIds == null || (offering != null && campusIds.contains(offering.getCampusId()));
+				})
 				.filter(item -> !"CANCELLED".equals(item.getStatus()))
 				.map(item -> view(item, offeringById, classroomById))
 				.toList();

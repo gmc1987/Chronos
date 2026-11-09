@@ -1,0 +1,19 @@
+$kind: http-request
+name: Scoped manager sees only allowed organization
+order: 4000
+method: GET
+url: '{{base_url}}/admin/organizations/list?page=0&size=100'
+queryParams:
+  - key: page
+    value: '0'
+  - key: size
+    value: '100'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('organization list is scoped', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.data.content).to.have.length(1);
+        pm.expect(body.data.content[0].id).to.eql(pm.collectionVariables.get('allowed_org_id'));
+      });

@@ -1,0 +1,24 @@
+$kind: http-request
+name: List terms preserves both code forms
+order: 5000
+method: GET
+url: '{{base_url}}/admin/education/terms?page=0&size=100'
+queryParams:
+  - key: page
+    value: '0'
+  - key: size
+    value: '100'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const rows = body.data.content.filter(row => row.localTermCode === pm.collectionVariables.get('local_term_code'));
+      const codes = rows.map(row => row.termCode).sort();
+      pm.test('term query returns two organization-qualified rows', () => {
+        pm.response.to.have.status(200);
+        pm.expect(rows).to.have.length(2);
+        pm.expect(codes).to.eql([
+          `${pm.collectionVariables.get('hv_org_code')}:${pm.collectionVariables.get('local_term_code')}`,
+          `${pm.collectionVariables.get('ug_org_code')}:${pm.collectionVariables.get('local_term_code')}`
+        ].sort());
+      });

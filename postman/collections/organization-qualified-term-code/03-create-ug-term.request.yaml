@@ -1,0 +1,35 @@
+$kind: http-request
+name: Create undergraduate term with same local code
+order: 3000
+method: POST
+url: '{{base_url}}/admin/education/terms'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "organizationId":"{{ug_org_id}}",
+      "localTermCode":"{{local_term_code}}",
+      "termName":"组织学期编码验收-本科",
+      "academicYear":"2099-2100",
+      "termNo":1,
+      "startDate":"2099-09-01",
+      "endDate":"2100-01-20",
+      "weekCount":20,
+      "currentTerm":false
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const expected = `${pm.collectionVariables.get('ug_org_code')}:${pm.collectionVariables.get('local_term_code')}`;
+      pm.test('another organization can reuse the same local term code', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data.localTermCode).to.eql(pm.collectionVariables.get('local_term_code'));
+        pm.expect(body.data.termCode).to.eql(expected);
+        pm.expect(body.data.organizationId).to.eql(pm.collectionVariables.get('ug_org_id'));
+      });
+      pm.collectionVariables.set('ug_term_id', body.data.id);

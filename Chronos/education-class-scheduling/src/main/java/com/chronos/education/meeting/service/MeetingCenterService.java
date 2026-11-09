@@ -33,6 +33,8 @@ import com.chronos.education.meeting.model.MeetingView;
 import com.chronos.model.pojo.AdminUser;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.file.service.ManagedFileService;
+import com.chronos.security.DirectoryDataScopeGuard;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -55,10 +57,16 @@ public class MeetingCenterService {
 	private final CalendarIntegrationService calendar;
 	private final IAuditLogService auditLogs;
 	private final EntityManager entityManager;
+	private final DirectoryDataScopeGuard dataScopes;
 
 	@Transactional(readOnly = true)
 	public List<MeetingRoom> rooms() {
 		return rooms.findAllByOrderByRoomNameAsc();
+	}
+	@Transactional(readOnly = true)
+	public List<MeetingRoom> rooms(String username) {
+		var visible = dataScopes.visibleOrganizationIds(actor(username));
+		return visible == null ? rooms() : rooms.findByCampusIdInOrderByRoomNameAsc(visible);
 	}
 
 	@Transactional(readOnly = true)
@@ -71,6 +79,16 @@ public class MeetingCenterService {
 						blank(user.getDisplayName())
 								? user.getUsername() : user.getDisplayName()))
 				.toList();
+	}
+	@Transactional(readOnly = true)
+	public List<MeetingCommands.ParticipantOption> participantOptions(String keyword, String username) {
+		var visible = dataScopes.visibleOrganizationIds(actor(username));
+		if (visible == null) return participantOptions(keyword);
+		String normalized = keyword == null ? "" : keyword.trim();
+		return users.searchActiveMeetingUsers(normalized, PageRequest.of(0, 100)).stream()
+				.filter(user -> user.getEmployeeId() != null && canAccessEmployee(username, user.getEmployeeId()))
+				.map(user -> new MeetingCommands.ParticipantOption(user.getUsername(),
+						blank(user.getDisplayName()) ? user.getUsername() : user.getDisplayName())).toList();
 	}
 
 	@Transactional
@@ -100,6 +118,11 @@ public class MeetingCenterService {
 
 	@Transactional
 	public MeetingRoom saveRoom(String id, MeetingCommands.Room command) {
+		return saveRoom(id, command, null);
+	}
+
+	@Transactional
+	public MeetingRoom saveRoom(String id, MeetingCommands.Room command, String username) {
 		if (command == null || blank(command.roomCode()) || blank(command.roomName())
 				|| command.capacity() == null || command.capacity() <= 0) {
 			throw new IllegalArgumentException("请填写会议室编码、名称和有效容量");
@@ -116,12 +139,24 @@ public class MeetingCenterService {
 			throw new IllegalArgumentException("会议室编码已存在");
 		}
 		MeetingRoom value = id == null ? new MeetingRoom() : requireRoom(id);
+		String campusId = blank(command.campusId()) && id != null ? value.getCampusId() : trim(command.campusId());
+		if (username != null) {
+			var authentication = actor(username);
+			if (id != null) {
+				if (blank(value.getCampusId())) {
+					dataScopes.requireFullAccess(authentication);
+				} else {
+					dataScopes.requireOrganization(authentication, value.getCampusId());
+				}
+			}
+			dataScopes.requireOrganization(authentication, campusId);
+		}
 		if (id != null && !Objects.equals(value.getRecordVersion(), command.recordVersion())) {
 			throw new IllegalStateException("会议室已被其他用户更新，请刷新后重试");
 		}
 		value.setRoomCode(command.roomCode().trim());
 		value.setRoomName(command.roomName().trim());
-		value.setCampusId(trim(command.campusId()));
+		value.setCampusId(campusId);
 		value.setBuildingName(trim(command.buildingName()));
 		value.setLocation(trim(command.location()));
 		value.setCapacity(command.capacity());
@@ -135,7 +170,12 @@ public class MeetingCenterService {
 
 	@Transactional
 	public void deleteRoom(String id) {
+		deleteRoom(id, null);
+	}
+	@Transactional
+	public void deleteRoom(String id, String username) {
 		MeetingRoom room = requireRoom(id);
+		if (username != null) dataScopes.requireOrganization(actor(username), room.getCampusId());
 		if (meetings.existsByRoomId(id)) {
 			throw new IllegalStateException("会议室已有预约历史，请停用而不是删除");
 		}
@@ -147,6 +187,12 @@ public class MeetingCenterService {
 		return meetings.findAllByOrderByStartTimeDesc().stream()
 				.map(this::view)
 				.toList();
+	}
+	@Transactional(readOnly = true)
+	public List<MeetingView> allMeetings(String username) {
+		var visible = dataScopes.visibleOrganizationIds(actor(username));
+		return (visible == null ? meetings.findAllByOrderByStartTimeDesc()
+				: meetings.findByOrganizationIdInOrderByStartTimeDesc(visible)).stream().map(this::view).toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -163,6 +209,15 @@ public class MeetingCenterService {
 				normalizeSearch(status).toUpperCase(),
 				PageRequest.of(safePage, safeSize))
 				.map(this::view);
+	}
+	@Transactional(readOnly = true)
+	public Page<MeetingView> meetingPage(String keyword, String status, int page, int size, String username) {
+		int safePage = Math.max(page, 0);
+		int safeSize = Math.min(Math.max(size, 1), 200);
+		var visible = dataScopes.visibleOrganizationIds(actor(username));
+		if (visible == null) return meetingPage(keyword, status, page, size);
+		return meetings.searchInOrganizations(visible, normalizeSearch(keyword),
+				normalizeSearch(status).toUpperCase(), PageRequest.of(safePage, safeSize)).map(this::view);
 	}
 
 	@Transactional(readOnly = true)
@@ -184,6 +239,16 @@ public class MeetingCenterService {
 			String username) {
 		validateMeeting(command);
 		Meeting value = id == null ? new Meeting() : requireMeeting(id);
+		String roomOrganization = blank(command.roomId()) ? null : requireRoom(command.roomId()).getCampusId();
+		String organizationId = id == null ? roomOrganization : value.getOrganizationId();
+		if (id == null && organizationId == null) {
+			organizationId = blank(command.organizationId()) ? singleOrganization(username) : command.organizationId();
+		}
+		dataScopes.requireOrganization(actor(username), organizationId);
+		if (!blank(command.roomId()) && !Objects.equals(organizationId, roomOrganization)) {
+			throw new IllegalArgumentException("会议室与会议所属机构不一致");
+		}
+		value.setOrganizationId(organizationId);
 		if (id != null && !value.getOrganizerUsername().equals(username)) {
 			throw new AccessDeniedException("只有会议组织者可以修改会议");
 		}
@@ -221,6 +286,19 @@ public class MeetingCenterService {
 		}
 		auditLogs.log("MEETING_SAVE", "MEETING", value.getId());
 		return view(value);
+	}
+
+	private UsernamePasswordAuthenticationToken actor(String username) {
+		return new UsernamePasswordAuthenticationToken(username, "", List.of());
+	}
+	private String singleOrganization(String username) {
+		var visible = dataScopes.visibleOrganizationIds(actor(username));
+		if (visible != null && visible.size() == 1) return visible.iterator().next();
+		throw new IllegalArgumentException("请选择会议所属机构或会议室");
+	}
+	private boolean canAccessEmployee(String username, String employeeId) {
+		try { dataScopes.requireEmployee(actor(username), employeeId); return true; }
+		catch (AccessDeniedException exception) { return false; }
 	}
 
 	@Transactional

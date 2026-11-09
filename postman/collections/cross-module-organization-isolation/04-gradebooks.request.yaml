@@ -1,0 +1,14 @@
+$kind: http-request
+name: Gradebooks accept scoped access
+order: 4000
+method: GET
+url: '{{base_url}}/admin/education/grades/gradebooks'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('gradebook endpoint applies scoped service without privilege escalation', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data).to.be.an('array');
+      });

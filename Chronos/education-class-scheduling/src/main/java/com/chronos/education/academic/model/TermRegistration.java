@@ -19,7 +19,7 @@ import lombok.Setter;
 public class TermRegistration extends BaseEntity {
 	@Column(name = "school_id", nullable = false, length = 64)
 	private String schoolId;
-	@Column(name = "term_code", nullable = false, length = 32)
+	@Column(name = "term_code", nullable = false, length = 128)
 	private String termCode;
 	@Column(name = "student_id", nullable = false, length = 64)
 	private String studentId;

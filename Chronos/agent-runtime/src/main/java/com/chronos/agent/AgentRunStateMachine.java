@@ -29,7 +29,8 @@ public final class AgentRunStateMachine {
 				AgentRunStatus.RUNNING, AgentRunStatus.FAILED,
 				AgentRunStatus.CANCELLED, AgentRunStatus.EXPIRED));
 		values.put(AgentRunStatus.RUNNING, EnumSet.of(
-				AgentRunStatus.PAUSE_REQUESTED, AgentRunStatus.WAITING_APPROVAL,
+				AgentRunStatus.PAUSE_REQUESTED, AgentRunStatus.WAITING_CONFIRMATION,
+				AgentRunStatus.WAITING_WORKFLOW, AgentRunStatus.WAITING_APPROVAL,
 				AgentRunStatus.CANDIDATES_READY, AgentRunStatus.COMPLETED,
 				AgentRunStatus.FAILED, AgentRunStatus.CANCELLED, AgentRunStatus.EXPIRED));
 		values.put(AgentRunStatus.PAUSE_REQUESTED, EnumSet.of(
@@ -40,6 +41,12 @@ public final class AgentRunStateMachine {
 		values.put(AgentRunStatus.REPLANNING, EnumSet.of(
 				AgentRunStatus.PAUSED, AgentRunStatus.QUEUED,
 				AgentRunStatus.FAILED, AgentRunStatus.CANCELLED));
+		values.put(AgentRunStatus.WAITING_CONFIRMATION, EnumSet.of(
+				AgentRunStatus.QUEUED, AgentRunStatus.PAUSED,
+				AgentRunStatus.FAILED, AgentRunStatus.CANCELLED, AgentRunStatus.EXPIRED));
+		values.put(AgentRunStatus.WAITING_WORKFLOW, EnumSet.of(
+				AgentRunStatus.QUEUED, AgentRunStatus.PAUSED,
+				AgentRunStatus.FAILED, AgentRunStatus.CANCELLED, AgentRunStatus.EXPIRED));
 		values.put(AgentRunStatus.WAITING_APPROVAL, EnumSet.of(
 				AgentRunStatus.QUEUED, AgentRunStatus.PAUSED,
 				AgentRunStatus.FAILED, AgentRunStatus.CANCELLED, AgentRunStatus.EXPIRED));

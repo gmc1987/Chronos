@@ -15,6 +15,7 @@ import com.chronos.education.meeting.model.Meeting;
 
 public interface MeetingRepository extends JpaRepository<Meeting, String> {
 	List<Meeting> findAllByOrderByStartTimeDesc();
+	List<Meeting> findByOrganizationIdInOrderByStartTimeDesc(Collection<String> organizationIds);
 
 	List<Meeting> findByOrganizerUsernameOrderByStartTimeDesc(String username);
 	List<Meeting> findByStatusAndStartTimeBetweenOrderByStartTimeAsc(
@@ -37,6 +38,18 @@ public interface MeetingRepository extends JpaRepository<Meeting, String> {
 			@Param("keyword") String keyword,
 			@Param("status") String status,
 			Pageable pageable);
+
+	@Query("""
+			select meeting from Meeting meeting
+			where meeting.organizationId in :organizationIds
+			  and (:status = '' or meeting.status = :status)
+			  and (:keyword = ''
+			       or lower(meeting.title) like lower(concat('%', :keyword, '%'))
+			       or lower(meeting.organizerUsername) like lower(concat('%', :keyword, '%')))
+			order by meeting.startTime desc
+			""")
+	Page<Meeting> searchInOrganizations(@Param("organizationIds") Collection<String> organizationIds,
+			@Param("keyword") String keyword, @Param("status") String status, Pageable pageable);
 
 	boolean existsByRoomId(String roomId);
 

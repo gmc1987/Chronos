@@ -275,6 +275,19 @@ public class EducationDataScopeService {
 		throw new AccessDeniedException("无权访问该班级数据");
 	}
 
+	public String requireSingleClassCampus(Set<String> classIds) {
+		var records = classes.findAllById(classIds);
+		Set<String> campusIds = records.stream()
+				.map(AdministrativeClass::getCampusId)
+				.filter(id -> id != null && !id.isBlank())
+				.collect(java.util.stream.Collectors.toSet());
+		if (records.size() != classIds.size() || campusIds.size() != 1
+				|| records.stream().anyMatch(value -> !campusIds.contains(value.getCampusId()))) {
+			throw new IllegalArgumentException("线上家长会需要选择归属同一机构的学生范围");
+		}
+		return campusIds.iterator().next();
+	}
+
 	public void assertClassUpdate(
 			EducationDataScope scope,
 			String classId,
@@ -399,6 +412,24 @@ public class EducationDataScopeService {
 			return;
 		}
 		throw new AccessDeniedException("无权访问该校区督导数据");
+	}
+
+	public Set<String> scheduleOrganizationCampuses(EducationDataScope scope, String organizationId) {
+		if (organizationId == null || organizationId.isBlank()) return null;
+		if (!scope.fullAccess() && !scope.schoolIds().contains(organizationId)
+				&& !scope.campusIds().contains(organizationId)) {
+			throw new AccessDeniedException("无权查询该机构的课表");
+		}
+		Set<String> campusIds = new HashSet<>();
+		if (scope.fullAccess() || scope.campusIds().contains(organizationId)) {
+			campusIds.add(organizationId);
+		}
+		organizations.findByParentOrgId_Id(organizationId).stream()
+				.filter(item -> "CAMPUS".equals(item.getOrganizationType()))
+				.filter(item -> scope.fullAccess() || scope.campusIds().contains(item.getId()))
+				.map(Organization::getId)
+				.forEach(campusIds::add);
+		return campusIds;
 	}
 
 	public String requireSingleSchool(EducationDataScope scope) {

@@ -11,6 +11,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IRoleRepository;
 import com.chronos.Idao.IEmployeeRepository;
-import com.chronos.Idao.IUserRoleAssignmentSourceRepository;
 import com.chronos.commons.utils.BeanCopyUtil;
 import com.chronos.model.dto.AdminUserDTO;
 import com.chronos.model.dto.TeacherAccountProvisioning;
 import com.chronos.model.pojo.AdminUser;
 import com.chronos.model.pojo.Role;
-import com.chronos.model.pojo.UserRoleAssignmentSource;
 import com.chronos.model.vo.AdminUserVO;
 import com.chronos.model.vo.RoleVO;
 import com.chronos.service.iService.IAdminUserService;
@@ -42,10 +41,64 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 	@Autowired private IRefreshTokenService refreshTokenService;
-	@Autowired private IUserRoleAssignmentSourceRepository roleAssignmentSources;
+	@Autowired private UserRoleAssignmentService roleAssignments;
 
 	public Page<AdminUser> pageUsers(AdminUserDTO dto, Pageable pageable) {
-		return this.adminUserRepository.findAll(pageable);
+		return pageUsers(dto, pageable, null);
+	}
+
+	public Page<AdminUser> pageUsers(AdminUserDTO dto, Pageable pageable, Set<String> allowedOrganizationIds) {
+		AdminUserDTO criteria = dto == null ? new AdminUserDTO() : dto;
+		String username = trimToNull(criteria.getUsername());
+		String email = trimToNull(criteria.getEmail());
+
+		Specification<AdminUser> specification = (root, query, builder) -> {
+			var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+			if (allowedOrganizationIds != null) {
+				if (allowedOrganizationIds.isEmpty()) return builder.disjunction();
+				predicates.add(root.get("organizationId").in(allowedOrganizationIds));
+			}
+			if (username != null && email != null && username.equalsIgnoreCase(email)) {
+				// 管理端只有一个“用户名/邮箱”搜索框，会把相同关键词同时传入两个字段。
+				// 这里必须按 OR 查询，否则没有邮箱的教职工账号永远无法被检索到。
+				String pattern = "%" + username.toLowerCase(java.util.Locale.ROOT) + "%";
+				predicates.add(builder.or(
+						builder.like(builder.lower(root.get("username")), pattern),
+						builder.like(builder.lower(builder.coalesce(root.get("email"), "")), pattern)));
+			} else {
+				if (username != null) {
+					predicates.add(builder.like(
+							builder.lower(root.get("username")),
+							"%" + username.toLowerCase(java.util.Locale.ROOT) + "%"));
+				}
+				if (email != null) {
+					predicates.add(builder.like(
+							builder.lower(builder.coalesce(root.get("email"), "")),
+							"%" + email.toLowerCase(java.util.Locale.ROOT) + "%"));
+				}
+			}
+			if (criteria.getStatus() != null) {
+				predicates.add(builder.equal(root.get("status"), criteria.getStatus()));
+			}
+			if (trimToNull(criteria.getOrganizationId()) != null) {
+				predicates.add(builder.equal(root.get("organizationId"), criteria.getOrganizationId().trim()));
+			}
+			if (trimToNull(criteria.getEmployeeId()) != null) {
+				predicates.add(builder.equal(root.get("employeeId"), criteria.getEmployeeId().trim()));
+			}
+			if (trimToNull(criteria.getAccountType()) != null) {
+				predicates.add(builder.equal(root.get("accountType"), criteria.getAccountType().trim()));
+			}
+			return builder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+		return this.adminUserRepository.findAll(specification, pageable);
+	}
+
+	private String trimToNull(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		return value.trim();
 	}
 
 	public AdminUserVO getUserById(String id) {
@@ -72,6 +125,7 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 			} catch (Exception exception) {
 			}
 		}
+		vo.setManualRoleIds(roleAssignments.manualRoleIds(u.getId()));
 
 		return vo;
 	}
@@ -107,12 +161,9 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		if (user.getFailedLoginAttempts() == null) user.setFailedLoginAttempts(0);
 		if (user.getMustChangePassword() == null) user.setMustChangePassword(false);
 
-		if (dto.getRoleIds() != null && !dto.getRoleIds().isEmpty()) {
-			Set<Role> roles = new HashSet<>(this.roleRepository.findAllById(dto.getRoleIds()));
-			user.setRoles(roles);
-		}
 		this.adminUserRepository.save(user);
-		syncManualRoleSources(user, dto.getRoleIds());
+		roleAssignments.replaceManualRoles(user, dto.getRoleIds());
+		roleAssignments.ensureBaseAccountRole(user);
 	}
 
 	@Override
@@ -125,7 +176,10 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		String stableEmployeeId = employee.getId();
 		AdminUser existing = adminUserRepository.findByEmployeeId(stableEmployeeId).orElse(null);
 		if (existing == null && !stableEmployeeId.equals(employeeId)) existing = adminUserRepository.findByEmployeeId(employeeId).orElse(null);
-		if (existing != null) return new TeacherAccountProvisioning(existing.getUsername(), stableEmployeeId, false);
+		if (existing != null) {
+			roleAssignments.ensureBaseAccountRole(existing);
+			return new TeacherAccountProvisioning(existing.getUsername(), stableEmployeeId, false);
+		}
 		String username = employee.getEmployeeCode();
 		ensureUsernameAvailable(username, null);
 		AdminUser user = new AdminUser();
@@ -134,10 +188,16 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		user.setAccountType("STAFF"); user.setAccountLocked(false); user.setFailedLoginAttempts(0);
 		user.setMustChangePassword(true); user.setStatus(1); user.setCreateTime(LocalDateTime.now());
 		user.setPassword(passwordEncoder.encode(generateTemporaryPassword()));
+		Role baseRole = roleRepository.findByRoleCode(UserRoleAssignmentService.BASE_ROLE_CODE);
+		if (baseRole == null || !Integer.valueOf(1).equals(baseRole.getStatus())) {
+			throw new IllegalStateException("基础角色 ROLE_PLATFORM_USER 不存在或未启用");
+		}
 		Role teacherRole = roleRepository.findByRoleCode("TEACHER");
 		if (teacherRole == null) teacherRole = roleRepository.findByRoleCode("EDU_TEACHER");
-		if (teacherRole != null) user.setRoles(new HashSet<>(Set.of(teacherRole)));
+		user.setRoles(new HashSet<>(Set.of(baseRole)));
 		adminUserRepository.save(user);
+		roleAssignments.ensureBaseAccountRole(user);
+		roleAssignments.ensureManualRole(user, teacherRole, "TEACHER_PROVISIONING");
 		return new TeacherAccountProvisioning(username, stableEmployeeId, true);
 	}
 
@@ -212,13 +272,11 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		}
 		user.setLastUpdateTime(LocalDateTime.now());
 		if (dto.getRoleIds() != null) {
-			Set<Role> roles = new HashSet<>(this.roleRepository.findAllById(dto.getRoleIds()));
-			user.setRoles(roles);
+			roleAssignments.replaceManualRoles(user, dto.getRoleIds());
 			user.setTokenVersion((user.getTokenVersion() == null ? 0 : user.getTokenVersion()) + 1);
 			refreshTokenService.revokeAll(user.getUsername());
 		}
 		this.adminUserRepository.save(user);
-		if (dto.getRoleIds() != null) syncManualRoleSources(user, dto.getRoleIds());
 	}
 
 	@Transactional
@@ -249,16 +307,4 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		}
 	}
 
-	private void syncManualRoleSources(AdminUser user, java.util.Collection<String> roleIds) {
-		roleAssignmentSources.deleteByUserIdAndSourceType(user.getId(), "MANUAL");
-		if (roleIds == null) return;
-		for (String roleId : roleIds) {
-			UserRoleAssignmentSource source = new UserRoleAssignmentSource();
-			source.setUserId(user.getId());
-			source.setRoleId(roleId);
-			source.setSourceType("MANUAL");
-			source.setSourceKey("MANUAL");
-			roleAssignmentSources.save(source);
-		}
-	}
 }

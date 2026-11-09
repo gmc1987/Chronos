@@ -1,0 +1,30 @@
+$kind: http-request
+name: Operation agent recognizes composite academic setup goal
+order: 9000
+method: POST
+url: '{{base_url}}/agent/operations/conversation'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request":"请帮我创建2093年度第二学期，同时完成教学日历和校区作息方案",
+      "organizationId":"{{hv_org_id}}",
+      "candidateOnly":false
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const required = body.data.draft.requiredInputs.map(item => item.key);
+      const tools = body.data.draft.plan.steps.map(item => item.toolCode);
+      pm.test('first turn recognizes year shorthand and keeps the full composite goal', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.data.status).to.eql('NEED_INPUT');
+        pm.expect(body.data.resolution.termCode).to.eql('2093-2094-2');
+        pm.expect(required).to.eql(['startDate', 'endDate', 'weekCount', 'campusId', 'scheduleName', 'periods']);
+        pm.expect(tools).to.eql(['academic.term.create', 'academic.calendar.prepare', 'academic.bell.configure']);
+      });
+

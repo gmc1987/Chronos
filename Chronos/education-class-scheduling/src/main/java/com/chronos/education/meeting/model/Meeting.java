@@ -17,6 +17,9 @@ import lombok.Setter;
 @Setter
 @Table(name = "edu_meeting")
 public class Meeting extends BaseEntity {
+	@Column(name = "organization_id", nullable = false, length = 64)
+	private String organizationId;
+
 	@Column(nullable = false, length = 200)
 	private String title;
 

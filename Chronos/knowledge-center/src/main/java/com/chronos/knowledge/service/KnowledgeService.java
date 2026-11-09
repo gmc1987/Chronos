@@ -98,10 +98,25 @@ public class KnowledgeService {
 	public List<KnowledgeBase> knowledgeBases() {
 		return knowledgeBases.findAllByOrderByCreateTimeDesc();
 	}
+	public List<KnowledgeBase> knowledgeBases(java.util.Collection<String> organizationIds) {
+		return organizationIds == null ? knowledgeBases() : knowledgeBases.findByOrganizationIdInOrderByCreateTimeDesc(organizationIds);
+	}
 
 	public Page<KnowledgeBase> knowledgeBases(int page, int size) {
 		return knowledgeBases.findAllByOrderByCreateTimeDesc(PageRequest.of(
 				Math.max(0, page), Math.min(Math.max(1, size), 100)));
+	}
+	public Page<KnowledgeBase> knowledgeBases(java.util.Collection<String> organizationIds, int page, int size) {
+		if (organizationIds == null) return knowledgeBases(page, size);
+		return knowledgeBases.findByOrganizationIdInOrderByCreateTimeDesc(organizationIds, PageRequest.of(
+				Math.max(0, page), Math.min(Math.max(1, size), 100)));
+	}
+	public String knowledgeBaseOrganization(String id) {
+		return knowledgeBases.findById(id).orElseThrow(() -> new IllegalArgumentException("知识库不存在")).getOrganizationId();
+	}
+	public String documentOrganization(String id) {
+		KnowledgeDocument document = documents.findById(id).orElseThrow(() -> new IllegalArgumentException("知识文档不存在"));
+		return knowledgeBaseOrganization(document.getKnowledgeBaseId());
 	}
 
 	@Transactional
@@ -118,7 +133,9 @@ public class KnowledgeService {
 		value.setBaseCode(command.getBaseCode().trim());
 		value.setBaseName(command.getBaseName().trim());
 		value.setDescription(trimToNull(command.getDescription()));
-		value.setOrganizationId(trimToNull(command.getOrganizationId()));
+		String organizationId = trimToNull(command.getOrganizationId());
+		if (id == null && organizationId == null) throw new IllegalArgumentException("知识库所属机构不能为空");
+		if (id == null) value.setOrganizationId(organizationId);
 		value.setEnabled(command.getEnabled() == null || command.getEnabled());
 		value.setAnswerModelId(trimToNull(command.getAnswerModelId()));
 		value.setRetrievalMode(command.getRetrievalMode() == null ? "KEYWORD" : command.getRetrievalMode().trim().toUpperCase());

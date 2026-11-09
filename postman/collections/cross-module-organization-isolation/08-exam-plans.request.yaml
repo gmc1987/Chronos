@@ -1,0 +1,17 @@
+$kind: http-request
+name: Exam plans are scoped to the allowed institution
+order: 8000
+method: GET
+url: '{{base_url}}/admin/education/exam/plans?semesterCode=SCALE-HV-2026%3A2026-2027-1'
+queryParams:
+  - key: semesterCode
+    value: 'SCALE-HV-2026:2026-2027-1'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('exam plans do not leak across schools', () => {
+        pm.response.to.have.status(200);
+        const body = pm.response.json();
+        pm.expect(body.code).to.eql('200');
+        body.data.forEach(row => pm.expect(row.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

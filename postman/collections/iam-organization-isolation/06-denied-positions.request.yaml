@@ -1,0 +1,14 @@
+$kind: http-request
+name: Scoped manager cannot read another organization positions
+order: 6000
+method: GET
+url: '{{base_url}}/admin/iam/positions?organizationId={{denied_org_id}}'
+queryParams:
+  - key: organizationId
+    value: '{{denied_org_id}}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('cross-organization position access is forbidden', () => {
+        pm.response.to.have.status(403);
+      });

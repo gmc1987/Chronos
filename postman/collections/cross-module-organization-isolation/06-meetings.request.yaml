@@ -1,0 +1,13 @@
+$kind: http-request
+name: Meetings expose an organization boundary
+order: 6000
+method: GET
+url: '{{base_url}}/admin/education/meetings'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('meeting management is limited to the allowed school', () => {
+        pm.response.to.have.status(200);
+        body.data.forEach(view => pm.expect(view.meeting.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

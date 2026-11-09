@@ -26,7 +26,7 @@ public class ScheduleEntry extends BaseEntity {
 	@Column(name = "record_version", nullable = false)
 	private Long recordVersion = 0L;
 
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "offering_id", length = 64, nullable = false)

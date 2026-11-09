@@ -16,7 +16,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_teacher_time_constraint")
 public class TeacherTimeConstraint extends BaseEntity {
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "teacher_id", length = 64, nullable = false)

@@ -39,6 +39,7 @@ import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.StudentProfileExportService;
 import com.chronos.education.scheduling.service.SemesterArchiveService;
 import com.chronos.security.IamAuthorization;
+import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
 public class AcademicDataController {
@@ -47,47 +48,66 @@ public class AcademicDataController {
 	private final IamAuthorization authorization;
 	private final EducationDataScopeService dataScopes;
 	private final SemesterArchiveService semesterArchives;
+	private final DirectoryDataScopeGuard directoryScopes;
 
 	public AcademicDataController(
 			AcademicDataService service,
 			StudentProfileExportService studentExports,
 			IamAuthorization authorization,
 			EducationDataScopeService dataScopes,
-			SemesterArchiveService semesterArchives) {
+			SemesterArchiveService semesterArchives,
+			DirectoryDataScopeGuard directoryScopes) {
 		this.service = service;
 		this.studentExports = studentExports;
 		this.authorization = authorization;
 		this.dataScopes = dataScopes;
 		this.semesterArchives = semesterArchives;
+		this.directoryScopes = directoryScopes;
 	}
 
 	@GetMapping("/admin/education/terms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
 	public ResultData<?> terms(
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
+			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String organizationId,
+			Authentication authentication) {
+		var organizationIds = directoryScopes.visibleOrganizationIds(authentication);
+		if (organizationId != null && !organizationId.isBlank()) {
+			directoryScopes.requireOrganization(authentication, organizationId);
+			organizationIds = java.util.Set.of(organizationId);
+		}
 		return page == null && size == null
-				? ok(service.terms())
+				? ok(service.terms(organizationIds))
 				: ok(PageView.from(service.terms(
+						organizationIds,
 						page == null ? 0 : page,
 						size == null ? 10 : size)));
 	}
 
 	@PostMapping("/admin/education/terms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:create','education:term:manage')")
-	public ResultData<AcademicTerm> createTerm(@RequestBody AcademicTerm command) {
+	public ResultData<AcademicTerm> createTerm(@RequestBody AcademicTerm command, Authentication authentication) {
+		command.setOrganizationId(resolveOrganization(authentication, command.getOrganizationId()));
 		return ok(service.saveTerm(null, command));
 	}
 
 	@PutMapping("/admin/education/terms/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
-	public ResultData<AcademicTerm> updateTerm(@PathVariable String id, @RequestBody AcademicTerm command) {
+	public ResultData<AcademicTerm> updateTerm(@PathVariable String id, @RequestBody AcademicTerm command,
+			Authentication authentication) {
+		AcademicTerm existing = service.terms().stream().filter(value -> id.equals(value.getId()))
+				.findFirst().orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		directoryScopes.requireOrganization(authentication, existing.getOrganizationId());
+		command.setOrganizationId(existing.getOrganizationId());
 		return ok(service.saveTerm(id, command));
 	}
 
 	@GetMapping("/admin/education/terms/{id}/archive-readiness")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
-	public ResultData<SemesterArchiveService.ArchiveReadiness> archiveReadiness(@PathVariable String id) {
+	public ResultData<SemesterArchiveService.ArchiveReadiness> archiveReadiness(@PathVariable String id,
+			Authentication authentication) {
+		requireTerm(authentication, id);
 		return ok(semesterArchives.readiness(id));
 	}
 
@@ -96,7 +116,24 @@ public class AcademicDataController {
 	public ResultData<AcademicTerm> archiveTerm(
 			@PathVariable String id,
 			Authentication authentication) {
+		requireTerm(authentication, id);
 		return ok(semesterArchives.archive(id, authentication.getName()));
+	}
+
+	private void requireTerm(Authentication authentication, String id) {
+		AcademicTerm value = service.terms().stream().filter(term -> id.equals(term.getId()))
+				.findFirst().orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		directoryScopes.requireOrganization(authentication, value.getOrganizationId());
+	}
+
+	private String resolveOrganization(Authentication authentication, String requested) {
+		if (requested != null && !requested.isBlank()) {
+			directoryScopes.requireOrganization(authentication, requested);
+			return requested;
+		}
+		var visible = directoryScopes.visibleOrganizationIds(authentication);
+		if (visible != null && visible.size() == 1) return visible.iterator().next();
+		throw new IllegalArgumentException("请选择学期所属机构");
 	}
 
 	@GetMapping("/admin/education/grades")
@@ -223,10 +260,18 @@ public class AcademicDataController {
 	@GetMapping("/admin/education/administrative-classes")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:view','education:class:manage')")
 	public ResultData<?> administrativeClasses(
+			@RequestParam(required = false) String campusId,
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
 			Authentication authentication) {
 		var scope = dataScopes.resolve(authentication.getName());
+		if (campusId != null && !campusId.isBlank()) {
+			dataScopes.assertCampusAccess(scope, campusId);
+			return page == null && size == null
+					? ok(service.administrativeClassesInCampus(campusId))
+					: ok(PageView.from(service.administrativeClassesInCampus(
+							campusId, page == null ? 0 : page, size == null ? 10 : size)));
+		}
 		return page == null && size == null
 				? ok(service.administrativeClasses(scope))
 				: ok(PageView.from(service.administrativeClasses(

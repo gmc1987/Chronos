@@ -15,6 +15,7 @@ import com.chronos.industry.service.IndustryTemplateRegistry;
  import java.time.LocalDateTime;
  import java.util.Optional;
  import java.util.Map;
+import java.util.Set;
  import org.springframework.beans.factory.annotation.Autowired;
  import org.springframework.data.domain.Page;
  import org.springframework.data.domain.Pageable;
@@ -38,6 +39,13 @@ import com.chronos.industry.service.IndustryTemplateRegistry;
    
    public Page<Organization> pageOrganizations(OrganizationDTO dto, Pageable pageable) {
      return this.organizationRepository.findAll(pageable);
+   }
+
+   public Page<Organization> pageOrganizations(OrganizationDTO dto, Pageable pageable,
+       Set<String> allowedOrganizationIds) {
+     if (allowedOrganizationIds == null) return pageOrganizations(dto, pageable);
+     if (allowedOrganizationIds.isEmpty()) return Page.empty(pageable);
+     return organizationRepository.findByIdIn(allowedOrganizationIds, pageable);
    }
  
    

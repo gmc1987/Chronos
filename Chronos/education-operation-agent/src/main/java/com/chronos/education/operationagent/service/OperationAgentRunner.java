@@ -1,6 +1,9 @@
 package com.chronos.education.operationagent.service;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +32,7 @@ public class OperationAgentRunner {
 	private final OperationAgentConditionRepository conditions;
 	private final OperationAgentBusinessTools tools;
 	private final OperationAgentToolCatalog toolCatalog;
+	private final OperationAgentGovernancePolicyService governance;
 	private final OperationAgentEventService events;
 	private final OperationAgentNotificationService notifications;
 	private final OperationAgentLlmService llm;
@@ -48,6 +52,7 @@ public class OperationAgentRunner {
 			OperationAgentConditionRepository conditions,
 			OperationAgentBusinessTools tools,
 			OperationAgentToolCatalog toolCatalog,
+			OperationAgentGovernancePolicyService governance,
 			OperationAgentEventService events,
 			OperationAgentNotificationService notifications,
 			OperationAgentLlmService llm,
@@ -59,6 +64,7 @@ public class OperationAgentRunner {
 		this.conditions = conditions;
 		this.tools = tools;
 		this.toolCatalog = toolCatalog;
+		this.governance = governance;
 		this.events = events;
 		this.notifications = notifications;
 		this.llm = llm;
@@ -80,7 +86,7 @@ public class OperationAgentRunner {
 	public void refreshApprovalEvidence(String runId) {
 		OperationAgentRun run = runs.findById(runId)
 				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
-		if (!"WAITING_APPROVAL".equals(run.getStatus())) {
+		if (!Set.of("WAITING_CONFIRMATION", "WAITING_APPROVAL").contains(run.getStatus())) {
 			throw new IllegalStateException("当前没有等待确认的步骤");
 		}
 		OperationAgentStepRun step = stepRuns.findByRunIdAndStepOrder(runId, run.getCurrentStepOrder())
@@ -135,21 +141,23 @@ public class OperationAgentRunner {
 					waitForInput(run, step, missing);
 					return;
 				}
-				boolean candidatePreview = Boolean.TRUE.equals(config.get("dryRun"));
-				boolean humanRequired = definition.approvalRequired() && !candidatePreview;
+				OperationAgentGovernancePolicyService.GovernanceDecision governanceDecision =
+						governance.decide(definition, config);
+				boolean humanRequired = governanceDecision.mode().requiresCheckpoint();
 				OperationAgentLlmService.StepDecision decision = new OperationAgentLlmService.StepDecision(
 						humanRequired ? "REQUIRE_HUMAN" : "PROCEED",
+						governanceDecision.reason(),
 						humanRequired
-								? "正式写入工具命中平台预设审批规则。"
-								: candidatePreview
-										? "当前步骤只生成候选结果，可由受控工具直接执行。"
-										: "当前工具和参数已通过平台确定性校验。",
-						humanRequired ? "请审核后继续执行正式数据写入" : "调用受控业务工具");
+								? governanceDecision.mode() == OperationAgentCheckpointMode.INITIATOR_CONFIRM
+										? "请核对候选结果并确认写入"
+										: "请由独立审核人复核后继续"
+								: "调用受控业务工具");
 				events.append(runId, "PLATFORM_STEP_DECISION",
 						"REQUIRE_HUMAN".equals(decision.decision()) ? "WARN" : "INFO",
 						"平台安全决策：" + step.getStepName(), decision.rationale(),
 						writeEvidence(Map.of(
 								"decision", decision.decision(),
+								"checkpointMode", governanceDecision.mode().name(),
 								"nextAction", decision.nextAction() == null ? "" : decision.nextAction(),
 								"toolCode", step.getToolCode())));
 				// The user may request a pause while this iteration is preparing the step.
@@ -160,28 +168,40 @@ public class OperationAgentRunner {
 					pauseAtCheckpoint(run, step);
 					return;
 				}
+				step.setCheckpointMode(governanceDecision.mode());
+				step.setPolicyCode(governanceDecision.policyCode());
+				step.setPolicyVersion(governanceDecision.policyVersion());
 				if ("REQUIRE_HUMAN".equals(decision.decision()) && step.getApprovedAt() == null) {
 					step.setApprovalRequired(true);
 					step.setMessage(decision.nextAction() == null || decision.nextAction().isBlank()
 							? "平台安全策略要求人工确认" : decision.nextAction());
 				}
-				if (Boolean.TRUE.equals(step.getApprovalRequired()) && step.getApprovedAt() == null) {
+				if (humanRequired && step.getApprovedAt() == null) {
 					refreshApprovalEvidence(run, plan, step, authorized, config);
 					// Runner itself is intentionally non-transactional. Repository save() in
 					// the preview call advances the optimistic-lock version, so continue with
 					// the freshly persisted entity instead of the stale loop instance.
 					step = stepRuns.findById(step.getId()).orElseThrow();
-					step.setStatus("WAITING_APPROVAL");
-					step.setMessage("此步骤将写入正式业务数据，需要人工确认");
+					boolean initiatorConfirmation = governanceDecision.mode()
+							== OperationAgentCheckpointMode.INITIATOR_CONFIRM;
+					String waitingStatus = initiatorConfirmation ? "WAITING_CONFIRMATION" : "WAITING_APPROVAL";
+					step.setStatus(waitingStatus);
+					step.setMessage(initiatorConfirmation
+							? "候选结果已生成，等待任务发起人确认写入"
+							: "候选结果已生成，等待非发起人独立复核");
 					stepRuns.save(step);
-					move(run, "WAITING_APPROVAL");
+					move(run, waitingStatus);
 					run.setCurrentStepOrder(step.getStepOrder());
 					run.setCurrentStepName(step.getStepName());
-					run.setNextAction("请审核“" + step.getStepName() + "”，批准后继续执行");
+					run.setNextAction(initiatorConfirmation
+							? "请核对“" + step.getStepName() + "”候选结果并确认写入"
+							: "请由独立审核人复核“" + step.getStepName() + "”后继续");
 					runs.save(run);
-					events.append(runId, "APPROVAL_REQUIRED", "WARN", "等待人工确认",
-							"步骤“" + step.getStepName() + "”风险等级较高，智能体已停止在写入前检查点。", null);
-					notifications.approvalRequired(run, step);
+					events.append(runId,
+							initiatorConfirmation ? "INITIATOR_CONFIRMATION_REQUIRED" : "APPROVAL_REQUIRED",
+							"WARN", initiatorConfirmation ? "等待发起人确认" : "等待独立审核",
+							governanceDecision.reason(), null);
+					if (!initiatorConfirmation) notifications.approvalRequired(run, step);
 					return;
 				}
 				executeStep(run, plan, step, authorized, config);
@@ -264,12 +284,26 @@ public class OperationAgentRunner {
 		Map<String, Object> preview = executeToolAs(
 				run.getOwnerUsername(), step.getToolCode(), previewConfig,
 				plan.getKnowledgeBaseId(), plan.getObjective());
-		step.setResultJson(mapper.writeValueAsString(preview));
-		step.setMessage("已按当前业务数据生成最新候选结果，等待人工确认");
+		String evidenceJson = mapper.writeValueAsString(preview);
+		step.setResultJson(evidenceJson);
+		step.setEvidenceVersion(step.getEvidenceVersion() == null ? 1 : step.getEvidenceVersion() + 1);
+		step.setEvidenceHash(sha256(evidenceJson));
+		step.setMessage(step.getCheckpointMode() == OperationAgentCheckpointMode.INITIATOR_CONFIRM
+				? "已按当前业务数据生成最新候选结果，等待发起人确认"
+				: "已按当前业务数据生成最新候选结果，等待独立审核");
 		stepRuns.save(step);
 		events.append(run.getId(), "APPROVAL_EVIDENCE_REFRESHED", "INFO",
 				"已刷新候选证据：" + step.getStepName(),
 				"审批检查点已基于前序步骤的最新结果重新执行只读预演。", step.getResultJson());
+	}
+
+	private String sha256(String value) {
+		try {
+			return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+					.digest(value.getBytes(StandardCharsets.UTF_8)));
+		} catch (Exception exception) {
+			throw new IllegalStateException("候选证据摘要生成失败", exception);
+		}
 	}
 
 	private void executeStep(
@@ -354,7 +388,52 @@ public class OperationAgentRunner {
 				if (parsed.containsKey(key)) config.put(key, parsed.get(key));
 			}
 		}
-		return config;
+		return resolveStepReferences(run.getId(), config);
+	}
+
+	/** Resolve ${tool.code.output.path} against successful steps in this run. */
+	private Map<String, Object> resolveStepReferences(String runId, Map<String, Object> config) {
+		Map<String, Object> outputs = new java.util.LinkedHashMap<>();
+		for (OperationAgentStepRun completed : stepRuns.findByRunIdOrderByStepOrder(runId)) {
+			if (!"SUCCEEDED".equals(completed.getStatus()) || completed.getResultJson() == null) continue;
+			try {
+				outputs.put(completed.getToolCode(), mapper.readValue(
+						completed.getResultJson(), new TypeReference<Map<String, Object>>() {}));
+			} catch (Exception ignored) {
+				// Invalid historical evidence must not be interpreted as an execution input.
+			}
+		}
+		@SuppressWarnings("unchecked")
+		Map<String, Object> resolved = (Map<String, Object>) resolveReferenceValue(config, outputs);
+		return resolved;
+	}
+
+	private Object resolveReferenceValue(Object value, Map<String, Object> outputs) {
+		if (value instanceof Map<?, ?> source) {
+			Map<String, Object> result = new java.util.LinkedHashMap<>();
+			source.forEach((key, item) -> result.put(String.valueOf(key), resolveReferenceValue(item, outputs)));
+			return result;
+		}
+		if (value instanceof java.util.List<?> source) {
+			return source.stream().map(item -> resolveReferenceValue(item, outputs)).toList();
+		}
+		if (!(value instanceof String text) || !text.startsWith("${") || !text.endsWith("}")) return value;
+		String expression = text.substring(2, text.length() - 1);
+		for (String toolCode : outputs.keySet().stream()
+				.sorted(java.util.Comparator.comparingInt(String::length).reversed()).toList()) {
+			if (!expression.startsWith(toolCode + ".")) continue;
+			Object current = outputs.get(toolCode);
+			for (String segment : expression.substring(toolCode.length() + 1).split("\\.")) {
+				if (current instanceof Map<?, ?> map) current = map.get(segment);
+				else if (current instanceof java.util.List<?> list && segment.matches("\\d+")) {
+					int index = Integer.parseInt(segment);
+					current = index < list.size() ? list.get(index) : null;
+				} else current = null;
+				if (current == null) break;
+			}
+			return current;
+		}
+		return null;
 	}
 
 	private void skipBlockedWriteStep(OperationAgentRun run, OperationAgentStepRun step) {

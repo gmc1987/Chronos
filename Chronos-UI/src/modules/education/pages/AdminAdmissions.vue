@@ -12,6 +12,7 @@
       </div>
     </header>
     <div class="toolbar">
+	  <el-select v-model="organizationId" clearable filterable placeholder="全部可管理机构" @change="changeOrganization"><el-option v-for="item in organizations" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select>
       <el-select v-model="filters.status" clearable placeholder="全部状态" @change="search">
         <el-option v-for="item in admissionStatuses" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
@@ -20,6 +21,7 @@
     </div>
     <el-table :data="rows" border>
       <el-table-column prop="candidateNo" label="考生号" min-width="150" />
+	  <el-table-column prop="organizationId" label="所属机构" min-width="170"><template #default="s">{{ organizationName(s.row.organizationId) }}</template></el-table-column>
       <el-table-column prop="admissionNo" label="录取号" min-width="130" />
       <el-table-column prop="studentName" label="姓名" width="100" />
       <el-table-column prop="admissionYear" label="入学年份" width="100" />
@@ -41,6 +43,7 @@
     <el-dialog v-model="editDialog" :title="form.id?'编辑录取数据':'录入录取数据'" width="720px">
       <el-alert title="这里保存的是省级招办核准录取数据的校内副本，不会直接生成正式学籍。" type="info" :closable="false" />
       <el-form label-width="110px" class="form-grid">
+		<el-form-item label="所属机构"><el-select v-model="form.organizationId" filterable :disabled="!!form.id"><el-option v-for="item in organizations" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="来源批次"><el-input v-model="form.sourceBatchNo" placeholder="例如：2026-GK-01" /></el-form-item>
         <el-form-item label="数据来源"><el-select v-model="form.sourceType"><el-option label="省级招办导入" value="PROVINCIAL_IMPORT" /><el-option label="授权人工补录" value="MANUAL_VERIFIED" /></el-select></el-form-item>
         <el-form-item label="考生号"><el-input v-model="form.candidateNo" /></el-form-item>
@@ -105,36 +108,39 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { batchAssignAdmissionClasses, batchEnrollAdmissions, batchReviewAdmissions, createAdmissionCandidate, downloadAdmissionImportTemplate, enrollAdmissionCandidate, importAdmissionCandidates, listAdministrativeClasses, listAdmissionCandidates, listEducationMajors, reviewAdmissionCandidate, updateAdmissionCandidate, updateAdmissionRegistration } from '../../../api/admin'
+import { batchAssignAdmissionClasses, batchEnrollAdmissions, batchReviewAdmissions, createAdmissionCandidate, downloadAdmissionImportTemplate, enrollAdmissionCandidate, importAdmissionCandidates, listAdministrativeClasses, listAdmissionCandidates, listEducationMajors, orgList, reviewAdmissionCandidate, updateAdmissionCandidate, updateAdmissionRegistration } from '../../../api/admin'
 
 const rows=ref([]),page=ref(1),size=ref(10),total=ref(0),majors=ref([]),classes=ref([]),editDialog=ref(false),enrollDialog=ref(false),registrationDialog=ref(false),active=ref(null),enrollClassId=ref('')
 const batchDialog=ref(false),batchLoading=ref(false),batchType=ref(''),batchPreview=ref(null)
+const organizations=ref([]),organizationId=ref('')
 const filters=reactive({status:'',keyword:''}),form=reactive({}),registration=reactive({status:'PENDING',nationalStudentNo:'',errorMessage:''})
 const batchForm=reactive({admissionYear:new Date().getFullYear(),batchLimit:100,targetClassSize:50})
 const educationLevels=[{label:'本科',value:'UNDERGRADUATE'},{label:'职业本科',value:'VOCATIONAL_UNDERGRADUATE'},{label:'高职/专科',value:'HIGHER_EDUCATION'}]
 const admissionStatuses=[{label:'待资格复查',value:'ADMITTED'},{label:'复查通过',value:'VERIFIED'},{label:'复查退回',value:'REJECTED'},{label:'已报到建档',value:'ENROLLED'}]
 const registrationStatuses={NOT_SUBMITTED:'未提交',PENDING:'待主管部门处理',REGISTERED:'注册成功',REJECTED:'注册退回'}
-const eligibleClasses=computed(()=>classes.value.filter(item=>(!form.admittedMajorId||item.majorId===form.admittedMajorId)&&(!form.admissionYear||item.gradeYear===form.admissionYear)))
-const enrollClasses=computed(()=>classes.value.filter(item=>item.gradeYear===active.value?.admissionYear&&(!active.value?.admittedMajorId||item.majorId===active.value.admittedMajorId)))
+const eligibleClasses=computed(()=>classes.value.filter(item=>(!form.organizationId||item.campusId===form.organizationId)&&(!form.admittedMajorId||item.majorId===form.admittedMajorId)&&(!form.admissionYear||item.gradeYear===form.admissionYear)))
+const enrollClasses=computed(()=>classes.value.filter(item=>item.campusId===active.value?.organizationId&&item.gradeYear===active.value?.admissionYear&&(!active.value?.admittedMajorId||item.majorId===active.value.admittedMajorId)))
 const batchTitle=computed(()=>({CLASS_ASSIGNMENT:'批量拟分行政班',REVIEW:'批量资格复查',ENROLL:'批量报到建档并开通账号'}[batchType.value]||'批量处理'))
 const batchRows=computed(()=>batchPreview.value?.assignments||batchPreview.value?.candidates||[])
-const load=async()=>{const r=await listAdmissionCandidates({page:page.value-1,size:size.value,...filters});rows.value=r.data?.content||[];total.value=r.data?.totalElements||0}
+const load=async()=>{const r=await listAdmissionCandidates({page:page.value-1,size:size.value,organizationId:organizationId.value||undefined,...filters});rows.value=r.data?.content||[];total.value=r.data?.totalElements||0}
+const changeOrganization=()=>{page.value=1;load()}
 const search=()=>{page.value=1;load()};const changeSize=()=>{page.value=1;load()}
-const openEdit=(row={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{sourceType:'PROVINCIAL_IMPORT',admissionYear:new Date().getFullYear(),educationLevel:'HIGHER_EDUCATION',...row});editDialog.value=true}
-const save=async()=>{if(!form.sourceBatchNo||!form.candidateNo||!form.studentName) return ElMessage.warning('请完整填写来源批次、考生号和姓名');await(form.id?updateAdmissionCandidate(form.id,form):createAdmissionCandidate(form));editDialog.value=false;ElMessage.success('录取数据已保存');await load()}
+const openEdit=(row={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{organizationId:organizationId.value||(organizations.value.length===1?organizations.value[0].id:''),sourceType:'PROVINCIAL_IMPORT',admissionYear:new Date().getFullYear(),educationLevel:'HIGHER_EDUCATION',...row});editDialog.value=true}
+const save=async()=>{if(!form.organizationId)return ElMessage.warning('请选择所属机构');if(!form.sourceBatchNo||!form.candidateNo||!form.studentName) return ElMessage.warning('请完整填写来源批次、考生号和姓名');await(form.id?updateAdmissionCandidate(form.id,form):createAdmissionCandidate(form));editDialog.value=false;ElMessage.success('录取数据已保存');await load()}
 const review=async(row,passed)=>{let remark='';if(!passed){const r=await ElMessageBox.prompt('请输入资格复查退回原因','复查退回',{inputType:'textarea',inputValidator:v=>!!v?.trim()||'退回原因不能为空'});remark=r.value}else{await ElMessageBox.confirm(`确认 ${row.studentName} 的录取资格复查通过？`,'资格复查',{type:'warning'})}await reviewAdmissionCandidate(row.id,{passed,remark});ElMessage.success(passed?'资格复查已通过':'录取记录已退回');await load()}
 const openEnroll=row=>{active.value=row;enrollClassId.value=row.plannedClassId||'';enrollDialog.value=true}
 const enroll=async()=>{if(!enrollClassId.value)return ElMessage.warning('请选择行政班');await enrollAdmissionCandidate(active.value.id,{administrativeClassId:enrollClassId.value});enrollDialog.value=false;ElMessage.success('报到建档完成，校内学号已生成');await load()}
 const openRegistration=row=>{active.value=row;Object.assign(registration,{status:row.registrationStatus==='NOT_SUBMITTED'?'PENDING':row.registrationStatus,nationalStudentNo:row.nationalStudentNo||'',errorMessage:row.registrationError||''});registrationDialog.value=true}
 const submitRegistration=async()=>{await updateAdmissionRegistration(active.value.id,{...registration});registrationDialog.value=false;ElMessage.success('学籍电子注册结果已登记');await load()}
 const downloadTemplate=async()=>{const blob=await downloadAdmissionImportTemplate();const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Chronos-正式录取名册模板.xlsx';a.click();URL.revokeObjectURL(url)}
-const uploadAdmissions=async file=>{const preview=await importAdmissionCandidates(file,true);if(preview.data?.errors?.length){await ElMessageBox.alert(preview.data.errors.slice(0,20).join('\n'),'导入校验失败',{type:'error'});return}await ElMessageBox.confirm(`校验通过，共 ${preview.data?.successCount||0} 条正式录取数据，确认导入？`,'导入确认',{type:'warning'});await importAdmissionCandidates(file,false);ElMessage.success('正式录取名册导入成功');await load()}
+const uploadAdmissions=async file=>{if(!organizationId.value){ElMessage.warning('请先选择录取数据所属机构');return}const preview=await importAdmissionCandidates(file,true,organizationId.value);if(preview.data?.errors?.length){await ElMessageBox.alert(preview.data.errors.slice(0,20).join('\n'),'导入校验失败',{type:'error'});return}await ElMessageBox.confirm(`校验通过，共 ${preview.data?.successCount||0} 条正式录取数据，确认导入？`,'导入确认',{type:'warning'});await importAdmissionCandidates(file,false,organizationId.value);ElMessage.success('正式录取名册导入成功');await load()}
 const batchApi=()=>batchType.value==='CLASS_ASSIGNMENT'?batchAssignAdmissionClasses:batchType.value==='REVIEW'?batchReviewAdmissions:batchEnrollAdmissions
 const openBatch=type=>{batchType.value=type;batchPreview.value=null;batchDialog.value=true}
-const previewBatch=async()=>{batchLoading.value=true;try{const r=await batchApi()({...batchForm,dryRun:true});batchPreview.value=r.data||{};if(!batchRows.value.length)ElMessage.warning('当前条件下没有可处理的候选数据')}finally{batchLoading.value=false}}
-const executeBatch=async()=>{await ElMessageBox.confirm(`确认执行“${batchTitle.value}”，共处理 ${batchRows.value.length} 条候选数据？`,'批量执行确认',{type:'warning'});batchLoading.value=true;try{const r=await batchApi()({...batchForm,dryRun:false});const count=r.data?.assigned??r.data?.succeeded??0;ElMessage.success(`批量处理完成，共成功 ${count} 条`);batchPreview.value=null;batchDialog.value=false;await load()}finally{batchLoading.value=false}}
+const previewBatch=async()=>{if(!organizationId.value)return ElMessage.warning('请先选择招生数据所属机构');batchLoading.value=true;try{const r=await batchApi()({...batchForm,organizationId:organizationId.value,dryRun:true});batchPreview.value=r.data||{};if(!batchRows.value.length)ElMessage.warning('当前条件下没有可处理的候选数据')}finally{batchLoading.value=false}}
+const executeBatch=async()=>{await ElMessageBox.confirm(`确认执行“${batchTitle.value}”，共处理 ${batchRows.value.length} 条候选数据？`,'批量执行确认',{type:'warning'});batchLoading.value=true;try{const r=await batchApi()({...batchForm,organizationId:organizationId.value,dryRun:false});const count=r.data?.assigned??r.data?.succeeded??0;ElMessage.success(`批量处理完成，共成功 ${count} 条`);batchPreview.value=null;batchDialog.value=false;await load()}finally{batchLoading.value=false}}
+const orgName=item=>item.organizationName||item.orgName||item.name||item.id;const organizationName=id=>orgName(organizations.value.find(x=>x.id===id)||{id})
 const majorName=id=>majors.value.find(x=>x.id===id)?.majorName||'-';const className=id=>classes.value.find(x=>x.id===id)?.className||'-';const levelName=v=>educationLevels.find(x=>x.value===v)?.label||v;const statusName=v=>admissionStatuses.find(x=>x.value===v)?.label||v;const registrationName=v=>registrationStatuses[v]||v;const statusType=v=>({ADMITTED:'warning',VERIFIED:'success',REJECTED:'danger',ENROLLED:'primary'}[v]||'info')
-onMounted(async()=>{const[m,c]=await Promise.all([listEducationMajors(),listAdministrativeClasses()]);majors.value=m.data||[];classes.value=c.data||[];await load()})
+onMounted(async()=>{const[m,c,o]=await Promise.all([listEducationMajors(),listAdministrativeClasses(),orgList({page:0,size:500})]);majors.value=m.data||[];classes.value=c.data||[];organizations.value=o.data?.content||o.data||[];if(organizations.value.length===1)organizationId.value=organizations.value[0].id;await load()})
 </script>
 
 <style scoped>

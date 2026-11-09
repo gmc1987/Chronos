@@ -1,0 +1,23 @@
+$kind: collection
+name: Organization Qualified Academic Term Code
+description: Verifies that the same school-local term code can coexist across organizations while downstream APIs receive an unambiguous organization-qualified code.
+variables:
+  - key: base_url
+    value: 'http://127.0.0.1:8080'
+  - key: admin_token
+    value: ''
+  - key: local_term_code
+    value: '2099-2100-1'
+  - key: hv_org_id
+    value: '9f1fee10-1c2e-b6e9-2e68-50e6f32cc65e'
+  - key: hv_org_code
+    value: 'SCALE-HV-2026'
+  - key: ug_org_id
+    value: '91c84e2f-f570-de1f-806a-3918bb1a1194'
+  - key: ug_org_code
+    value: 'SCALE-UG-2026'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{admin_token}}'

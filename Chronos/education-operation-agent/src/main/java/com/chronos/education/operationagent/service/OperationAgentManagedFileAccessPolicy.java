@@ -4,9 +4,12 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 import com.chronos.file.service.ManagedFileAccessPolicy;
 
-/** Restricts operation-agent roster files to the user who created the draft upload. */
+/** Restricts operation-agent business files to the user who created the upload. */
 @Component
 public class OperationAgentManagedFileAccessPolicy implements ManagedFileAccessPolicy {
+	public static final String BUSINESS_ATTACHMENT = "EDUCATION_OPERATION_AGENT_FILE";
+	/** @deprecated Kept for already uploaded admission rosters. */
+	@Deprecated
 	public static final String ADMISSION_ROSTER = "EDUCATION_ADMISSION_AGENT";
 
 	public String newBusinessId(String username) {
@@ -24,7 +27,7 @@ public class OperationAgentManagedFileAccessPolicy implements ManagedFileAccessP
 	}
 
 	private boolean owns(String username, String businessType, String businessId) {
-		if (!ADMISSION_ROSTER.equals(businessType)
+		if ((!BUSINESS_ATTACHMENT.equals(businessType) && !ADMISSION_ROSTER.equals(businessType))
 				|| username == null || username.isBlank()
 				|| businessId == null) {
 			return false;

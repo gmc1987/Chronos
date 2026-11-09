@@ -60,6 +60,7 @@ public final class FacilityDtos {
 	}
 
 	public record MaterialCommand(
+			String organizationId,
 			String materialCode,
 			String materialName,
 			String specification,
@@ -161,6 +162,7 @@ public final class FacilityDtos {
 
 	public record MaterialView(
 			String id,
+			String organizationId,
 			String materialCode,
 			String materialName,
 			String specification,
@@ -174,7 +176,7 @@ public final class FacilityDtos {
 			boolean lowStock) {
 		public static MaterialView from(MaintenanceMaterial value) {
 			BigDecimal available = value.getStockQuantity().subtract(value.getReservedQuantity());
-			return new MaterialView(value.getId(), value.getMaterialCode(), value.getMaterialName(),
+			return new MaterialView(value.getId(), value.getOrganizationId(), value.getMaterialCode(), value.getMaterialName(),
 					value.getSpecification(), value.getUnit(), value.getStockQuantity(), value.getReservedQuantity(),
 					available, value.getSafetyStock(), value.getUnitCost(), value.getStatus(),
 					available.compareTo(value.getSafetyStock()) <= 0);

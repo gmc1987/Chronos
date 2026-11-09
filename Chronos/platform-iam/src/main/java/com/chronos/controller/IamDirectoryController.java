@@ -37,10 +37,14 @@ import com.chronos.service.iService.IIamDirectoryService;
 import com.chronos.service.impl.DirectoryImportService;
 import com.chronos.service.impl.BusinessNumberService;
 import com.chronos.service.impl.EmployeeImportService;
-import com.chronos.service.impl.PositionRoleMappingService;
-import com.chronos.model.pojo.PositionRoleMapping;
 import com.chronos.security.IamAuthorization;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.Authentication;
+import com.chronos.security.DirectoryDataScopeGuard;
+import com.chronos.Idao.IPositionRepository;
+import com.chronos.Idao.IJobLevelRepository;
+import com.chronos.Idao.IEmployeeAssignmentRepository;
+import com.chronos.Idao.IOrganizationUnitRepository;
 
 import jakarta.validation.Valid;
 
@@ -51,32 +55,46 @@ public class IamDirectoryController {
     private final IIamDirectoryService service;
     private final DirectoryImportService importService;
     private final BusinessNumberService businessNumbers;
-    private final PositionRoleMappingService positionRoleMappings;
     private final IamAuthorization iamAuthorization;
+    private final DirectoryDataScopeGuard dataScope;
+    private final IPositionRepository positions;
+    private final IJobLevelRepository jobLevels;
+    private final IEmployeeAssignmentRepository assignments;
+    private final IOrganizationUnitRepository organizationUnits;
 
     public IamDirectoryController(
             IIamDirectoryService service,
             DirectoryImportService importService,
             BusinessNumberService businessNumbers,
-            PositionRoleMappingService positionRoleMappings,
-            IamAuthorization iamAuthorization) {
+            IamAuthorization iamAuthorization,
+            DirectoryDataScopeGuard dataScope,
+            IPositionRepository positions,
+            IJobLevelRepository jobLevels,
+            IEmployeeAssignmentRepository assignments,
+            IOrganizationUnitRepository organizationUnits) {
         this.service = service;
         this.importService = importService;
         this.businessNumbers = businessNumbers;
-        this.positionRoleMappings = positionRoleMappings;
         this.iamAuthorization = iamAuthorization;
+        this.dataScope = dataScope;
+        this.positions = positions;
+        this.jobLevels = jobLevels;
+        this.assignments = assignments;
+        this.organizationUnits = organizationUnits;
     }
 
     @GetMapping("/organization-units")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage','iam:role:authorize')")
-    public ResultData<List<OrganizationUnitVO>> units(@RequestParam String organizationId) {
+    public ResultData<List<OrganizationUnitVO>> units(@RequestParam String organizationId, Authentication authentication) {
+        dataScope.requireOrganization(authentication, organizationId);
         return ok(service.organizationUnits(organizationId));
     }
 
     @PostMapping("/organization-units")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')")
     public ResultData<OrganizationUnitVO> createUnit(
-            @Valid @RequestBody OrganizationUnitDTO value) {
+            @Valid @RequestBody OrganizationUnitDTO value, Authentication authentication) {
+        dataScope.requireOrganization(authentication, value.getOrganizationId());
         value.setId(null);
         return ok(service.saveOrganizationUnit(value));
     }
@@ -85,14 +103,22 @@ public class IamDirectoryController {
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')")
     public ResultData<OrganizationUnitVO> updateUnit(
             @PathVariable String id,
-            @Valid @RequestBody OrganizationUnitDTO value) {
+            @Valid @RequestBody OrganizationUnitDTO value, Authentication authentication) {
         value.setId(id);
+        var existing = organizationUnits.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("organization unit not found"));
+        dataScope.requireOrganization(authentication, existing.getOrgId());
+        dataScope.requireOrganization(authentication, value.getOrganizationId());
+        if (!existing.getOrgId().equals(value.getOrganizationId()))
+            throw new IllegalArgumentException("部门不允许跨机构迁移");
         return ok(service.saveOrganizationUnit(value));
     }
 
     @DeleteMapping("/organization-units/{id}")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')")
-    public ResultData<Void> deleteUnit(@PathVariable String id) {
+    public ResultData<Void> deleteUnit(@PathVariable String id, Authentication authentication) {
+        dataScope.requireOrganization(authentication, organizationUnits.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("organization unit not found")).getOrgId());
         service.deleteOrganizationUnit(id);
         return ok(null);
     }
@@ -100,18 +126,22 @@ public class IamDirectoryController {
     @GetMapping("/positions")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')")
     public ResultData<?> positions(
+            @RequestParam String organizationId,
             @RequestParam(required = false) Integer page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            Authentication authentication) {
+        dataScope.requireOrganization(authentication, organizationId);
         if (page == null) {
-            return ok(service.positions());
+            return ok(service.positions(organizationId));
         }
-        return ok(PageView.from(service.pagePositions(pageable(page, size))));
+        return ok(PageView.from(service.pagePositions(organizationId, pageable(page, size))));
     }
 
     @PostMapping("/positions")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')")
-    public ResultData<Position> createPosition(@RequestBody Position value) {
+    public ResultData<Position> createPosition(@RequestBody Position value, Authentication authentication) {
         value.setId(null);
+        dataScope.requireOrganization(authentication, value.getOrganizationId());
         return ok(service.savePosition(value));
     }
 
@@ -119,14 +149,21 @@ public class IamDirectoryController {
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')")
     public ResultData<Position> updatePosition(
             @PathVariable String id,
-            @RequestBody Position value) {
+            @RequestBody Position value, Authentication authentication) {
+        Position existing = positions.findById(id).orElseThrow(() -> new IllegalArgumentException("position not found"));
+        dataScope.requireOrganization(authentication, existing.getOrganizationId());
+        if (value.getOrganizationId() != null && !existing.getOrganizationId().equals(value.getOrganizationId()))
+            throw new IllegalArgumentException("岗位不允许跨机构迁移");
+        value.setOrganizationId(existing.getOrganizationId());
         value.setId(id);
         return ok(service.savePosition(value));
     }
 
     @DeleteMapping("/positions/{id}")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')")
-    public ResultData<Void> deletePosition(@PathVariable String id) {
+    public ResultData<Void> deletePosition(@PathVariable String id, Authentication authentication) {
+        dataScope.requireOrganization(authentication, positions.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("position not found")).getOrganizationId());
         service.deletePosition(id);
         return ok(null);
     }
@@ -163,18 +200,22 @@ public class IamDirectoryController {
     @GetMapping("/job-levels")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')")
     public ResultData<?> jobLevels(
+            @RequestParam String organizationId,
             @RequestParam(required = false) Integer page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            Authentication authentication) {
+        dataScope.requireOrganization(authentication, organizationId);
         if (page == null) {
-            return ok(service.jobLevels());
+            return ok(service.jobLevels(organizationId));
         }
-        return ok(PageView.from(service.pageJobLevels(pageable(page, size))));
+        return ok(PageView.from(service.pageJobLevels(organizationId, pageable(page, size))));
     }
 
     @PostMapping("/job-levels")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')")
-    public ResultData<JobLevel> createJobLevel(@RequestBody JobLevel value) {
+    public ResultData<JobLevel> createJobLevel(@RequestBody JobLevel value, Authentication authentication) {
         value.setId(null);
+        dataScope.requireOrganization(authentication, value.getOrganizationId());
         return ok(service.saveJobLevel(value));
     }
 
@@ -182,14 +223,21 @@ public class IamDirectoryController {
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')")
     public ResultData<JobLevel> updateJobLevel(
             @PathVariable String id,
-            @RequestBody JobLevel value) {
+            @RequestBody JobLevel value, Authentication authentication) {
+        JobLevel existing = jobLevels.findById(id).orElseThrow(() -> new IllegalArgumentException("job level not found"));
+        dataScope.requireOrganization(authentication, existing.getOrganizationId());
+        if (value.getOrganizationId() != null && !existing.getOrganizationId().equals(value.getOrganizationId()))
+            throw new IllegalArgumentException("职级不允许跨机构迁移");
+        value.setOrganizationId(existing.getOrganizationId());
         value.setId(id);
         return ok(service.saveJobLevel(value));
     }
 
     @DeleteMapping("/job-levels/{id}")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')")
-    public ResultData<Void> deleteJobLevel(@PathVariable String id) {
+    public ResultData<Void> deleteJobLevel(@PathVariable String id, Authentication authentication) {
+        dataScope.requireOrganization(authentication, jobLevels.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("job level not found")).getOrganizationId());
         service.deleteJobLevel(id);
         return ok(null);
     }
@@ -197,19 +245,23 @@ public class IamDirectoryController {
     @GetMapping("/employees")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage','iam:role:authorize')")
     public ResultData<?> employees(
+            @RequestParam String organizationId,
             @RequestParam(required = false) Integer page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "") String keyword) {
+            @RequestParam(defaultValue = "") String keyword,
+            Authentication authentication) {
+        dataScope.requireOrganization(authentication, organizationId);
         if (page == null) {
-            return ok(service.employees());
+            return ok(service.employees(organizationId));
         }
-        return ok(PageView.from(service.pageEmployees(keyword, pageable(page, size))));
+        return ok(PageView.from(service.pageEmployees(organizationId, keyword, pageable(page, size))));
     }
 
     @PostMapping("/employees")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')")
-    public ResultData<Employee> createEmployee(@RequestBody Employee value) {
+    public ResultData<Employee> createEmployee(@RequestBody Employee value, Authentication authentication) {
         value.setId(null);
+        dataScope.requireOrganization(authentication, value.getNumberingOrganizationId());
         return ok(service.saveEmployee(value));
     }
 
@@ -217,27 +269,39 @@ public class IamDirectoryController {
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')")
     public ResultData<Employee> updateEmployee(
             @PathVariable String id,
-            @RequestBody Employee value) {
+            @RequestBody Employee value, Authentication authentication) {
+        dataScope.requireEmployee(authentication, id);
         value.setId(id);
         return ok(service.saveEmployee(value));
     }
 
     @DeleteMapping("/employees/{id}")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')")
-    public ResultData<Void> deleteEmployee(@PathVariable String id) {
+    public ResultData<Void> deleteEmployee(@PathVariable String id, Authentication authentication) {
+        dataScope.requireEmployee(authentication, id);
         service.deleteEmployee(id);
         return ok(null);
     }
 
     @GetMapping("/number-rules")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')")
-    public ResultData<List<BusinessNumberRule>> numberRules() {
-        return ok(businessNumbers.rules());
+    public ResultData<List<BusinessNumberRule>> numberRules(Authentication authentication) {
+        var allowed = dataScope.visibleOrganizationIds(authentication);
+        if (allowed == null) return ok(businessNumbers.rules());
+        return ok(businessNumbers.rules().stream()
+                .filter(rule -> "GLOBAL".equals(rule.getOrganizationId())
+                        || allowed.contains(rule.getOrganizationId()))
+                .toList());
     }
 
     @PutMapping("/number-rules")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage')")
-    public ResultData<BusinessNumberRule> saveNumberRule(@RequestBody BusinessNumberRule value) {
+    public ResultData<BusinessNumberRule> saveNumberRule(
+            @RequestBody BusinessNumberRule value, Authentication authentication) {
+        if (value.getOrganizationId() == null || "GLOBAL".equals(value.getOrganizationId()))
+            dataScope.requireFullAccess(authentication);
+        else
+            dataScope.requireOrganization(authentication, value.getOrganizationId());
         return ok(businessNumbers.saveRule(value));
     }
 
@@ -261,63 +325,35 @@ public class IamDirectoryController {
     public ResultData<Map<String, Object>> importData(
             @PathVariable String type,
             @RequestPart("file") MultipartFile file,
+            @RequestParam String organizationId,
             @RequestParam(defaultValue = "false") boolean dryRun,
             @RequestParam(defaultValue = "false") boolean syncAccounts,
-            @RequestParam(defaultValue = "true") boolean syncRoles,
             @RequestParam(defaultValue = "true") boolean disableInactiveAccounts,
             @RequestParam(defaultValue = "EXCEL") String sourceSystem) {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
+        dataScope.requireOrganization(authentication, organizationId);
         if (syncAccounts && !iamAuthorization.any(authentication,
                 "iam:directory:account-provision", "iam:directory:manage")) {
             throw new org.springframework.security.access.AccessDeniedException("缺少批量开通账号权限");
         }
-        if (syncRoles && !iamAuthorization.any(authentication,
-                "iam:directory:role-sync", "iam:directory:manage")) {
-            throw new org.springframework.security.access.AccessDeniedException("缺少岗位角色同步权限");
-        }
-        return ok(importService.importFile(type, file, dryRun,
-                new EmployeeImportService.ImportOptions(syncAccounts, syncRoles,
+        return ok(importService.importFile(type, file, dryRun, organizationId,
+                new EmployeeImportService.ImportOptions(syncAccounts,
                         disableInactiveAccounts, sourceSystem, dryRun)));
-    }
-
-    @GetMapping("/position-role-mappings")
-    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage','iam:role:authorize')")
-    public ResultData<List<PositionRoleMapping>> positionRoleMappings(@RequestParam String positionId) {
-        return ok(positionRoleMappings.list(positionId));
-    }
-
-    @PostMapping("/position-role-mappings")
-    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:role-sync','iam:directory:manage','iam:role:authorize')")
-    public ResultData<PositionRoleMapping> createPositionRoleMapping(@RequestBody PositionRoleMapping value) {
-        value.setId(null);
-        return ok(positionRoleMappings.save(value));
-    }
-
-    @PutMapping("/position-role-mappings/{id}")
-    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:role-sync','iam:directory:manage','iam:role:authorize')")
-    public ResultData<PositionRoleMapping> updatePositionRoleMapping(
-            @PathVariable String id, @RequestBody PositionRoleMapping value) {
-        value.setId(id);
-        return ok(positionRoleMappings.save(value));
-    }
-
-    @DeleteMapping("/position-role-mappings/{id}")
-    @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:role-sync','iam:directory:manage','iam:role:authorize')")
-    public ResultData<Void> deletePositionRoleMapping(@PathVariable String id) {
-        positionRoleMappings.delete(id);
-        return ok(null);
     }
 
     @GetMapping("/assignments")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:view','iam:directory:manage')")
-    public ResultData<List<EmployeeAssignmentVO>> assignments(@RequestParam String employeeId) {
+    public ResultData<List<EmployeeAssignmentVO>> assignments(@RequestParam String employeeId, Authentication authentication) {
+        dataScope.requireEmployee(authentication, employeeId);
         return ok(service.assignments(employeeId));
     }
 
     @PostMapping("/assignments")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:create','iam:directory:manage')")
     public ResultData<EmployeeAssignmentVO> createAssignment(
-            @Valid @RequestBody EmployeeAssignmentDTO value) {
+            @Valid @RequestBody EmployeeAssignmentDTO value, Authentication authentication) {
+        dataScope.requireOrganization(authentication, value.getOrganizationId());
+        dataScope.requireEmployee(authentication, value.getEmployeeId());
         value.setId(null);
         return ok(service.saveAssignment(value));
     }
@@ -326,14 +362,21 @@ public class IamDirectoryController {
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:update','iam:directory:manage')")
     public ResultData<EmployeeAssignmentVO> updateAssignment(
             @PathVariable String id,
-            @Valid @RequestBody EmployeeAssignmentDTO value) {
+            @Valid @RequestBody EmployeeAssignmentDTO value, Authentication authentication) {
+        var existing = assignments.findById(id).orElseThrow(() -> new IllegalArgumentException("assignment not found"));
+        dataScope.requireOrganization(authentication, existing.getOrganizationId());
+        dataScope.requireOrganization(authentication, value.getOrganizationId());
+        dataScope.requireEmployee(authentication, existing.getEmployeeId());
         value.setId(id);
         return ok(service.saveAssignment(value));
     }
 
     @DeleteMapping("/assignments/{id}")
     @PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:delete','iam:directory:manage')")
-    public ResultData<Void> deleteAssignment(@PathVariable String id) {
+    public ResultData<Void> deleteAssignment(@PathVariable String id, Authentication authentication) {
+        var existing = assignments.findById(id).orElseThrow(() -> new IllegalArgumentException("assignment not found"));
+        dataScope.requireOrganization(authentication, existing.getOrganizationId());
+        dataScope.requireEmployee(authentication, existing.getEmployeeId());
         service.deleteAssignment(id);
         return ok(null);
     }

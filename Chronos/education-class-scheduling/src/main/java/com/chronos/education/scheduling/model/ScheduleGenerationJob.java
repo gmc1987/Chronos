@@ -17,7 +17,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_schedule_generation_job")
 public class ScheduleGenerationJob extends BaseEntity {
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "request_json", columnDefinition = "text", nullable = false)

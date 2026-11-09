@@ -22,6 +22,21 @@ public interface StudentProfileRepository extends JpaRepository<StudentProfile, 
 
 	@Query("""
 			select student from StudentProfile student
+			where student.administrativeClassId in (
+			    select administrativeClass.id from AdministrativeClass administrativeClass where administrativeClass.campusId in :campusIds
+			)
+			  and (:fullAccess = true or student.administrativeClassId in :classIds or student.gradeId in :gradeIds)
+			  and (lower(student.studentNo) like concat('%', :keyword, '%')
+			       or lower(student.studentName) like concat('%', :keyword, '%'))
+			order by student.studentNo
+			""")
+	Page<StudentProfile> searchCampusScheduleOptions(
+			@Param("campusIds") java.util.Set<String> campusIds, @Param("fullAccess") boolean fullAccess,
+			@Param("classIds") java.util.Collection<String> classIds, @Param("gradeIds") java.util.Collection<String> gradeIds,
+			@Param("keyword") String keyword, Pageable pageable);
+
+	@Query("""
+			select student from StudentProfile student
 			where lower(student.studentNo) like concat('%', :keyword, '%')
 			   or lower(student.studentName) like concat('%', :keyword, '%')
 			order by student.studentNo

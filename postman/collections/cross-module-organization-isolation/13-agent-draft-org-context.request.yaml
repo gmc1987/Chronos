@@ -1,0 +1,33 @@
+$kind: http-request
+name: Operation agent propagates the selected organization
+order: 13000
+method: POST
+url: '{{base_url}}/agent/operations/plans/draft'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request": "检查 2026-2027-1 学期的基础数据和排课准备度，只生成候选方案",
+      "semesterCode": "2026-2027-1",
+      "candidateOnly": true,
+      "organizationId": "{{allowed_org_id}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const allowed = pm.collectionVariables.get('allowed_org_id');
+      pm.test('agent planning snapshot uses the selected organization', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data.readiness.organizationId).to.eql(allowed);
+      });
+      pm.test('every organization-scoped step keeps the selected organization', () => {
+        const globalTools = ['workflow.start', 'workflow.complete', 'form.submit', 'iam.role.upsert'];
+        body.data.plan.steps
+          .filter(step => !globalTools.includes(step.toolCode))
+          .forEach(step => pm.expect(step.toolConfig.organizationId, step.toolCode).to.eql(allowed));
+      });

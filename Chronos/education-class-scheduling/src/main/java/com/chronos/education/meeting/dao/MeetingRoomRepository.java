@@ -8,6 +8,7 @@ import com.chronos.education.meeting.model.MeetingRoom;
 
 public interface MeetingRoomRepository extends JpaRepository<MeetingRoom, String> {
 	List<MeetingRoom> findAllByOrderByRoomNameAsc();
+	List<MeetingRoom> findByCampusIdInOrderByRoomNameAsc(java.util.Collection<String> campusIds);
 
 	boolean existsByRoomCodeAndIdNot(String roomCode, String id);
 

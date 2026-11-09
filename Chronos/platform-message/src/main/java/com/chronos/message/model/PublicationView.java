@@ -37,7 +37,8 @@ public record PublicationView(
 		long readCount,
 		long recipientCount,
 		List<AudienceCommand> audiences,
-		List<AttachmentView> attachments) {
+		List<AttachmentView> attachments,
+		String ownerOrganizationId) {
 	public record AttachmentView(
 			String id,
 			String originalName,

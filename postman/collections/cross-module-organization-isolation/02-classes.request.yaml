@@ -1,0 +1,16 @@
+$kind: http-request
+name: Academic classes stay inside school
+order: 2000
+method: GET
+url: '{{base_url}}/admin/education/administrative-classes'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const rows = body.data;
+      pm.test('all returned classes belong to the allowed school', () => {
+        pm.response.to.have.status(200);
+        pm.expect(rows.length).to.be.above(0);
+        rows.forEach(row => pm.expect(row.campusId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });
+      pm.collectionVariables.set('visible_class_ids', JSON.stringify(rows.map(row => row.id)));

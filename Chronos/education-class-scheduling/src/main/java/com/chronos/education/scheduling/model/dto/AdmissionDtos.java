@@ -23,6 +23,6 @@ public final class AdmissionDtos {
 			java.util.List<String> errors,
 			java.util.List<ImportRow> rows) {}
 	public record BatchActionCommand(Integer admissionYear, Integer batchLimit,
-			Integer targetClassSize, boolean dryRun) {}
+			Integer targetClassSize, boolean dryRun, String organizationId) {}
 	public record OfferingGenerationCommand(String semesterCode, Integer batchLimit, boolean dryRun) {}
 }

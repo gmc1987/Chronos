@@ -16,13 +16,13 @@ public interface IIamDirectoryService {
     List<OrganizationUnitVO> organizationUnits(String organizationId);
     OrganizationUnitVO saveOrganizationUnit(OrganizationUnitDTO value);
     void deleteOrganizationUnit(String id);
-    List<Position> positions(); Position savePosition(Position value); void deletePosition(String id);
-    Page<Position> pagePositions(Pageable pageable);
+    List<Position> positions(String organizationId); Position savePosition(Position value); void deletePosition(String id);
+    Page<Position> pagePositions(String organizationId, Pageable pageable);
     List<JobTitle> jobTitles(); JobTitle saveJobTitle(JobTitle value); void deleteJobTitle(String id);
-    List<JobLevel> jobLevels(); JobLevel saveJobLevel(JobLevel value); void deleteJobLevel(String id);
-    Page<JobLevel> pageJobLevels(Pageable pageable);
-    List<Employee> employees(); Employee saveEmployee(Employee value); void deleteEmployee(String id);
-    Page<Employee> pageEmployees(String keyword, Pageable pageable);
+    List<JobLevel> jobLevels(String organizationId); JobLevel saveJobLevel(JobLevel value); void deleteJobLevel(String id);
+    Page<JobLevel> pageJobLevels(String organizationId, Pageable pageable);
+    List<Employee> employees(String organizationId); Employee saveEmployee(Employee value); void deleteEmployee(String id);
+    Page<Employee> pageEmployees(String organizationId, String keyword, Pageable pageable);
     List<EmployeeAssignmentVO> assignments(String employeeId);
     EmployeeAssignmentVO saveAssignment(EmployeeAssignmentDTO value); void deleteAssignment(String id);
 }

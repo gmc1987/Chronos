@@ -46,16 +46,27 @@
         <el-form-item label="邮箱">
           <el-input v-model="form.email" />
         </el-form-item>
+        <el-form-item label="所属机构" :required="dialogMode === 'create'">
+          <el-select v-model="form.organizationId" filterable placeholder="请选择所属机构" style="width:100%">
+            <el-option v-for="organization in organizations" :key="organization.id"
+              :label="organization.organizationName" :value="organization.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status">
             <el-option :value="1" label="启用" />
             <el-option :value="0" label="禁用" />
           </el-select>
         </el-form-item>
-        <el-form-item label="角色">
+        <el-form-item label="人工分配角色">
           <el-select v-model="form.roleIds" multiple style="width: 100%">
             <el-option v-for="role in roles" :key="role.id" :label="role.roleName" :value="role.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="dialogMode === 'edit'" label="当前全部角色">
+          <el-tag v-for="role in form.roles || []" :key="role.id" class="role-tag">
+            {{ role.roleName }}
+          </el-tag>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -68,7 +79,8 @@
 
 <script setup>
 import { ref } from 'vue'
-import { listUsers, userDetail, createUser, updateUser, deleteUser, listRoles } from '../api'
+import { ElMessage } from 'element-plus'
+import { listUsers, userDetail, createUser, updateUser, deleteUser, listRoles, orgList } from '../api'
 
 const users = ref([])
 const total = ref(0)
@@ -76,6 +88,7 @@ const page = ref(1)
 const size = ref(10)
 const keyword = ref('')
 const roles = ref([])
+const organizations = ref([])
 
 const showDialog = ref(false)
 const dialogMode = ref('create')
@@ -113,7 +126,7 @@ const onSizeChange = (val) => {
 
 const openCreate = () => {
   dialogMode.value = 'create'
-  form.value = { username: '', password: '', email: '', status: 1, roleIds: [] }
+  form.value = { username: '', password: '', email: '', organizationId: '', status: 1, roleIds: [] }
   showDialog.value = true
 }
 
@@ -124,12 +137,17 @@ const openEdit = async (row) => {
   form.value = {
     ...user,
     password: '',
-    roleIds: (user.roles || []).map((role) => role.id),
+    // 用户管理只修改 MANUAL 来源，不能把基础角色或智能体授权误当成人工角色覆盖。
+    roleIds: user.manualRoleIds || [],
   }
   showDialog.value = true
 }
 
 const submit = async () => {
+  if (dialogMode.value === 'create' && !form.value.organizationId) {
+    ElMessage.warning('请选择用户所属机构')
+    return
+  }
   if (dialogMode.value === 'create') {
     await createUser(form.value)
   } else {
@@ -145,6 +163,7 @@ const remove = async (row) => {
 }
 
 loadRoles()
+orgList({ page: 0, size: 500 }).then(response => { organizations.value = response.data?.content || [] })
 load()
 </script>
 

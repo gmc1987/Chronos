@@ -1,0 +1,24 @@
+$kind: http-request
+name: Admin login
+order: 1000
+method: POST
+url: '{{base_url}}/auth/login'
+auth:
+  type: noauth
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {"username":"admin","password":"{{admin_password}}"}
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('admin login succeeds', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data.accessToken).to.be.a('string').and.not.empty;
+      });
+      pm.collectionVariables.set('admin_token', body.data.accessToken);

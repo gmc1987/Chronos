@@ -70,16 +70,31 @@ public class SemesterPreparationExecutionService {
 	/** Agent 入口：按年度执行同一套分班规则。 */
 	@Transactional
 	public Map<String, Object> assignClasses(int year, int batchLimit, int targetClassSize, boolean dryRun) {
+		return assignClasses(year, batchLimit, targetClassSize, dryRun, null);
+	}
+
+	@Transactional
+	public Map<String, Object> assignClasses(int year, int batchLimit, int targetClassSize, boolean dryRun,
+			String organizationId) {
+		return assignClasses(year, batchLimit, targetClassSize, dryRun, organizationId, null);
+	}
+
+	@Transactional
+	public Map<String, Object> assignClasses(int year, int batchLimit, int targetClassSize, boolean dryRun,
+			String organizationId, List<String> candidateNos) {
 		int limit = bounded(batchLimit, 100, 500);
 		int classSize = bounded(targetClassSize, 50, 200);
 		var candidates = admissionCandidates.findAll().stream()
+				.filter(value -> organizationId == null || organizationId.equals(value.getOrganizationId()))
 				.filter(value -> Integer.valueOf(year).equals(value.getAdmissionYear()))
+				.filter(value -> candidateNos == null || candidateNos.contains(value.getCandidateNo()))
 				.filter(value -> "ADMITTED".equals(value.getAdmissionStatus()))
 				.filter(value -> value.getAdmittedMajorId() != null && value.getPlannedClassId() == null)
 				.sorted(Comparator.comparing(value -> value.getCandidateNo()))
 				.limit(limit).toList();
 		var allClasses = administrativeClasses.findAll();
 		var classesByMajor = allClasses.stream()
+				.filter(value -> organizationId == null || organizationId.equals(value.getCampusId()))
 				.filter(value -> "ACTIVE".equals(value.getStatus()))
 				.filter(value -> Integer.valueOf(year).equals(value.getGradeYear()))
 				.filter(value -> value.getMajorId() != null)
@@ -125,9 +140,23 @@ public class SemesterPreparationExecutionService {
 	/** Agent 入口：预览或批量完成资格复查。 */
 	@Transactional
 	public Map<String, Object> reviewAdmissions(int year, int batchLimit, boolean dryRun, String actor) {
+		return reviewAdmissions(year, batchLimit, dryRun, actor, null);
+	}
+
+	@Transactional
+	public Map<String, Object> reviewAdmissions(int year, int batchLimit, boolean dryRun, String actor,
+			String organizationId) {
+		return reviewAdmissions(year, batchLimit, dryRun, actor, organizationId, null);
+	}
+
+	@Transactional
+	public Map<String, Object> reviewAdmissions(int year, int batchLimit, boolean dryRun, String actor,
+			String organizationId, List<String> candidateNos) {
 		int limit = bounded(batchLimit, 100, 500);
 		var candidates = admissionCandidates.findAll().stream()
+				.filter(value -> organizationId == null || organizationId.equals(value.getOrganizationId()))
 				.filter(value -> Integer.valueOf(year).equals(value.getAdmissionYear()))
+				.filter(value -> candidateNos == null || candidateNos.contains(value.getCandidateNo()))
 				.filter(value -> "ADMITTED".equals(value.getAdmissionStatus()))
 				.sorted(Comparator.comparing(value -> value.getCandidateNo())).limit(limit).toList();
 		int eligible = 0;
@@ -154,9 +183,22 @@ public class SemesterPreparationExecutionService {
 	/** Agent 入口：预览或批量建档、生成学号并开通账号。 */
 	@Transactional
 	public Map<String, Object> enrollAdmissions(int year, int batchLimit, boolean dryRun) {
+		return enrollAdmissions(year, batchLimit, dryRun, null);
+	}
+
+	@Transactional
+	public Map<String, Object> enrollAdmissions(int year, int batchLimit, boolean dryRun, String organizationId) {
+		return enrollAdmissions(year, batchLimit, dryRun, organizationId, null);
+	}
+
+	@Transactional
+	public Map<String, Object> enrollAdmissions(int year, int batchLimit, boolean dryRun,
+			String organizationId, List<String> candidateNos) {
 		int limit = bounded(batchLimit, 50, 200);
 		var candidates = admissionCandidates.findAll().stream()
+				.filter(value -> organizationId == null || organizationId.equals(value.getOrganizationId()))
 				.filter(value -> Integer.valueOf(year).equals(value.getAdmissionYear()))
+				.filter(value -> candidateNos == null || candidateNos.contains(value.getCandidateNo()))
 				.filter(value -> "VERIFIED".equals(value.getAdmissionStatus()))
 				.sorted(Comparator.comparing(value -> value.getCandidateNo())).limit(limit).toList();
 		int eligible = 0;
@@ -183,10 +225,20 @@ public class SemesterPreparationExecutionService {
 	/** Agent 入口：由确认后的任教关系生成教学任务和行政班成员。 */
 	@Transactional
 	public Map<String, Object> generateOfferings(String semesterCode, int batchLimit, boolean dryRun) {
+		return generateOfferings(semesterCode, batchLimit, dryRun, null);
+	}
+
+	@Transactional
+	public Map<String, Object> generateOfferings(String semesterCode, int batchLimit, boolean dryRun,
+			String organizationId) {
 		int limit = bounded(batchLimit, 100, 500);
 		var term = terms.findByTermCode(semesterCode)
 				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
-		var existing = new ArrayList<>(offerings.findBySemesterCodeOrderByOfferingCode(semesterCode));
+		if (organizationId != null && !organizationId.equals(term.getOrganizationId())) {
+			throw new IllegalArgumentException("学期不属于当前智能体任务的目标机构");
+		}
+		var existing = new ArrayList<>(offerings.findBySemesterCodeOrderByOfferingCode(semesterCode).stream()
+				.filter(value -> organizationId == null || organizationId.equals(value.getCampusId())).toList());
 		var catalogBySubject = courses.findAll().stream()
 				.filter(value -> Boolean.TRUE.equals(value.getEnabled()) && value.getSubjectId() != null)
 				.collect(Collectors.groupingBy(value -> value.getSubjectId()));
@@ -194,6 +246,8 @@ public class SemesterPreparationExecutionService {
 				.filter(value -> term.getId().equals(value.getAcademicTermId()))
 				.filter(value -> Boolean.TRUE.equals(value.getEnabled()))
 				.filter(value -> value.getAdministrativeClassId() != null)
+				.filter(value -> organizationId == null || administrativeClasses.findById(value.getAdministrativeClassId())
+						.map(item -> organizationId.equals(item.getCampusId())).orElse(false))
 				.limit(limit).toList();
 		List<String> createdIds = new ArrayList<>();
 		int creatable = 0;

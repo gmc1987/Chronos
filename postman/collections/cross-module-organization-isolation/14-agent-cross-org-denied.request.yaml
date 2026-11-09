@@ -1,0 +1,25 @@
+$kind: http-request
+name: Operation agent rejects a cross-organization target
+order: 14000
+method: POST
+url: '{{base_url}}/agent/operations/plans/draft'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request": "检查其他学校的学期基础数据",
+      "semesterCode": "2026-2027-1",
+      "candidateOnly": true,
+      "organizationId": "{{denied_org_id}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('cross-organization agent planning is denied before LLM execution', () => {
+        pm.expect(pm.response.code).to.be.oneOf([400, 403]);
+        pm.expect(body.code).not.to.eql('200');
+      });

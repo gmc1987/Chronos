@@ -16,6 +16,9 @@ public interface AdministrativeClassRepository extends JpaRepository<Administrat
 	List<AdministrativeClass> findByHeadTeacherId(String headTeacherId);
 	List<AdministrativeClass> findByCampusIdIn(List<String> campusIds);
 
+	List<AdministrativeClass> findByCampusIdOrderByGradeYearDescClassCodeAsc(String campusId);
+	Page<AdministrativeClass> findByCampusIdOrderByGradeYearDescClassCodeAsc(String campusId, Pageable pageable);
+
 	@Query("""
 			select value from AdministrativeClass value
 			where value.id in :classIds

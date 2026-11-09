@@ -19,6 +19,7 @@ import lombok.Setter;
 @Table(name = "edu_admission_candidate", uniqueConstraints = @UniqueConstraint(
 		name = "uk_edu_admission_candidate", columnNames = {"admission_year", "candidate_no"}))
 public class AdmissionCandidate extends BaseEntity {
+	@Column(name = "organization_id", length = 64, nullable = false) private String organizationId;
 	@Column(name = "source_batch_no", length = 64, nullable = false) private String sourceBatchNo;
 	@Column(name = "source_type", length = 24, nullable = false) private String sourceType = "PROVINCIAL_IMPORT";
 	@Column(name = "candidate_no", length = 64, nullable = false) private String candidateNo;

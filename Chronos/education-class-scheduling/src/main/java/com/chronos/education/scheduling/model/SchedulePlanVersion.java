@@ -21,7 +21,7 @@ import lombok.Setter;
 				name = "uk_edu_schedule_plan_version",
 				columnNames = { "semester_code", "version_no" }))
 public class SchedulePlanVersion extends BaseEntity {
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "version_no", nullable = false)

@@ -187,6 +187,23 @@ public class FacilityMaintenanceService {
 	}
 
 	@Transactional(readOnly = true)
+	public Page<RepairOrderView> adminOrders(Collection<String> organizationIds, String keyword, String status, int page, int size) {
+		if (organizationIds == null) return adminOrders(keyword, status, page, size);
+		Specification<RepairOrder> specification = (root, query, builder) -> root.get("organizationId").in(organizationIds);
+		if (status != null && !status.isBlank()) specification = specification.and((root, query, builder) -> builder.equal(root.get("status"), status));
+		if (keyword != null && !keyword.isBlank()) {
+			String value = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
+			specification = specification.and((root, query, builder) -> builder.or(
+					builder.like(builder.lower(root.get("orderNo")), value), builder.like(builder.lower(root.get("title")), value),
+					builder.like(builder.lower(root.get("location")), value), builder.like(builder.lower(root.get("reporterName")), value),
+					builder.like(builder.lower(root.get("technicianName")), value)));
+		}
+		return orders.findAll(specification, page(page, size)).map(value -> view(value, false));
+	}
+
+	public String orderOrganization(String id) { return order(id).getOrganizationId(); }
+
+	@Transactional(readOnly = true)
 	public Page<RepairOrderView> myOrders(String actor, int page, int size) {
 		return orders.findByReporterUsernameOrderByCreateTimeDesc(actor, page(page, size))
 				.map(value -> view(value, false));
@@ -365,13 +382,34 @@ public class FacilityMaintenanceService {
 		return materials.findAll(specification, page(page, size)).map(MaterialView::from);
 	}
 
+	@Transactional(readOnly = true)
+	public Page<MaterialView> materials(Collection<String> organizationIds, String keyword, int page, int size) {
+		if (organizationIds == null) return materials(keyword, page, size);
+		Specification<MaintenanceMaterial> specification = (root, query, builder) -> root.get("organizationId").in(organizationIds);
+		if (keyword != null && !keyword.isBlank()) {
+			String value = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
+			specification = specification.and((root, query, builder) -> builder.or(
+					builder.like(builder.lower(root.get("materialCode")), value), builder.like(builder.lower(root.get("materialName")), value)));
+		}
+		return materials.findAll(specification, page(page, size)).map(MaterialView::from);
+	}
+
 	@Transactional
 	public MaterialView saveMaterial(String id, MaterialCommand command) {
+		return saveMaterial(id, command, command == null ? null : command.organizationId());
+	}
+
+	@Transactional
+	public MaterialView saveMaterial(String id, MaterialCommand command, String organizationId) {
 		require(command != null, "物料信息不能为空");
 		requireText(command.materialCode(), "请填写物料编码");
 		requireText(command.materialName(), "请填写物料名称");
 		requireText(command.unit(), "请填写计量单位");
 		MaintenanceMaterial value = id == null ? new MaintenanceMaterial() : material(id);
+		if (id == null) {
+			requireText(organizationId, "请选择物料所属机构");
+			value.setOrganizationId(organizationId.trim());
+		}
 		if (id == null) {
 			require(materials.findByMaterialCode(command.materialCode().trim()).isEmpty(), "物料编码已存在");
 		}
@@ -384,6 +422,8 @@ public class FacilityMaintenanceService {
 		value.setStatus(normalize(command.status(), Set.of("ACTIVE", "DISABLED"), "ACTIVE", "物料状态无效"));
 		return MaterialView.from(materials.save(value));
 	}
+
+	public String materialOrganization(String id) { return material(id).getOrganizationId(); }
 
 	@Transactional
 	public MaterialView restock(String id, StockCommand command, String actor) {

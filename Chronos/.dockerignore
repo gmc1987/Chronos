@@ -1,0 +1,13 @@
+.git
+.idea
+.settings
+.classpath
+.project
+.factorypath
+.DS_Store
+**/.DS_Store
+**/target
+data
+logs
+*.log
+.env

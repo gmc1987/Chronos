@@ -34,7 +34,7 @@ public class AgentRun extends BaseEntity {
 	@Column(name = "school_id", length = 64)
 	private String schoolId;
 
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "status", length = 32, nullable = false)

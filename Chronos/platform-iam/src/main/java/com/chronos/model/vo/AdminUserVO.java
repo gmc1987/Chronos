@@ -37,4 +37,6 @@ public class AdminUserVO extends BaseVO implements Serializable {
 	private String lastLoginIp;
 	private Integer status;
 	private Set<RoleVO> roles;
+	/** 用户管理页面可修改的人工角色；基础角色和智能授权角色只读展示。 */
+	private Set<String> manualRoleIds;
 }

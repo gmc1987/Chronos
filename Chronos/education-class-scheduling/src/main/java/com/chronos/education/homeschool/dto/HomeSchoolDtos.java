@@ -3,7 +3,7 @@ import java.time.LocalDateTime;
 public final class HomeSchoolDtos {
 	private HomeSchoolDtos() {}
 	public record ParentBindingCommand(String parentId, String username) {}
-	public record ParentBindingResponse(String id, String parentId, String parentName, String username, String status,
+	public record ParentBindingResponse(String id, String parentId, String organizationId, String parentName, String username, String status,
 			LocalDateTime verifiedAt, LocalDateTime invalidatedAt, boolean accountAvailable) {}
 	public record NoticeCommand(String schoolId, String classId, String title, String content,
 			Boolean receiptRequired, LocalDateTime expireAt) {}

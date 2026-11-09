@@ -10,7 +10,8 @@ import lombok.Setter;
 @Entity @Getter @Setter @NoArgsConstructor
 @Table(name = "t_job_level", comment = "员工职级")
 public class JobLevel extends BaseEntity {
-    @Column(name = "level_code", length = 100, nullable = false, unique = true) private String levelCode;
+    @Column(name = "organization_id", length = 64) private String organizationId;
+    @Column(name = "level_code", length = 100, nullable = false) private String levelCode;
     @Column(name = "level_name", length = 100, nullable = false) private String levelName;
     @Column(name = "level_sequence", nullable = false) private Integer levelSequence = 0;
     @Column(name = "level_category", length = 50) private String levelCategory;

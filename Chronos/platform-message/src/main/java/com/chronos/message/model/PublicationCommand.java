@@ -20,7 +20,8 @@ public record PublicationCommand(
 		String approvalWorkflowDefinitionId,
 		LocalDateTime publishAt,
 		LocalDateTime expireAt,
-		List<AudienceCommand> audiences) {
+		List<AudienceCommand> audiences,
+		String ownerOrganizationId) {
 	public record AudienceCommand(
 			String subjectType,
 			String subjectId,

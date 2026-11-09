@@ -68,7 +68,8 @@ class EmployeeImportServiceTest {
 		when(organizations.findByOrgCode("SCHOOL_001")).thenReturn(organization);
 		when(units.findByOrgIdAndOrganizationUnitCode("org-1", "COLLEGE_CS"))
 				.thenReturn(Optional.of(department));
-		when(positions.findByPositionCode("LECTURER")).thenReturn(position);
+        when(positions.findByOrganizationIdAndPositionCode("org-1", "LECTURER"))
+				.thenReturn(Optional.of(position));
 		when(assignments.findFirstByEmployeeIdAndOrganizationIdAndOrganizationUnitIdAndPositionId(
 				any(), any(), any(), any())).thenReturn(Optional.empty());
 		when(assignments.save(any(EmployeeAssignment.class))).thenAnswer(invocation -> {
@@ -82,10 +83,10 @@ class EmployeeImportServiceTest {
 			return value;
 		});
 		when(identities.save(any(PersonExternalIdentity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-		when(accounts.sync(any(), any(Boolean.class), any(Boolean.class), any(Boolean.class))).thenReturn(
+		when(accounts.sync(any(), any(Boolean.class), any(Boolean.class))).thenReturn(
 				new StaffAccountProvisioningService.AccountSyncResult(
 						"202600001", "王老师", "202600001", true, "Abc234567890",
-						Set.of("FACULTY_TEACHER"), List.of()));
+						Set.of("ROLE_PLATFORM_USER"), List.of()));
 	}
 
 	@Test
@@ -97,14 +98,14 @@ class EmployeeImportServiceTest {
 		when(employees.findByEmployeeCode("202600001")).thenReturn(Optional.empty());
 
 		Map<String, Object> result = service.importRows(List.of(employeeRow("HR-001")),
-				new EmployeeImportService.ImportOptions(true, true, true, "EXCEL", false));
+				new EmployeeImportService.ImportOptions(true, true, "EXCEL", false));
 
 		assertThat(((Map<?, ?>) result.get("employees")).get("created")).isEqualTo(1);
 		assertThat(((Map<?, ?>) result.get("accounts")).get("created")).isEqualTo(1L);
 		verify(businessNumbers).nextEmployeeNumber("org-1", java.time.LocalDate.of(2026, 9, 1));
 		verify(identities).save(any(PersonExternalIdentity.class));
 		verify(accounts).sync(any(Employee.class), org.mockito.ArgumentMatchers.eq(true),
-				org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.eq(false));
+				org.mockito.ArgumentMatchers.eq(false));
 	}
 
 	@Test
@@ -119,12 +120,12 @@ class EmployeeImportServiceTest {
 		when(employees.findById("employee-1")).thenReturn(Optional.of(existing));
 
 		Map<String, Object> result = service.importRows(List.of(employeeRow("HR-001")),
-				new EmployeeImportService.ImportOptions(false, true, true, "EXCEL", false));
+				new EmployeeImportService.ImportOptions(false, true, "EXCEL", false));
 
 		assertThat(((Map<?, ?>) result.get("employees")).get("updated")).isEqualTo(1);
 		assertThat(existing.getEmployeeCode()).isEqualTo("202600001");
 		verify(businessNumbers, never()).nextEmployeeNumber(any(), any());
-		verify(accounts, never()).sync(any(), any(Boolean.class), any(Boolean.class), any(Boolean.class));
+		verify(accounts, never()).sync(any(), any(Boolean.class), any(Boolean.class));
 	}
 
 	private Map<String, String> employeeRow(String externalKey) {

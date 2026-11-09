@@ -322,7 +322,7 @@ public class MeetingRecurrenceService {
 				source.title(), source.agenda(), source.meetingType(), start, end,
 				source.roomId(), source.meetingProvider(), source.externalMeetingId(),
 				source.joinUrl(), source.onlineAccessCode(), source.participantUsernames(),
-				recordVersion);
+				recordVersion, source.organizationId());
 	}
 
 	private Meeting require(String id) {

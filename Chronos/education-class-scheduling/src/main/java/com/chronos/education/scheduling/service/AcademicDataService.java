@@ -48,6 +48,7 @@ import com.chronos.model.dto.TeacherAccountProvisioning;
 import com.chronos.service.iService.ITeacherAccountProvisioningService;
 import com.chronos.service.impl.BusinessNumberService;
 import com.chronos.Idao.IEmployeeRepository;
+import com.chronos.Idao.IOrganizationRepository;
 
 /** 教务主数据与走班成员服务，删除操作均先校验业务引用。 */
 @Service
@@ -70,6 +71,7 @@ public class AcademicDataService {
 	private final ITeacherAccountProvisioningService teacherAccounts;
 	private final BusinessNumberService businessNumbers;
 	private final IEmployeeRepository employees;
+	private final IOrganizationRepository organizations;
 
 	public AcademicDataService(
 			AcademicTermRepository terms,
@@ -89,7 +91,8 @@ public class AcademicDataService {
 			EducationUserBindingRepository bindings,
 			ITeacherAccountProvisioningService teacherAccounts,
 			BusinessNumberService businessNumbers,
-			IEmployeeRepository employees) {
+			IEmployeeRepository employees,
+			IOrganizationRepository organizations) {
 		this.terms = terms;
 		this.grades = grades;
 		this.subjects = subjects;
@@ -108,14 +111,24 @@ public class AcademicDataService {
 		this.teacherAccounts = teacherAccounts;
 		this.businessNumbers = businessNumbers;
 		this.employees = employees;
+		this.organizations = organizations;
 	}
 
 	public List<AcademicTerm> terms() {
 		return terms.findAllByOrderByStartDateDesc();
 	}
 
+	public List<AcademicTerm> terms(Collection<String> organizationIds) {
+		return organizationIds == null ? terms() : terms.findByOrganizationIdInOrderByStartDateDesc(organizationIds);
+	}
+
 	public Page<AcademicTerm> terms(int page, int size) {
 		return terms.findAllByOrderByStartDateDesc(pageable(page, size));
+	}
+
+	public Page<AcademicTerm> terms(Collection<String> organizationIds, int page, int size) {
+		return organizationIds == null ? terms(page, size)
+				: terms.findByOrganizationIdInOrderByStartDateDesc(organizationIds, pageable(page, size));
 	}
 
 	@Transactional
@@ -124,22 +137,56 @@ public class AcademicDataService {
 				|| !command.getStartDate().isBefore(command.getEndDate())) {
 			throw new IllegalArgumentException("学期开始日期必须早于结束日期");
 		}
-		if (id != null && terms.findById(id)
-				.map(AcademicTerm::getStatus)
-				.filter("ARCHIVED"::equals)
-				.isPresent()) {
+		AcademicTerm existing = id == null ? null : terms.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		if (existing != null && "ARCHIVED".equals(existing.getStatus())) {
 			throw new IllegalStateException("已归档学期不能直接修改");
+		}
+		if (existing == null) {
+			String organizationId = required(command.getOrganizationId(), "所属机构");
+			var organization = organizations.findById(organizationId)
+					.orElseThrow(() -> new IllegalArgumentException("所属机构不存在"));
+			String localCode = localTermCode(command);
+			if (terms.existsByOrganizationIdAndLocalTermCode(organizationId, localCode)) {
+				throw new IllegalStateException("该机构已存在学期编码 " + localCode);
+			}
+			command.setLocalTermCode(localCode);
+			command.setTermCode(qualifiedTermCode(organization.getOrgCode(), localCode));
+		} else {
+			// 学期编码已经被大量教学数据引用，创建后不可修改；名称和日期仍可维护。
+			command.setOrganizationId(existing.getOrganizationId());
+			command.setLocalTermCode(existing.getLocalTermCode());
+			command.setTermCode(existing.getTermCode());
 		}
 		// 归档只能走带准备度检查和审计的专用接口，禁止普通编辑绕过归档边界。
 		command.setStatus("ACTIVE");
 		AcademicTerm value = entity(id, command, terms);
 		if (Boolean.TRUE.equals(command.getCurrentTerm())) {
-			terms.findAll().stream().filter(item -> !item.getId().equals(value.getId())).forEach(item -> {
+			terms.findByOrganizationIdOrderByStartDateDesc(command.getOrganizationId()).stream()
+					.filter(item -> !item.getId().equals(value.getId())).forEach(item -> {
 				item.setCurrentTerm(false);
 				terms.save(item);
 			});
 		}
 		return terms.save(value);
+	}
+
+	private String localTermCode(AcademicTerm command) {
+		String value = command.getLocalTermCode();
+		if (value == null || value.isBlank()) value = command.getTermCode();
+		if (value == null || value.isBlank()) throw new IllegalArgumentException("学期编码不能为空");
+		value = value.trim();
+		int separator = value.indexOf(':');
+		if (separator >= 0) value = value.substring(separator + 1).trim();
+		if (value.isBlank() || value.length() > 64) throw new IllegalArgumentException("校内学期编码长度必须为 1-64 个字符");
+		return value;
+	}
+
+	private String qualifiedTermCode(String organizationCode, String localCode) {
+		String prefix = required(organizationCode, "机构编码").trim();
+		String value = prefix + ":" + localCode;
+		if (value.length() > 128) throw new IllegalArgumentException("机构学期编码长度不能超过 128 个字符");
+		return value;
 	}
 
 	public List<EducationGrade> grades() {
@@ -249,6 +296,15 @@ public class AcademicDataService {
 		return result;
 	}
 
+	public List<AdministrativeClass> administrativeClassesInCampus(String campusId) {
+		return withHeadTeacherNames(administrativeClasses.findByCampusIdOrderByGradeYearDescClassCodeAsc(campusId));
+	}
+
+	public Page<AdministrativeClass> administrativeClassesInCampus(String campusId, int page, int size) {
+		return withHeadTeacherNames(administrativeClasses.findByCampusIdOrderByGradeYearDescClassCodeAsc(
+				campusId, pageable(page, size)));
+	}
+
 	public List<AdministrativeClass> administrativeClasses(EducationDataScope scope) {
 		return scope.fullAccess()
 				? administrativeClasses()
@@ -351,11 +407,20 @@ public class AcademicDataService {
 			String keyword,
 			int page,
 			int size) {
+		return scheduleStudentOptions(scope, keyword, page, size, null);
+	}
+
+	public Page<StudentProfile> scheduleStudentOptions(
+			EducationDataScope scope, String keyword, int page, int size, java.util.Set<String> campusIds) {
 		String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT);
 		if (normalizedKeyword.length() > 100) {
 			throw new IllegalArgumentException("学生查询关键词不能超过100个字符");
 		}
 		Pageable requestedPage = pageable(page, Math.min(size, 50));
+		if (campusIds != null) {
+			return students.searchCampusScheduleOptions(campusIds, scope.fullAccess(),
+					nonEmpty(scope.administrativeClassIds()), nonEmpty(scope.gradeIds()), normalizedKeyword, requestedPage);
+		}
 		return scope.fullAccess()
 				? students.searchScheduleOptions(normalizedKeyword, requestedPage)
 				: students.searchVisibleScheduleOptions(
@@ -890,6 +955,11 @@ public class AcademicDataService {
 
 	private int value(Integer number) {
 		return number == null ? 0 : number;
+	}
+
+	private String required(String value, String label) {
+		if (value == null || value.isBlank()) throw new IllegalArgumentException(label + "不能为空");
+		return value;
 	}
 
 	private List<AdministrativeClass> withHeadTeacherNames(List<AdministrativeClass> rows) {

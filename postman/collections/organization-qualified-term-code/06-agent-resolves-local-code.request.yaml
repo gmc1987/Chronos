@@ -1,0 +1,31 @@
+$kind: http-request
+name: Operation agent resolves local term code in organization context
+order: 6000
+method: POST
+url: '{{base_url}}/agent/operations/conversation'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request":"请处理 2099-2100-1 学期的排课准备工作",
+      "semesterCode":"{{local_term_code}}",
+      "organizationId":"{{hv_org_id}}",
+      "candidateOnly":true,
+      "confirmNonCurrent":false,
+      "createMissingTerm":false
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('agent resolves local code before asking for non-current confirmation', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data.status).to.eql('CONFIRM_NON_CURRENT');
+        pm.expect(body.data.resolution.termCode).to.eql(
+          `${pm.collectionVariables.get('hv_org_code')}:${pm.collectionVariables.get('local_term_code')}`
+        );
+      });

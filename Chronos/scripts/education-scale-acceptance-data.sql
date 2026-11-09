@@ -1,4 +1,4 @@
--- 本地生产演示规模数据。依赖已有 2026-2027-1 学期；可重复执行。
+-- 本地生产演示规模数据。每所演示学校独立维护 2026-2027-1 校内学期编码；可重复执行。
 -- 用法：docker cp 本文件 Chronos:/tmp/education-scale-acceptance-data.sql
 --       docker exec Chronos psql -v ON_ERROR_STOP=1 -U Chronos -d ChronosEducation -f /tmp/education-scale-acceptance-data.sql
 -- 首次执行后从容器复制 /tmp/chronos-scale-credentials.csv，并以 0600 权限保存。
@@ -18,6 +18,21 @@ INSERT INTO t_organization (id, create_by, create_time, org_code,
 SELECT md5('scale-org-' || code)::uuid::text, 'scale_seed', now(), code,
        name, 'SCHOOL', now(), short_name, 1, 'Asia/Shanghai', 'EDUCATION'
 FROM schools ON CONFLICT (org_code) DO NOTHING;
+
+INSERT INTO edu_academic_term (
+    id, organization_id, term_code, local_term_code, term_name, academic_year,
+    term_no, start_date, end_date, week_count, current_term, status,
+    create_by, create_time)
+SELECT md5('scale-term-' || organization.org_code || '-2026-2027-1')::uuid::text,
+       organization.id,
+       organization.org_code || ':2026-2027-1',
+       '2026-2027-1',
+       '2026—2027学年第一学期',
+       '2026-2027', 1, DATE '2026-09-01', DATE '2027-01-31', 20,
+       true, 'ACTIVE', 'scale_seed', now()
+FROM t_organization organization
+WHERE organization.org_code LIKE 'SCALE-%-2026'
+ON CONFLICT (term_code) DO NOTHING;
 
 WITH grades(school, year, stage) AS (
     SELECT 'HV', year, 'HIGHER_EDUCATION' FROM generate_series(2024, 2026) year
@@ -79,6 +94,30 @@ FROM teachers t JOIN t_iam_employee e ON e.employee_code =
     'SCALE-' || t.school || '-T' || lpad(t.n::text, 3, '0')
 ON CONFLICT (teacher_no) DO NOTHING;
 
+-- 演示教师必须有机构任职；员工目录按任职而非账号归属过滤。
+-- 已维护过任职的员工保留原有数据，不自动补第二条主任职。
+INSERT INTO t_organization_unit (id, create_by, create_time, org_id,
+    organization_unit_code, organization_unit_name, level, sort_order, status, tree_path, unit_type)
+SELECT md5('scale-teaching-unit-' || o.org_code)::uuid::text, 'scale_seed', now(), o.id,
+       'SCALE-DEMO-TEACHING', '演示教学部', 1, 0, 1,
+       '/' || md5('scale-teaching-unit-' || o.org_code)::uuid::text || '/', 'DEPARTMENT'
+FROM t_organization o
+WHERE o.org_code IN ('SCALE-HV-2026', 'SCALE-JC-2026', 'SCALE-UG-2026')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO t_employee_assignment (id, create_by, create_time, employee_id,
+    organization_id, organization_unit_id, primary_assignment, department_leader,
+    effective_from, status)
+SELECT md5('scale-primary-assignment-' || e.id)::uuid::text, 'scale_seed', now(), e.id,
+       o.id, d.id, true, false, e.hire_date, 1
+FROM t_iam_employee e
+JOIN t_organization o ON o.org_code = 'SCALE-' || split_part(e.employee_code, '-', 2) || '-2026'
+JOIN t_organization_unit d ON d.org_id = o.id AND d.organization_unit_code = 'SCALE-DEMO-TEACHING'
+WHERE e.create_by = 'scale_seed'
+  AND e.employee_code ~ '^SCALE-(HV|JC|UG)-T[0-9]{3}$'
+  AND NOT EXISTS (SELECT 1 FROM t_employee_assignment a WHERE a.employee_id = e.id)
+ON CONFLICT DO NOTHING;
+
 -- 高职为 3 年级 × 14 专业 × 每专业每年级 4 班；其他两校各 4 班。
 CREATE TEMP TABLE scale_demo_classes AS
 SELECT 'HV'::text AS school, g AS year, m AS major_no, c AS class_no,
@@ -127,8 +166,10 @@ INSERT INTO edu_bell_schedule (id, academic_term_id, campus_id,
 SELECT md5('scale-bell-' || o.org_code)::uuid::text, term.id, o.id,
        'BELL-' || o.org_code, o.short_name || '标准作息', true, 'ACTIVE',
        'scale_seed', now()
-FROM t_organization o CROSS JOIN edu_academic_term term
-WHERE o.org_code LIKE 'SCALE-%-2026' AND term.term_code = '2026-2027-1'
+FROM t_organization o
+JOIN edu_academic_term term
+  ON term.organization_id = o.id AND term.local_term_code = '2026-2027-1'
+WHERE o.org_code LIKE 'SCALE-%-2026'
   AND NOT EXISTS (SELECT 1 FROM edu_bell_schedule b
                   WHERE b.schedule_code = 'BELL-' || o.org_code);
 
@@ -229,7 +270,7 @@ INSERT INTO edu_course_offering (id, semester_code, offering_code, course_code,
     weekly_lessons, campus_id, status, preferred_duration_periods, week_pattern,
     offering_mode, create_by, create_time)
 SELECT md5('scale-offering-' || r.class_code || '-' || r.kind)::uuid::text,
-       '2026-2027-1', r.class_code || '-' || r.kind, r.course_code,
+       o.org_code || ':2026-2027-1', r.class_code || '-' || r.kind, r.course_code,
        cc.course_name, ac.class_name || '·' || cc.course_name, t.id, t.teacher_name,
        r.class_size, r.lessons, o.id, 'ACTIVE', 1, 'ALL', 'NORMAL', 'scale_seed', now()
 FROM offering_rows r

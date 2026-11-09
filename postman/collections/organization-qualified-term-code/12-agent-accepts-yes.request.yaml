@@ -1,0 +1,30 @@
+$kind: http-request
+name: Operation agent accepts affirmative confirmation
+order: 12000
+method: POST
+url: '{{base_url}}/agent/operations/conversation'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request":"是的",
+      "contextMessages":["我要处理2092-2093学年第二学期的教学日历"],
+      "semesterCode":"2092-2093-2",
+      "organizationId":"{{hv_org_id}}",
+      "candidateOnly":false,
+      "createMissingTerm":true
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const required = body.data.draft.requiredInputs.map(item => item.key);
+      pm.test('yes advances the conversation instead of repeating the same question', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.data.status).to.eql('NEED_INPUT');
+        pm.expect(body.data.resolution.creationRequested).to.eql(true);
+        pm.expect(required).to.eql(['startDate', 'endDate', 'weekCount']);
+      });

@@ -1,0 +1,23 @@
+$kind: collection
+name: Cross-module Organization Isolation Audit
+description: Live regression audit for a non-admin account restricted to one school.
+variables:
+  - key: base_url
+    value: 'http://127.0.0.1:8080'
+  - key: scope_username
+    value: 'audit-org-scope'
+  - key: scope_password
+    value: ''
+  - key: scope_token
+    value: ''
+  - key: allowed_org_id
+    value: '9f1fee10-1c2e-b6e9-2e68-50e6f32cc65e'
+  - key: denied_org_id
+    value: '91c84e2f-f570-de1f-806a-3918bb1a1194'
+  - key: visible_class_ids
+    value: '[]'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{scope_token}}'

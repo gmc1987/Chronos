@@ -1,0 +1,19 @@
+$kind: http-request
+name: Scoped manager sees only accounts in allowed organization
+order: 9000
+method: GET
+url: '{{base_url}}/admin/users/list?page=0&size=200'
+queryParams:
+  - key: page
+    value: '0'
+  - key: size
+    value: '200'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('account list is scoped', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.data.content.length).to.be.above(0);
+        body.data.content.forEach(item => pm.expect(item.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

@@ -6,6 +6,9 @@
     </header>
     <el-alert type="info" :closable="false" title="住宿分配属于新生入学的独立阶段。先维护床位，再按学期逐人确认；同一学生或床位不能重复分配。" />
     <div class="toolbar">
+      <el-select v-model="organizationId" placeholder="选择所属机构" filterable style="width:280px" @change="changeOrganization">
+        <el-option v-for="item in organizations" :key="item.id" :label="orgName(item)" :value="item.id" />
+      </el-select>
       <el-select v-model="semesterCode" placeholder="选择学期" filterable style="width:280px" @change="loadAssignments">
         <el-option v-for="term in terms" :key="term.id || term.termCode" :label="`${term.termName || term.termCode}（${term.termCode}）`" :value="term.termCode" />
       </el-select>
@@ -29,7 +32,7 @@
         </div>
       </el-tab-pane>
     </el-tabs>
-    <el-dialog v-model="buildingDialog" title="新增宿舍楼" width="520px"><el-form label-width="90px"><el-form-item label="楼栋编码"><el-input v-model="buildingForm.buildingCode" /></el-form-item><el-form-item label="楼栋名称"><el-input v-model="buildingForm.buildingName" /></el-form-item><el-form-item label="性别规则"><el-select v-model="buildingForm.genderPolicy"><el-option label="混合" value="MIXED" /><el-option label="男生" value="MALE" /><el-option label="女生" value="FEMALE" /></el-select></el-form-item></el-form><template #footer><el-button @click="buildingDialog=false">取消</el-button><el-button type="primary" @click="saveBuilding">保存</el-button></template></el-dialog>
+    <el-dialog v-model="buildingDialog" title="新增宿舍楼" width="520px"><el-form label-width="90px"><el-form-item label="所属机构">{{ organizationName(organizationId) }}</el-form-item><el-form-item label="楼栋编码"><el-input v-model="buildingForm.buildingCode" /></el-form-item><el-form-item label="楼栋名称"><el-input v-model="buildingForm.buildingName" /></el-form-item><el-form-item label="性别规则"><el-select v-model="buildingForm.genderPolicy"><el-option label="混合" value="MIXED" /><el-option label="男生" value="MALE" /><el-option label="女生" value="FEMALE" /></el-select></el-form-item></el-form><template #footer><el-button @click="buildingDialog=false">取消</el-button><el-button type="primary" @click="saveBuilding">保存</el-button></template></el-dialog>
     <el-dialog v-model="roomDialog" :title="editingRoom ? '编辑房间' : '新增房间'" width="520px"><el-form label-width="90px"><el-form-item label="楼栋">{{ activeBuilding?.buildingName }}</el-form-item><el-form-item label="房间号"><el-input v-model="roomForm.roomNo" /></el-form-item><el-form-item label="楼层"><el-input-number v-model="roomForm.floorNo" :min="1" /></el-form-item><el-form-item label="床位数"><el-input-number v-model="roomForm.capacity" :min="1" /></el-form-item></el-form><template #footer><el-button @click="roomDialog=false">取消</el-button><el-button type="primary" @click="saveRoom">保存</el-button></template></el-dialog>
     <el-dialog v-model="bedDialog" title="新增床位" width="420px"><el-form label-width="90px"><el-form-item label="房间">{{ activeRoom?.roomNo }}</el-form-item><el-form-item label="床位号"><el-input v-model="bedForm.bedNo" placeholder="如 01" /></el-form-item></el-form><template #footer><el-button @click="bedDialog=false">取消</el-button><el-button type="primary" @click="saveBed">保存</el-button></template></el-dialog>
   </section>
@@ -39,9 +42,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { accommodationAssignments, accommodationBeds, accommodationBuildings, accommodationRooms, accommodationStudents, assignAccommodation, cancelAccommodation, createAccommodationBed, createAccommodationBuilding, createAccommodationRoom, deleteAccommodationRoom, downloadAccommodationImportTemplate, importAccommodationResources, updateAccommodationRoom } from '../api/accommodation'
-import { listAcademicTerms } from '../../../api/admin'
+import { listAcademicTerms, orgList } from '../../../api/admin'
 
-const tab = ref('resources'); const semesterCode = ref(''); const terms = ref([]); const buildings = ref([]); const beds = ref([]); const assignments = ref([]); const students = ref([])
+const tab = ref('resources'); const organizationId = ref(''); const organizations = ref([]); const semesterCode = ref(''); const terms = ref([]); const buildings = ref([]); const beds = ref([]); const assignments = ref([]); const students = ref([])
 const buildingDialog = ref(false); const roomDialog = ref(false); const bedDialog = ref(false); const activeBuilding = ref(null); const activeRoom = ref(null); const editingRoom = ref(null)
 const buildingForm = reactive({ buildingCode: '', buildingName: '', genderPolicy: 'MIXED' }); const roomForm = reactive({ roomNo: '', floorNo: 1, capacity: 6 }); const bedForm = reactive({ bedNo: '' }); const assignForm = reactive({ studentId: '', bedId: '' })
 const unwrap = response => response.data?.content || response.data || []
@@ -51,7 +54,8 @@ const normalizeStudent = item => ({ ...item, studentNo: item.studentNo ?? item.s
 const normalizeBed = item => ({ ...item, bedNo: item.bedNo ?? item.bed_no, roomNo: item.roomNo ?? item.room_no, buildingName: item.buildingName ?? item.building_name })
 const normalizeAssignment = item => ({ ...item, studentNo: item.studentNo ?? item.student_no, studentName: item.studentName ?? item.student_name, buildingName: item.buildingName ?? item.building_name, roomNo: item.roomNo ?? item.room_no, bedNo: item.bedNo ?? item.bed_no })
 const loadTerms = async () => {
-  const result = await listAcademicTerms({ page: 0, size: 100 })
+	if (!organizationId.value) { terms.value = []; semesterCode.value = ''; return }
+  const result = await listAcademicTerms({ page: 0, size: 100, organizationId: organizationId.value || undefined })
   terms.value = unwrap(result)
   const current = terms.value.find(item => item.currentTerm) || terms.value[0]
   if (current) {
@@ -59,25 +63,26 @@ const loadTerms = async () => {
     await loadAssignments()
   }
 }
-const loadResources = async () => { const result = unwrap(await accommodationBuildings()); buildings.value = await Promise.all(result.map(async raw => { const item = normalizeBuilding(raw); return { ...item, rooms: unwrap(await accommodationRooms(item.id)).map(normalizeRoom) } })) }
-const loadBeds = async () => { if (!semesterCode.value) return; beds.value = unwrap(await accommodationBeds(semesterCode.value, true)).map(normalizeBed) }
-const loadAssignments = async () => { if (!semesterCode.value) return ElMessage.warning('请先选择学期'); assignments.value = unwrap(await accommodationAssignments(semesterCode.value)).map(normalizeAssignment); await loadBeds() }
-const loadStudents = async keyword => { students.value = unwrap(await accommodationStudents(keyword)).map(normalizeStudent) }
+const loadResources = async () => { if (!organizationId.value) { buildings.value = []; return }; const result = unwrap(await accommodationBuildings(organizationId.value)); buildings.value = await Promise.all(result.map(async raw => { const item = normalizeBuilding(raw); return { ...item, rooms: unwrap(await accommodationRooms(item.id)).map(normalizeRoom) } })) }
+const loadBeds = async () => { if (!semesterCode.value || !organizationId.value) return; beds.value = unwrap(await accommodationBeds(semesterCode.value, true, organizationId.value)).map(normalizeBed) }
+const loadAssignments = async () => { if (!semesterCode.value) return ElMessage.warning('请先选择学期'); assignments.value = unwrap(await accommodationAssignments(semesterCode.value, organizationId.value)).map(normalizeAssignment); await loadBeds() }
+const loadStudents = async keyword => { if (!organizationId.value) return; students.value = unwrap(await accommodationStudents(keyword, organizationId.value)).map(normalizeStudent) }
 const downloadTemplate = async () => { const blob = await downloadAccommodationImportTemplate(); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Chronos-宿舍资源批量导入模板.xlsx'; anchor.click(); URL.revokeObjectURL(url) }
 const uploadResources = async ({ file }) => {
   try {
-    const preview = await importAccommodationResources(file, true)
+    if (!organizationId.value) return ElMessage.warning('请先选择宿舍资源所属机构')
+    const preview = await importAccommodationResources(file, true, organizationId.value)
     const result = preview?.data || {}
     if (result.errors?.length) return ElMessage.error(`校验失败：${result.errors[0]}`)
     await ElMessageBox.confirm(`校验通过，将处理 ${result.successCount || 0} 行宿舍资源并自动补齐床位，确认导入？`, '导入确认', { type: 'warning' })
-    const imported = await importAccommodationResources(file, false)
+    const imported = await importAccommodationResources(file, false, organizationId.value)
     ElMessage.success(`宿舍资源导入成功，共处理 ${imported?.data?.successCount || 0} 行`)
     await loadResources(); await loadBeds()
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.response?.data?.msg || error?.message || '宿舍资源导入失败')
   }
 }
-const saveBuilding = async () => { await createAccommodationBuilding(buildingForm); buildingDialog.value = false; Object.assign(buildingForm, { buildingCode: '', buildingName: '', genderPolicy: 'MIXED' }); await loadResources(); ElMessage.success('宿舍楼已保存') }
+const saveBuilding = async () => { if (!organizationId.value) return ElMessage.warning('请先选择所属机构'); await createAccommodationBuilding({ ...buildingForm, organizationId: organizationId.value }); buildingDialog.value = false; Object.assign(buildingForm, { buildingCode: '', buildingName: '', genderPolicy: 'MIXED' }); await loadResources(); ElMessage.success('宿舍楼已保存') }
 const openRoom = building => { activeBuilding.value = building; editingRoom.value = null; Object.assign(roomForm, { roomNo: '', floorNo: 1, capacity: 6 }); roomDialog.value = true }
 const editRoom = (building, room) => { activeBuilding.value = building; activeRoom.value = room; editingRoom.value = room; Object.assign(roomForm, { roomNo: room.roomNo, floorNo: room.floorNo, capacity: room.capacity }); roomDialog.value = true }
 const saveRoom = async () => { if (editingRoom.value) await updateAccommodationRoom(editingRoom.value.id, roomForm); else await createAccommodationRoom(activeBuilding.value.id, roomForm); roomDialog.value = false; await loadResources(); ElMessage.success(editingRoom.value ? '房间已更新' : '房间已保存'); editingRoom.value = null }
@@ -86,7 +91,10 @@ const openBed = (building, room) => { activeBuilding.value = building; activeRoo
 const saveBed = async () => { await createAccommodationBed(activeRoom.value.id, bedForm); bedDialog.value = false; await loadResources(); ElMessage.success('床位已保存') }
 const saveAssignment = async () => { await assignAccommodation({ semesterCode: semesterCode.value, ...assignForm }); Object.assign(assignForm, { studentId: '', bedId: '' }); ElMessage.success('住宿分配已保存'); await loadAssignments() }
 const cancelAssignment = async row => { await ElMessageBox.confirm(`确认撤销 ${row.studentName} 的住宿分配？`, '撤销确认', { type: 'warning' }); await cancelAccommodation(row.id); ElMessage.success('住宿分配已撤销'); await loadAssignments() }
-onMounted(async () => { await Promise.all([loadTerms(), loadResources()]) })
+const orgName = item => item.organizationName || item.orgName || item.name || item.id
+const organizationName = id => orgName(organizations.value.find(item => item.id === id) || { id: id || '未选择' })
+const changeOrganization = async () => { semesterCode.value = ''; students.value = []; assignments.value = []; beds.value = []; await Promise.all([loadTerms(), loadResources()]) }
+onMounted(async () => { const response = await orgList({ page: 0, size: 500 }); organizations.value = unwrap(response); if (organizations.value.length === 1) organizationId.value = organizations.value[0].id; await Promise.all([loadTerms(), loadResources()]) })
 </script>
 
 <style scoped>

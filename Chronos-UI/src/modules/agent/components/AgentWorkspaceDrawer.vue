@@ -22,10 +22,19 @@
             </article>
             <el-empty v-if="!chatMessages.length" description="例如：检查本学期排课准备度并生成候选方案" :image-size="64" />
           </div>
+		  <div v-if="['CONFIRM_CREATE', 'CONFIRM_NON_CURRENT'].includes(pendingSemesterAction)" class="agent-chat__quick-actions">
+			<el-button type="primary" size="small" :loading="chatSending" @click="sendQuickReply('是的')">
+			  {{ pendingSemesterAction === 'CONFIRM_CREATE' ? '确认创建' : '继续处理' }}
+			</el-button>
+			<el-button size="small" :disabled="chatSending" @click="sendQuickReply('取消')">取消</el-button>
+		  </div>
           <el-input v-model="chatText" type="textarea" :rows="4" resize="none" :disabled="chatSending"
             placeholder="例如：检查 2026-2027-1 学期的排课数据，生成一个候选课表，不要直接发布" />
           <div class="agent-chat__options">
-            <div class="agent-chat__semester-hint">学期由智能体从你的描述中识别；未指定时使用当前启用学期。</div>
+			<div class="agent-chat__semester-hint">学期由智能体从你的描述中识别；未指定时使用当前启用学期，不存在时可直接在对话中创建。</div>
+			<el-select v-model="chatOrganizationId" clearable filterable placeholder="目标机构（多机构账号建议选择）">
+			  <el-option v-for="item in organizations" :key="item.id" :label="organizationName(item)" :value="item.id" />
+			</el-select>
             <div class="agent-chat__mode">
               <span>处理方式</span>
               <el-radio-group v-model="chatCandidateOnly">
@@ -34,11 +43,17 @@
               </el-radio-group>
             </div>
           </div>
-          <el-upload ref="chatUploadRef" :auto-upload="false" :limit="1" accept=".xlsx,.XLSX,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            :on-change="selectChatAdmissionFile" :on-remove="clearChatAdmissionFile">
-            <el-button size="small">附加新生名册（可选）</el-button>
+          <el-upload ref="chatUploadRef" :auto-upload="false" :limit="5" multiple accept=".xlsx,.XLSX,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            :on-change="selectChatBusinessFile" :on-remove="removeChatBusinessFile" :on-exceed="onBusinessFileExceed">
+            <el-button size="small">附加业务文件（可选，最多 5 个）</el-button>
           </el-upload>
-          <small class="agent-chat__tip">文件和消息会绑定到本次运行；智能体不会绕过权限、校验或人工审核。</small>
+          <div v-if="chatAttachmentAnalyses.length" class="agent-attachment-list">
+            <div v-for="item in chatAttachmentAnalyses" :key="item.managedFileId">
+              <strong>{{ item.filename }}</strong>
+              <span>{{ item.businessTypeName }} · {{ item.dataRows }} 行</span>
+            </div>
+          </div>
+          <small class="agent-chat__tip">文件和消息会绑定到本次运行；正式写入将按业务策略进行本人确认、业务流程审批或独立复核。</small>
           <el-button type="primary" :loading="chatSending" :disabled="!canExecute" @click="sendChat">发送给智能体</el-button>
         </div>
       </el-tab-pane>
@@ -58,19 +73,21 @@
           </section>
 		  <section v-if="pendingApprovalStep" class="agent-approval-card" aria-label="人工确认检查点">
 			<div class="agent-approval-card__title">
-			  <div><small>HUMAN APPROVAL</small><strong>人工确认检查点</strong></div>
-			  <el-tag type="warning" size="small">等待异人审核</el-tag>
+			  <div><small>GOVERNED CHECKPOINT</small><strong>人工确认检查点</strong></div>
+			  <el-tag type="warning" size="small">{{ detail.checkpoint?.label || '等待确认' }}</el-tag>
 			</div>
 			<dl>
 			  <div><dt>待确认步骤</dt><dd>{{ pendingApprovalStep.stepOrder }}. {{ pendingApprovalStep.stepName }}</dd></div>
 			  <div><dt>发起人</dt><dd>{{ detail.overview.run.ownerUsername }}</dd></div>
 			  <div><dt>业务工具</dt><dd>{{ approvalTool?.name || pendingApprovalStep.toolCode }}</dd></div>
 			  <div><dt>风险等级</dt><dd>{{ approvalTool?.riskLevel || '按工具策略控制' }}</dd></div>
+			  <div><dt>确认方式</dt><dd>{{ checkpointModeLabel }}</dd></div>
 			</dl>
 			<p>{{ pendingApprovalStep.message || '该步骤将写入正式业务数据，执行前必须人工确认。' }}</p>
 			<section v-if="approvalEvidence" class="agent-approval-evidence">
 			  <strong>候选处理结果</strong>
 			  <div class="agent-approval-evidence__summary">
+				<span v-if="approvalEvidence.message">{{ approvalEvidence.message }}</span>
 				<span v-if="approvalEvidence.filename">文件：{{ approvalEvidence.filename }}</span>
 				<span v-if="approvalEvidence.totalRows != null">名册行数：{{ approvalEvidence.totalRows }}</span>
 				<span v-if="approvalEvidence.importedRows != null">校验通过：{{ approvalEvidence.importedRows }}</span>
@@ -82,14 +99,25 @@
 				<template #default><div v-for="item in approvalEvidence.errors" :key="item">{{ item }}</div></template>
 			  </el-alert>
 			  <el-table v-if="approvalEvidenceRows.length" :data="approvalEvidenceRows" size="small" border max-height="260">
-				<el-table-column prop="candidateNo" label="考生号" min-width="130" />
-				<el-table-column prop="studentName" label="姓名" min-width="90" />
-				<el-table-column prop="admissionNo" label="录取号" min-width="120" />
-				<el-table-column prop="admissionYear" label="年份" width="70" />
-				<el-table-column prop="className" label="拟分班级" min-width="140" />
+				<el-table-column v-for="column in approvalEvidenceColumns" :key="column.key"
+				  :prop="column.key" :label="column.label" min-width="120">
+				  <template #default="scope">{{ displayEvidenceCell(scope.row?.[column.key]) }}</template>
+				</el-table-column>
 			  </el-table>
+			  <details class="agent-step-evidence">
+				<summary>查看全部候选证据</summary>
+				<pre>{{ prettyEvidence(pendingApprovalStep.resultJson) }}</pre>
+			  </details>
 			</section>
-			<el-alert v-if="isOwner" type="warning" :closable="false" show-icon>
+			<template v-if="canConfirm">
+			  <el-input v-model="reviewComment" type="textarea" :rows="2" resize="none"
+				placeholder="确认说明（可选）" />
+			  <div class="agent-approval-card__actions">
+				<el-button :loading="reviewing" @click="refreshApprovalEvidence">刷新候选结果</el-button>
+				<el-button type="success" :loading="reviewing" :disabled="approvalHasErrors" @click="confirmCheckpoint">确认写入</el-button>
+			  </div>
+			</template>
+			<el-alert v-else-if="isOwner && detail.checkpoint?.mode === 'DUAL_CONTROL'" type="warning" :closable="false" show-icon>
 			  <template #title>你是本次计划负责人，不能审核自己的步骤</template>
 			  <div>请由具备“学期运营智能体审核”权限的其他账号处理。</div>
 			  <div v-if="detail.eligibleReviewers?.length">可审核账号：{{ detail.eligibleReviewers.join('、') }}</div>
@@ -104,7 +132,7 @@
 				<el-button type="danger" plain :loading="reviewing" @click="rejectApproval">驳回</el-button>
 			  </div>
 			</template>
-			<el-alert v-else type="info" :closable="false" title="当前账号没有该步骤的审核权限" />
+			<el-alert v-else type="info" :closable="false" :title="detail.checkpoint?.reason || '当前账号不能处理该检查点'" />
 		  </section>
           <div class="agent-run-actions">
             <el-button v-if="canPause" size="small" @click="pause">暂停</el-button>
@@ -184,14 +212,16 @@ import { useRouter } from 'vue-router'
 import { Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  addOperationAgentCondition, approveOperationAgentStep, cancelOperationAgentRun,
+  addOperationAgentCondition, cancelOperationAgentRun, decideOperationAgentCheckpoint,
   createOperationAgentPlan, deleteOperationAgentPlan, draftOperationAgentPlan, converseWithOperationAgent, fetchOperationAgentEvents,
   fetchOperationAgentPlans, fetchOperationAgentRun, fetchOperationAgentRuns,
   fetchOperationAgentTools, pauseOperationAgentRun, resumeOperationAgentRun,
-  promoteOperationAgentCandidate, refreshOperationAgentApprovalEvidence, rejectOperationAgentStep, retryOperationAgentRun, startOperationAgentRun, supplyOperationAgentInput, updateOperationAgentPlan,
+  promoteOperationAgentCandidate, refreshOperationAgentApprovalEvidence, retryOperationAgentRun, startOperationAgentRun, supplyOperationAgentInput, updateOperationAgentPlan,
   uploadOperationAgentAdmissionRoster,
+  uploadOperationAgentBusinessAttachment,
 } from '../api'
 import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
+import { orgList } from '../../../api/admin'
 
 const props = defineProps({ open: Boolean })
 const router = useRouter()
@@ -226,12 +256,16 @@ const interactionText = ref('')
 const interactionSending = ref(false)
 const chatText = ref('')
 const chatCandidateOnly = ref(true)
+const chatOrganizationId = ref('')
+const organizations = ref([])
 const chatSending = ref(false)
 const chatMessages = ref([])
-const chatAdmissionFile = ref(null)
+const chatBusinessFiles = ref([])
+const chatAttachmentAnalyses = ref([])
 const chatUploadRef = ref(null)
 const pendingSemesterCode = ref('')
 const pendingSemesterAction = ref('')
+const pendingConversationMessages = ref([])
 const reviewComment = ref('')
 const reviewing = ref(false)
 let poller
@@ -249,19 +283,47 @@ const canExecute = hasAdminPermission('education:operation-agent:execute', 'educ
 const canReview = hasAdminPermission('education:operation-agent:review')
 const currentStatus = computed(() => detail.value?.overview?.run?.status)
 const isOwner = computed(() => detail.value?.overview?.run?.ownerUsername === username)
-const pendingApprovalStep = computed(() => detail.value?.steps?.find(step => step.status === 'WAITING_APPROVAL') || null)
+const pendingApprovalStep = computed(() => detail.value?.steps?.find(step => ['WAITING_CONFIRMATION', 'WAITING_APPROVAL', 'WAITING_WORKFLOW'].includes(step.status)) || null)
 const approvalTool = computed(() => tools.value.find(tool => tool.code === pendingApprovalStep.value?.toolCode))
 const approvalEvidence = computed(() => parseEvidence(pendingApprovalStep.value?.resultJson))
-const approvalEvidenceRows = computed(() => approvalEvidence.value?.rows || approvalEvidence.value?.assignments || approvalEvidence.value?.candidates || [])
+const approvalEvidenceRows = computed(() => approvalEvidence.value?.rows || approvalEvidence.value?.assignments
+  || approvalEvidence.value?.candidates || approvalEvidence.value?.sessions || approvalEvidence.value?.rooms
+  || approvalEvidence.value?.roles || approvalEvidence.value?.items || [])
+const evidenceLabels = {
+  candidateNo: '考生号', studentName: '姓名', admissionNo: '录取号', admissionYear: '年份', className: '拟分班级',
+  username: '用户名', roleCode: '角色编码', roleName: '角色名称', operation: '操作', sourceKey: '授权来源',
+  sessionId: '考试场次', roomId: '考场', classroomId: '教室', examDate: '考试日期', startTime: '开始时间',
+  componentId: '成绩项目', studentId: '学生', rawScore: '成绩', specialStatus: '特殊状态', remark: '备注',
+  organizationId: '目标机构', localTermCode: '校内学期编码', termCode: '机构学期编码',
+  termName: '学期名称', academicYear: '学年', termNo: '学期序号', startDate: '开始日期',
+  endDate: '结束日期', weekCount: '教学周数', currentTerm: '当前学期',
+}
+const approvalEvidenceColumns = computed(() => {
+  const rows = approvalEvidenceRows.value
+  if (!Array.isArray(rows) || !rows.length) return []
+  const keys = [...new Set(rows.slice(0, 20).flatMap(row => Object.keys(row || {})))]
+    .filter(key => rows.some(row => row?.[key] == null || ['string', 'number', 'boolean'].includes(typeof row?.[key])))
+  return keys.slice(0, 8).map(key => ({ key, label: evidenceLabels[key] || key }))
+})
+const displayEvidenceCell = value => {
+  if (value == null || value === '') return '—'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
 const approvalHasErrors = computed(() => Boolean(approvalEvidence.value?.errors?.length))
-const canPause = computed(() => isOwner.value && ['RUNNING', 'WAITING_APPROVAL'].includes(currentStatus.value))
+const checkpointModeLabel = computed(() => ({
+  INITIATOR_CONFIRM: '发起人本人确认', DUAL_CONTROL: '非发起人独立审核',
+  BUSINESS_WORKFLOW: '流程中心任务办理', NONE: '无需人工确认',
+}[detail.value?.checkpoint?.mode] || '按平台治理策略控制'))
+const canPause = computed(() => isOwner.value && ['RUNNING', 'WAITING_CONFIRMATION', 'WAITING_APPROVAL', 'WAITING_WORKFLOW'].includes(currentStatus.value))
 const canResume = computed(() => isOwner.value && currentStatus.value === 'PAUSED'
-  && !detail.value?.steps?.some(step => ['WAITING_APPROVAL', 'WAITING_INPUT'].includes(step.status)))
-const canApprove = computed(() => canReview && !isOwner.value && ['WAITING_APPROVAL', 'PAUSED'].includes(currentStatus.value) && Boolean(pendingApprovalStep.value))
+  && !detail.value?.steps?.some(step => ['WAITING_CONFIRMATION', 'WAITING_APPROVAL', 'WAITING_WORKFLOW', 'WAITING_INPUT'].includes(step.status)))
+const canConfirm = computed(() => isOwner.value && Boolean(detail.value?.checkpoint?.ownerCanConfirm) && Boolean(pendingApprovalStep.value))
+const canApprove = computed(() => canReview && !isOwner.value && Boolean(detail.value?.checkpoint?.reviewerCanApprove) && Boolean(pendingApprovalStep.value))
 const canRetry = computed(() => isOwner.value && currentStatus.value === 'FAILED')
-const canCondition = computed(() => isOwner.value && ['RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'WAITING_APPROVAL'].includes(currentStatus.value))
-const canCancel = computed(() => isOwner.value && ['QUEUED', 'RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'WAITING_APPROVAL'].includes(currentStatus.value))
-const canInteract = computed(() => isOwner.value && ['RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'WAITING_APPROVAL'].includes(currentStatus.value))
+const canCondition = computed(() => isOwner.value && ['RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'WAITING_CONFIRMATION', 'WAITING_APPROVAL', 'WAITING_WORKFLOW'].includes(currentStatus.value))
+const canCancel = computed(() => isOwner.value && ['QUEUED', 'RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'WAITING_CONFIRMATION', 'WAITING_APPROVAL', 'WAITING_WORKFLOW'].includes(currentStatus.value))
+const canInteract = computed(() => isOwner.value && ['RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'WAITING_CONFIRMATION', 'WAITING_APPROVAL', 'WAITING_WORKFLOW'].includes(currentStatus.value))
 const canPromoteCandidate = computed(() => isOwner.value && Boolean(detail.value?.candidatePromotionAvailable))
 const hasAdmissionSteps = computed(() => detail.value?.steps?.some(step => step.toolCode?.startsWith('admission.')))
 const hasEnrollmentStep = computed(() => detail.value?.steps?.some(step => step.toolCode === 'admission.enroll.batch'))
@@ -294,12 +356,18 @@ watch(() => props.open, async value => {
 async function loadBase() {
   loading.value = true
   try {
-    const [toolResult, planResult, runResult] = await Promise.all([
-      fetchOperationAgentTools(), fetchOperationAgentPlans(), fetchOperationAgentRuns(),
+    // 审核员无需机构目录管理权限。可选的机构选择器不能阻断待审任务加载。
+    const organizationRequest = hasAdminPermission('iam:organization:view', 'iam:organization:manage', 'iam:role:authorize')
+      ? orgList({ page: 0, size: 500 })
+      : Promise.resolve({ data: [] })
+    const [toolResult, planResult, runResult, organizationResult] = await Promise.all([
+      fetchOperationAgentTools(), fetchOperationAgentPlans(), fetchOperationAgentRuns(), organizationRequest,
     ])
     tools.value = toolResult.data || []
     plans.value = planResult.data || []
     runs.value = runResult.data || []
+	organizations.value = organizationResult.data?.content || organizationResult.data || []
+	if (!chatOrganizationId.value && organizations.value.length === 1) chatOrganizationId.value = organizations.value[0].id
     if (!selectedRunId.value && runs.value.length) selectedRunId.value = runs.value[0].run.id
     if (selectedRunId.value) await loadRun()
   } finally { loading.value = false }
@@ -381,18 +449,35 @@ async function selectDraftAdmissionFile(file) {
 function clearDraftAdmissionFile() {
   draftAdmissionFile.value = null
 }
-async function selectChatAdmissionFile(file) {
+async function selectChatBusinessFile(file) {
   const filename = String(file?.name || file?.raw?.name || '')
   if (!filename.toLocaleLowerCase().endsWith('.xlsx')) {
-    chatAdmissionFile.value = null
+    chatBusinessFiles.value = chatBusinessFiles.value.filter(item => item.uid !== file.uid)
     await nextTick()
-    chatUploadRef.value?.clearFiles()
-    return ElMessage.warning('新生名册仅支持 XLSX 文件，文件扩展名大小写均可')
+    return ElMessage.warning('业务附件目前支持 XLSX 文件，文件扩展名大小写均可')
   }
-  chatAdmissionFile.value = file.raw
+  if (!chatBusinessFiles.value.some(item => item.uid === file.uid)) {
+    chatBusinessFiles.value.push({ uid: file.uid, raw: file.raw, name: filename })
+  }
 }
-function clearChatAdmissionFile() {
-  chatAdmissionFile.value = null
+function removeChatBusinessFile(file) {
+  chatBusinessFiles.value = chatBusinessFiles.value.filter(item => item.uid !== file.uid)
+  chatAttachmentAnalyses.value = chatAttachmentAnalyses.value.filter(item => item.uid !== file.uid)
+}
+function onBusinessFileExceed() {
+  ElMessage.warning('一次对话最多附加 5 个业务文件；可分批处理更多文件')
+}
+function sendQuickReply(text) {
+  if (text === '取消') {
+	chatMessages.value.push({ role: 'user', text })
+	chatMessages.value.push({ role: 'agent', text: '已取消本次学期确认，你可以重新描述要处理的目标。' })
+	pendingSemesterCode.value = ''
+	pendingSemesterAction.value = ''
+	pendingConversationMessages.value = []
+	return
+  }
+  chatText.value = text
+  return sendChat()
 }
 async function sendChat() {
   const request = chatText.value.trim()
@@ -404,48 +489,74 @@ async function sendChat() {
     if (pendingSemesterAction.value === 'CREATE_TERM_INPUT_REQUIRED') {
       semesterCode = pendingSemesterCode.value
       createMissingTerm = true
-    } else if (/(创建|新建|建立)/.test(request)) {
+    } else {
       semesterCode = pendingSemesterCode.value
-      createMissingTerm = true
-    } else if (/(继续|确认|是的|可以|处理)/.test(request)) {
-      semesterCode = pendingSemesterCode.value
-      confirmNonCurrent = pendingSemesterAction.value === 'CONFIRM_NON_CURRENT'
-    } else if (/(当前学期|取消|不用|换回)/.test(request)) {
-      pendingSemesterCode.value = ''
-      pendingSemesterAction.value = ''
+      if (pendingSemesterAction.value === 'CONFIRM_CREATE') createMissingTerm = true
     }
   }
   chatSending.value = true
   chatMessages.value.push({ role: 'user', text: request })
   chatText.value = ''
   try {
-    let managedFileId = ''
-    if (chatAdmissionFile.value) {
-      const uploaded = await uploadOperationAgentAdmissionRoster(chatAdmissionFile.value)
-      managedFileId = uploaded.data?.id || uploaded.data?.fileId || ''
-      if (!managedFileId) throw new Error('新生名册上传后未返回文件标识')
+    const managedFileIds = []
+    chatAttachmentAnalyses.value = []
+    for (const selected of chatBusinessFiles.value) {
+      const uploaded = await uploadOperationAgentBusinessAttachment(selected.raw)
+      const fileId = uploaded.data?.file?.id || ''
+      if (!fileId) throw new Error(`业务文件“${selected.name}”上传后未返回文件标识`)
+      managedFileIds.push(fileId)
+      chatAttachmentAnalyses.value.push({
+        ...uploaded.data.analysis,
+        uid: selected.uid,
+        managedFileId: fileId,
+      })
+    }
+    if (chatAttachmentAnalyses.value.length) {
+      chatMessages.value.push({
+        role: 'agent',
+        text: `已识别 ${chatAttachmentAnalyses.value.length} 个业务文件：${chatAttachmentAnalyses.value.map(item => `${item.filename}（${item.businessTypeName}，${item.dataRows} 行）`).join('；')}。正在结合你的目标选择业务 Skill。`,
+      })
     }
     const result = await converseWithOperationAgent({
       request,
+	  contextMessages: pendingConversationMessages.value,
       semesterCode,
       admissionYear: null,
-      managedFileId: managedFileId || null,
+      managedFileIds,
       candidateOnly: chatCandidateOnly.value,
       confirmNonCurrent,
       createMissingTerm,
+	  organizationId: chatOrganizationId.value || null,
     })
     const response = result.data || {}
-    if (['CONFIRM_NON_CURRENT', 'CONFIRM_CREATE', 'CREATE_TERM_INPUT_REQUIRED', 'NEED_CURRENT_TERM', 'CONFLICT'].includes(response.status)) {
+	if (response.draft?.modelGenerated === false) {
+	  chatMessages.value.push({ role: 'agent', text: '本轮已尝试调用大模型，但模型规划未完成，当前展示的是规则兜底方案。请核对后再继续。' })
+	}
+	if (response.status === 'CANCELLED') {
+	  pendingSemesterCode.value = ''
+	  pendingSemesterAction.value = ''
+	  pendingConversationMessages.value = []
+	  chatMessages.value.push({ role: 'agent', text: '已取消本次任务。' })
+	  return
+	}
+    if (['NEED_INTENT', 'CONFIRM_NON_CURRENT', 'CONFIRM_CREATE', 'CREATE_TERM_INPUT_REQUIRED', 'NEED_CURRENT_TERM', 'NEED_TERM_SELECTION', 'CONFLICT'].includes(response.status)) {
       const resolution = response.resolution || {}
+	  if (pendingConversationMessages.value.at(-1) !== request) pendingConversationMessages.value.push(request)
+	  pendingSemesterAction.value = response.status
       if (resolution.termCode) {
         pendingSemesterCode.value = resolution.termCode
-        pendingSemesterAction.value = response.status
       }
       chatMessages.value.push({ role: 'agent', text: resolution.message || '请先确认本次处理的学期。' })
       return
     }
     if (response.status === 'NEED_INPUT') {
       const required = response.draft?.requiredInputs || []
+	  if (pendingConversationMessages.value.at(-1) !== request) pendingConversationMessages.value.push(request)
+	  const resolution = response.resolution || {}
+	  if (resolution.creationRequested && resolution.termCode) {
+		pendingSemesterCode.value = resolution.termCode
+		pendingSemesterAction.value = 'CREATE_TERM_INPUT_REQUIRED'
+	  }
       const detailText = required.length
         ? `我还需要你补充：${required.map(item => `${item.label}（${item.prompt}）`).join('；')}`
         : '我还需要更多业务资料才能安全开始，请补充目标范围或相关数据。'
@@ -454,12 +565,16 @@ async function sendChat() {
     }
     const runId = response.run?.run?.id
     if (!runId) throw new Error('智能体已规划，但未返回运行实例')
-    chatMessages.value.push({ role: 'agent', text: '我已读取当前业务现状并开始执行。接下来会在每个阶段展示进度，遇到需要确认的步骤会暂停等待你处理。' })
+    const matchedSkills = response.draft?.matchedSkills || []
+    const skillText = matchedSkills.length ? `已匹配：${matchedSkills.map(item => item.name).join('、')}。` : ''
+    chatMessages.value.push({ role: 'agent', text: `${skillText}我已读取当前业务现状并开始候选执行。接下来会展示每个步骤；正式写入前将按业务策略等待本人确认、流程审批或独立复核。` })
     pendingSemesterCode.value = ''
     pendingSemesterAction.value = ''
+	pendingConversationMessages.value = []
     selectedRunId.value = runId
     tab.value = 'runs'
-    chatAdmissionFile.value = null
+    chatBusinessFiles.value = []
+    chatAttachmentAnalyses.value = []
     chatUploadRef.value?.clearFiles()
     await loadBase()
     await loadRun()
@@ -621,11 +736,36 @@ async function start(item) {
 async function pause() { await pauseOperationAgentRun(selectedRunId.value); await loadRun() }
 async function resume() { await resumeOperationAgentRun(selectedRunId.value); await loadRun() }
 async function retry() { await retryOperationAgentRun(selectedRunId.value); await loadRun(); ElMessage.success('已从失败步骤重新执行') }
+async function confirmCheckpoint() {
+	try {
+		await ElMessageBox.confirm('确认候选结果无误并写入正式业务数据？系统会记录确认人、候选版本和时间。', '确认写入', { type: 'warning' })
+	} catch (error) {
+		if (error === 'cancel' || error === 'close') return
+		throw error
+	}
+  reviewing.value = true
+  try {
+    await decideOperationAgentCheckpoint(selectedRunId.value, pendingApprovalStep.value.stepOrder, {
+      action: 'CONFIRM',
+      evidenceVersion: detail.value?.checkpoint?.evidenceVersion,
+      evidenceHash: detail.value?.checkpoint?.evidenceHash,
+      comment: reviewComment.value.trim(),
+    })
+    reviewComment.value = ''
+    await loadRun()
+    ElMessage.success('候选结果已确认，智能体将继续执行正式步骤')
+  } finally { reviewing.value = false }
+}
 async function approve() {
   await ElMessageBox.confirm('确认允许当前步骤调用正式业务工具？本次确认会记录操作者和时间。', '确认执行步骤', { type: 'warning' })
 	reviewing.value = true
 	try {
-	  await approveOperationAgentStep(selectedRunId.value, reviewComment.value.trim())
+	  await decideOperationAgentCheckpoint(selectedRunId.value, pendingApprovalStep.value.stepOrder, {
+	    action: 'APPROVE',
+	    evidenceVersion: detail.value?.checkpoint?.evidenceVersion,
+	    evidenceHash: detail.value?.checkpoint?.evidenceHash,
+	    comment: reviewComment.value.trim(),
+	  })
 	  reviewComment.value = ''
 	  await loadRun()
 	  ElMessage.success('审核已通过，智能体将从当前检查点继续执行')
@@ -645,7 +785,12 @@ async function rejectApproval() {
 	await ElMessageBox.confirm('确认驳回当前步骤并退回计划负责人修正？', '驳回执行步骤', { type: 'warning' })
 	reviewing.value = true
 	try {
-	  await rejectOperationAgentStep(selectedRunId.value, comment)
+	  await decideOperationAgentCheckpoint(selectedRunId.value, pendingApprovalStep.value.stepOrder, {
+	    action: 'REJECT',
+	    evidenceVersion: detail.value?.checkpoint?.evidenceVersion,
+	    evidenceHash: detail.value?.checkpoint?.evidenceHash,
+	    comment,
+	  })
 	  reviewComment.value = ''
 	  await loadRun()
 	  ElMessage.success('步骤已驳回，计划负责人可以修正后重试')
@@ -708,40 +853,43 @@ const stageCount = steps => new Set((steps || []).map(step => step.businessStage
 const showStageHeader = (steps, index) => Boolean(steps[index]?.businessStageCode) && (index === 0 || steps[index - 1]?.businessStageCode !== steps[index].businessStageCode)
 const statusLabel = status => ({
   QUEUED: '排队中', RUNNING: '执行中', PAUSE_REQUESTED: '暂停中', PAUSED: '已暂停',
-  REPLANNING: '重新规划', WAITING_APPROVAL: '等待确认', COMPLETED: '已完成',
+  REPLANNING: '重新规划', WAITING_CONFIRMATION: '等待本人确认', WAITING_APPROVAL: '等待独立审核',
+  WAITING_WORKFLOW: '等待业务流程', COMPLETED: '已完成',
   SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消', SKIPPED: '已跳过',
   WAITING_INPUT: '等待补充资料',
 }[status] || status)
 const readinessLabel = key => ({
-  semesterCode: '学期', admissionYear: '入学年份', termExists: '学期已建立', activeClassCount: '启用行政班',
+  organizationId: '目标机构', semesterCode: '学期', admissionYear: '入学年份', termExists: '学期已建立', activeClassCount: '启用行政班',
   admissionCandidateCount: '新生候选', unassignedAdmissionCount: '待分班新生', unenrolledAdmissionCount: '待建档新生',
   activeStudentCount: '在籍学生', activeTeacherCount: '在岗教师', teachingAssignmentCount: '教师分工',
   courseOfferingCount: '开课任务', scheduleCandidateCount: '排课候选', publishedScheduleVersionCount: '已发布课表',
 }[key] || key)
-const statusType = status => ({ COMPLETED: 'success', SUCCEEDED: 'success', FAILED: 'danger', WAITING_APPROVAL: 'warning', WAITING_INPUT: 'warning', PAUSED: 'warning', CANCELLED: 'info' }[status] || 'primary')
+const organizationName = item => item.organizationName || item.orgName || item.name || item.id
+const statusType = status => ({ COMPLETED: 'success', SUCCEEDED: 'success', FAILED: 'danger', WAITING_CONFIRMATION: 'warning', WAITING_APPROVAL: 'warning', WAITING_WORKFLOW: 'warning', WAITING_INPUT: 'warning', PAUSED: 'warning', CANCELLED: 'info' }[status] || 'primary')
 const formatTime = value => value ? String(value).replace('T', ' ').slice(5, 19) : ''
 </script>
 
 <style scoped>
-.agent-workspace{position:fixed;z-index:100;inset:0 0 0 auto;width:clamp(320px,16.667vw,420px);display:flex;flex-direction:column;background:#f8fafb;border-left:1px solid #dce5e7;box-shadow:-16px 0 40px rgba(28,51,63,.12);color:#243b47}
-.agent-workspace__header{height:72px;padding:0 18px 0 20px;display:flex;align-items:center;justify-content:space-between;background:#173c4b;color:#fff}
+.agent-workspace{position:fixed;z-index:100;inset:0 0 0 auto;width:clamp(320px,16.667vw,420px);height:100vh;height:100dvh;max-height:100vh;max-height:100dvh;overflow:hidden;display:flex;flex-direction:column;background:#f8fafb;border-left:1px solid #dce5e7;box-shadow:-16px 0 40px rgba(28,51,63,.12);color:#243b47}
+.agent-workspace__header{height:72px;min-height:72px;flex:0 0 72px;padding:0 18px 0 20px;display:flex;align-items:center;justify-content:space-between;background:#173c4b;color:#fff}
 .agent-workspace__header>div{display:grid;gap:3px}.agent-workspace__header small{font-size:9px;letter-spacing:1.5px;opacity:.62}.agent-workspace__header strong{font-size:17px}.agent-workspace__header :deep(.el-button){color:#fff}
-.agent-workspace__tabs{min-height:0;flex:1;display:flex;flex-direction:column}.agent-workspace__tabs :deep(.el-tabs__header){margin:0;padding:0 16px;background:#fff}.agent-workspace__tabs :deep(.el-tabs__content){min-height:0;flex:1}.agent-workspace__tabs :deep(.el-tab-pane){height:100%;display:flex;flex-direction:column}
+.agent-workspace__tabs{min-height:0;flex:1;overflow:hidden;display:flex;flex-direction:column}.agent-workspace__tabs :deep(.el-tabs__header){flex:0 0 auto;margin:0;padding:0 16px;background:#fff}.agent-workspace__tabs :deep(.el-tabs__content){min-height:0;flex:1;overflow:hidden}.agent-workspace__tabs :deep(.el-tab-pane){height:100%;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;display:flex;flex-direction:column}.agent-workspace__tabs :deep(.el-tab-pane::-webkit-scrollbar){width:8px}.agent-workspace__tabs :deep(.el-tab-pane::-webkit-scrollbar-thumb){border:2px solid transparent;border-radius:8px;background:rgba(75,103,114,.35);background-clip:padding-box}.agent-workspace__tabs :deep(.el-tab-pane::-webkit-scrollbar-track){background:transparent}
 .agent-toolbar{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#758690}
 .agent-toolbar__actions{display:flex;gap:6px}.agent-toolbar__actions :deep(.el-button+.el-button){margin-left:0}
-.agent-chat{min-height:0;overflow:auto;padding:16px 14px 18px;display:grid;align-content:start;gap:10px}.agent-chat__intro{padding:14px;border:1px solid #cfe4df;border-radius:14px;background:linear-gradient(135deg,#eef9f6,#fff)}.agent-chat__intro strong{font-size:13px}.agent-chat__intro p{margin:7px 0 0;color:#60747d;font-size:11px;line-height:1.6}.agent-chat__messages{min-height:150px;display:grid;align-content:start;gap:8px}.agent-chat__message{max-width:94%;padding:9px 11px;border-radius:12px;background:#fff;border:1px solid #e0e8eb}.agent-chat__message.is-user{justify-self:end;background:#e8f4f1;border-color:#c9e4dd}.agent-chat__message span{display:block;color:#74858b;font-size:9px}.agent-chat__message p{margin:4px 0 0;color:#344c55;font-size:11px;line-height:1.55;white-space:pre-wrap}.agent-chat__options{display:grid;grid-template-columns:1fr;gap:8px}.agent-chat__mode{display:grid;gap:5px;padding:9px 10px;border:1px solid #e0e8eb;border-radius:10px;background:#fff}.agent-chat__mode>span{color:#74858b;font-size:10px}.agent-chat__mode :deep(.el-radio-group){display:flex;flex-wrap:wrap;gap:8px}.agent-chat__mode :deep(.el-radio){height:auto;margin-right:0;font-size:10px}.agent-chat__tip{color:#788990;font-size:10px;line-height:1.45}
-.agent-scroll{min-height:0;overflow:auto;padding:0 12px 18px;display:grid;align-content:start;gap:10px}.agent-scroll--run{padding-top:12px}
+.agent-chat{min-height:min-content;overflow:visible;padding:16px 14px 18px;display:grid;align-content:start;gap:10px}.agent-chat__intro{padding:14px;border:1px solid #cfe4df;border-radius:14px;background:linear-gradient(135deg,#eef9f6,#fff)}.agent-chat__intro strong{font-size:13px}.agent-chat__intro p{margin:7px 0 0;color:#60747d;font-size:11px;line-height:1.6}.agent-chat__messages{min-height:150px;display:grid;align-content:start;gap:8px}.agent-chat__quick-actions{display:flex;gap:8px;justify-content:flex-end}.agent-chat__message{max-width:94%;padding:9px 11px;border-radius:12px;background:#fff;border:1px solid #e0e8eb}.agent-chat__message.is-user{justify-self:end;background:#e8f4f1;border-color:#c9e4dd}.agent-chat__message span{display:block;color:#74858b;font-size:9px}.agent-chat__message p{margin:4px 0 0;color:#344c55;font-size:11px;line-height:1.55;white-space:pre-wrap}.agent-chat__options{display:grid;grid-template-columns:1fr;gap:8px}.agent-chat__mode{display:grid;gap:5px;padding:9px 10px;border:1px solid #e0e8eb;border-radius:10px;background:#fff}.agent-chat__mode>span{color:#74858b;font-size:10px}.agent-chat__mode :deep(.el-radio-group){display:flex;flex-wrap:wrap;gap:8px}.agent-chat__mode :deep(.el-radio){height:auto;margin-right:0;font-size:10px}.agent-chat__tip{color:#788990;font-size:10px;line-height:1.45}
+.agent-scroll{min-height:min-content;overflow:visible;padding:0 12px 18px;display:grid;align-content:start;gap:10px}.agent-scroll--run{padding-top:12px}
 .agent-plan-card{padding:13px;border:1px solid #e0e8eb;border-radius:14px;background:#fff;box-shadow:0 6px 18px rgba(40,61,71,.04)}.agent-plan-card__title{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.agent-plan-card p{margin:8px 0;color:#6d7c84;font-size:12px;line-height:1.55}.agent-plan-meta{display:flex;gap:10px;color:#94a0a6;font-size:10px}.agent-plan-actions{display:flex;margin-top:11px}
 .agent-run-select{width:calc(100% - 24px);margin:12px}.agent-run-summary{margin:0 12px;padding:13px;border-radius:14px;background:linear-gradient(135deg,#e7f5f1,#f6fbfa);border:1px solid #d2e9e3}.agent-run-summary__top{display:flex;justify-content:space-between;gap:8px}.agent-run-summary p{margin:8px 0 5px;font-size:12px}.agent-run-summary small{color:#687a81;font-size:10px;line-height:1.5}.agent-run-actions{padding:10px 12px;display:flex;flex-wrap:wrap;gap:5px}.agent-run-actions :deep(.el-button+.el-button){margin-left:0}
 .agent-approval-card{margin:10px 12px 0;padding:13px;display:grid;gap:10px;border:1px solid #e8bd72;border-radius:14px;background:#fffaf0;box-shadow:0 8px 20px rgba(121,82,25,.07)}.agent-approval-card__title{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.agent-approval-card__title>div{display:grid;gap:2px}.agent-approval-card__title small{color:#a36c20;font-size:8px;letter-spacing:1.2px}.agent-approval-card__title strong{font-size:13px}.agent-approval-card dl{display:grid;gap:6px;margin:0}.agent-approval-card dl>div{display:grid;grid-template-columns:70px 1fr;gap:8px;font-size:10px}.agent-approval-card dt{color:#8b795f}.agent-approval-card dd{margin:0;color:#384b53;overflow-wrap:anywhere}.agent-approval-card>p{margin:0;color:#75644c;font-size:10px;line-height:1.55}.agent-approval-card :deep(.el-alert__content){min-width:0}.agent-approval-card :deep(.el-alert__description){font-size:10px;line-height:1.55}.agent-approval-card__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.agent-approval-card__actions :deep(.el-button){width:100%;margin:0}
 .agent-approval-evidence{display:grid;gap:8px;padding:10px;border:1px solid #eed9b3;border-radius:10px;background:#fff}.agent-approval-evidence>strong{font-size:11px}.agent-approval-evidence__summary{display:flex;flex-wrap:wrap;gap:5px}.agent-approval-evidence__summary span{padding:3px 6px;border-radius:6px;background:#f7f1e6;color:#685b47;font-size:9px}.agent-approval-evidence :deep(.el-table){font-size:10px}
-.agent-section h3{margin:0 0 9px;font-size:12px}.agent-step{position:relative;display:grid;grid-template-columns:12px 1fr auto;gap:8px;padding:9px 8px;border-left:1px solid #dce5e7}.agent-step__dot{width:9px;height:9px;margin-top:4px;margin-left:-13px;border:2px solid #aab6bb;border-radius:50%;background:#fff}.agent-step div{display:grid;gap:4px}.agent-step strong{font-size:11px}.agent-step small{color:#7c8a91;font-size:9px;line-height:1.4}.agent-step em{color:#8a989e;font-size:9px;font-style:normal}.agent-step.is-succeeded .agent-step__dot{border-color:#0f8b72;background:#0f8b72}.agent-step.is-running .agent-step__dot,.agent-step.is-waiting_approval .agent-step__dot{border-color:#d99028;background:#fff4df}
+.agent-section h3{margin:0 0 9px;font-size:12px}.agent-step{position:relative;display:grid;grid-template-columns:12px 1fr auto;gap:8px;padding:9px 8px;border-left:1px solid #dce5e7}.agent-step__dot{width:9px;height:9px;margin-top:4px;margin-left:-13px;border:2px solid #aab6bb;border-radius:50%;background:#fff}.agent-step div{display:grid;gap:4px}.agent-step strong{font-size:11px}.agent-step small{color:#7c8a91;font-size:9px;line-height:1.4}.agent-step em{color:#8a989e;font-size:9px;font-style:normal}.agent-step.is-succeeded .agent-step__dot{border-color:#0f8b72;background:#0f8b72}.agent-step.is-running .agent-step__dot,.agent-step.is-waiting_confirmation .agent-step__dot,.agent-step.is-waiting_approval .agent-step__dot,.agent-step.is-waiting_workflow .agent-step__dot{border-color:#d99028;background:#fff4df}
 .agent-step__content{min-width:0}.agent-step-evidence{margin-top:3px}.agent-step-evidence summary{cursor:pointer;color:#35766c;font-size:9px}.agent-step-evidence pre{max-height:220px;margin:5px 0 0;padding:7px;overflow:auto;border-radius:7px;background:#f2f6f7;color:#52646b;font:9px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 .agent-stage-header{display:flex;align-items:center;gap:7px;margin:10px 0 2px;padding:7px 9px;border-radius:9px;background:#e8f2f1;color:#315b62}.agent-stage-header span{font-size:9px;letter-spacing:.5px}.agent-stage-header strong{font-size:11px}.agent-upload-tip{display:block;margin-left:8px;color:#7c8a91;font-size:11px;line-height:1.5}
 .agent-events{display:grid;gap:8px}.agent-events article{padding:9px 10px;border-left:3px solid #9eb0b8;border-radius:0 10px 10px 0;background:#fff}.agent-events article.is-success{border-color:#0f8b72}.agent-events article.is-warn{border-color:#d99028}.agent-events article.is-error{border-color:#cf5353}.agent-events time{display:block;color:#9aa6ab;font-size:9px}.agent-events strong{display:block;margin-top:3px;font-size:11px}.agent-events p{margin:4px 0 0;color:#6f7f86;font-size:10px;line-height:1.45}
 .agent-interaction{margin:0 12px 12px;padding:12px;display:grid;gap:8px;border:1px solid #cfe0e5;border-radius:14px;background:#fff;box-shadow:0 8px 20px rgba(34,66,78,.06)}.agent-interaction>div{display:grid;gap:3px}.agent-interaction strong{font-size:12px}.agent-interaction small{color:#71838b;font-size:10px;line-height:1.45}.agent-interaction :deep(.el-button){width:100%}
 .agent-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.agent-step-editor__header{display:flex;justify-content:space-between;margin:12px 0}.agent-step-editor{display:grid;grid-template-columns:24px 1fr 1fr auto auto;gap:8px;align-items:center;margin-bottom:8px;padding:10px;border:1px solid #e1e8eb;border-radius:10px}.agent-step-editor__stage{grid-column:2/-1;color:#55717a}.agent-step-editor__detail,.agent-step-editor__config{grid-column:2/-1}.agent-condition-tip{color:#697a82;font-size:12px;line-height:1.6}
 .agent-chat__semester-hint{padding:8px 10px;border-radius:9px;background:#f2f7f7;color:#637a81;font-size:10px;line-height:1.45}
+.agent-attachment-list{display:grid;gap:5px}.agent-attachment-list>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:7px 9px;border:1px solid #dce8e9;border-radius:9px;background:#fff}.agent-attachment-list strong{overflow:hidden;color:#3f5962;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.agent-attachment-list span{color:#6e8188;font-size:9px}
 .agent-draft-analysis{display:grid;gap:8px;margin-bottom:16px;padding:14px;border:1px solid #cfe4df;border-radius:12px;background:#f4faf8}.agent-draft-analysis p,.agent-draft-analysis small{margin:0}.agent-draft-analysis small{color:#667b82;line-height:1.5}.agent-readiness{display:flex;flex-wrap:wrap;gap:6px}.agent-readiness span{padding:4px 7px;border-radius:7px;background:#fff;color:#536970;font-size:11px}
 .agent-planning-progress{display:grid;gap:10px;margin-top:6px;padding:14px;border:1px solid #cfe0e5;border-radius:12px;background:#f7fafb}.agent-planning-progress__header{display:flex;justify-content:space-between;gap:12px}.agent-planning-progress__header span{color:#71838b;font-size:11px}.agent-planning-progress>p{margin:0;color:#60747d;font-size:12px;line-height:1.5}.agent-planning-progress__steps{display:grid;gap:7px}.agent-planning-progress__step{display:grid;grid-template-columns:12px 1fr auto;align-items:start;gap:8px}.agent-planning-progress__step i{width:10px;height:10px;margin-top:3px;border:2px solid #aebdc3;border-radius:50%;background:#fff}.agent-planning-progress__step div{display:grid;gap:2px}.agent-planning-progress__step strong{font-size:11px}.agent-planning-progress__step small,.agent-planning-progress__step em{color:#7b8c93;font-size:10px;font-style:normal}.agent-planning-progress__step.is-running i{border-color:#2f7f91;box-shadow:0 0 0 4px rgba(47,127,145,.12)}.agent-planning-progress__step.is-completed i{border-color:#14836d;background:#14836d}.agent-planning-progress__step.is-skipped i{border-color:#aebdc3;background:#e8edef}.agent-planning-progress__step.is-failed i{border-color:#c84d4d;background:#c84d4d}.agent-planning-progress__step.is-failed em{color:#c84d4d}
 @media(max-width:720px){.agent-workspace{width:100%}.agent-form-grid{grid-template-columns:1fr}.agent-step-editor{grid-template-columns:24px 1fr}.agent-step-editor__config{grid-column:1/-1}}

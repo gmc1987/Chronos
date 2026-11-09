@@ -33,7 +33,7 @@ public class ClassroomReservation extends BaseEntity {
 	@Column(name = "applicant_id", length = 64)
 	private String applicantId;
 
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "classroom_id", length = 64, nullable = false)

@@ -42,6 +42,18 @@ public class AdmissionService {
 				PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
 	}
 
+	public Page<AdmissionCandidate> list(java.util.Collection<String> organizationIds,
+			String status, String keyword, int page, int size) {
+		if (organizationIds == null) return list(status, keyword, page, size);
+		return candidates.searchInOrganizations(organizationIds, normalize(status),
+				normalize(keyword).toLowerCase(Locale.ROOT),
+				PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
+	}
+
+	public AdmissionCandidate get(String id) {
+		return require(id);
+	}
+
 	@Transactional
 	public AdmissionCandidate save(AdmissionCandidate command) {
 		validate(command);
@@ -56,6 +68,7 @@ public class AdmissionService {
 		value.setCandidateNo(command.getCandidateNo().trim()); value.setAdmissionNo(trim(command.getAdmissionNo()));
 		value.setStudentName(command.getStudentName().trim()); value.setGender(trim(command.getGender())); value.setPhone(trim(command.getPhone()));
 		value.setAdmissionYear(command.getAdmissionYear()); value.setEducationLevel(command.getEducationLevel().trim());
+		value.setOrganizationId(command.getOrganizationId());
 		value.setAdmittedMajorId(blankToNull(command.getAdmittedMajorId())); value.setPlannedClassId(blankToNull(command.getPlannedClassId()));
 		return candidates.save(value);
 	}
@@ -79,6 +92,8 @@ public class AdmissionService {
 		}
 		var targetClass = classes.findById(administrativeClassId)
 				.orElseThrow(() -> new IllegalArgumentException("拟分行政班不存在"));
+		if (!value.getOrganizationId().equals(targetClass.getCampusId()))
+			throw new IllegalArgumentException("拟分行政班不属于录取记录所在机构");
 		if (!"ACTIVE".equals(targetClass.getStatus())) throw new IllegalArgumentException("拟分行政班未启用");
 		if (!value.getAdmissionYear().equals(targetClass.getGradeYear())) {
 			throw new IllegalArgumentException("行政班入学年份与录取年份不一致");
@@ -98,6 +113,8 @@ public class AdmissionService {
 		if (value.getStudentId() != null) throw new IllegalStateException("该录取记录已经生成学生档案");
 		var targetClass = classes.findById(command.administrativeClassId())
 				.orElseThrow(() -> new IllegalArgumentException("报到行政班不存在"));
+		if (!value.getOrganizationId().equals(targetClass.getCampusId()))
+			throw new IllegalArgumentException("报到行政班不属于录取记录所在机构");
 		EducationGrade grade = grades.findById(targetClass.getGradeId())
 				.orElseThrow(() -> new IllegalStateException("行政班未关联有效年级"));
 		if (!value.getAdmissionYear().equals(targetClass.getGradeYear())) throw new IllegalArgumentException("行政班入学年份与录取年份不一致");
@@ -137,6 +154,7 @@ public class AdmissionService {
 
 	private AdmissionCandidate require(String id) { return candidates.findById(id).orElseThrow(() -> new IllegalArgumentException("录取记录不存在")); }
 	private void validate(AdmissionCandidate value) {
+		if (normalize(value.getOrganizationId()).isEmpty()) throw new IllegalArgumentException("所属机构不能为空");
 		if (normalize(value.getSourceBatchNo()).isEmpty()) throw new IllegalArgumentException("来源批次不能为空");
 		if (normalize(value.getCandidateNo()).isEmpty()) throw new IllegalArgumentException("考生号不能为空");
 		if (normalize(value.getStudentName()).isEmpty()) throw new IllegalArgumentException("学生姓名不能为空");
@@ -144,8 +162,12 @@ public class AdmissionService {
 		if (normalize(value.getEducationLevel()).isEmpty()) throw new IllegalArgumentException("培养层次不能为空");
 		if (value.getAdmittedMajorId() != null && !value.getAdmittedMajorId().isBlank()) majors.findById(value.getAdmittedMajorId())
 				.orElseThrow(() -> new IllegalArgumentException("录取专业不存在"));
-		if (value.getPlannedClassId() != null && !value.getPlannedClassId().isBlank()) classes.findById(value.getPlannedClassId())
-				.orElseThrow(() -> new IllegalArgumentException("拟分行政班不存在"));
+		if (value.getPlannedClassId() != null && !value.getPlannedClassId().isBlank()) {
+			var targetClass = classes.findById(value.getPlannedClassId())
+					.orElseThrow(() -> new IllegalArgumentException("拟分行政班不存在"));
+			if (!value.getOrganizationId().equals(targetClass.getCampusId()))
+				throw new IllegalArgumentException("拟分行政班不属于录取记录所在机构");
+		}
 	}
 	private String defaultText(String value, String fallback) { return normalize(value).isEmpty() ? fallback : value.trim(); }
 	private String blankToNull(String value) { return normalize(value).isEmpty() ? null : value.trim(); }

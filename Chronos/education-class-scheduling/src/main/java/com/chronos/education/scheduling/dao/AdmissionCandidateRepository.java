@@ -20,4 +20,16 @@ public interface AdmissionCandidateRepository extends JpaRepository<AdmissionCan
 		order by value.admissionYear desc, value.createTime desc
 		""")
 	Page<AdmissionCandidate> search(@Param("status") String status, @Param("keyword") String keyword, Pageable pageable);
+
+	@Query("""
+		select value from AdmissionCandidate value
+		where value.organizationId in :organizationIds
+		  and (:status = '' or value.admissionStatus = :status)
+		  and (:keyword = '' or lower(value.studentName) like concat('%', :keyword, '%')
+		       or lower(value.candidateNo) like concat('%', :keyword, '%')
+		       or lower(coalesce(value.admissionNo, '')) like concat('%', :keyword, '%'))
+		order by value.admissionYear desc, value.createTime desc
+		""")
+	Page<AdmissionCandidate> searchInOrganizations(@Param("organizationIds") java.util.Collection<String> organizationIds,
+			@Param("status") String status, @Param("keyword") String keyword, Pageable pageable);
 }

@@ -8,12 +8,12 @@ import com.chronos.ai.model.AiModel;
 
 class DeepSeekChatModelFactoryTest {
 	@Test
-	void capsInteractiveReadTimeoutEvenWhenDatabaseConfigurationIsLonger() {
+	void respectsConfiguredReadTimeoutWithinCallDeadline() {
 		AiModel model = new AiModel();
 		model.setReadTimeoutMs(180_000);
 
 		assertThat(DeepSeekChatModelFactory.effectiveReadTimeoutMs(model, 240_000))
-				.isEqualTo(60_000);
+				.isEqualTo(180_000);
 	}
 
 	@Test

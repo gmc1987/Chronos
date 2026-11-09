@@ -6,9 +6,11 @@ import com.chronos.model.vo.OrganizationVO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.util.Map;
+import java.util.Set;
 
 public interface IOrganizationService {
   Page<Organization> pageOrganizations(OrganizationDTO paramOrganizationDTO, Pageable paramPageable);
+  Page<Organization> pageOrganizations(OrganizationDTO dto, Pageable pageable, Set<String> allowedOrganizationIds);
   
   OrganizationVO getById(String paramString);
   

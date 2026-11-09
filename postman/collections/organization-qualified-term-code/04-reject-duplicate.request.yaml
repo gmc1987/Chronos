@@ -1,0 +1,30 @@
+$kind: http-request
+name: Reject duplicate local term code within one organization
+order: 4000
+method: POST
+url: '{{base_url}}/admin/education/terms'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "organizationId":"{{hv_org_id}}",
+      "localTermCode":"{{local_term_code}}",
+      "termName":"不应创建的重复学期",
+      "academicYear":"2099-2100",
+      "termNo":1,
+      "startDate":"2099-09-01",
+      "endDate":"2100-01-20",
+      "weekCount":20,
+      "currentTerm":false
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('same organization cannot reuse its local term code', () => {
+        pm.expect(pm.response.code).to.be.oneOf([400, 409]);
+        pm.expect(body.msg).to.include(pm.collectionVariables.get('local_term_code'));
+      });

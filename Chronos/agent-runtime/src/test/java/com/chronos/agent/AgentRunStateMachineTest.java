@@ -17,6 +17,12 @@ class AgentRunStateMachineTest {
 		assertThat(AgentRunStateMachine.canTransition(
 				AgentRunStatus.PAUSE_REQUESTED, AgentRunStatus.PAUSED)).isTrue();
 		assertThat(AgentRunStateMachine.canTransition(
+				AgentRunStatus.RUNNING, AgentRunStatus.WAITING_CONFIRMATION)).isTrue();
+		assertThat(AgentRunStateMachine.canTransition(
+				AgentRunStatus.WAITING_CONFIRMATION, AgentRunStatus.QUEUED)).isTrue();
+		assertThat(AgentRunStateMachine.canTransition(
+				AgentRunStatus.RUNNING, AgentRunStatus.WAITING_WORKFLOW)).isTrue();
+		assertThat(AgentRunStateMachine.canTransition(
 				AgentRunStatus.WAITING_APPROVAL, AgentRunStatus.QUEUED)).isTrue();
 		assertThat(AgentRunStateMachine.canTransition(
 				AgentRunStatus.WAITING_APPROVAL, AgentRunStatus.FAILED)).isTrue();

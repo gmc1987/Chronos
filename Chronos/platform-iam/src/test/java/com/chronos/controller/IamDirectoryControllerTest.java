@@ -19,23 +19,34 @@ import com.chronos.model.pojo.Position;
 import com.chronos.service.iService.IIamDirectoryService;
 import com.chronos.service.impl.DirectoryImportService;
 import com.chronos.service.impl.BusinessNumberService;
-import com.chronos.service.impl.PositionRoleMappingService;
 import com.chronos.security.IamAuthorization;
+import com.chronos.security.DirectoryDataScopeGuard;
+import com.chronos.Idao.IPositionRepository;
+import com.chronos.Idao.IJobLevelRepository;
+import com.chronos.Idao.IEmployeeAssignmentRepository;
+import com.chronos.Idao.IOrganizationUnitRepository;
+import org.springframework.security.core.Authentication;
 
 class IamDirectoryControllerTest {
 
     private IIamDirectoryService service;
     private IamDirectoryController controller;
+    private Authentication authentication;
 
     @BeforeEach
     void setUp() {
         service = mock(IIamDirectoryService.class);
+        authentication = mock(Authentication.class);
         controller = new IamDirectoryController(
                 service,
                 mock(DirectoryImportService.class),
                 mock(BusinessNumberService.class),
-                mock(PositionRoleMappingService.class),
-                mock(IamAuthorization.class));
+                mock(IamAuthorization.class),
+                mock(DirectoryDataScopeGuard.class),
+                mock(IPositionRepository.class),
+                mock(IJobLevelRepository.class),
+                mock(IEmployeeAssignmentRepository.class),
+                mock(IOrganizationUnitRepository.class));
     }
 
     @Test
@@ -43,10 +54,10 @@ class IamDirectoryControllerTest {
         Position position = new Position();
         position.setPositionName("班主任");
         PageRequest pageable = PageRequest.of(0, 10);
-        when(service.pagePositions(pageable))
+        when(service.pagePositions("org-1", pageable))
                 .thenReturn(new PageImpl<>(List.of(position), pageable, 12));
 
-        ResultData<?> response = controller.positions(0, 10);
+        ResultData<?> response = controller.positions("org-1", 0, 10, authentication);
 
         PageView<?> page = assertPage(response, 12);
         assertThat(page.content()).hasSize(1);
@@ -58,10 +69,10 @@ class IamDirectoryControllerTest {
         JobLevel level = new JobLevel();
         level.setLevelName("中级");
         PageRequest pageable = PageRequest.of(0, 20);
-        when(service.pageJobLevels(pageable))
+        when(service.pageJobLevels("org-1", pageable))
                 .thenReturn(new PageImpl<>(List.of(level), pageable, 21));
 
-        ResultData<?> response = controller.jobLevels(0, 20);
+        ResultData<?> response = controller.jobLevels("org-1", 0, 20, authentication);
 
         PageView<?> page = assertPage(response, 21);
         assertThat(page.content()).hasSize(1);
@@ -73,13 +84,13 @@ class IamDirectoryControllerTest {
         Employee employee = new Employee();
         employee.setEmployeeName("测试教师");
         PageRequest pageable = PageRequest.of(1, 5);
-        when(service.pageEmployees("教师", pageable))
+        when(service.pageEmployees("org-1", "教师", pageable))
                 .thenReturn(new PageImpl<>(
                         List.of(employee, new Employee(), new Employee()),
                         pageable,
                         8));
 
-        ResultData<?> response = controller.employees(1, 5, "教师");
+        ResultData<?> response = controller.employees("org-1", 1, 5, "教师", authentication);
 
         PageView<?> page = assertPage(response, 8);
         assertThat(page.content()).hasSize(3);

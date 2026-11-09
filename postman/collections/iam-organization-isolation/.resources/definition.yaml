@@ -1,0 +1,19 @@
+$kind: collection
+name: IAM Organization Isolation
+description: Regression checks for organization-scoped directory and account APIs.
+variables:
+  - key: base_url
+    value: 'http://127.0.0.1:8080'
+  - key: admin_token
+    value: ''
+  - key: scope_token
+    value: ''
+  - key: allowed_org_id
+    value: '9f1fee10-1c2e-b6e9-2e68-50e6f32cc65e'
+  - key: denied_org_id
+    value: '00aa56a0-7e74-719f-e028-9193019e218f'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{scope_token}}'

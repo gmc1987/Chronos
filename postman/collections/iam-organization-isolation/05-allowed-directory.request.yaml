@@ -1,0 +1,18 @@
+$kind: http-request
+name: Scoped manager reads allowed directory data
+order: 5000
+method: GET
+url: '{{base_url}}/admin/iam/positions?organizationId={{allowed_org_id}}'
+queryParams:
+  - key: organizationId
+    value: '{{allowed_org_id}}'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('allowed organization positions are readable', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+        pm.expect(body.data).to.be.an('array');
+        body.data.forEach(item => pm.expect(item.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

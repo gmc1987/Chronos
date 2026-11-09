@@ -147,9 +147,9 @@ public class EmployeeImportService {
 				var unit = units.findByOrgIdAndOrganizationUnitCode(organization.getId(), departmentCode)
 						.orElseThrow(() -> new IllegalArgumentException(error(row.line(),
 								"部门编码不存在：" + departmentCode)));
-				var position = positions.findByPositionCode(positionCode);
-				if (position == null) throw new IllegalArgumentException(error(row.line(),
-						"岗位编码不存在：" + positionCode));
+				var position = positions.findByOrganizationIdAndPositionCode(organization.getId(), positionCode)
+						.orElseThrow(() -> new IllegalArgumentException(error(row.line(),
+								"当前机构不存在岗位编码：" + positionCode)));
 				EmployeeAssignment assignment = assignments
 						.findFirstByEmployeeIdAndOrganizationIdAndOrganizationUnitIdAndPositionId(
 								employee.getId(), organization.getId(), unit.getId(), position.getId())
@@ -161,9 +161,10 @@ public class EmployeeImportService {
 				assignment.setOrganizationUnitId(unit.getId());
 				assignment.setPositionId(position.getId());
 				String levelCode = value(row.data(), "职级编码");
-				assignment.setJobLevelId(levelCode.isBlank() ? null : levels.findByLevelCode(levelCode)
+				assignment.setJobLevelId(levelCode.isBlank() ? null : levels.findByOrganizationIdAndLevelCode(
+						organization.getId(), levelCode)
 						.orElseThrow(() -> new IllegalArgumentException(error(row.line(),
-								"职级编码不存在：" + levelCode))).getId());
+								"当前机构不存在职级编码：" + levelCode))).getId());
 				assignment.setPrimaryAssignment(bool(value(row.data(), "主任职")));
 				assignment.setDepartmentLeader(bool(value(row.data(), "部门负责人")));
 				assignment.setEffectiveFrom(row.effectiveFrom());
@@ -187,7 +188,7 @@ public class EmployeeImportService {
 		List<String> warnings = new ArrayList<>();
 		if (options.syncAccounts()) {
 			for (Employee employee : affectedEmployees.values()) {
-				var result = accountProvisioning.sync(employee, options.syncRoles(),
+				var result = accountProvisioning.sync(employee,
 						options.disableInactiveAccounts(), options.dryRun());
 				accountResults.add(result);
 				for (String warning : result.warnings()) {
@@ -269,7 +270,7 @@ public class EmployeeImportService {
 		if (!errors.isEmpty()) throw new IllegalArgumentException("导入校验失败：" + String.join("；", errors));
 	}
 
-	public record ImportOptions(boolean syncAccounts, boolean syncRoles,
+	public record ImportOptions(boolean syncAccounts,
 			boolean disableInactiveAccounts, String sourceSystem, boolean dryRun) {
 		public ImportOptions {
 			sourceSystem = sourceSystem == null || sourceSystem.isBlank()

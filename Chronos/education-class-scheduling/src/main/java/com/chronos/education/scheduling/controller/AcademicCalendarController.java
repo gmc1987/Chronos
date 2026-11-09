@@ -25,14 +25,17 @@ public class AcademicCalendarController {
 	private final AcademicCalendarService service;
 	private final EducationDataScopeService dataScopes;
 	private final OfficialHolidayImportService holidayImports;
+	private final com.chronos.security.DirectoryDataScopeGuard directoryScope;
 
 	public AcademicCalendarController(
 			AcademicCalendarService service,
 			EducationDataScopeService dataScopes,
-			OfficialHolidayImportService holidayImports) {
+			OfficialHolidayImportService holidayImports,
+			com.chronos.security.DirectoryDataScopeGuard directoryScope) {
 		this.service = service;
 		this.dataScopes = dataScopes;
 		this.holidayImports = holidayImports;
+		this.directoryScope = directoryScope;
 	}
 
 	@GetMapping("/admin/education/term-progress")
@@ -47,27 +50,52 @@ public class AcademicCalendarController {
 
 	@GetMapping("/admin/education/calendar-days")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
-	public ResultData<?> calendarDays(@RequestParam String termId) {
+	public ResultData<?> calendarDays(@RequestParam String termId,
+			@RequestParam(required = false) String organizationId, Authentication authentication) {
+		String owner = requireCalendarTerm(authentication, termId);
+		if (organizationId != null && !organizationId.isBlank() && !organizationId.equals(owner)) {
+			throw new IllegalArgumentException("学期与所选机构不一致");
+		}
 		return ok(service.calendarDays(termId));
 	}
 
 	@PostMapping("/admin/education/calendar-days")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
-	public ResultData<?> createCalendarDay(@RequestBody AcademicCalendarDay command) {
+	public ResultData<?> createCalendarDay(@RequestBody AcademicCalendarDay command, Authentication authentication) {
+		requireCalendarTerm(authentication, command.getAcademicTermId());
 		return ok(service.saveCalendarDay(null, command));
 	}
+
+	@PostMapping("/admin/education/calendar-days/import")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
+	public ResultData<?> importCalendarDays(@RequestBody CalendarImportCommand command, Authentication authentication) {
+		String owner = requireCalendarTerm(authentication, command.termId());
+		if (command.organizationId() == null || !command.organizationId().equals(owner)) {
+			throw new IllegalArgumentException("请选择与学期一致的机构");
+		}
+		return ok(service.importCalendarDays(command.termId(), command.rows(), !Boolean.FALSE.equals(command.preview())));
+	}
+
+	public record CalendarImportCommand(
+			String organizationId, String termId, Boolean preview, java.util.List<AcademicCalendarDay> rows) { }
 
 	@PutMapping("/admin/education/calendar-days/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
 	public ResultData<?> updateCalendarDay(
 			@PathVariable String id,
-			@RequestBody AcademicCalendarDay command) {
+			@RequestBody AcademicCalendarDay command, Authentication authentication) {
+		String originalTerm = service.calendarDayTermId(id);
+		requireCalendarTerm(authentication, originalTerm);
+		if (!originalTerm.equals(command.getAcademicTermId())) {
+			throw new IllegalArgumentException("教学日历记录不能转移到其他学期");
+		}
 		return ok(service.saveCalendarDay(id, command));
 	}
 
 	@DeleteMapping("/admin/education/calendar-days/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
-	public ResultData<?> deleteCalendarDay(@PathVariable String id) {
+	public ResultData<?> deleteCalendarDay(@PathVariable String id, Authentication authentication) {
+		requireCalendarTerm(authentication, service.calendarDayTermId(id));
 		service.deleteCalendarDay(id);
 		return ok(null);
 	}
@@ -131,6 +159,12 @@ public class AcademicCalendarController {
 	public ResultData<?> deleteBellPeriod(@PathVariable String id) {
 		service.deleteBellPeriod(id);
 		return ok(null);
+	}
+
+	private String requireCalendarTerm(Authentication authentication, String termId) {
+		String organizationId = service.termOrganization(termId);
+		directoryScope.requireOrganization(authentication, organizationId);
+		return organizationId;
 	}
 
 	private <T> ResultData<T> ok(T data) {

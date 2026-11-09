@@ -1,0 +1,21 @@
+$kind: http-request
+name: Student list follows visible classes
+order: 3000
+method: GET
+url: '{{base_url}}/admin/education/students?page=0&size=100'
+queryParams:
+  - key: page
+    value: '0'
+  - key: size
+    value: '100'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      const rows = body.data.content;
+      const classIds = new Set(JSON.parse(pm.collectionVariables.get('visible_class_ids')));
+      pm.test('students are limited to visible classes', () => {
+        pm.response.to.have.status(200);
+        pm.expect(rows.length).to.be.above(0);
+        rows.forEach(row => pm.expect(classIds.has(row.administrativeClassId)).to.eql(true));
+      });

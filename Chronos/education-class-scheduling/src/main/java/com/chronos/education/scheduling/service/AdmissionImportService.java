@@ -54,10 +54,10 @@ public class AdmissionImportService {
 	}
 
 	@Transactional
-	public ImportResult importFile(MultipartFile file, boolean dryRun) {
+	public ImportResult importFile(MultipartFile file, boolean dryRun, String organizationId) {
 		if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择录取名册文件");
 		try {
-			return importBytes(file.getBytes(), dryRun);
+			return importBytes(file.getBytes(), dryRun, organizationId);
 		} catch (IOException exception) {
 			throw new IllegalArgumentException("无法读取 Excel 文件", exception);
 		}
@@ -66,7 +66,13 @@ public class AdmissionImportService {
 	/** 供受控批处理和智能体复用；字节内容仍执行与浏览器上传完全相同的整批校验。 */
 	@Transactional
 	public ImportResult importBytes(byte[] content, boolean dryRun) {
+		throw new IllegalArgumentException("导入录取名册必须指定所属机构");
+	}
+
+	@Transactional
+	public ImportResult importBytes(byte[] content, boolean dryRun, String organizationId) {
 		if (content == null || content.length == 0) throw new IllegalArgumentException("录取名册内容为空");
+		if (organizationId == null || organizationId.isBlank()) throw new IllegalArgumentException("所属机构不能为空");
 		List<AdmissionCandidate> values = new ArrayList<>(); List<String> errors = new ArrayList<>(); Set<String> fileKeys = new HashSet<>();
 		try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
 			var sheet = workbook.getSheetAt(0); DataFormatter formatter = new DataFormatter();
@@ -75,6 +81,10 @@ public class AdmissionImportService {
 				Row row = sheet.getRow(rowIndex); if (row == null || empty(row, formatter)) continue;
 				try {
 					AdmissionCandidate value = parse(row, formatter);
+					value.setOrganizationId(organizationId);
+					if (value.getPlannedClassId() != null && !organizationId.equals(classes.findById(value.getPlannedClassId())
+							.map(item -> item.getCampusId()).orElse(null)))
+						throw new IllegalArgumentException("行政班不属于所选机构");
 					String key = value.getAdmissionYear() + "|" + value.getCandidateNo();
 					if (!fileKeys.add(key)) throw new IllegalArgumentException("文件中考生号重复");
 					if (candidates.findByAdmissionYearAndCandidateNo(value.getAdmissionYear(), value.getCandidateNo()).isPresent())

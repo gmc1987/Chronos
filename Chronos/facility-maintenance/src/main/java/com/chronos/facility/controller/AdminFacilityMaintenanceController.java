@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
 
 import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
@@ -28,29 +29,34 @@ import com.chronos.facility.model.dto.FacilityDtos.StockCommand;
 import com.chronos.facility.model.dto.FacilityDtos.TechnicianCommand;
 import com.chronos.facility.model.dto.FacilityDtos.TechnicianView;
 import com.chronos.facility.service.FacilityMaintenanceService;
+import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
 @RequestMapping("/admin/facility")
 public class AdminFacilityMaintenanceController {
 	private final FacilityMaintenanceService service;
+	private final DirectoryDataScopeGuard dataScopes;
 
-	public AdminFacilityMaintenanceController(FacilityMaintenanceService service) {
+	public AdminFacilityMaintenanceController(FacilityMaintenanceService service, DirectoryDataScopeGuard dataScopes) {
 		this.service = service;
+		this.dataScopes = dataScopes;
 	}
 
 	@GetMapping("/repair-orders")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:repair:view','facility:repair:manage')")
 	public ResultData<PageView<RepairOrderView>> orders(
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) String status,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
-		return ok(PageView.from(service.adminOrders(keyword, status, page, size)));
+			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
+		return ok(PageView.from(service.adminOrders(queryOrganizations(authentication, organizationId), keyword, status, page, size)));
 	}
 
 	@GetMapping("/repair-orders/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:repair:view','facility:repair:manage')")
 	public ResultData<RepairOrderView> detail(@PathVariable String id, Principal principal) {
+		dataScopes.requireOrganization(auth(principal), service.orderOrganization(id));
 		return ok(service.detail(id, principal.getName(), true));
 	}
 
@@ -60,12 +66,14 @@ public class AdminFacilityMaintenanceController {
 			@PathVariable String id,
 			@RequestBody DispatchCommand command,
 			Principal principal) {
+		dataScopes.requireOrganization(auth(principal), service.orderOrganization(id));
 		return ok(service.dispatch(id, command, principal.getName()));
 	}
 
 	@PostMapping("/repair-orders/{id}/auto-dispatch")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:repair:dispatch','facility:repair:manage')")
 	public ResultData<RepairOrderView> autoDispatch(@PathVariable String id, Principal principal) {
+		dataScopes.requireOrganization(auth(principal), service.orderOrganization(id));
 		return ok(service.retryAutoDispatch(id, principal.getName()));
 	}
 
@@ -75,6 +83,7 @@ public class AdminFacilityMaintenanceController {
 			@PathVariable String id,
 			@RequestBody ActionCommand command,
 			Principal principal) {
+		dataScopes.requireOrganization(auth(principal), service.orderOrganization(id));
 		return ok(service.cancel(id, command, principal.getName(), true));
 	}
 
@@ -107,24 +116,27 @@ public class AdminFacilityMaintenanceController {
 	@GetMapping("/materials")
 	@PreAuthorize("@iamAuthorization.any(authentication,'facility:material:view','facility:material:manage')")
 	public ResultData<PageView<MaterialView>> materials(
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) String keyword,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
-		return ok(PageView.from(service.materials(keyword, page, size)));
+			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
+		return ok(PageView.from(service.materials(queryOrganizations(authentication, organizationId), keyword, page, size)));
 	}
 
 	@PostMapping("/materials")
 	@PreAuthorize("@iamAuthorization.has(authentication,'facility:material:manage')")
-	public ResultData<MaterialView> createMaterial(@RequestBody MaterialCommand command) {
-		return ok(service.saveMaterial(null, command));
+	public ResultData<MaterialView> createMaterial(@RequestBody MaterialCommand command, Authentication authentication) {
+		return ok(service.saveMaterial(null, command, resolveOrganization(authentication, command.organizationId())));
 	}
 
 	@PutMapping("/materials/{id}")
 	@PreAuthorize("@iamAuthorization.has(authentication,'facility:material:manage')")
 	public ResultData<MaterialView> updateMaterial(
 			@PathVariable String id,
-			@RequestBody MaterialCommand command) {
-		return ok(service.saveMaterial(id, command));
+			@RequestBody MaterialCommand command, Authentication authentication) {
+		String organizationId = service.materialOrganization(id);
+		dataScopes.requireOrganization(authentication, organizationId);
+		return ok(service.saveMaterial(id, command, organizationId));
 	}
 
 	@PostMapping("/materials/{id}/restock")
@@ -133,6 +145,7 @@ public class AdminFacilityMaintenanceController {
 			@PathVariable String id,
 			@RequestBody StockCommand command,
 			Principal principal) {
+		dataScopes.requireOrganization(auth(principal), service.materialOrganization(id));
 		return ok(service.restock(id, command, principal.getName()));
 	}
 
@@ -166,6 +179,26 @@ public class AdminFacilityMaintenanceController {
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
 		return ok(PageView.from(service.ledger(page, size)));
+	}
+
+	private Authentication auth(Principal principal) {
+		if (principal instanceof Authentication authentication) return authentication;
+		return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal.getName(), "", List.of());
+	}
+
+	private java.util.Set<String> queryOrganizations(Authentication authentication, String organizationId) {
+		if (organizationId == null || organizationId.isBlank()) {
+			return dataScopes.visibleOrganizationIds(authentication);
+		}
+		dataScopes.requireOrganization(authentication, organizationId);
+		return java.util.Set.of(organizationId);
+	}
+
+	private String resolveOrganization(Authentication authentication, String requested) {
+		if (requested != null && !requested.isBlank()) { dataScopes.requireOrganization(authentication, requested); return requested; }
+		var visible = dataScopes.visibleOrganizationIds(authentication);
+		if (visible != null && visible.size() == 1) return visible.iterator().next();
+		throw new IllegalArgumentException("请选择维修物料所属机构");
 	}
 
 	private <T> ResultData<T> ok(T data) {

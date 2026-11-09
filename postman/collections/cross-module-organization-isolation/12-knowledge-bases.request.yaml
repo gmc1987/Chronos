@@ -1,0 +1,13 @@
+$kind: http-request
+name: Knowledge bases stay inside school
+order: 12000
+method: GET
+url: '{{base_url}}/admin/knowledge-bases'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('knowledge bases are limited to the allowed school', () => {
+        pm.response.to.have.status(200);
+        body.data.forEach(row => pm.expect(row.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

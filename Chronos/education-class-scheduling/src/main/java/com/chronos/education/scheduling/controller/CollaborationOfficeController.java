@@ -3,6 +3,7 @@ package com.chronos.education.scheduling.controller;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeAssignmentRepository;
 import com.chronos.Idao.IOrganizationUnitRepository;
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.Idao.IPositionRepository;
 import com.chronos.education.scheduling.service.CollaborationOfficeService;
 import com.chronos.education.scheduling.service.CollaborationOfficeService.DocumentCommand;
@@ -12,12 +13,17 @@ import com.chronos.education.scheduling.service.CollaborationOfficeService.Share
 import com.chronos.commons.model.PageView;
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.pojo.Employee;
+import com.chronos.security.DirectoryDataScopeGuard;
 import com.chronos.service.iService.IIamDirectoryService;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -39,6 +45,8 @@ public class CollaborationOfficeController {
 	private final IOrganizationUnitRepository units;
 	private final IPositionRepository positions;
 	private final IAdminUserRepository accounts;
+	private final DirectoryDataScopeGuard dataScope;
+	private final IOrganizationRepository organizations;
 
 	public CollaborationOfficeController(
 			CollaborationOfficeService collaboration,
@@ -46,13 +54,17 @@ public class CollaborationOfficeController {
 			IEmployeeAssignmentRepository assignments,
 			IOrganizationUnitRepository units,
 			IPositionRepository positions,
-			IAdminUserRepository accounts) {
+			IAdminUserRepository accounts,
+			DirectoryDataScopeGuard dataScope,
+			IOrganizationRepository organizations) {
 		this.collaboration = collaboration;
 		this.directory = directory;
 		this.assignments = assignments;
 		this.units = units;
 		this.positions = positions;
 		this.accounts = accounts;
+		this.dataScope = dataScope;
+		this.organizations = organizations;
 	}
 
 	@GetMapping("/resources")
@@ -136,11 +148,22 @@ public class CollaborationOfficeController {
 
 	@GetMapping("/contacts")
 	public ResultData<?> contacts(
+			Authentication authentication,
 			@RequestParam(defaultValue = "") String keyword,
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size) {
 		String normalized = keyword.trim().toLowerCase(Locale.ROOT);
-		List<ContactView> result = directory.employees().stream()
+		var visibleOrganizationIds = dataScope.visibleOrganizationIds(authentication);
+		if (visibleOrganizationIds == null) {
+			visibleOrganizationIds = organizations.findAll().stream()
+					.filter(value -> Integer.valueOf(1).equals(value.getStatus()))
+					.map(value -> value.getId())
+					.collect(Collectors.toSet());
+		}
+		Map<String, Employee> visibleEmployees = visibleOrganizationIds.stream()
+				.flatMap(organizationId -> directory.employees(organizationId).stream())
+				.collect(Collectors.toMap(Employee::getId, Function.identity(), (left, right) -> left));
+		List<ContactView> result = visibleEmployees.values().stream()
 				.filter(employee -> "ACTIVE".equals(employee.getEmploymentStatus()))
 				.filter(employee -> normalized.isEmpty()
 						|| contains(employee.getEmployeeName(), normalized)

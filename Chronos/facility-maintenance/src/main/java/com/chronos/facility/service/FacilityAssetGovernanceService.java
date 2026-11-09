@@ -53,6 +53,15 @@ public class FacilityAssetGovernanceService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<FacilityAsset> assets(java.util.Collection<String> organizationIds) {
+		return organizationIds == null ? assets() : assets.findByOrganizationIdInOrderByAssetCode(organizationIds);
+	}
+
+	public String assetOrganization(String id) {
+		return assets.findById(id).orElseThrow(() -> new IllegalArgumentException("资产不存在")).getOrganizationId();
+	}
+
+	@Transactional(readOnly = true)
 	public FacilityAsset assetByQr(String token) {
 		return assets.findByQrToken(token)
 				.orElseThrow(() -> new IllegalArgumentException("资产二维码无效"));
@@ -70,7 +79,9 @@ public class FacilityAssetGovernanceService {
 		value.setAssetName(text(command.assetName(), "资产名称不能为空"));
 		value.setCategory(text(command.category(), "资产分类不能为空"));
 		value.setSerialNumber(trim(command.serialNumber()));
-		value.setOrganizationId(trim(command.organizationId()));
+		String organizationId = trim(command.organizationId());
+		if (id == null && organizationId == null) throw new IllegalArgumentException("资产所属机构不能为空");
+		if (id == null) value.setOrganizationId(organizationId);
 		value.setLocation(text(command.location(), "资产位置不能为空"));
 		value.setPurchaseDate(command.purchaseDate());
 		value.setWarrantyExpiry(command.warrantyExpiry());

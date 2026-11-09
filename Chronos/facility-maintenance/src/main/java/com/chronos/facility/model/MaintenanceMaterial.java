@@ -18,6 +18,9 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "fm_material", comment = "维修物料库存")
 public class MaintenanceMaterial extends BaseEntity {
+	@Column(name = "organization_id", nullable = false, length = 64)
+	private String organizationId;
+
 	@Column(name = "material_code", nullable = false, unique = true, length = 64)
 	private String materialCode;
 	@Column(name = "material_name", nullable = false, length = 200)

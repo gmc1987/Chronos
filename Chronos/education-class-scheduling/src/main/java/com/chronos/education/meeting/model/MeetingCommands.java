@@ -37,7 +37,8 @@ public final class MeetingCommands {
 			@Size(max = 1000) String joinUrl,
 			@Size(max = 128) String onlineAccessCode,
 			@Size(max = 500) List<@NotBlank @Size(max = 128) String> participantUsernames,
-			Long recordVersion) {
+			Long recordVersion,
+			String organizationId) {
 	}
 
 	public record RecurrencePreview(

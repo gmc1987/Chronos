@@ -294,17 +294,7 @@ public class GradeCenterService {
  public Gradebook review(String id, String taskId, boolean approved, String comment, String actor) {
      Gradebook gradebook = gradebooks.findById(id)
              .orElseThrow(() -> new IllegalArgumentException("成绩册不存在"));
-     WorkflowTask task = workflowTasks.findById(taskId)
-             .orElseThrow(() -> new IllegalArgumentException("审核任务不存在"));
-     var workflow = workflows.instance(task.getInstanceId());
-     if (!id.equals(workflow.getBusinessKey())) {
-         throw new AccessDeniedException("审核任务不属于当前成绩册");
-     }
-     // 成绩审核必须由独立人员办理，不能仅靠候选角色排除发起人。
-     if (actor.equals(workflow.getInitiator())
-             || dataScopes.resolve(actor).teacherIds().contains(gradebook.getTeacherId())) {
-         throw new AccessDeniedException("提交人或任课教师不得审核本人成绩册");
-     }
+     WorkflowTask task = requireIndependentReview(gradebook, taskId, actor);
      var instance = approved
              ? workflows.completeTask(taskId, true, comment, actor)
              : workflows.rejectTask(taskId, "", comment, actor);
@@ -318,6 +308,30 @@ public class GradeCenterService {
      audit.log(actor, approved ? "EDU_GRADEBOOK_APPROVE" : "EDU_GRADEBOOK_REJECT",
              "gradebookId=" + id + ",node=" + task.getNodeKey());
      return gradebooks.save(gradebook);
+ }
+
+ @Transactional(readOnly = true)
+ public void checkReviewEligibility(String id, String taskId, String actor) {
+     Gradebook gradebook = authorizedGradebook(id, actor);
+     WorkflowTask task = requireIndependentReview(gradebook, taskId, actor);
+     if (!"PENDING".equals(task.getStatus()) || !actor.equals(task.getAssignee())) {
+         throw new AccessDeniedException("请由当前审核人认领待办后再办理");
+     }
+ }
+
+ private WorkflowTask requireIndependentReview(Gradebook gradebook, String taskId, String actor) {
+     WorkflowTask task = workflowTasks.findById(taskId)
+             .orElseThrow(() -> new IllegalArgumentException("审核任务不存在"));
+     var workflow = workflows.instance(task.getInstanceId());
+     if (!gradebook.getId().equals(workflow.getBusinessKey())) {
+         throw new AccessDeniedException("审核任务不属于当前成绩册");
+     }
+     // 成绩审核必须由独立人员办理，不能仅靠候选角色排除发起人。
+     if (actor.equals(workflow.getInitiator())
+             || dataScopes.resolve(actor).teacherIds().contains(gradebook.getTeacherId())) {
+         throw new AccessDeniedException("提交人或任课教师不得审核本人成绩册");
+     }
+     return task;
  }
  @Transactional public Gradebook publish(String id,String actor){Gradebook g=authorizedGradebook(id,actor);if("PUBLISHED".equals(g.getStatus()))return g;if(!"APPROVED".equals(g.getStatus()))throw new IllegalStateException("仅审核通过后可发布");List<GradebookStudent> ss=students.findByGradebookId(id);List<AssessmentComponent> cs=components.findBySchemeIdOrderBySortOrder(g.getSchemeId());List<GradeItem> allItems=items.findByGradebookId(id);Map<String,List<GradeItem>> by=allItems.stream().collect(Collectors.groupingBy(GradeItem::getStudentId));Map<String,AssessmentComponent> componentById=cs.stream().collect(Collectors.toMap(AssessmentComponent::getId,x->x));AssessmentScheme scheme=schemes.findById(g.getSchemeId()).orElseThrow();CourseOffering offering=offerings.findById(g.getOfferingId()).orElseThrow();int version=g.getSubmissionNo();Map<String,Object> snapshotData=new LinkedHashMap<>();snapshotData.put("snapshotVersion",1);snapshotData.put("capturedAt",LocalDateTime.now().toString());Map<String,Object> offeringSnapshot=new LinkedHashMap<>();offeringSnapshot.put("id",offering.getId());offeringSnapshot.put("offeringCode",offering.getOfferingCode());offeringSnapshot.put("teachingClassName",offering.getTeachingClassName());offeringSnapshot.put("semesterCode",offering.getSemesterCode());offeringSnapshot.put("courseCode",offering.getCourseCode());offeringSnapshot.put("courseName",offering.getCourseName());offeringSnapshot.put("campusId",offering.getCampusId());offeringSnapshot.put("offeringMode",offering.getOfferingMode());snapshotData.put("offering",offeringSnapshot);snapshotData.put("students",ss.stream().map(this::snapshotStudent).toList());snapshotData.put("components",cs.stream().map(this::snapshotComponent).toList());snapshotData.put("items",allItems.stream().map(this::snapshotItem).toList());String snapshot;try{snapshot=json.writeValueAsString(snapshotData);}catch(Exception e){throw new IllegalArgumentException("成绩快照序列化失败",e);}String hash=hash(snapshot);for(GradebookStudent student:ss){BigDecimal total=by.getOrDefault(student.getStudentId(),List.of()).stream().filter(x->x.getConvertedScore()!=null).map(x->{AssessmentComponent c=componentById.get(x.getComponentId());return c==null?BigDecimal.ZERO:x.getConvertedScore().divide(c.getMaxScore(),8,java.math.RoundingMode.HALF_UP).multiply(c.getWeight());}).reduce(BigDecimal.ZERO,BigDecimal::add);CourseGrade cg=new CourseGrade();cg.setGradebookId(id);cg.setStudentId(student.getStudentId());cg.setTotalScore(total);applyGradeLevel(cg,total);cg.setPassed(total.compareTo(scheme.getPassScore())>=0);cg.setVersionNo(version);cg.setSnapshotHash(hash);courseGrades.save(cg);notifications.published(id,student.getStudentId(),g.getOfferingId(),String.valueOf(version));}GradePublishSnapshot p=new GradePublishSnapshot();p.setGradebookId(id);p.setVersionNo(version);p.setSnapshotJson(snapshot);p.setSnapshotHash(hash);p.setPublishedBy(actor);p.setPublishedAt(LocalDateTime.now());snapshots.save(p);g.setStatus("PUBLISHED");g.setPublishedAt(LocalDateTime.now());audit.log(actor,"EDU_GRADEBOOK_PUBLISH","gradebookId="+id+",version="+version);Gradebook saved=gradebooks.save(g);domainEvents.enqueue(new com.chronos.education.grade.dto.GradeSourceEventContracts.CourseGradesPublishedV1(UUID.randomUUID().toString(),"CourseGradesPublishedV1",java.time.OffsetDateTime.now(),1,g.getId(),g.getOfferingId(),g.getSubmissionNo(),hash,actor));return saved;}
 	@Transactional(readOnly = true)
@@ -392,6 +406,13 @@ public class GradeCenterService {
 			component.setSortOrder(command.sortOrder() == null ? defaultOrder++ : command.sortOrder());
 			components.save(component);
 		}
+	}
+
+	/** Uses the same rules as saving a scheme without changing grade data. */
+	@Transactional(readOnly = true)
+	public void validateSchemeCandidate(SchemeCommand command, String actor) {
+		validateScheme(command);
+		authorizedOffering(command.offeringId(), actor);
 	}
 
 	private void validateScheme(SchemeCommand command) {

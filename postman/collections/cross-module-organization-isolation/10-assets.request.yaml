@@ -1,0 +1,13 @@
+$kind: http-request
+name: Facility assets stay inside school
+order: 10000
+method: GET
+url: '{{base_url}}/admin/facility/governance/assets'
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('assets are limited to the allowed school', () => {
+        pm.response.to.have.status(200);
+        body.data.forEach(row => pm.expect(row.organizationId).to.eql(pm.collectionVariables.get('allowed_org_id')));
+      });

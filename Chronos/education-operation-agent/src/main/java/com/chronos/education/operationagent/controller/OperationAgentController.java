@@ -21,36 +21,53 @@ import com.chronos.file.model.ManagedFileView;
 public class OperationAgentController {
 	private final OperationAgentService service;
 	private final OperationAgentManagedFileService managedFiles;
+	private final com.chronos.education.operationagent.service.OperationAgentSkillCatalog skills;
 
 	public OperationAgentController(
 			OperationAgentService service,
-			OperationAgentManagedFileService managedFiles) {
+			OperationAgentManagedFileService managedFiles,
+			com.chronos.education.operationagent.service.OperationAgentSkillCatalog skills) {
 		this.service = service;
 		this.managedFiles = managedFiles;
+		this.skills = skills;
 	}
 
 	@PostMapping(value = "/files/admission-rosters", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<ManagedFileView> uploadAdmissionRoster(
 			@RequestPart("file") MultipartFile file,
 			Authentication authentication) {
 		return ok(managedFiles.uploadAdmissionRoster(file, authentication));
 	}
 
+	@PostMapping(value = "/files/business-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	public ResultData<OperationAgentManagedFileService.BusinessFileUpload> uploadBusinessAttachment(
+			@RequestPart("file") MultipartFile file,
+			Authentication authentication) {
+		return ok(managedFiles.uploadBusinessFile(file, authentication));
+	}
+
 	@GetMapping("/tools")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
 	public ResultData<?> tools() {
 		return ok(service.tools());
 	}
 
+	@GetMapping("/skills")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
+	public ResultData<?> skills() {
+		return ok(skills.all());
+	}
+
 	@GetMapping("/plans")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
 	public ResultData<List<PlanView>> plans(Authentication authentication) {
 		return ok(service.listPlans(authentication));
 	}
 
 	@PostMapping("/plans/draft")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<DraftResult> draft(
 			@RequestBody DraftCommand command,
 			Authentication authentication) {
@@ -59,7 +76,7 @@ public class OperationAgentController {
 
 	/** Conversational entry point; internal plan details are returned only as audit data. */
 	@PostMapping("/conversation")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<ConversationResult> conversation(
 			@RequestBody ConversationCommand command,
 			Authentication authentication) {
@@ -67,7 +84,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/plans")
-	@PreAuthorize("hasAuthority('education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAuthority('education:operation-agent:manage')")
 	public ResultData<PlanView> create(
 			@RequestBody PlanCommand command,
 			Authentication authentication) {
@@ -75,7 +92,7 @@ public class OperationAgentController {
 	}
 
 	@PutMapping("/plans/{id}")
-	@PreAuthorize("hasAuthority('education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAuthority('education:operation-agent:manage')")
 	public ResultData<PlanView> update(
 			@PathVariable String id,
 			@RequestBody PlanCommand command,
@@ -84,7 +101,7 @@ public class OperationAgentController {
 	}
 
 	@DeleteMapping("/plans/{id}")
-	@PreAuthorize("hasAuthority('education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAuthority('education:operation-agent:manage')")
 	public ResultData<Void> delete(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -93,7 +110,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/plans/{id}/runs")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<RunView> start(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -101,13 +118,13 @@ public class OperationAgentController {
 	}
 
 	@GetMapping("/runs")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
 	public ResultData<List<RunView>> runs(Authentication authentication) {
 		return ok(service.listRuns(authentication));
 	}
 
 	@GetMapping("/runs/{id}")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
 	public ResultData<RunDetail> detail(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -115,7 +132,7 @@ public class OperationAgentController {
 	}
 
 	@GetMapping("/runs/{id}/events")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:view','education:operation-agent:manage','education:operation-agent:execute','education:operation-agent:review')")
 	public ResultData<List<OperationAgentEvent>> events(
 			@PathVariable String id,
 			@RequestParam(defaultValue = "0") long after,
@@ -124,7 +141,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/pause")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<RunView> pause(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -132,7 +149,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/resume")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<RunView> resume(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -140,7 +157,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/approve")
-	@PreAuthorize("hasAuthority('education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAuthority('education:operation-agent:review')")
 	public ResultData<RunView> approve(
 			@PathVariable String id,
 			@RequestBody(required = false) ReviewCommand command,
@@ -148,8 +165,18 @@ public class OperationAgentController {
 		return ok(service.approve(id, command, authentication));
 	}
 
+	@PostMapping("/runs/{id}/steps/{stepOrder}/decisions")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage','education:operation-agent:review')")
+	public ResultData<RunView> decideCheckpoint(
+			@PathVariable String id,
+			@PathVariable Integer stepOrder,
+			@RequestBody CheckpointDecisionCommand command,
+			Authentication authentication) {
+		return ok(service.decideCheckpoint(id, stepOrder, command, authentication));
+	}
+
 	@PostMapping("/runs/{id}/approval-evidence/refresh")
-	@PreAuthorize("hasAuthority('education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage','education:operation-agent:review')")
 	public ResultData<RunDetail> refreshApprovalEvidence(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -157,7 +184,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/reject")
-	@PreAuthorize("hasAuthority('education:operation-agent:review')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAuthority('education:operation-agent:review')")
 	public ResultData<RunView> reject(
 			@PathVariable String id,
 			@RequestBody ReviewCommand command,
@@ -166,7 +193,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/conditions")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<RunView> condition(
 			@PathVariable String id,
 			@RequestBody ConditionCommand command,
@@ -175,7 +202,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/inputs")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<RunView> input(
 			@PathVariable String id,
 			@RequestBody StepInputCommand command,
@@ -184,7 +211,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/cancel")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<RunView> cancel(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -192,7 +219,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/retry")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<RunView> retry(
 			@PathVariable String id,
 			Authentication authentication) {
@@ -200,7 +227,7 @@ public class OperationAgentController {
 	}
 
 	@PostMapping("/runs/{id}/promote")
-	@PreAuthorize("hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
+	@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('education:operation-agent:execute','education:operation-agent:manage')")
 	public ResultData<PromotionResult> promote(
 			@PathVariable String id,
 			Authentication authentication) {

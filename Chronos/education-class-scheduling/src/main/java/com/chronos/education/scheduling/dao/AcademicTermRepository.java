@@ -18,9 +18,14 @@ import com.chronos.education.scheduling.model.AcademicTerm;
 public interface AcademicTermRepository extends JpaRepository<AcademicTerm, String> {
 	List<AcademicTerm> findAllByOrderByStartDateDesc();
 	Page<AcademicTerm> findAllByOrderByStartDateDesc(Pageable pageable);
+	List<AcademicTerm> findByOrganizationIdInOrderByStartDateDesc(java.util.Collection<String> organizationIds);
+	Page<AcademicTerm> findByOrganizationIdInOrderByStartDateDesc(java.util.Collection<String> organizationIds, Pageable pageable);
+	List<AcademicTerm> findByOrganizationIdOrderByStartDateDesc(String organizationId);
 	Optional<AcademicTerm> findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc(String status);
 
 	Optional<AcademicTerm> findByTermCode(String termCode);
+	Optional<AcademicTerm> findByOrganizationIdAndLocalTermCode(String organizationId, String localTermCode);
+	boolean existsByOrganizationIdAndLocalTermCode(String organizationId, String localTermCode);
 	List<AcademicTerm> findByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatus(
 			LocalDate startBoundary, LocalDate endBoundary, String status);
 

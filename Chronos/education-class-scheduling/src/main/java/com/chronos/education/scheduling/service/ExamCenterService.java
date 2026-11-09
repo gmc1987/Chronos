@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.model.pojo.Organization;
@@ -121,7 +122,13 @@ public class ExamCenterService {
 
 	@Transactional(readOnly = true)
 	public List<ExamPlan> plans(String semesterCode) {
-		return plans.findBySemesterCodeOrderByStartDateAsc(semesterCode);
+		var authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication == null || !authentication.isAuthenticated())
+			return plans.findBySemesterCodeOrderByStartDateAsc(semesterCode);
+		var scope = dataScopes.resolve(authentication.getName());
+		return scope.fullAccess() ? plans.findBySemesterCodeOrderByStartDateAsc(semesterCode)
+				: plans.findBySemesterCodeAndOrganizationIdInOrderByStartDateAsc(
+						semesterCode, scope.campusIds());
 	}
 
 	@Transactional(readOnly = true)
@@ -592,6 +599,9 @@ public class ExamCenterService {
 			throw new IllegalArgumentException("考试日期必须位于学期内且起止有效");
 		}
 		ExamPlan value = id == null ? new ExamPlan() : plan(id);
+		if (id == null) value.setOrganizationId(term.getOrganizationId());
+		else if (!value.getOrganizationId().equals(term.getOrganizationId()))
+			throw new IllegalArgumentException("学期与考试计划不属于同一机构");
 		if (!"DRAFT".equals(value.getStatus())) {
 			throw new IllegalStateException("已发布考试计划须走变更流程");
 		}
@@ -1878,7 +1888,13 @@ public class ExamCenterService {
 	}
 
 	private ExamPlan plan(String id) {
-		return plans.findById(id).orElseThrow(() -> new IllegalArgumentException("考试计划不存在"));
+		ExamPlan value = plans.findById(id).orElseThrow(() -> new IllegalArgumentException("考试计划不存在"));
+		var authentication = SecurityContextHolder.getContext().getAuthentication();
+		if (authentication != null && authentication.isAuthenticated()
+				&& !"anonymousUser".equals(authentication.getName())) {
+			dataScopes.assertCampusAccess(dataScopes.resolve(authentication.getName()), value.getOrganizationId());
+		}
+		return value;
 	}
 
 	private ExamPlan draft(String id) {
@@ -1890,17 +1906,23 @@ public class ExamCenterService {
 	}
 
 	private ExamSession session(String id) {
-		return sessions.findById(id).orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
+		ExamSession value = sessions.findById(id).orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
+		plan(value.getPlanId());
+		return value;
 	}
 
 	private ExamRoom room(String id) {
-		return rooms.findById(id).orElseThrow(() -> new IllegalArgumentException("考场不存在"));
+		ExamRoom value = rooms.findById(id).orElseThrow(() -> new IllegalArgumentException("考场不存在"));
+		session(value.getSessionId());
+		return value;
 	}
 
 	private ExamInvigilation assignment(String id) {
-		return assignments.findById(id)
+		ExamInvigilation value = assignments.findById(id)
 				.filter(item -> "ASSIGNED".equals(item.getStatus()))
 				.orElseThrow(() -> new IllegalArgumentException("监考任务不存在或已调换"));
+		room(value.getRoomId());
+		return value;
 	}
 
 	private void required(String value, String label) {

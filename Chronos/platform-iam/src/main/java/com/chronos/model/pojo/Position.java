@@ -10,7 +10,8 @@ import lombok.Setter;
 @Entity @Getter @Setter @NoArgsConstructor
 @Table(name = "t_position", comment = "岗位")
 public class Position extends BaseEntity {
-    @Column(name = "position_code", length = 100, nullable = false, unique = true) private String positionCode;
+    @Column(name = "organization_id", length = 64) private String organizationId;
+    @Column(name = "position_code", length = 100, nullable = false) private String positionCode;
     @Column(name = "position_name", length = 100, nullable = false) private String positionName;
     @Column(name = "position_category", length = 50) private String positionCategory;
     @Column(name = "position_level", length = 50) private String positionLevel;

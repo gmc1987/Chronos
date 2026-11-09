@@ -13,13 +13,18 @@ import com.chronos.agent.AgentRunStatus;
 import com.chronos.education.operationagent.dao.*;
 import com.chronos.education.operationagent.model.*;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.security.DirectoryDataScopeGuard;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class OperationAgentService {
+	private static final java.util.regex.Pattern TERM_CREATION_PATTERN = java.util.regex.Pattern.compile(
+			"(?:创建|新建|新增|建立|初始化|开设)(?:一个|新的|新)?\\s*(?:(?:20\\d{2}\\s*[-—至]\\s*20\\d{2}\\s*(?:学年)?\\s*(?:[-—]\\s*)?第?[一二12]学期)|(?:20\\d{2}\\s*(?:年度|学年)\\s*第?[一二12]学期)|学年学期|学期数据|新学期|学期)|"
+					+ "(?:学年学期|学期数据|新学期|学期).{0,8}(?:创建|新建|新增|建立|初始化|开设)");
 	private static final Set<String> ACTIVE_RUN_STATUSES = Set.of(
-			"QUEUED", "RUNNING", "PAUSE_REQUESTED", "PAUSED", "REPLANNING", "WAITING_APPROVAL");
+			"QUEUED", "RUNNING", "PAUSE_REQUESTED", "PAUSED", "REPLANNING",
+			"WAITING_CONFIRMATION", "WAITING_WORKFLOW", "WAITING_APPROVAL");
 	private final OperationAgentPlanRepository plans;
 	private final OperationAgentPlanStepRepository planSteps;
 	private final OperationAgentRunRepository runs;
@@ -27,6 +32,7 @@ public class OperationAgentService {
 	private final OperationAgentEventRepository eventRepository;
 	private final OperationAgentConditionRepository conditions;
 	private final OperationAgentToolCatalog toolCatalog;
+	private final OperationAgentGovernancePolicyService governance;
 	private final OperationAgentEventService events;
 	private final OperationAgentRunner runner;
 	private final OperationAgentLlmService llm;
@@ -34,6 +40,7 @@ public class OperationAgentService {
 	private final OperationAgentSemesterResolver semesterResolver;
 	private final ObjectMapper mapper;
 	private final IAuditLogService audit;
+	private final DirectoryDataScopeGuard dataScopes;
 
 	public OperationAgentService(
 			OperationAgentPlanRepository plans,
@@ -43,13 +50,15 @@ public class OperationAgentService {
 			OperationAgentEventRepository eventRepository,
 			OperationAgentConditionRepository conditions,
 			OperationAgentToolCatalog toolCatalog,
+			OperationAgentGovernancePolicyService governance,
 			OperationAgentEventService events,
 			OperationAgentRunner runner,
 			OperationAgentLlmService llm,
 			OperationAgentNotificationService notifications,
 			OperationAgentSemesterResolver semesterResolver,
 			ObjectMapper mapper,
-			IAuditLogService audit) {
+			IAuditLogService audit,
+			DirectoryDataScopeGuard dataScopes) {
 		this.plans = plans;
 		this.planSteps = planSteps;
 		this.runs = runs;
@@ -57,6 +66,7 @@ public class OperationAgentService {
 		this.eventRepository = eventRepository;
 		this.conditions = conditions;
 		this.toolCatalog = toolCatalog;
+		this.governance = governance;
 		this.events = events;
 		this.runner = runner;
 		this.llm = llm;
@@ -64,12 +74,27 @@ public class OperationAgentService {
 		this.semesterResolver = semesterResolver;
 		this.mapper = mapper;
 		this.audit = audit;
+		this.dataScopes = dataScopes;
 	}
 
 	public OperationAgentLlmService.DraftResult draftPlan(
 			OperationAgentLlmService.DraftCommand command,
 			Authentication authentication) {
-		OperationAgentLlmService.DraftResult result = llm.draft(command, authentication);
+		return draftPlan(command, authentication, null);
+	}
+
+	private OperationAgentLlmService.DraftResult draftPlan(
+			OperationAgentLlmService.DraftCommand command,
+			Authentication authentication, com.fasterxml.jackson.databind.JsonNode intent) {
+		if (command.organizationId() != null && !command.organizationId().isBlank()) {
+			dataScopes.requireOrganization(authentication, command.organizationId());
+			String qualifiedSemester = semesterResolver.qualify(
+					command.semesterCode(), command.organizationId());
+			command = new OperationAgentLlmService.DraftCommand(
+					command.request(), command.knowledgeBaseId(), qualifiedSemester, command.admissionYear(),
+					command.managedFileId(), command.managedFileIds(), command.candidateOnly(), command.organizationId());
+		}
+		OperationAgentLlmService.DraftResult result = llm.draft(command, authentication, intent);
 		audit.log(authentication.getName(), "OPERATION_AGENT_LLM_DRAFT",
 				"stepCount=" + result.plan().steps().size());
 		return result;
@@ -84,22 +109,80 @@ public class OperationAgentService {
 	@Transactional
 	public ConversationResult converse(ConversationCommand command,
 			Authentication authentication) {
-		OperationAgentSemesterResolver.Resolution resolution = semesterResolver.resolve(
-				command.request(), command.semesterCode(), Boolean.TRUE.equals(command.confirmNonCurrent()),
-				Boolean.TRUE.equals(command.createMissingTerm()));
+		String conversationRequest = conversationRequest(command.contextMessages(), command.request());
+		if (command.organizationId() != null && !command.organizationId().isBlank()) {
+			dataScopes.requireOrganization(authentication, command.organizationId());
+		}
+		var intent = llm.recognizeConversation(conversationRequest, authentication);
+		if (intent.path("cancelled").asBoolean()) {
+			return new ConversationResult("CANCELLED", null, null, null, null);
+		}
+		if (intent.path("needsClarification").asBoolean() || intent.path("skillCodes").isEmpty()) {
+			return new ConversationResult("NEED_INTENT", null, null, null,
+					new OperationAgentSemesterResolver.Resolution("NEED_INTENT", null, null, null,
+							intent.path("question").asText("请补充本次要完成的具体业务目标。"), false, false));
+		}
+		boolean termCreationRequested = intent.path("createTerm").asBoolean()
+				|| (Boolean.TRUE.equals(command.createMissingTerm()) && intent.path("confirmed").asBoolean());
+		String recognizedTerm = intent.path("semesterCode").asText(null);
+		if (recognizedTerm == null) recognizedTerm = command.semesterCode();
+		OperationAgentSemesterResolver.Resolution resolution = intent.path("requiresSemester").asBoolean()
+				? semesterResolver.resolve(
+						"", recognizedTerm, intent.path("confirmed").asBoolean(),
+						termCreationRequested, command.organizationId())
+				: new OperationAgentSemesterResolver.Resolution(
+						"READY", null, null, null, "本次业务不依赖学期，按通用业务流程处理。", false, false);
 		if (!"READY".equals(resolution.status())) {
 			return new ConversationResult(resolution.status(), null, null, null, resolution);
 		}
+		String planningRequest = resolution.creationRequested()
+				? "创建学年学期数据。" + conversationRequest
+				: conversationRequest;
+		planningRequest += "\nLLM已识别的结构化意图：" + intent.toString();
 		OperationAgentLlmService.DraftCommand draftCommand = new OperationAgentLlmService.DraftCommand(
-				command.request(), command.knowledgeBaseId(), resolution.termCode(), command.admissionYear(),
-				command.managedFileId(), command.candidateOnly());
-		OperationAgentLlmService.DraftResult draft = draftPlan(draftCommand, authentication);
+				planningRequest, command.knowledgeBaseId(), resolution.termCode(), command.admissionYear(),
+				command.managedFileId(), command.managedFileIds(), command.candidateOnly(), command.organizationId());
+		boolean academicOnly = intent.path("skillCodes").size() == 1
+				&& "academic.term-setup".equals(intent.path("skillCodes").get(0).asText());
+		OperationAgentLlmService.DraftResult draft = academicOnly
+				? llm.academicIntentDraft(intent, draftCommand) : draftPlan(draftCommand, authentication, intent);
+		llm.validateIntentTools(intent, draft);
 		if (!draft.readyToSave()) {
 			return new ConversationResult("NEED_INPUT", draft, null, null, resolution);
 		}
 		PlanView plan = savePlan(null, draft.plan(), authentication);
 		RunView run = start(plan.plan().getId(), authentication);
 		return new ConversationResult("STARTED", draft, plan, run, resolution);
+	}
+
+	private boolean requiresSemesterContext(ConversationCommand command, String conversationRequest) {
+		if (command.semesterCode() != null && !command.semesterCode().isBlank()) return true;
+		String request = conversationRequest.toLowerCase(Locale.ROOT);
+		return List.of("学期", "排课", "课表", "开课", "教学任务", "选课", "考试", "成绩",
+				"期末", "住宿", "宿舍", "床位", "毕业", "归档", "新生", "录取", "入学", "分班")
+				.stream().anyMatch(request::contains);
+	}
+
+	private boolean requestsTermCreation(String request) {
+		return TERM_CREATION_PATTERN.matcher(request == null ? "" : request).find();
+	}
+
+	/**
+	 * 对话端传入的上下文只用于本次意图和参数合并。服务端限制轮数与长度，
+	 * 避免客户端无限回传历史内容导致模型上下文和审计记录失控。
+	 */
+	private String conversationRequest(List<String> contextMessages, String request) {
+		String current = request == null ? "" : request.trim();
+		if (current.isBlank()) throw new IllegalArgumentException("请描述希望智能体完成的工作");
+		List<String> values = new java.util.ArrayList<>();
+		if (contextMessages != null) {
+			contextMessages.stream().filter(Objects::nonNull).map(String::trim).filter(value -> !value.isBlank())
+					.limit(12).forEach(value -> values.add(value.length() > 1000 ? value.substring(0, 1000) : value));
+		}
+		values.add(current.length() > 1000 ? current.substring(0, 1000) : current);
+		String merged = String.join("\n用户补充：", values);
+		if (merged.length() > 6000) throw new IllegalArgumentException("对话上下文过长，请开始一个新任务");
+		return merged;
 	}
 
 	@Transactional(readOnly = true)
@@ -163,11 +246,12 @@ public class OperationAgentService {
 			step.setBusinessStageCode(definition.businessStageCode());
 			step.setBusinessStageName(definition.businessStageName());
 			step.setRiskLevel(definition.riskLevel());
-			boolean dryRun = value.toolConfig() != null && Boolean.TRUE.equals(value.toolConfig().get("dryRun"));
-			boolean platformApproval = definition.approvalRequired() && !dryRun;
-			step.setApprovalRequired(value.approvalRequired() == null
-					? platformApproval
-					: value.approvalRequired() || platformApproval);
+			OperationAgentGovernancePolicyService.GovernanceDecision decision = governance.decide(
+					definition, value.toolConfig() == null ? Map.of() : value.toolConfig());
+			step.setCheckpointMode(decision.mode());
+			step.setPolicyCode(decision.policyCode());
+			step.setPolicyVersion(decision.policyVersion());
+			step.setApprovalRequired(decision.mode().requiresCheckpoint());
 			step.setSuccessCriteria(blank(value.successCriteria()));
 			step.setToolConfigJson(write(value.toolConfig() == null ? Map.of() : value.toolConfig()));
 			planSteps.save(step);
@@ -243,6 +327,9 @@ public class OperationAgentService {
 			step.setBusinessStageCode(source.getBusinessStageCode());
 			step.setBusinessStageName(source.getBusinessStageName());
 			step.setApprovalRequired(source.getApprovalRequired());
+			step.setCheckpointMode(source.getCheckpointMode());
+			step.setPolicyCode(source.getPolicyCode());
+			step.setPolicyVersion(source.getPolicyVersion());
 			stepRuns.save(step);
 		}
 		OperationAgentCondition initial = new OperationAgentCondition();
@@ -273,12 +360,15 @@ public class OperationAgentService {
 	@Transactional(readOnly = true)
 	public RunDetail detail(String id, Authentication authentication) {
 		OperationAgentRun run = ownedRun(id, authentication);
+		CheckpointView checkpoint = checkpointView(run, authentication);
 		return new RunDetail(
 				runView(run),
 				stepRuns.findByRunIdOrderByStepOrder(id),
 				conditions.findByRunIdOrderByConditionVersion(id),
 				candidatePromotionAvailable(run),
-				notifications.eligibleReviewers(run.getOwnerUsername()));
+				checkpoint != null && checkpoint.mode() == OperationAgentCheckpointMode.DUAL_CONTROL
+						? notifications.eligibleReviewers(run.getOwnerUsername()) : List.of(),
+				checkpoint);
 	}
 
 	/**
@@ -346,8 +436,10 @@ public class OperationAgentService {
 	@Transactional
 	public RunView requestPause(String id, Authentication authentication) {
 		OperationAgentRun run = lockedOwnedRun(id, authentication);
-		if ("WAITING_APPROVAL".equals(run.getStatus())) {
-			AgentRunStateMachine.assertTransition(AgentRunStatus.WAITING_APPROVAL, AgentRunStatus.PAUSED);
+		if (Set.of("WAITING_CONFIRMATION", "WAITING_APPROVAL", "WAITING_WORKFLOW")
+				.contains(run.getStatus())) {
+			AgentRunStateMachine.assertTransition(
+					AgentRunStatus.valueOf(run.getStatus()), AgentRunStatus.PAUSED);
 			run.setStatus("PAUSED");
 			run.setPausedAt(LocalDateTime.now());
 			run.setNextAction("可补充附加条件并评估影响，或继续到审批检查点");
@@ -370,11 +462,12 @@ public class OperationAgentService {
 	@Transactional
 	public RunView resume(String id, Authentication authentication) {
 		OperationAgentRun run = lockedOwnedRun(id, authentication);
-		if (!Set.of("PAUSED", "WAITING_APPROVAL").contains(run.getStatus())) {
+		if (!Set.of("PAUSED", "WAITING_CONFIRMATION", "WAITING_APPROVAL", "WAITING_WORKFLOW")
+				.contains(run.getStatus())) {
 			throw new IllegalStateException("只有已暂停或等待确认的实例可以继续");
 		}
-		if ("WAITING_APPROVAL".equals(run.getStatus())) {
-			throw new IllegalStateException("当前步骤尚未批准，请先确认该步骤");
+		if (!"PAUSED".equals(run.getStatus())) {
+			throw new IllegalStateException("当前步骤存在待处理检查点，请先完成确认或业务审批");
 		}
 		AgentRunStateMachine.assertTransition(AgentRunStatus.PAUSED, AgentRunStatus.QUEUED);
 		run.setStatus("QUEUED");
@@ -401,6 +494,9 @@ public class OperationAgentService {
 		}
 		OperationAgentStepRun step = stepRuns.findByRunIdAndStepOrder(id, run.getCurrentStepOrder())
 				.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
+		if (step.getCheckpointMode() != OperationAgentCheckpointMode.DUAL_CONTROL) {
+			throw new IllegalStateException("当前步骤不是异人审核检查点");
+		}
 		if (!"WAITING_APPROVAL".equals(step.getStatus())) {
 			throw new IllegalStateException("当前步骤不需要确认");
 		}
@@ -410,6 +506,8 @@ public class OperationAgentService {
 		}
 		step.setApprovedBy(authentication.getName());
 		step.setApprovedAt(LocalDateTime.now());
+		step.setDecisionAction("APPROVE");
+		step.setDecisionComment(blank(command == null ? null : command.comment()));
 		step.setStatus("QUEUED");
 		step.setMessage("人工已确认，等待执行");
 		stepRuns.save(step);
@@ -427,15 +525,119 @@ public class OperationAgentService {
 		return runView(run);
 	}
 
+	/**
+	 * 统一检查点决策入口。本人确认和异人审核共享证据版本校验，但权限规则
+	 * 由检查点模式决定，前端不能通过更换 action 绕过平台策略。
+	 */
+	@Transactional
+	public RunView decideCheckpoint(
+			String id,
+			Integer stepOrder,
+			CheckpointDecisionCommand command,
+			Authentication authentication) {
+		if (command == null || command.action() == null || command.action().isBlank()) {
+			throw new IllegalArgumentException("检查点决策不能为空");
+		}
+		String action = command.action().trim().toUpperCase(Locale.ROOT);
+		if (Set.of("APPROVE", "REJECT").contains(action)) {
+			OperationAgentRun reviewRun = runs.findLockedById(id)
+					.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
+			OperationAgentStepRun reviewStep = stepRuns
+					.findByRunIdAndStepOrder(id, reviewRun.getCurrentStepOrder())
+					.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
+			if (stepOrder == null || !reviewStep.getStepOrder().equals(stepOrder)) {
+				throw new IllegalStateException("检查点步骤已变化，请刷新后重新审核");
+			}
+			if (reviewStep.getCheckpointMode() != OperationAgentCheckpointMode.DUAL_CONTROL
+					|| !"WAITING_APPROVAL".equals(reviewStep.getStatus())) {
+				throw new IllegalStateException("当前步骤不是异人审核检查点");
+			}
+			validateEvidenceVersion(reviewStep, command);
+			return "APPROVE".equals(action)
+					? approve(id, new ReviewCommand(command.comment()), authentication)
+					: reject(id, new ReviewCommand(command.comment()), authentication);
+		}
+		if ("CANCEL".equals(action)) return cancel(id, authentication);
+		if (!"CONFIRM".equals(action)) throw new IllegalArgumentException("不支持的检查点决策：" + action);
+
+		OperationAgentRun run = lockedOwnedRun(id, authentication);
+		if (!"WAITING_CONFIRMATION".equals(run.getStatus())) {
+			throw new IllegalStateException("当前没有等待发起人确认的步骤");
+		}
+		OperationAgentStepRun step = stepRuns.findByRunIdAndStepOrder(id, run.getCurrentStepOrder())
+				.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
+		if (stepOrder == null || !step.getStepOrder().equals(stepOrder)) {
+			throw new IllegalStateException("检查点步骤已变化，请刷新后重新确认");
+		}
+		if (step.getCheckpointMode() != OperationAgentCheckpointMode.INITIATOR_CONFIRM
+				|| !"WAITING_CONFIRMATION".equals(step.getStatus())) {
+			throw new IllegalStateException("当前步骤不是发起人确认检查点");
+		}
+		validateEvidenceVersion(step, command);
+		validateEvidenceHasNoErrors(step);
+
+		step.setApprovedBy(authentication.getName());
+		step.setApprovedAt(LocalDateTime.now());
+		step.setDecisionAction("CONFIRM");
+		step.setDecisionComment(blank(command.comment()));
+		step.setStatus("QUEUED");
+		step.setMessage("发起人已确认候选结果，等待执行");
+		stepRuns.save(step);
+		AgentRunStateMachine.assertTransition(
+				AgentRunStatus.WAITING_CONFIRMATION, AgentRunStatus.QUEUED);
+		run.setStatus("QUEUED");
+		run.setPauseRequested(false);
+		run.setNextAction("已确认候选结果，等待执行器调用正式业务工具");
+		runs.save(run);
+		events.append(id, "STEP_CONFIRMED", "SUCCESS", "发起人已确认写入",
+				authentication.getName() + " 已确认“" + step.getStepName() + "”候选结果。"
+						+ reviewComment(new ReviewCommand(command.comment())), null);
+		audit.log(authentication.getName(), "OPERATION_AGENT_STEP_CONFIRM",
+				"runId=" + id + ", stepOrder=" + step.getStepOrder()
+						+ ", evidenceVersion=" + step.getEvidenceVersion());
+		submitAfterCommit(id);
+		return runView(run);
+	}
+
+	private void validateEvidenceVersion(
+			OperationAgentStepRun step,
+			CheckpointDecisionCommand command) {
+		if (step.getEvidenceHash() == null || step.getEvidenceHash().isBlank()) {
+			throw new IllegalStateException("候选证据需要刷新，请刷新后重新确认");
+		}
+		if (!Objects.equals(step.getEvidenceVersion(), command.evidenceVersion())
+				|| !Objects.equals(step.getEvidenceHash(), command.evidenceHash())) {
+			throw new IllegalStateException("候选结果已发生变化，请刷新后重新确认");
+		}
+	}
+
+	private void validateEvidenceHasNoErrors(OperationAgentStepRun step) {
+		Map<String, Object> evidence = readMap(step.getResultJson());
+		if (evidence.get("errors") instanceof Collection<?> errors && !errors.isEmpty()) {
+			throw new IllegalStateException("候选结果存在校验错误，不能确认写入；请修正业务文件后重新执行");
+		}
+		if (Boolean.FALSE.equals(evidence.get("valid"))) {
+			throw new IllegalStateException("候选结果校验未通过，不能确认写入");
+		}
+	}
+
 	@Transactional
 	public RunDetail refreshApprovalEvidence(String id, Authentication authentication) {
-		if (!hasReviewPermission(authentication)) {
-			throw new IllegalStateException("当前账号没有学期运营智能体审核权限");
-		}
 		OperationAgentRun run = runs.findLockedById(id)
 				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
-		if (authentication.getName().equals(run.getOwnerUsername())) {
-			throw new IllegalStateException("计划负责人不能刷新并审核自己的步骤");
+		OperationAgentStepRun step = stepRuns.findByRunIdAndStepOrder(id, run.getCurrentStepOrder())
+				.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
+		if (step.getCheckpointMode() == OperationAgentCheckpointMode.INITIATOR_CONFIRM) {
+			if (!authentication.getName().equals(run.getOwnerUsername())) {
+				throw new IllegalStateException("只有任务发起人可以刷新本人确认候选结果");
+			}
+		} else {
+			if (!hasReviewPermission(authentication)) {
+				throw new IllegalStateException("当前账号没有学期运营智能体审核权限");
+			}
+			if (authentication.getName().equals(run.getOwnerUsername())) {
+				throw new IllegalStateException("计划负责人不能刷新异人审核候选结果");
+			}
 		}
 		runner.refreshApprovalEvidence(id);
 		audit.log(authentication.getName(), "OPERATION_AGENT_APPROVAL_EVIDENCE_REFRESH",
@@ -461,15 +663,20 @@ public class OperationAgentService {
 		}
 		OperationAgentStepRun step = stepRuns.findByRunIdAndStepOrder(id, run.getCurrentStepOrder())
 				.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
+		if (step.getCheckpointMode() != OperationAgentCheckpointMode.DUAL_CONTROL) {
+			throw new IllegalStateException("当前步骤不是异人审核检查点");
+		}
 		if (!"WAITING_APPROVAL".equals(step.getStatus())) {
 			throw new IllegalStateException("当前步骤不需要确认");
 		}
 		step.setStatus("FAILED");
 		step.setProgress(100);
+		step.setApprovedBy(authentication.getName());
+		step.setApprovedAt(LocalDateTime.now());
+		step.setDecisionAction("REJECT");
+		step.setDecisionComment(comment);
 		step.setMessage("人工审核已驳回：" + comment);
 		step.setCompletedAt(LocalDateTime.now());
-		step.setResultJson(write(Map.of(
-				"decision", "REJECTED", "reviewer", authentication.getName(), "comment", comment)));
 		stepRuns.save(step);
 		AgentRunStateMachine.assertTransition(AgentRunStatus.valueOf(run.getStatus()), AgentRunStatus.FAILED);
 		run.setStatus("FAILED");
@@ -492,6 +699,41 @@ public class OperationAgentService {
 		return comment.isBlank() ? "" : " 审核意见：" + comment;
 	}
 
+	private CheckpointView checkpointView(OperationAgentRun run, Authentication authentication) {
+		if (run.getCurrentStepOrder() == null) return null;
+		OperationAgentStepRun step = stepRuns
+				.findByRunIdAndStepOrder(run.getId(), run.getCurrentStepOrder()).orElse(null);
+		if (step == null || !Set.of("WAITING_CONFIRMATION", "WAITING_APPROVAL", "WAITING_WORKFLOW")
+				.contains(step.getStatus())) return null;
+		OperationAgentCheckpointMode mode = step.getCheckpointMode();
+		boolean owner = authentication.getName().equals(run.getOwnerUsername());
+		String label = switch (mode) {
+			case INITIATOR_CONFIRM -> "等待本人确认";
+			case DUAL_CONTROL -> "等待独立审核";
+			case BUSINESS_WORKFLOW -> "等待业务流程处理";
+			case NONE -> "无需确认";
+		};
+		String reason = switch (mode) {
+			case INITIATOR_CONFIRM -> "批量写入正式数据前需要发起人核对候选结果。";
+			case DUAL_CONTROL -> "该步骤必须由具备审核权限的非发起人复核。";
+			case BUSINESS_WORKFLOW -> "该步骤由流程中心任务办理人处理。";
+			case NONE -> "当前步骤不需要人工检查点。";
+		};
+		List<String> actions = new ArrayList<>();
+		if (mode == OperationAgentCheckpointMode.INITIATOR_CONFIRM && owner) {
+			actions.add("CONFIRM");
+			actions.add("CANCEL");
+		}
+		if (mode == OperationAgentCheckpointMode.DUAL_CONTROL && !owner && hasReviewPermission(authentication)) {
+			actions.add("APPROVE");
+			actions.add("REJECT");
+		}
+		return new CheckpointView(mode, label, reason,
+				mode == OperationAgentCheckpointMode.INITIATOR_CONFIRM && owner,
+				mode == OperationAgentCheckpointMode.DUAL_CONTROL && !owner && hasReviewPermission(authentication),
+				List.copyOf(actions), step.getEvidenceVersion(), step.getEvidenceHash());
+	}
+
 	@Transactional
 	public RunView addCondition(String id, ConditionCommand command, Authentication authentication) {
 		if (command.conditionText() == null || command.conditionText().isBlank()) {
@@ -499,7 +741,8 @@ public class OperationAgentService {
 		}
 		OperationAgentRun run = lockedOwnedRun(id, authentication);
 		String originalStatus = run.getStatus();
-		if (!Set.of("RUNNING", "PAUSE_REQUESTED", "PAUSED", "WAITING_APPROVAL").contains(originalStatus)) {
+		if (!Set.of("RUNNING", "PAUSE_REQUESTED", "PAUSED", "WAITING_CONFIRMATION",
+				"WAITING_WORKFLOW", "WAITING_APPROVAL").contains(originalStatus)) {
 			throw new IllegalStateException("当前运行状态不能增加附加条件");
 		}
 		if ("RUNNING".equals(originalStatus)) {
@@ -518,9 +761,9 @@ public class OperationAgentService {
 		condition.setSubmittedBy(authentication.getName());
 		conditions.save(condition);
 		if (Boolean.TRUE.equals(parsed.get("blockWriteTools"))
-				&& Set.of("WAITING_APPROVAL", "PAUSED").contains(originalStatus)) {
+				&& Set.of("WAITING_CONFIRMATION", "WAITING_APPROVAL", "PAUSED").contains(originalStatus)) {
 			for (OperationAgentStepRun step : stepRuns.findByRunIdOrderByStepOrder(id)) {
-				if ("WAITING_APPROVAL".equals(step.getStatus())
+				if (Set.of("WAITING_CONFIRMATION", "WAITING_APPROVAL").contains(step.getStatus())
 						&& toolCatalog.require(step.getToolCode()).writeTool()) {
 					step.setStatus("QUEUED");
 					step.setMessage("附加条件禁止正式数据写入，等待执行器在检查点安全跳过");
@@ -636,11 +879,16 @@ public class OperationAgentService {
 		failedStep.setAttemptNo(0);
 		failedStep.setApprovedBy(null);
 		failedStep.setApprovedAt(null);
+		failedStep.setDecisionAction(null);
+		failedStep.setDecisionComment(null);
+		failedStep.setEvidenceHash(null);
 		failedStep.setStartedAt(null);
 		failedStep.setCompletedAt(null);
 		failedStep.setResultJson(null);
-		failedStep.setMessage(Boolean.TRUE.equals(failedStep.getApprovalRequired())
-				? "失败步骤重试前需要重新审核" : "等待重新执行");
+		failedStep.setMessage(failedStep.getCheckpointMode() == OperationAgentCheckpointMode.INITIATOR_CONFIRM
+				? "失败步骤重试前需要发起人重新确认"
+				: Boolean.TRUE.equals(failedStep.getApprovalRequired())
+						? "失败步骤重试前需要重新审核" : "等待重新执行");
 		stepRuns.save(failedStep);
 		AgentRunStateMachine.assertTransition(AgentRunStatus.FAILED, AgentRunStatus.QUEUED);
 		run.setStatus("QUEUED");
@@ -648,8 +896,10 @@ public class OperationAgentService {
 		run.setCurrentStepName(failedStep.getStepName());
 		run.setErrorMessage(null);
 		run.setCompletedAt(null);
-		run.setNextAction(Boolean.TRUE.equals(failedStep.getApprovalRequired())
-				? "请由非发起人重新审核失败步骤" : "等待执行器重新调用失败步骤");
+		run.setNextAction(failedStep.getCheckpointMode() == OperationAgentCheckpointMode.INITIATOR_CONFIRM
+				? "等待重新生成候选结果并由发起人确认"
+				: Boolean.TRUE.equals(failedStep.getApprovalRequired())
+						? "请由非发起人重新审核失败步骤" : "等待执行器重新调用失败步骤");
 		runs.save(run);
 		events.append(id, "RUN_RETRIED", "INFO", "已请求重试失败步骤",
 				authentication.getName() + " 请求从“" + failedStep.getStepName() + "”继续。", null);
@@ -732,6 +982,9 @@ public class OperationAgentService {
 		}
 		if (command.objective() == null || command.objective().isBlank()) {
 			throw new IllegalArgumentException("计划目标不能为空");
+		}
+		if (command.objective().length() > 1000) {
+			throw new IllegalArgumentException("计划目标摘要不能超过1000字，请将详细条件放在执行规则中");
 		}
 		if (command.ruleText() == null || command.ruleText().isBlank()) {
 			throw new IllegalArgumentException("执行规则不能为空");
@@ -886,6 +1139,11 @@ public class OperationAgentService {
 			Map<String, Object> toolConfig) {}
 	public record ConditionCommand(String conditionText) {}
 	public record ReviewCommand(String comment) {}
+	public record CheckpointDecisionCommand(
+			String action,
+			Integer evidenceVersion,
+			String evidenceHash,
+			String comment) {}
 	public record StepInputCommand(Integer stepOrder, Map<String, Object> values) {}
 	public record PlanView(
 			OperationAgentPlan plan,
@@ -894,13 +1152,16 @@ public class OperationAgentService {
 	public record RunView(OperationAgentRun run, String planName) {}
 	public record ConversationCommand(
 			String request,
+			List<String> contextMessages,
 			String knowledgeBaseId,
 			String semesterCode,
 			Integer admissionYear,
 			String managedFileId,
+			List<String> managedFileIds,
 			Boolean candidateOnly,
 			Boolean confirmNonCurrent,
-			Boolean createMissingTerm) {}
+			Boolean createMissingTerm,
+			String organizationId) {}
 	public record ConversationResult(
 			String status,
 			OperationAgentLlmService.DraftResult draft,
@@ -912,6 +1173,16 @@ public class OperationAgentService {
 			List<OperationAgentStepRun> steps,
 			List<OperationAgentCondition> conditions,
 			boolean candidatePromotionAvailable,
-			List<String> eligibleReviewers) {}
+			List<String> eligibleReviewers,
+			CheckpointView checkpoint) {}
+	public record CheckpointView(
+			OperationAgentCheckpointMode mode,
+			String label,
+			String reason,
+			boolean ownerCanConfirm,
+			boolean reviewerCanApprove,
+			List<String> allowedActions,
+			Integer evidenceVersion,
+			String evidenceHash) {}
 	public record PromotionResult(PlanView plan, RunView run) {}
 }

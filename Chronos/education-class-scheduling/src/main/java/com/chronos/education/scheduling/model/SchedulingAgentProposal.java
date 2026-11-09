@@ -20,7 +20,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_scheduling_agent_proposal")
 public class SchedulingAgentProposal extends BaseEntity {
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
 	@Column(name = "request_text", columnDefinition = "text", nullable = false)

@@ -1,0 +1,18 @@
+$kind: http-request
+name: Scoped manager cannot read another organization employees
+order: 8000
+method: GET
+url: '{{base_url}}/admin/iam/employees?organizationId={{denied_org_id}}&page=0&size=10'
+queryParams:
+  - key: organizationId
+    value: '{{denied_org_id}}'
+  - key: page
+    value: '0'
+  - key: size
+    value: '10'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('cross-organization employee access is forbidden', () => {
+        pm.response.to.have.status(403);
+      });

@@ -1,0 +1,26 @@
+$kind: http-request
+name: Operation agent requests explicit create confirmation
+order: 11000
+method: POST
+url: '{{base_url}}/agent/operations/conversation'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request":"我要处理2092-2093学年第二学期的教学日历",
+      "organizationId":"{{hv_org_id}}",
+      "candidateOnly":false
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('missing term reaches a create-confirmation state', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.data.status).to.eql('CONFIRM_CREATE');
+        pm.expect(body.data.resolution.termCode).to.eql('2092-2093-2');
+      });
+

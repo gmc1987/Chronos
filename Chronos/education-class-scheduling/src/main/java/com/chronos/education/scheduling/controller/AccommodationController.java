@@ -28,14 +28,17 @@ import com.chronos.education.scheduling.service.AccommodationService.BedCommand;
 import com.chronos.education.scheduling.service.AccommodationService.BuildingCommand;
 import com.chronos.education.scheduling.service.AccommodationService.RoomCommand;
 import com.chronos.education.scheduling.service.AccommodationImportService;
+import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
 @RequestMapping("/admin/education/accommodations")
 public class AccommodationController {
 	private final AccommodationService service;
 	private final AccommodationImportService imports;
+	private final DirectoryDataScopeGuard dataScopes;
 
-	public AccommodationController(AccommodationService service, AccommodationImportService imports) { this.service = service; this.imports = imports; }
+	public AccommodationController(AccommodationService service, AccommodationImportService imports,
+			DirectoryDataScopeGuard dataScopes) { this.service = service; this.imports = imports; this.dataScopes = dataScopes; }
 
 	@GetMapping(value = "/import-template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
@@ -49,62 +52,109 @@ public class AccommodationController {
 	@PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
 	public ResultData<?> importFile(@RequestPart("file") MultipartFile file,
-			@RequestParam(defaultValue = "true") boolean dryRun) {
-		return ok(imports.importFile(file, dryRun));
+			@RequestParam(defaultValue = "true") boolean dryRun,
+			@RequestParam(required = false) String organizationId, Authentication authentication) {
+		String resolved = resolveOrganization(authentication, organizationId);
+		return ok(imports.importFile(file, dryRun, resolved));
 	}
 
 	@GetMapping("/buildings")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:view','education:accommodation:manage')")
-	public ResultData<List<Map<String, Object>>> buildings() { return ok(service.buildings()); }
+	public ResultData<List<Map<String, Object>>> buildings(
+			@RequestParam(required = false) String organizationId, Authentication authentication) {
+		return ok(service.buildings(selectedOrganizations(authentication, organizationId)));
+	}
 
 	@PostMapping("/buildings")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
-	public ResultData<Map<String, Object>> createBuilding(@RequestBody BuildingCommand command) { return ok(service.createBuilding(command)); }
+	public ResultData<Map<String, Object>> createBuilding(@RequestBody BuildingCommand command, Authentication authentication) {
+		return ok(service.createBuilding(command, resolveOrganization(authentication, command.organizationId())));
+	}
 
 	@GetMapping("/buildings/{buildingId}/rooms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:view','education:accommodation:manage')")
-	public ResultData<List<Map<String, Object>>> rooms(@PathVariable String buildingId) { return ok(service.rooms(buildingId)); }
+	public ResultData<List<Map<String, Object>>> rooms(@PathVariable String buildingId, Authentication authentication) {
+		requireOrganization(authentication, service.buildingOrganization(buildingId)); return ok(service.rooms(buildingId));
+	}
 
 	@PostMapping("/buildings/{buildingId}/rooms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
-	public ResultData<Map<String, Object>> createRoom(@PathVariable String buildingId, @RequestBody RoomCommand command) { return ok(service.createRoom(buildingId, command)); }
+	public ResultData<Map<String, Object>> createRoom(@PathVariable String buildingId, @RequestBody RoomCommand command, Authentication authentication) {
+		requireOrganization(authentication, service.buildingOrganization(buildingId)); return ok(service.createRoom(buildingId, command));
+	}
 
 	@PutMapping("/rooms/{roomId}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
-	public ResultData<Map<String, Object>> updateRoom(@PathVariable String roomId, @RequestBody RoomCommand command) { return ok(service.updateRoom(roomId, command)); }
+	public ResultData<Map<String, Object>> updateRoom(@PathVariable String roomId, @RequestBody RoomCommand command, Authentication authentication) {
+		requireOrganization(authentication, service.roomOrganization(roomId)); return ok(service.updateRoom(roomId, command));
+	}
 
 	@DeleteMapping("/rooms/{roomId}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
 	public ResultData<Void> deleteRoom(@PathVariable String roomId, Authentication authentication) {
+		requireOrganization(authentication, service.roomOrganization(roomId));
 		service.deleteRoom(roomId, authentication.getName());
 		return ok(null);
 	}
 
 	@PostMapping("/rooms/{roomId}/beds")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
-	public ResultData<Map<String, Object>> createBed(@PathVariable String roomId, @RequestBody BedCommand command) { return ok(service.createBed(roomId, command)); }
+	public ResultData<Map<String, Object>> createBed(@PathVariable String roomId, @RequestBody BedCommand command, Authentication authentication) {
+		requireOrganization(authentication, service.roomOrganization(roomId)); return ok(service.createBed(roomId, command));
+	}
 
 	@GetMapping("/beds")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:view','education:accommodation:manage')")
-	public ResultData<List<Map<String, Object>>> beds(@RequestParam String semesterCode, @RequestParam(defaultValue = "false") boolean availableOnly) { return ok(service.beds(semesterCode, availableOnly)); }
+	public ResultData<List<Map<String, Object>>> beds(@RequestParam String semesterCode,
+			@RequestParam(defaultValue = "false") boolean availableOnly,
+			@RequestParam(required = false) String organizationId, Authentication authentication) {
+		return ok(service.beds(semesterCode, availableOnly, selectedOrganizations(authentication, organizationId)));
+	}
 
 	@GetMapping("/assignments")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:view','education:accommodation:manage')")
-	public ResultData<List<Map<String, Object>>> assignments(@RequestParam String semesterCode) { return ok(service.assignments(semesterCode)); }
+	public ResultData<List<Map<String, Object>>> assignments(@RequestParam String semesterCode,
+			@RequestParam(required = false) String organizationId, Authentication authentication) {
+		return ok(service.assignments(semesterCode, selectedOrganizations(authentication, organizationId)));
+	}
 
 	@GetMapping("/student-options")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:view','education:accommodation:manage')")
-	public ResultData<List<Map<String, Object>>> studentOptions(@RequestParam(defaultValue = "") String keyword) { return ok(service.studentOptions(keyword)); }
+	public ResultData<List<Map<String, Object>>> studentOptions(@RequestParam(defaultValue = "") String keyword,
+			@RequestParam(required = false) String organizationId, Authentication authentication) {
+		return ok(service.studentOptions(keyword, selectedOrganizations(authentication, organizationId)));
+	}
 
 	@PostMapping("/assign")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
-	public ResultData<Map<String, Object>> assign(@RequestBody AssignmentCommand command, Authentication authentication) { return ok(service.assign(command, authentication.getName())); }
+	public ResultData<Map<String, Object>> assign(@RequestBody AssignmentCommand command, Authentication authentication) {
+		requireOrganization(authentication, service.bedOrganization(command.bedId()));
+		requireOrganization(authentication, service.studentOrganization(command.studentId()));
+		return ok(service.assign(command, authentication.getName()));
+	}
 
 	@DeleteMapping("/assignments/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
 	public ResultData<Void> cancel(@PathVariable String id, Authentication authentication) {
+		requireOrganization(authentication, service.assignmentOrganization(id));
 		service.cancelAssignment(id, authentication.getName());
 		return ok(null);
+	}
+	private void requireOrganization(Authentication authentication, String organizationId) {
+		dataScopes.requireOrganization(authentication, organizationId);
+	}
+	private String resolveOrganization(Authentication authentication, String requested) {
+		if (requested != null && !requested.isBlank()) { requireOrganization(authentication, requested); return requested; }
+		var visible = dataScopes.visibleOrganizationIds(authentication);
+		if (visible != null && visible.size() == 1) return visible.iterator().next();
+		throw new IllegalArgumentException("请选择宿舍资源所属机构");
+	}
+	private java.util.Collection<String> selectedOrganizations(Authentication authentication, String requested) {
+		if (requested != null && !requested.isBlank()) {
+			requireOrganization(authentication, requested);
+			return java.util.Set.of(requested);
+		}
+		return dataScopes.visibleOrganizationIds(authentication);
 	}
 
 	private <T> ResultData<T> ok(T data) { ResultData<T> result = new ResultData<>(); result.setCode("200"); result.setMsg("success"); result.setData(data); return result; }

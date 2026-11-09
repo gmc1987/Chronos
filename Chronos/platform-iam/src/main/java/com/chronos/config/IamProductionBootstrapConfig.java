@@ -380,10 +380,6 @@ public class IamProductionBootstrapConfig {
             rolePermissions.saveAll(allIamPermissionIds.stream().filter(id->!existing.contains(id)).map(id->new RolePermission(role.getId(),id)).toList());
         });
         Permission workflowUse=permissions.findByPermissionCode("workflow:use");
-        roles.findAll().stream().filter(r->"ROLE_PLATFORM_USER".equalsIgnoreCase(r.getRoleCode())).forEach(role->{
-            boolean exists=rolePermissions.findByRoleId(role.getId()).stream().anyMatch(x->x.getPermissionId().equals(workflowUse.getId()));
-            if(!exists)rolePermissions.save(new RolePermission(role.getId(),workflowUse.getId()));
-        });
 		Permission publicationRead = permissions.findByPermissionCode("message:publication:read");
 		roles.findAll().stream()
 				.filter(role -> "ROLE_PLATFORM_USER".equalsIgnoreCase(role.getRoleCode())
@@ -436,6 +432,35 @@ public class IamProductionBootstrapConfig {
             }
         }
         if(portalApplications!=null)portalApplications.findAll().stream().filter(a->"workflow".equalsIgnoreCase(a.getAppCode())).forEach(a->{a.setRequiredPermission("workflow:instance:view");portalApplications.save(a);});
+        restrictPlatformUserRole(roles, permissions, rolePermissions, legacyRelations);
+    }
+
+    /**
+     * 基础账号角色只负责登录后的公共只读能力，不能通过历史 workflow:use
+     * 等聚合权限重新获得审批、转办或跨部门查询能力。
+     */
+    private void restrictPlatformUserRole(
+            IRoleRepository roles,
+            IPermissionRepository permissions,
+            IRolePermissionRepository rolePermissions,
+            IRoleMenuPermissionRepository menuPermissions) {
+        Role platformUser = roles.findByRoleCode("ROLE_PLATFORM_USER");
+        if (platformUser == null) {
+            return;
+        }
+
+        Set<String> allowedPermissionCodes = Set.of("message:publication:read");
+        Set<String> allowedPermissionIds = permissions.findAll().stream()
+                .filter(permission -> allowedPermissionCodes.contains(permission.getPermissionCode()))
+                .filter(permission -> Integer.valueOf(1).equals(permission.getStatus()))
+                .map(Permission::getId)
+                .collect(Collectors.toSet());
+        rolePermissions.deleteAll(rolePermissions.findByRoleId(platformUser.getId()).stream()
+                .filter(relation -> !allowedPermissionIds.contains(relation.getPermissionId()))
+                .toList());
+        menuPermissions.deleteByRoleId(platformUser.getId());
+        platformUser.getMenus().clear();
+        roles.save(platformUser);
     }
 
     private void grantSuperAdministratorAccess(

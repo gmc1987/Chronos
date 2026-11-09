@@ -49,6 +49,31 @@ class ClassSchedulingServiceTest {
 	}
 
 	@Test
+	void filtersWeeklyScheduleByOfferingCampusEvenWhenSemesterIsShared() {
+		CourseOffering schoolA = new CourseOffering();
+		schoolA.setId("offering-a");
+		schoolA.setCampusId("school-a");
+		CourseOffering schoolB = new CourseOffering();
+		schoolB.setId("offering-b");
+		schoolB.setCampusId("school-b");
+		ScheduleEntry entryA = new ScheduleEntry();
+		entryA.setOfferingId(schoolA.getId());
+		entryA.setClassroomId("room-a");
+		ScheduleEntry entryB = new ScheduleEntry();
+		entryB.setOfferingId(schoolB.getId());
+		entryB.setClassroomId("room-b");
+		Classroom room = new Classroom();
+		room.setId("room-a");
+		when(classrooms.findAllById(java.util.Set.of("room-a", "room-b"))).thenReturn(List.of(room));
+		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-FALL")).thenReturn(List.of(schoolA, schoolB));
+		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-FALL")).thenReturn(List.of(entryA, entryB));
+
+		org.assertj.core.api.Assertions.assertThat(service.schedule("2026-FALL", "ALL", null, java.util.Set.of("school-a")))
+				.extracting(com.chronos.education.scheduling.model.ScheduleEntryView::offeringId)
+				.containsExactly("offering-a");
+	}
+
+	@Test
 	void rejectsOverlappingClassesWithSharedStudent() {
 		CourseOffering target = new CourseOffering();
 		target.setId("combined-offering");

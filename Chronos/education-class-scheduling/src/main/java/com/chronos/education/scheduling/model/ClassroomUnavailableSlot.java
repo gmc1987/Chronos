@@ -15,7 +15,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_classroom_unavailable_slot")
 public class ClassroomUnavailableSlot extends BaseEntity {
-	@Column(name = "semester_code", length = 32, nullable = false)
+	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 	@Column(name = "classroom_id", length = 64, nullable = false)
 	private String classroomId;

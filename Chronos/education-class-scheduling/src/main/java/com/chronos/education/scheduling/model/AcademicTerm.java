@@ -17,8 +17,15 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_academic_term")
 public class AcademicTerm extends BaseEntity {
-	@Column(name = "term_code", length = 32, nullable = false, unique = true)
+	@Column(name = "organization_id", length = 64, nullable = false)
+	private String organizationId;
+
+	@Column(name = "term_code", length = 128, nullable = false, unique = true)
 	private String termCode;
+
+	/** 学校内部使用的简短学期编码，例如 2026-2027-1。 */
+	@Column(name = "local_term_code", length = 64, nullable = false)
+	private String localTermCode;
 
 	@Column(name = "term_name", length = 128, nullable = false)
 	private String termName;

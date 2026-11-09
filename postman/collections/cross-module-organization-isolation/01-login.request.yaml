@@ -1,0 +1,23 @@
+$kind: http-request
+name: Scoped account login
+order: 1000
+method: POST
+url: '{{base_url}}/auth/login'
+auth:
+  type: noauth
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {"username":"{{scope_username}}","password":"{{scope_password}}"}
+scripts:
+  - type: afterResponse
+    code: |-
+      const body = pm.response.json();
+      pm.test('scoped account login succeeds', () => {
+        pm.response.to.have.status(200);
+        pm.expect(body.code).to.eql('200');
+      });
+      pm.collectionVariables.set('scope_token', body.data.accessToken);
