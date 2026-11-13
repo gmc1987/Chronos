@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AvailableWorkflowsView: View {
+    var flowCodePrefix: String? = nil
     /// Domain-managed workflows must be started from their dedicated native business screen.
     private let domainManagedFlows: Set<String> = [
         "EDU_GRADEBOOK_REVIEW", "EDU_GRADE_CHANGE_REVIEW", "EDU_TEACHING_CONTENT_REVIEW",
@@ -25,7 +26,8 @@ struct AvailableWorkflowsView: View {
     private func load() async {
         do {
             rows = records(from: try await model.session.getJSON("/workflows/available")).filter {
-                guard let code = $0.objectValue?["flowCode"]?.stringValue else { return true }
+                guard let code = $0.objectValue?["flowCode"]?.stringValue else { return flowCodePrefix == nil }
+                if let flowCodePrefix { return code.hasPrefix(flowCodePrefix) }
                 return !domainManagedFlows.contains(code)
             }
             error = nil

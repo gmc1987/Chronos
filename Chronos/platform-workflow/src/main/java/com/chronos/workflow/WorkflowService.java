@@ -10,6 +10,7 @@ import com.chronos.service.iService.IAuditLogService;
 import com.chronos.workflow.ai.WorkflowAiProvider;
 import com.chronos.workflow.executor.WorkflowExecutorRegistry;
 import com.chronos.workflow.event.WorkflowCompletedEvent;
+import com.chronos.workflow.event.WorkflowStartedEvent;
 import com.chronos.workflow.event.WorkflowRejectedEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -778,7 +779,7 @@ public class WorkflowService {
 		i.setCurrentNodeKey(d.getEntryNodeKey());
 		// 从本版本开始，新流程实例只允许由 Flowable 推进。LEGACY 仅兼容历史存量实例。
 		i.setEngineType("FLOWABLE");
-		i = instances.save(i);
+		i = instances.saveAndFlush(i);
 		addParticipant(i.getId(), actor, "INITIATOR", null);
 		if (d.getMainFormId() != null && !d.getMainFormId().isBlank()) {
 			List<FormField> fields = formService.fields(d.getMainFormId());
@@ -792,6 +793,18 @@ public class WorkflowService {
 			List<String> attachmentIds = attachmentIds(submittedForm, fields);
 			if (!attachmentIds.isEmpty()) {
 				managedFiles.bind(attachmentIds, "WORKFLOW_FORM", i.getId(), actor);
+			}
+		}
+		Map<String, Object> runtimeVariables = new LinkedHashMap<>();
+		eventPublisher.publishEvent(new WorkflowStartedEvent(i.getId(), d.getFlowCode(), actor,
+				java.util.Collections.unmodifiableMap(new LinkedHashMap<>(submittedForm)), runtimeVariables));
+		if (!runtimeVariables.isEmpty()) {
+			var merged = new LinkedHashMap<>(readMap(i.getVariablesJson()));
+			merged.putAll(runtimeVariables);
+			try {
+				i.setVariablesJson(json.writeValueAsString(merged));
+			} catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+				throw new IllegalArgumentException("无法写入工作流运行参数", exception);
 			}
 		}
 		i = flowableRuntime.start(d, i, actor);

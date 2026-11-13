@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { watch, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   addExamCandidates,
@@ -22,6 +23,7 @@ import {
 } from '../../../api/admin'
 
 const terms = ref([])
+const organizationId = ref('')
 const semesterCode = ref('')
 const plans = ref([])
 const sessions = ref([])
@@ -70,7 +72,10 @@ async function run(action, success) {
 }
 
 async function loadPlans() {
-  plans.value = semesterCode.value ? unwrap(await listExamPlans(semesterCode.value)) : []
+  const term = semesterCode.value
+  const rows = term ? unwrap(await listExamPlans(term)) : []
+  if (term !== semesterCode.value) return
+  plans.value = rows
   selectedPlan.value = null
   await selectPlan(null)
 }
@@ -79,7 +84,9 @@ async function selectPlan(plan) {
   selectedPlan.value = plan
   selectedSession.value = null
   selectedRoom.value = null
-  sessions.value = plan ? unwrap(await listExamSessions(plan.id)) : []
+  const rows = plan ? unwrap(await listExamSessions(plan.id)) : []
+  if (selectedPlan.value !== plan) return
+  sessions.value = rows
   rooms.value = []
   candidates.value = []
 }
@@ -87,7 +94,9 @@ async function selectPlan(plan) {
 async function selectSession(session) {
   selectedSession.value = session
   selectedRoom.value = null
-  rooms.value = session ? unwrap(await listExamRooms(session.id)) : []
+  const rows = session ? unwrap(await listExamRooms(session.id)) : []
+  if (selectedSession.value !== session) return
+  rooms.value = rows
   candidates.value = []
 }
 
@@ -142,7 +151,7 @@ async function loadStudents(keyword = studentKeyword.value, page = studentPage.v
   studentPage.value = page
   studentLoading.value = true
   try {
-    const result = (await listEducationStudents({ keyword, page, size: 10 })).data
+    const result = (await listEducationStudents({ keyword, page, size: 10, organizationId: organizationId.value })).data
     if (sequence !== studentRequestSequence) return
     students.value = result?.content || []
     studentTotal.value = result?.totalElements || 0
@@ -223,28 +232,44 @@ async function applySeatCandidate() {
   }, '座位方案已应用')
 }
 
-onMounted(() => run(async () => {
-  const [termResult, classroomResult, subjectResult, classResult] = await Promise.all([
-    listAcademicTerms(),
-    listClassrooms(),
-    listEducationSubjects(),
-    listAdministrativeClasses(),
-  ])
-  terms.value = unwrap(termResult)
-  classrooms.value = unwrap(classroomResult)
-  subjects.value = unwrap(subjectResult)
-  classes.value = unwrap(classResult)
-  semesterCode.value = terms.value.find((item) => item.currentTerm)?.termCode
-    || terms.value[0]?.termCode || ''
-  await loadPlans()
-}))
+watch(organizationId, id => {
+  for (const dialog of [roomDialog, candidateDialog, seatDialog]) dialog.value = false
+  studentRequestSequence++
+  studentLoading.value = false
+  students.value = []
+  candidateStudents.value = []
+  classrooms.value = []
+  classes.value = []
+  semesterCode.value = ''
+  terms.value = []
+  plans.value = []
+  selectPlan(null)
+  if (!id) return
+  return run(async () => {
+    const [termResult, classroomResult, subjectResult, classResult] = await Promise.all([
+      listAcademicTerms({ organizationId: id }),
+      listClassrooms({ organizationId: id }),
+      listEducationSubjects(),
+      listAdministrativeClasses({ campusId: id }),
+    ])
+    if (id !== organizationId.value) return
+    terms.value = unwrap(termResult)
+    classrooms.value = unwrap(classroomResult)
+    subjects.value = unwrap(subjectResult)
+    classes.value = unwrap(classResult)
+    semesterCode.value = terms.value.find((item) => item.currentTerm)?.termCode
+      || terms.value[0]?.termCode || ''
+    await loadPlans()
+  })
+})
 </script>
 
 <template>
   <div class="exam-page">
     <header class="page-header">
       <div><h2>考场管理</h2><p>按考试计划和科目场次配置教室、考生与座位。</p></div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="loadPlans">
+      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
+      <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="loadPlans">
         <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
       </el-select>
     </header>
@@ -301,7 +326,7 @@ onMounted(() => run(async () => {
       <el-form label-width="110px">
         <el-form-item label="教室">
           <el-select v-model="roomForm.classroomId" filterable>
-            <el-option v-for="item in classrooms" :key="item.id" :label="`${item.roomName}（容量 ${item.capacity}）`" :value="item.id" />
+            <el-option v-for="item in classrooms" :key="item.id" :label="`${item.buildingName ? item.buildingName + ' · ' : ''}${item.roomName}（容量 ${item.capacity}）`" :value="item.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="所需监考人数"><el-input-number v-model="roomForm.requiredInvigilators" :min="1" /></el-form-item>

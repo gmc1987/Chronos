@@ -62,6 +62,8 @@ public final class NativeApplicationScreen {
                 records("AI 智能中心", "/agent/specs/list?page=0&size=50", "暂无智能体").show(); break;
             case "TEACHING_CENTER":
                 modules("教学中心", NativeModules.teaching()).show(); break;
+            case "TEACHER_PERSONNEL":
+                showTeacherPersonnel(); break;
             case "FACILITY_REPAIR":
                 new RepairListScreen(activity, ui, async, host, http, back).show(); break;
             default:
@@ -70,6 +72,23 @@ public final class NativeApplicationScreen {
                         "该应用尚未配置原生功能标识。", back);
                 break;
         }
+    }
+
+    private void showTeacherPersonnel() {
+        android.widget.LinearLayout page = new ApplicationScreenChrome(ui, host).page("教师人事", back);
+        android.widget.Button start = ui.secondaryButton("发起人事申请");
+        start.setOnClickListener(view -> new AvailableWorkflowsScreen(activity, ui, async, host, http,
+                this::showTeacherPersonnel, "EDU_TEACHER_PERSONNEL_").show());
+        page.addView(start);
+        android.widget.Button history = ui.secondaryButton("我的申请");
+        history.setOnClickListener(view -> new NativeRecordsScreen(ui, async, host, http, "我的人事申请",
+                "/portal/education/teacher-personnel/mine", "暂无申请", this::showTeacherPersonnel).show());
+        page.addView(history);
+        android.widget.Button approvals = ui.secondaryButton("审批待办");
+        approvals.setOnClickListener(view -> new WorkflowCenterScreen(activity, ui, async, host, http,
+                this::showTeacherPersonnel).show());
+        page.addView(approvals);
+        host.show(ui.scroll(page));
     }
 
     public void showWorkflowInstance(String instanceId) {

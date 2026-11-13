@@ -5,7 +5,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.Set;
 
+import com.chronos.commons.model.PageView;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -73,26 +75,15 @@ public class AcademicDataService {
 	private final IEmployeeRepository employees;
 	private final IOrganizationRepository organizations;
 
-	public AcademicDataService(
-			AcademicTermRepository terms,
-			EducationGradeRepository grades,
-			SubjectRepository subjects,
-			CourseCatalogRepository courses,
-			MajorRepository majors,
-			AdministrativeClassRepository administrativeClasses,
-			StudentProfileRepository students,
-			ParentProfileRepository parents,
-			StudentGuardianRepository guardians,
-			TeacherAcademicProfileRepository teachers,
-			TeacherTeachingAssignmentRepository teachingAssignments,
-			TeachingClassMemberRepository members,
-			CourseOfferingRepository offerings,
-			ScheduleEntryRepository scheduleEntries,
-			EducationUserBindingRepository bindings,
-			ITeacherAccountProvisioningService teacherAccounts,
-			BusinessNumberService businessNumbers,
-			IEmployeeRepository employees,
-			IOrganizationRepository organizations) {
+	public AcademicDataService(AcademicTermRepository terms, EducationGradeRepository grades,
+			SubjectRepository subjects, CourseCatalogRepository courses, MajorRepository majors,
+			AdministrativeClassRepository administrativeClasses, StudentProfileRepository students,
+			ParentProfileRepository parents, StudentGuardianRepository guardians,
+			TeacherAcademicProfileRepository teachers, TeacherTeachingAssignmentRepository teachingAssignments,
+			TeachingClassMemberRepository members, CourseOfferingRepository offerings,
+			ScheduleEntryRepository scheduleEntries, EducationUserBindingRepository bindings,
+			ITeacherAccountProvisioningService teacherAccounts, BusinessNumberService businessNumbers,
+			IEmployeeRepository employees, IOrganizationRepository organizations) {
 		this.terms = terms;
 		this.grades = grades;
 		this.subjects = subjects;
@@ -137,8 +128,8 @@ public class AcademicDataService {
 				|| !command.getStartDate().isBefore(command.getEndDate())) {
 			throw new IllegalArgumentException("学期开始日期必须早于结束日期");
 		}
-		AcademicTerm existing = id == null ? null : terms.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		AcademicTerm existing = id == null ? null
+				: terms.findById(id).orElseThrow(() -> new IllegalArgumentException("学期不存在"));
 		if (existing != null && "ARCHIVED".equals(existing.getStatus())) {
 			throw new IllegalStateException("已归档学期不能直接修改");
 		}
@@ -164,33 +155,47 @@ public class AcademicDataService {
 		if (Boolean.TRUE.equals(command.getCurrentTerm())) {
 			terms.findByOrganizationIdOrderByStartDateDesc(command.getOrganizationId()).stream()
 					.filter(item -> !item.getId().equals(value.getId())).forEach(item -> {
-				item.setCurrentTerm(false);
-				terms.save(item);
-			});
+						item.setCurrentTerm(false);
+						terms.save(item);
+					});
 		}
 		return terms.save(value);
 	}
 
 	private String localTermCode(AcademicTerm command) {
 		String value = command.getLocalTermCode();
-		if (value == null || value.isBlank()) value = command.getTermCode();
-		if (value == null || value.isBlank()) throw new IllegalArgumentException("学期编码不能为空");
+		if (value == null || value.isBlank())
+			value = command.getTermCode();
+		if (value == null || value.isBlank())
+			throw new IllegalArgumentException("学期编码不能为空");
 		value = value.trim();
 		int separator = value.indexOf(':');
-		if (separator >= 0) value = value.substring(separator + 1).trim();
-		if (value.isBlank() || value.length() > 64) throw new IllegalArgumentException("校内学期编码长度必须为 1-64 个字符");
+		if (separator >= 0)
+			value = value.substring(separator + 1).trim();
+		if (value.isBlank() || value.length() > 64)
+			throw new IllegalArgumentException("校内学期编码长度必须为 1-64 个字符");
 		return value;
 	}
 
 	private String qualifiedTermCode(String organizationCode, String localCode) {
 		String prefix = required(organizationCode, "机构编码").trim();
 		String value = prefix + ":" + localCode;
-		if (value.length() > 128) throw new IllegalArgumentException("机构学期编码长度不能超过 128 个字符");
+		if (value.length() > 128)
+			throw new IllegalArgumentException("机构学期编码长度不能超过 128 个字符");
 		return value;
 	}
 
 	public List<EducationGrade> grades() {
 		return grades.findAllByOrderByEnrollmentYearDescSortOrderAsc();
+	}
+
+	public List<EducationGrade> visibleGrades(Set<String> organizations) {
+		return grades().stream().filter(grade -> organizations == null || grade.getOrganizationId() == null
+				|| organizations.contains(grade.getOrganizationId())).toList();
+	}
+
+	public EducationGrade gradeById(String id) {
+		return grades.findById(id).orElseThrow(() -> new IllegalArgumentException("年级不存在"));
 	}
 
 	public Page<EducationGrade> grades(int page, int size) {
@@ -202,13 +207,13 @@ public class AcademicDataService {
 		if (command.getEnrollmentYear() == null || command.getEnrollmentYear() < 2000) {
 			throw new IllegalArgumentException("入学年份不正确");
 		}
+		if (id != null) command.setOrganizationId(gradeById(id).getOrganizationId());
 		return grades.save(entity(id, command, grades));
 	}
 
 	@Transactional
 	public void deleteGrade(String id) {
-		if (administrativeClasses.countByGradeId(id) > 0
-				|| students.countByGradeId(id) > 0
+		if (administrativeClasses.countByGradeId(id) > 0 || students.countByGradeId(id) > 0
 				|| teachingAssignments.countByGradeId(id) > 0) {
 			throw new IllegalStateException("年级已被班级、学生或任教关系引用，不能删除");
 		}
@@ -223,15 +228,30 @@ public class AcademicDataService {
 		return subjects.findAllByOrderBySortOrderAscSubjectCodeAsc(pageable(page, size));
 	}
 
+	public List<Subject> subjects(String organizationId) {
+		return subjects.findByOrganizationIdOrderBySubjectCode(organizationId);
+	}
+
+	public List<Subject> visibleSubjects(Collection<String> organizationIds) {
+		return organizationIds == null ? subjects()
+				: subjects.findByOrganizationIdInOrOrganizationIdIsNullOrderBySubjectCode(
+						nonEmpty(new java.util.HashSet<>(organizationIds)));
+	}
+
+	public Subject subjectById(String id) {
+		return subjects.findById(id).orElseThrow(() -> new IllegalArgumentException("数据不存在"));
+	}
+
 	@Transactional
 	public Subject saveSubject(String id, Subject command) {
+		if (id != null)
+			command.setOrganizationId(subjectById(id).getOrganizationId());
 		return subjects.save(entity(id, command, subjects));
 	}
 
 	@Transactional
 	public void deleteSubject(String id) {
-		if (courses.countBySubjectId(id) > 0
-				|| teachingAssignments.countBySubjectId(id) > 0) {
+		if (courses.countBySubjectId(id) > 0 || teachingAssignments.countBySubjectId(id) > 0) {
 			throw new IllegalStateException("学科已被课程或任教关系引用，不能删除");
 		}
 		subjects.deleteById(id);
@@ -245,11 +265,44 @@ public class AcademicDataService {
 		return courses.findAllByOrderByCourseCode(pageable(page, size));
 	}
 
+	public List<CourseCatalog> courses(String organizationId) {
+		return courses.findByOrganizationIdOrderByCourseCode(organizationId);
+	}
+
+	public List<CourseCatalog> visibleCourses(Collection<String> organizationIds) {
+		return organizationIds == null ? courses()
+				: courses.findByOrganizationIdInOrOrganizationIdIsNullOrderByCourseCode(
+						nonEmpty(new java.util.HashSet<>(organizationIds)));
+	}
+
+	public CourseCatalog courseById(String id) {
+		return courses.findById(id).orElseThrow(() -> new IllegalArgumentException("数据不存在"));
+	}
+
 	@Transactional
 	public CourseCatalog saveCourse(String id, CourseCatalog command) {
+		if (id != null) {
+			var existing = courseById(id);
+			command.setOrganizationId(existing.getOrganizationId());
+			if (command.getMajorIds() == null) command.setMajorIds(Set.copyOf(existing.getMajorIds()));
+		}
+		Set<String> majorIds = command.getMajorIds() == null ? Set.of() : command.getMajorIds();
+		if (majorIds.stream().anyMatch(majorId -> majorId == null || majorId.isBlank())) {
+			throw new IllegalArgumentException("适用专业不能为空");
+		}
+		var selectedMajors = majors.findAllById(majorIds);
+		if (selectedMajors.size() != majorIds.size() || selectedMajors.stream().anyMatch(major ->
+				command.getOrganizationId() != null && major.getOrganizationId() != null
+						&& !command.getOrganizationId().equals(major.getOrganizationId()))) {
+			throw new IllegalArgumentException("适用专业不存在或不属于课程所在机构");
+		}
+		command.setMajorIds(new java.util.HashSet<>(majorIds));
 		if (command.getSubjectId() != null && !command.getSubjectId().isBlank()) {
-			subjects.findById(command.getSubjectId())
-					.orElseThrow(() -> new IllegalArgumentException("学科不存在"));
+			var subject = subjectById(command.getSubjectId());
+			if (subject.getOrganizationId() != null
+					&& !subject.getOrganizationId().equals(command.getOrganizationId())) {
+				throw new IllegalArgumentException("学科不属于课程所在机构");
+			}
 		}
 		if (command.getTotalHours() == null || command.getTotalHours() <= 0) {
 			throw new IllegalArgumentException("课程总学时必须大于 0");
@@ -269,8 +322,24 @@ public class AcademicDataService {
 		return majors.findAllByOrderByMajorCode(pageable(page, size));
 	}
 
+	public List<Major> majors(String organizationId) {
+		return majors.findByOrganizationIdOrderByMajorCode(organizationId);
+	}
+
+	public List<Major> visibleMajors(Collection<String> organizationIds) {
+		return organizationIds == null ? majors()
+				: majors.findByOrganizationIdInOrOrganizationIdIsNullOrderByMajorCode(
+						nonEmpty(new java.util.HashSet<>(organizationIds)));
+	}
+
+	public Major majorById(String id) {
+		return majors.findById(id).orElseThrow(() -> new IllegalArgumentException("数据不存在"));
+	}
+
 	@Transactional
 	public Major saveMajor(String id, Major command) {
+		if (id != null)
+			command.setOrganizationId(majorById(id).getOrganizationId());
 		return majors.save(entity(id, command, majors));
 	}
 
@@ -289,10 +358,10 @@ public class AcademicDataService {
 	public Page<AdministrativeClass> administrativeClasses(int page, int size) {
 		Page<AdministrativeClass> result = administrativeClasses
 				.findAllByOrderByGradeYearDescClassCodeAsc(pageable(page, size));
-		Map<String, String> names = teacherNames(result.getContent().stream()
-				.map(AdministrativeClass::getHeadTeacherId)
-				.toList());
-		result.forEach(item -> item.setHeadTeacherName(names.get(item.getHeadTeacherId())));
+		Map<String, String> names = teacherNames(
+				result.getContent().stream().map(AdministrativeClass::getHeadTeacherId).toList());
+		result.forEach(item -> item
+				.setHeadTeacherName(item.getHeadTeacherId() == null ? null : names.get(item.getHeadTeacherId())));
 		return result;
 	}
 
@@ -301,30 +370,20 @@ public class AcademicDataService {
 	}
 
 	public Page<AdministrativeClass> administrativeClassesInCampus(String campusId, int page, int size) {
-		return withHeadTeacherNames(administrativeClasses.findByCampusIdOrderByGradeYearDescClassCodeAsc(
-				campusId, pageable(page, size)));
+		return withHeadTeacherNames(
+				administrativeClasses.findByCampusIdOrderByGradeYearDescClassCodeAsc(campusId, pageable(page, size)));
 	}
 
 	public List<AdministrativeClass> administrativeClasses(EducationDataScope scope) {
-		return scope.fullAccess()
-				? administrativeClasses()
-				: withHeadTeacherNames(administrativeClasses.findVisible(
-						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds()),
-						nonEmpty(scope.campusIds())));
+		return scope.fullAccess() ? administrativeClasses()
+				: withHeadTeacherNames(administrativeClasses.findVisible(nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()), nonEmpty(scope.campusIds())));
 	}
 
-	public Page<AdministrativeClass> administrativeClasses(
-			EducationDataScope scope,
-			int page,
-			int size) {
-		return scope.fullAccess()
-				? administrativeClasses(page, size)
-				: withHeadTeacherNames(administrativeClasses.findVisible(
-						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds()),
-						nonEmpty(scope.campusIds()),
-						pageable(page, size)));
+	public Page<AdministrativeClass> administrativeClasses(EducationDataScope scope, int page, int size) {
+		return scope.fullAccess() ? administrativeClasses(page, size)
+				: withHeadTeacherNames(administrativeClasses.findVisible(nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()), nonEmpty(scope.campusIds()), pageable(page, size)));
 	}
 
 	@Transactional
@@ -334,14 +393,15 @@ public class AcademicDataService {
 			majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
 		}
 		if (command.getGradeId() != null && !command.getGradeId().isBlank()) {
-			grades.findById(command.getGradeId())
-					.orElseThrow(() -> new IllegalArgumentException("年级不存在"));
+			var grade = gradeById(command.getGradeId());
+			if (grade.getOrganizationId() != null && !grade.getOrganizationId().equals(command.getCampusId())) {
+				throw new IllegalArgumentException("年级不属于行政班所在机构");
+			}
 		}
 		if (command.getHeadTeacherId() != null && !command.getHeadTeacherId().isBlank()) {
 			var headTeacher = teachers.findById(command.getHeadTeacherId())
 					.orElseThrow(() -> new IllegalArgumentException("班主任教师不存在"));
-			if (!Boolean.TRUE.equals(headTeacher.getEnabled())
-					|| !"ACTIVE".equals(headTeacher.getEmploymentStatus())) {
+			if (!Boolean.TRUE.equals(headTeacher.getEnabled()) || !"ACTIVE".equals(headTeacher.getEmploymentStatus())) {
 				throw new IllegalArgumentException("班主任必须是在岗教师");
 			}
 			String campusId = command.getCampusId();
@@ -382,36 +442,28 @@ public class AcademicDataService {
 	}
 
 	public List<StudentProfile> students(EducationDataScope scope) {
-		return scope.fullAccess()
-				? students()
-				: students.findVisible(
-						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds()));
+		return scope.fullAccess() ? students()
+				: students.findVisible(nonEmpty(scope.administrativeClassIds()), nonEmpty(scope.gradeIds()));
 	}
 
-	public Page<StudentProfile> students(
-			EducationDataScope scope,
-			int page,
-			int size) {
-		return scope.fullAccess()
-				? students(page, size)
-				: students.findVisible(
-						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds()),
+	public Page<StudentProfile> students(EducationDataScope scope, int page, int size) {
+		return scope.fullAccess() ? students(page, size)
+				: students.findVisible(nonEmpty(scope.administrativeClassIds()), nonEmpty(scope.gradeIds()),
 						pageable(page, size));
 	}
 
 	/** 课表学生选择器按数据范围和关键词在数据库分页，不加载完整学生档案列表。 */
-	public Page<StudentProfile> scheduleStudentOptions(
-			EducationDataScope scope,
-			String keyword,
-			int page,
-			int size) {
+	public Page<StudentProfile> scheduleStudentOptions(EducationDataScope scope, String keyword, int page, int size) {
 		return scheduleStudentOptions(scope, keyword, page, size, null);
 	}
 
-	public Page<StudentProfile> scheduleStudentOptions(
-			EducationDataScope scope, String keyword, int page, int size, java.util.Set<String> campusIds) {
+	public Page<StudentProfile> scheduleStudentOptions(EducationDataScope scope, String keyword, int page, int size,
+			java.util.Set<String> campusIds) {
+		return scheduleStudentOptions(scope, keyword, page, size, campusIds, null);
+	}
+
+	public Page<StudentProfile> scheduleStudentOptions(EducationDataScope scope, String keyword, int page, int size,
+			Set<String> campusIds, String excludeEnrolledOfferingId) {
 		String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase(java.util.Locale.ROOT);
 		if (normalizedKeyword.length() > 100) {
 			throw new IllegalArgumentException("学生查询关键词不能超过100个字符");
@@ -419,15 +471,12 @@ public class AcademicDataService {
 		Pageable requestedPage = pageable(page, Math.min(size, 50));
 		if (campusIds != null) {
 			return students.searchCampusScheduleOptions(campusIds, scope.fullAccess(),
-					nonEmpty(scope.administrativeClassIds()), nonEmpty(scope.gradeIds()), normalizedKeyword, requestedPage);
+					nonEmpty(scope.administrativeClassIds()), nonEmpty(scope.gradeIds()), normalizedKeyword,
+					excludeEnrolledOfferingId, requestedPage);
 		}
-		return scope.fullAccess()
-				? students.searchScheduleOptions(normalizedKeyword, requestedPage)
-				: students.searchVisibleScheduleOptions(
-						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds()),
-						normalizedKeyword,
-						requestedPage);
+		return scope.fullAccess() ? students.searchScheduleOptions(normalizedKeyword, requestedPage)
+				: students.searchVisibleScheduleOptions(nonEmpty(scope.administrativeClassIds()),
+						nonEmpty(scope.gradeIds()), normalizedKeyword, requestedPage);
 	}
 
 	@Transactional
@@ -436,7 +485,8 @@ public class AcademicDataService {
 			StudentProfile existing = students.findLockedById(id)
 					.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
 			if (!java.util.Objects.equals(existing.getEnrollmentStatus(), command.getEnrollmentStatus())
-					|| !java.util.Objects.equals(existing.getAdministrativeClassId(), command.getAdministrativeClassId())
+					|| !java.util.Objects.equals(existing.getAdministrativeClassId(),
+							command.getAdministrativeClassId())
 					|| !java.util.Objects.equals(existing.getGradeId(), command.getGradeId())
 					|| !java.util.Objects.equals(existing.getGradeYear(), command.getGradeYear())
 					|| !java.util.Objects.equals(existing.getMajorId(), command.getMajorId())) {
@@ -457,8 +507,7 @@ public class AcademicDataService {
 			majors.findById(command.getMajorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
 		}
 		if (command.getGradeId() != null && !command.getGradeId().isBlank()) {
-			grades.findById(command.getGradeId())
-					.orElseThrow(() -> new IllegalArgumentException("年级不存在"));
+			grades.findById(command.getGradeId()).orElseThrow(() -> new IllegalArgumentException("年级不存在"));
 		}
 		var targetClass = administrativeClasses.findById(command.getAdministrativeClassId())
 				.orElseThrow(() -> new IllegalArgumentException("行政班不存在"));
@@ -471,10 +520,10 @@ public class AcademicDataService {
 			throw new IllegalArgumentException("新建学生的初始学籍状态必须为在读");
 		}
 		if (command.getStudentNo() == null || command.getStudentNo().isBlank()) {
-			String educationStage = command.getGradeId() == null ? "" : grades.findById(command.getGradeId())
-					.map(EducationGrade::getEducationStage).orElse("");
-			command.setStudentNo(businessNumbers.nextStudentNumber(
-					targetClass.getCampusId(), command.getGradeYear(), educationStage));
+			String educationStage = command.getGradeId() == null ? ""
+					: grades.findById(command.getGradeId()).map(EducationGrade::getEducationStage).orElse("");
+			command.setStudentNo(businessNumbers.nextStudentNumber(targetClass.getCampusId(), command.getGradeYear(),
+					educationStage));
 		}
 		if (command.getRegistrationStatus() == null || command.getRegistrationStatus().isBlank()) {
 			command.setRegistrationStatus("NOT_SUBMITTED");
@@ -496,11 +545,9 @@ public class AcademicDataService {
 		var eligibleIds = new java.util.HashSet<>(offerings.findDistinctTeacherIdsByCampusIdIn(List.of(campusId)));
 		administrativeClasses.findAll().stream()
 				.filter(item -> campusId.equals(item.getCampusId()) && item.getHeadTeacherId() != null)
-				.map(AdministrativeClass::getHeadTeacherId)
-				.forEach(eligibleIds::add);
+				.map(AdministrativeClass::getHeadTeacherId).forEach(eligibleIds::add);
 		return withAccountStatus(teachers.findAllByOrderByTeacherNo().stream()
-				.filter(item -> Boolean.TRUE.equals(item.getEnabled())
-						&& "ACTIVE".equals(item.getEmploymentStatus())
+				.filter(item -> Boolean.TRUE.equals(item.getEnabled()) && "ACTIVE".equals(item.getEmploymentStatus())
 						&& (campusId.equals(item.getDepartmentId()) || eligibleIds.contains(item.getId())))
 				.toList());
 	}
@@ -517,11 +564,15 @@ public class AcademicDataService {
 		if (!scope.campusIds().isEmpty()) {
 			// School-scoped schedulers need teachers with offerings in their school,
 			// even when they do not hold a personal teacher assignment.
-			visibleTeacherIds.addAll(offerings.findDistinctTeacherIdsByCampusIdIn(
-					scope.campusIds().stream().toList()));
+			visibleTeacherIds.addAll(offerings.findDistinctTeacherIdsByCampusIdIn(scope.campusIds().stream().toList()));
 		}
-		return withAccountStatus(teachers.findByIdInOrderByTeacherNo(
-				nonEmpty(visibleTeacherIds)));
+		return withAccountStatus(teachers.findByIdInOrderByTeacherNo(nonEmpty(visibleTeacherIds)));
+	}
+
+	public List<TeacherAcademicProfile> teachers(EducationDataScope scope, String organizationId) {
+		var employeeIds = employees.findVisibleByOrganization(organizationId).stream().map(employee -> employee.getId())
+				.collect(java.util.stream.Collectors.toSet());
+		return teachers(scope).stream().filter(item -> employeeIds.contains(item.getEmployeeId())).toList();
 	}
 
 	private List<TeacherAcademicProfile> withAccountStatus(List<TeacherAcademicProfile> values) {
@@ -538,87 +589,68 @@ public class AcademicDataService {
 		TeacherAccountProvisioning account = teacherAccounts.find(teacher.getEmployeeId());
 		var binding = bindings.findByProfileTypeAndProfileId("TEACHER", teacher.getId());
 		teacher.setAccountUsername(account == null ? null : account.username());
-		teacher.setAccountStatus(binding.map(item -> "ACTIVE".equals(item.getStatus())
-				? "ACTIVE" : "INACTIVE")
+		teacher.setAccountStatus(binding.map(item -> "ACTIVE".equals(item.getStatus()) ? "ACTIVE" : "INACTIVE")
 				.orElse(account == null ? "UNBOUND" : "ACCOUNT_EXISTS"));
 	}
 
-	public Page<TeacherAcademicProfile> teachers(
-			EducationDataScope scope,
-			int page,
-			int size) {
-		return scope.fullAccess()
-				? teachers(page, size)
-				: withAccountStatus(teachers.findByIdInOrderByTeacherNo(
-						nonEmpty(scope.teacherIds()),
-						pageable(page, size)));
+	public Page<TeacherAcademicProfile> teachers(EducationDataScope scope, int page, int size) {
+		return scope.fullAccess() ? teachers(page, size)
+				: withAccountStatus(
+						teachers.findByIdInOrderByTeacherNo(nonEmpty(scope.teacherIds()), pageable(page, size)));
 	}
 
 	@Transactional
 	public TeacherAcademicProfile saveTeacher(String id, TeacherAcademicProfile command) {
-		if (command == null || command.getEmployeeId() == null || command.getEmployeeId().isBlank()) {
-			throw new IllegalArgumentException("教师档案必须绑定 IAM 员工");
+		if (id == null)
+			throw new IllegalStateException("请通过教师入职审批建立档案");
+		var value = teachers.findLockedById(id).orElseThrow(() -> new IllegalArgumentException("教师档案不存在"));
+		if (!java.util.Objects.equals(value.getEmployeeId(), command.getEmployeeId())
+				|| !java.util.Objects.equals(value.getDepartmentId(), command.getDepartmentId())
+				|| !java.util.Objects.equals(value.getEnabled(), command.getEnabled())
+				|| (command.getEmploymentStatus() != null
+						&& !java.util.Objects.equals(value.getEmploymentStatus(), command.getEmploymentStatus()))) {
+			throw new IllegalArgumentException("所属单位及任职状态必须通过教师人事流程办理");
 		}
-		var employee = employees.findById(command.getEmployeeId())
-				.orElseThrow(() -> new IllegalArgumentException("绑定的 IAM 员工不存在"));
-		// 教师档案沿用唯一工号，避免人事工号与教务教师编号长期分叉。
-		command.setTeacherNo(employee.getEmployeeCode());
-		command.setTeacherName(employee.getEmployeeName());
-		TeacherAccountProvisioning account = teacherAccounts.provision(command.getEmployeeId(), command.getTeacherName());
-		TeacherAcademicProfile value;
-		if (id != null) {
-			value = teachers.findLockedById(id)
-					.orElseThrow(() -> new IllegalArgumentException("教师档案不存在"));
-			if (!java.util.Objects.equals(value.getDepartmentId(), command.getDepartmentId())
-					|| !java.util.Objects.equals(value.getEnabled(), command.getEnabled())
-					|| command.getEmploymentStatus() != null
-					&& !java.util.Objects.equals(
-							value.getEmploymentStatus(),
-							command.getEmploymentStatus())) {
-				throw new IllegalArgumentException("所属单位及任职状态必须通过教师任职异动办理");
-			}
-			value.setEmployeeId(command.getEmployeeId());
-			value.setTeacherNo(command.getTeacherNo());
-			value.setTeacherName(command.getTeacherName());
-			value.setSpecialty(command.getSpecialty());
-			value.setMaxWeeklyLessons(command.getMaxWeeklyLessons());
-			value.setMaxDailyLessons(command.getMaxDailyLessons());
-			value.setMaxConsecutiveLessons(command.getMaxConsecutiveLessons());
-		} else {
-			value = command;
-			value.setEnabled(true);
-			value.setEmploymentStatus("ACTIVE");
+		value.setSpecialty(command.getSpecialty());
+		value.setMaxWeeklyLessons(command.getMaxWeeklyLessons());
+		value.setMaxDailyLessons(command.getMaxDailyLessons());
+		value.setMaxConsecutiveLessons(command.getMaxConsecutiveLessons());
+		return teachers.save(value);
+	}
+
+	@Transactional
+	public TeacherAcademicProfile createApprovedTeacher(String employeeId, String organizationId) {
+		var employee = employees.findById(employeeId).orElseThrow(() -> new IllegalArgumentException("绑定的 IAM 员工不存在"));
+		if (teachers.findByEmployeeId(employeeId).isPresent()) {
+			throw new IllegalStateException("该员工已有教师档案");
 		}
-		value = teachers.save(value);
-		EducationUserBinding binding = bindings.findByProfileTypeAndProfileId("TEACHER", value.getId())
-				.orElseGet(EducationUserBinding::new);
-		String profileId = value.getId();
-		bindings.findByUsernameAndProfileType(account.username(), "TEACHER")
-				.filter(existing -> !profileId.equals(existing.getProfileId()))
-				.ifPresent(existing -> { throw new IllegalArgumentException("IAM 账号已绑定其他教师"); });
-		binding.setUsername(account.username());
-		binding.setProfileType("TEACHER");
-		binding.setProfileId(value.getId());
-		binding.setStatus("ACTIVE");
-		bindings.save(binding);
-		value.setAccountUsername(account.username());
-		value.setAccountStatus("ACTIVE");
-		return value;
+		var value = new TeacherAcademicProfile();
+		value.setEmployeeId(employeeId);
+		value.setTeacherNo(employee.getEmployeeCode());
+		value.setTeacherName(employee.getEmployeeName());
+		value.setDepartmentId(organizationId);
+		value.setEnabled(true);
+		value.setEmploymentStatus("ACTIVE");
+		return bindTeacherAccount(teachers.save(value).getId());
 	}
 
 	@Transactional
 	public TeacherAcademicProfile bindTeacherAccount(String id) {
-		TeacherAcademicProfile value = teachers.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("教师档案不存在"));
+		TeacherAcademicProfile value = teachers.findById(id).orElseThrow(() -> new IllegalArgumentException("教师档案不存在"));
 		TeacherAccountProvisioning account = teacherAccounts.provision(value.getEmployeeId(), value.getTeacherName());
 		bindings.findByUsernameAndProfileType(account.username(), "TEACHER")
-				.filter(existing -> !id.equals(existing.getProfileId()))
-				.ifPresent(existing -> { throw new IllegalArgumentException("IAM 账号已绑定其他教师"); });
+				.filter(existing -> !id.equals(existing.getProfileId())).ifPresent(existing -> {
+					throw new IllegalArgumentException("IAM 账号已绑定其他教师");
+				});
 		EducationUserBinding binding = bindings.findByProfileTypeAndProfileId("TEACHER", id)
 				.orElseGet(EducationUserBinding::new);
-		binding.setUsername(account.username()); binding.setProfileType("TEACHER");
-		binding.setProfileId(id); binding.setStatus("ACTIVE"); bindings.save(binding);
-		value.setAccountUsername(account.username()); value.setAccountStatus("ACTIVE");
+		binding.setUsername(account.username());
+		binding.setProfileType("TEACHER");
+		binding.setProfileId(id);
+		binding.setStatus("ACTIVE");
+		bindings.save(binding);
+		value.setAccountUsername(account.username());
+		value.setAccountStatus("ACTIVE");
 		return value;
 	}
 
@@ -667,34 +699,27 @@ public class AcademicDataService {
 	}
 
 	public List<StudentGuardianRelation> guardians(String studentId) {
-		students.findById(studentId)
-				.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+		students.findById(studentId).orElseThrow(() -> new IllegalArgumentException("学生不存在"));
 		return guardians.findByStudentIdOrderByCreateTime(studentId);
 	}
 
 	public List<StudentGuardianRelation> guardiansByParent(String parentId) {
-		parents.findById(parentId)
-				.orElseThrow(() -> new IllegalArgumentException("家长不存在"));
+		parents.findById(parentId).orElseThrow(() -> new IllegalArgumentException("家长不存在"));
 		return guardians.findByParentIdOrderByCreateTime(parentId);
 	}
 
 	@Transactional
-	public StudentGuardianRelation saveGuardian(
-			String id,
-			StudentGuardianRelation command) {
+	public StudentGuardianRelation saveGuardian(String id, StudentGuardianRelation command) {
 		if (command == null || command.getStudentId() == null || command.getParentId() == null
 				|| command.getRelationship() == null || command.getRelationship().isBlank()) {
 			throw new IllegalArgumentException("监护关系字段不完整");
 		}
-		students.findById(command.getStudentId())
-				.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
-		parents.findById(command.getParentId())
-				.orElseThrow(() -> new IllegalArgumentException("家长不存在"));
+		students.findById(command.getStudentId()).orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+		parents.findById(command.getParentId()).orElseThrow(() -> new IllegalArgumentException("家长不存在"));
 		if (Boolean.TRUE.equals(command.getPrimaryGuardian())) {
 			guardians.findByStudentIdOrderByCreateTime(command.getStudentId()).stream()
 					.filter(existing -> !java.util.Objects.equals(existing.getId(), id))
-					.filter(existing -> Boolean.TRUE.equals(existing.getPrimaryGuardian()))
-					.findAny()
+					.filter(existing -> Boolean.TRUE.equals(existing.getPrimaryGuardian())).findAny()
 					.ifPresent(existing -> {
 						throw new IllegalStateException("每名学生只能有一名主监护人");
 					});
@@ -710,11 +735,7 @@ public class AcademicDataService {
 	}
 
 	@Transactional
-	public StudentGuardianRelation verifyGuardian(
-			String id,
-			boolean approved,
-			String note,
-			String actor) {
+	public StudentGuardianRelation verifyGuardian(String id, boolean approved, String note, String actor) {
 		StudentGuardianRelation value = guardians.findForUpdate(id)
 				.orElseThrow(() -> new IllegalArgumentException("监护关系不存在"));
 		if (!"PENDING".equals(value.getVerificationStatus())) {
@@ -734,11 +755,7 @@ public class AcademicDataService {
 	}
 
 	@Transactional
-	public StudentGuardianRelation restrictGuardian(
-			String id,
-			String level,
-			String reason,
-			java.time.LocalDate from,
+	public StudentGuardianRelation restrictGuardian(String id, String level, String reason, java.time.LocalDate from,
 			java.time.LocalDate to) {
 		StudentGuardianRelation value = guardians.findForUpdate(id)
 				.orElseThrow(() -> new IllegalArgumentException("监护关系不存在"));
@@ -760,10 +777,7 @@ public class AcademicDataService {
 	}
 
 	@Transactional
-	public StudentGuardianRelation consentGuardian(
-			String id,
-			String status,
-			LocalDateTime expiresAt) {
+	public StudentGuardianRelation consentGuardian(String id, String status, LocalDateTime expiresAt) {
 		StudentGuardianRelation value = guardians.findForUpdate(id)
 				.orElseThrow(() -> new IllegalArgumentException("监护关系不存在"));
 		String normalized = status == null ? "" : status.trim().toUpperCase(java.util.Locale.ROOT);
@@ -788,53 +802,71 @@ public class AcademicDataService {
 	public Page<TeacherTeachingAssignment> teachingAssignments(int page, int size) {
 		Page<TeacherTeachingAssignment> result = teachingAssignments
 				.findAllByOrderByCreateTimeDesc(pageable(page, size));
-		Map<String, String> names = teacherNames(result.getContent().stream()
-				.map(TeacherTeachingAssignment::getTeacherId)
-				.toList());
+		Map<String, String> names = teacherNames(
+				result.getContent().stream().map(TeacherTeachingAssignment::getTeacherId).toList());
 		result.forEach(item -> item.setTeacherName(names.get(item.getTeacherId())));
 		return result;
 	}
 
 	public List<TeacherTeachingAssignment> teachingAssignments(EducationDataScope scope) {
-		return scope.fullAccess()
-				? teachingAssignments()
-				: withTeacherNames(teachingAssignments.findVisible(
-						nonEmpty(scope.teacherIds()),
-						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds())));
+		return scope.fullAccess() ? teachingAssignments()
+				: withTeacherNames(teachingAssignments.findVisible(nonEmpty(scope.teacherIds()),
+						nonEmpty(scope.administrativeClassIds()), nonEmpty(scope.gradeIds())));
 	}
 
-	public Page<TeacherTeachingAssignment> teachingAssignments(
-			EducationDataScope scope,
-			int page,
-			int size) {
-		return scope.fullAccess()
-				? teachingAssignments(page, size)
-				: withTeacherNames(teachingAssignments.findVisible(
-						nonEmpty(scope.teacherIds()),
-						nonEmpty(scope.administrativeClassIds()),
-						nonEmpty(scope.gradeIds()),
-						pageable(page, size)));
+	public List<TeacherTeachingAssignment> teachingAssignments(EducationDataScope scope, String organizationId) {
+		var termIds = terms.findByOrganizationIdOrderByStartDateDesc(organizationId).stream().map(AcademicTerm::getId)
+				.toList();
+		if (termIds.isEmpty()) {
+			return List.of();
+		}
+		return withTeacherNames(teachingAssignments.findByAcademicTermIdInOrderByCreateTimeDesc(termIds).stream()
+				.filter(item -> scope.fullAccess() || scope.teacherIds().contains(item.getTeacherId())
+						|| (item.getAdministrativeClassId() != null
+								&& scope.administrativeClassIds().contains(item.getAdministrativeClassId()))
+						|| (item.getGradeId() != null && scope.gradeIds().contains(item.getGradeId())))
+				.toList());
+	}
+
+	public Page<TeacherTeachingAssignment> teachingAssignments(EducationDataScope scope, int page, int size) {
+		return scope.fullAccess() ? teachingAssignments(page, size)
+				: withTeacherNames(teachingAssignments.findVisible(nonEmpty(scope.teacherIds()),
+						nonEmpty(scope.administrativeClassIds()), nonEmpty(scope.gradeIds()), pageable(page, size)));
 	}
 
 	@Transactional
-	public TeacherTeachingAssignment saveTeachingAssignment(
-			String id,
-			TeacherTeachingAssignment command) {
-		terms.findById(command.getAcademicTermId())
-				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
-		teachers.findById(command.getTeacherId())
-				.orElseThrow(() -> new IllegalArgumentException("教师不存在"));
-		subjects.findById(command.getSubjectId())
-				.orElseThrow(() -> new IllegalArgumentException("学科不存在"));
-		if (command.getGradeId() != null && !command.getGradeId().isBlank()) {
-			grades.findById(command.getGradeId())
-					.orElseThrow(() -> new IllegalArgumentException("年级不存在"));
+	public TeacherTeachingAssignment saveTeachingAssignment(String id, TeacherTeachingAssignment command) {
+		var term = terms.findById(command.getAcademicTermId()).orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		teachers.findById(command.getTeacherId()).orElseThrow(() -> new IllegalArgumentException("教师不存在"));
+		var subject = subjectById(command.getSubjectId());
+		if (subject.getOrganizationId() != null && !subject.getOrganizationId().equals(term.getOrganizationId())) {
+			throw new IllegalArgumentException("学科不属于学期所在机构");
 		}
-		if (command.getAdministrativeClassId() != null
-				&& !command.getAdministrativeClassId().isBlank()) {
-			administrativeClasses.findById(command.getAdministrativeClassId())
+		if (id != null && command.getCourseId() == null) {
+			teachingAssignments.findById(id).ifPresent(existing -> command.setCourseId(existing.getCourseId()));
+		}
+		if (command.getCourseId() != null) {
+			var course = courseById(command.getCourseId());
+			if (!Boolean.TRUE.equals(course.getEnabled()) || !subject.getId().equals(course.getSubjectId())
+					|| (course.getOrganizationId() != null && !course.getOrganizationId().equals(term.getOrganizationId()))) {
+				throw new IllegalArgumentException("课程须启用，并属于所选学科和学期所在机构");
+			}
+		}
+		if (command.getGradeId() != null && !command.getGradeId().isBlank()) {
+			var grade = gradeById(command.getGradeId());
+			if (grade.getOrganizationId() != null && !grade.getOrganizationId().equals(term.getOrganizationId())) {
+				throw new IllegalArgumentException("年级不属于学期所在机构");
+			}
+		}
+		if (command.getAdministrativeClassId() != null && !command.getAdministrativeClassId().isBlank()) {
+			var schoolClass = administrativeClasses.findById(command.getAdministrativeClassId())
 					.orElseThrow(() -> new IllegalArgumentException("行政班不存在"));
+			if (!java.util.Objects.equals(schoolClass.getCampusId(), term.getOrganizationId())) {
+				throw new IllegalArgumentException("行政班不属于学期所在机构");
+			}
+			if (command.getGradeId() != null && !java.util.Objects.equals(command.getGradeId(), schoolClass.getGradeId())) {
+				throw new IllegalArgumentException("所选年级与行政班不一致");
+			}
 		}
 		return teachingAssignments.save(entity(id, command, teachingAssignments));
 	}
@@ -847,6 +879,20 @@ public class AcademicDataService {
 	public List<TeachingClassMember> members(String offeringId) {
 		offerings.findById(offeringId).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
 		return members.findByOfferingIdOrderByCreateTime(offeringId);
+	}
+
+	public record TeachingClassMemberPage(PageView<TeachingClassMember> page, long enrolledCount) {}
+
+	@Transactional(readOnly = true)
+	public TeachingClassMemberPage members(String offeringId, EducationDataScope scope, int page, int size) {
+		if (!offerings.existsById(offeringId)) throw new IllegalArgumentException("教学任务不存在");
+		var studentIds = nonEmpty(scope.studentIds());
+		var classIds = nonEmpty(scope.administrativeClassIds());
+		var gradeIds = nonEmpty(scope.gradeIds());
+		var result = members.findVisiblePage(offeringId, scope.fullAccess(), studentIds, classIds, gradeIds,
+				pageable(page, size));
+		long enrolledCount = members.countVisibleEnrolled(offeringId, scope.fullAccess(), studentIds, classIds, gradeIds);
+		return new TeachingClassMemberPage(PageView.from(result), enrolledCount);
 	}
 
 	@Transactional
@@ -867,8 +913,7 @@ public class AcademicDataService {
 				.orElseThrow(() -> new IllegalStateException("原教学班成员关系已不存在"));
 		String enrollmentSource = previous.getEnrollmentSource();
 		boolean combined = "COMBINED".equals(offerings.findById(offeringId)
-				.orElseThrow(() -> new IllegalStateException("原教学任务已不存在"))
-				.getOfferingMode());
+				.orElseThrow(() -> new IllegalStateException("原教学任务已不存在")).getOfferingMode());
 		TeachingClassMember restored = enrollInternal(offeringId, studentId, combined);
 		restored.setEnrollmentSource(enrollmentSource);
 		return members.save(restored);
@@ -887,12 +932,8 @@ public class AcademicDataService {
 		return members.save(member);
 	}
 
-	private TeachingClassMember enrollInternal(
-			String offeringId,
-			String studentId,
-			boolean fromCombined) {
-		var offering = offerings.findById(offeringId)
-				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+	private TeachingClassMember enrollInternal(String offeringId, String studentId, boolean fromCombined) {
+		var offering = offerings.findById(offeringId).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
 		if ("COMBINED".equals(offering.getOfferingMode()) != fromCombined) {
 			throw new IllegalStateException("合班课成员只能通过来源行政班同步维护");
 		}
@@ -904,8 +945,7 @@ public class AcademicDataService {
 		}
 		assertStudentScheduleAvailable(studentId, offeringId);
 		long enrolled = members.findByOfferingIdOrderByCreateTime(offeringId).stream()
-				.filter(item -> "ENROLLED".equals(item.getEnrollmentStatus()))
-				.count();
+				.filter(item -> "ENROLLED".equals(item.getEnrollmentStatus())).count();
 		if (enrolled >= offering.getStudentCount()) {
 			throw new IllegalStateException("教学班人数已达到容量上限");
 		}
@@ -920,8 +960,7 @@ public class AcademicDataService {
 
 	@Transactional
 	public TeachingClassMember withdraw(String offeringId, String studentId) {
-		if ("COMBINED".equals(offerings.findById(offeringId)
-				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"))
+		if ("COMBINED".equals(offerings.findById(offeringId).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"))
 				.getOfferingMode())) {
 			throw new IllegalStateException("合班课成员只能通过来源行政班同步维护");
 		}
@@ -936,13 +975,13 @@ public class AcademicDataService {
 		List<ScheduleEntry> target = scheduleEntries.findByOfferingId(targetOfferingId);
 		for (TeachingClassMember membership : members.findByStudentIdAndEnrollmentStatus(studentId, "ENROLLED")) {
 			for (ScheduleEntry existing : scheduleEntries.findByOfferingId(membership.getOfferingId())) {
-				boolean conflicts = target.stream().anyMatch(candidate ->
-						candidate.getSemesterCode().equals(existing.getSemesterCode())
+				boolean conflicts = target.stream()
+						.anyMatch(candidate -> candidate.getSemesterCode().equals(existing.getSemesterCode())
 								&& candidate.getDayOfWeek().equals(existing.getDayOfWeek())
 								&& candidate.getPeriodNo() <= existing.getPeriodNo() + existing.getDurationPeriods() - 1
-								&& existing.getPeriodNo() <= candidate.getPeriodNo() + candidate.getDurationPeriods() - 1
-								&& ("ALL".equals(candidate.getWeekPattern())
-										|| "ALL".equals(existing.getWeekPattern())
+								&& existing.getPeriodNo() <= candidate.getPeriodNo() + candidate.getDurationPeriods()
+										- 1
+								&& ("ALL".equals(candidate.getWeekPattern()) || "ALL".equals(existing.getWeekPattern())
 										|| candidate.getWeekPattern().equals(existing.getWeekPattern()))
 								&& candidate.getStartWeek() <= existing.getEndWeek()
 								&& candidate.getEndWeek() >= existing.getStartWeek());
@@ -958,47 +997,41 @@ public class AcademicDataService {
 	}
 
 	private String required(String value, String label) {
-		if (value == null || value.isBlank()) throw new IllegalArgumentException(label + "不能为空");
+		if (value == null || value.isBlank())
+			throw new IllegalArgumentException(label + "不能为空");
 		return value;
 	}
 
 	private List<AdministrativeClass> withHeadTeacherNames(List<AdministrativeClass> rows) {
-		Map<String, String> names = teacherNames(rows.stream()
-				.map(AdministrativeClass::getHeadTeacherId)
-				.toList());
-		rows.forEach(item -> item.setHeadTeacherName(names.get(item.getHeadTeacherId())));
+		Map<String, String> names = teacherNames(rows.stream().map(AdministrativeClass::getHeadTeacherId).toList());
+		rows.forEach(item -> item
+				.setHeadTeacherName(item.getHeadTeacherId() == null ? null : names.get(item.getHeadTeacherId())));
 		return rows;
 	}
 
 	private Page<AdministrativeClass> withHeadTeacherNames(Page<AdministrativeClass> rows) {
-		Map<String, String> names = teacherNames(rows.getContent().stream()
-				.map(AdministrativeClass::getHeadTeacherId)
-				.toList());
-		rows.forEach(item -> item.setHeadTeacherName(names.get(item.getHeadTeacherId())));
+		Map<String, String> names = teacherNames(
+				rows.getContent().stream().map(AdministrativeClass::getHeadTeacherId).toList());
+		rows.forEach(item -> item
+				.setHeadTeacherName(item.getHeadTeacherId() == null ? null : names.get(item.getHeadTeacherId())));
 		return rows;
 	}
 
 	private List<TeacherTeachingAssignment> withTeacherNames(List<TeacherTeachingAssignment> rows) {
-		Map<String, String> names = teacherNames(rows.stream()
-				.map(TeacherTeachingAssignment::getTeacherId)
-				.toList());
+		Map<String, String> names = teacherNames(rows.stream().map(TeacherTeachingAssignment::getTeacherId).toList());
 		rows.forEach(item -> item.setTeacherName(names.get(item.getTeacherId())));
 		return rows;
 	}
 
 	private Page<TeacherTeachingAssignment> withTeacherNames(Page<TeacherTeachingAssignment> rows) {
-		Map<String, String> names = teacherNames(rows.getContent().stream()
-				.map(TeacherTeachingAssignment::getTeacherId)
-				.toList());
+		Map<String, String> names = teacherNames(
+				rows.getContent().stream().map(TeacherTeachingAssignment::getTeacherId).toList());
 		rows.forEach(item -> item.setTeacherName(names.get(item.getTeacherId())));
 		return rows;
 	}
 
 	private Map<String, String> teacherNames(Collection<String> ids) {
-		List<String> validIds = ids.stream()
-				.filter(id -> id != null && !id.isBlank())
-				.distinct()
-				.toList();
+		List<String> validIds = ids.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
 		if (validIds.isEmpty()) {
 			return Map.of();
 		}
@@ -1029,12 +1062,12 @@ public class AcademicDataService {
 		return values.isEmpty() ? List.of("__NO_EDUCATION_RESOURCE__") : values.stream().toList();
 	}
 
-	private <T> T entity(String id, T command, org.springframework.data.jpa.repository.JpaRepository<T, String> repository) {
+	private <T> T entity(String id, T command,
+			org.springframework.data.jpa.repository.JpaRepository<T, String> repository) {
 		if (id == null) {
 			return command;
 		}
-		T existing = repository.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("数据不存在"));
+		T existing = repository.findById(id).orElseThrow(() -> new IllegalArgumentException("数据不存在"));
 		BaseEntity target = (BaseEntity) command;
 		BaseEntity source = (BaseEntity) existing;
 		target.setId(id);

@@ -22,9 +22,16 @@ public final class AvailableWorkflowsScreen {
             "EDU_TEACHER_LEAVE_APPROVAL", "EDU_COURSE_ADJUSTMENT_APPROVAL"));
     private final Activity activity; private final UiKit ui; private final AsyncRunner async;
     private final ScreenHost host; private final HttpClient http; private final Runnable back;
+    private final String flowCodePrefix;
 
     public AvailableWorkflowsScreen(Activity activity, UiKit ui, AsyncRunner async, ScreenHost host,
             HttpClient http, Runnable back) {
+        this(activity, ui, async, host, http, back, "");
+    }
+
+    public AvailableWorkflowsScreen(Activity activity, UiKit ui, AsyncRunner async, ScreenHost host,
+            HttpClient http, Runnable back, String flowCodePrefix) {
+        this.flowCodePrefix = flowCodePrefix;
         this.activity = activity; this.ui = ui; this.async = async;
         this.host = host; this.http = http; this.back = back;
     }
@@ -42,7 +49,8 @@ public final class AvailableWorkflowsScreen {
         NativeRecordViews records = new NativeRecordViews(ui);
         for (int i = 0; i < rows.length(); i++) {
             JSONObject row = rows.optJSONObject(i); if (row == null) continue;
-            if (DOMAIN_MANAGED_FLOWS.contains(row.optString("flowCode"))) continue;
+            String code = row.optString("flowCode");
+            if (flowCodePrefix.isEmpty() ? DOMAIN_MANAGED_FLOWS.contains(code) : !code.startsWith(flowCodePrefix)) continue;
             String flowId = row.optString("id");
             LinearLayout card = records.card(row);
             if (!flowId.isEmpty()) {

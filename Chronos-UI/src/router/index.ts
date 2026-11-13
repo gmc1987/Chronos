@@ -30,6 +30,7 @@ const AdminForms = () => import('../modules/workflow/pages/AdminForms.vue')
 const AdminWorkflowOutbox = () => import('../modules/workflow/pages/AdminWorkflowOutbox.vue')
 const AdminWorkflowIncidents = () => import('../modules/workflow/pages/AdminWorkflowIncidents.vue')
 const AdminIntegrationCenter = () => import('../modules/integration/pages/AdminIntegrationCenter.vue')
+const TeacherPersonnelWorkbench = () => import('../modules/education/pages/TeacherPersonnelWorkbench.vue')
 const PortalWorkflowStart = () => import('../modules/workflow/pages/PortalWorkflowStart.vue')
 const PortalWorkflowForms = () => import('../modules/workflow/pages/PortalWorkflowForms.vue')
 const PortalWorkflowTasks = () => import('../modules/workflow/pages/PortalWorkflowTasks.vue')
@@ -150,6 +151,7 @@ const router = createRouter({
         { path: 'tasks', name: 'portal-tasks', component: PortalWorkflowTasks },
         { path: 'workflow-delegations', name: 'portal-workflow-delegations', component: PortalWorkflowDelegations },
         { path: 'workflow-notifications', name: 'portal-workflow-notifications', component: PortalWorkflowNotifications },
+        { path: 'education/teacher-personnel', name: 'portal-teacher-personnel', component: TeacherPersonnelWorkbench, props: { portal: true } },
         { path: 'workflows', name: 'portal-workflows', component: PortalWorkflowStart },
         { path: 'workflow-instances/:id/forms', name: 'portal-workflow-forms', component: PortalWorkflowForms },
         { path: 'publications', name: 'portal-publications', component: PortalPublications },

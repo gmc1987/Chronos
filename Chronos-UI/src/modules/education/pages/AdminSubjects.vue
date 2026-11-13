@@ -24,7 +24,7 @@ const fields = [
 </script>
 
 <template>
-  <AcademicCrudPage
+  <AcademicCrudPage searchable organization-scoped import-kind="SUBJECTS" permission-prefix="education:subject"
     title="学科管理"
     description="统一维护课程、教师资格和成绩分析使用的学科维度"
     entity-label="学科"

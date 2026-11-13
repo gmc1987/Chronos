@@ -7,6 +7,7 @@ const organizationId = defineModel(String)
 const props = defineProps({
   autoSelectSingle: { type: Boolean, default: true },
   schoolOrCampusOnly: Boolean,
+  schoolOnly: Boolean,
   contextKey: { type: String, default: '' },
   placeholder: { type: String, default: '请选择所属机构' },
 })
@@ -24,8 +25,8 @@ const {
   organizationId,
   contextKey,
   autoSelectSingle: props.autoSelectSingle,
-  filter: item => !props.schoolOrCampusOnly
-    || ['SCHOOL', 'CAMPUS'].includes(item.organizationType),
+  filter: item => props.schoolOnly ? item.organizationType === 'SCHOOL'
+    : !props.schoolOrCampusOnly || ['SCHOOL', 'CAMPUS'].includes(item.organizationType),
 })
 
 defineExpose({ options, reloadOrganizations })

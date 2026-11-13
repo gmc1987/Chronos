@@ -30,6 +30,12 @@ public class Classroom extends BaseEntity {
 	@Column(name = "building_name", length = 128)
 	private String buildingName;
 
+	@Column(name = "floor_id", length = 64)
+	private String floorId;
+
+	@Column(name = "room_number", length = 64)
+	private String roomNumber;
+
 	@Column(name = "capacity", nullable = false)
 	private Integer capacity = 0;
 

@@ -312,6 +312,14 @@ public class EducationDataScopeService {
 		throw new AccessDeniedException("无权访问该学生数据");
 	}
 
+	public void assertStudentInSchool(EducationDataScope scope, String schoolId, StudentProfile student) {
+		var campuses = scheduleOrganizationCampuses(scope, schoolId);
+		if (student.getAdministrativeClassId() == null || classes.findById(student.getAdministrativeClassId())
+				.filter(item -> campuses.contains(item.getCampusId())).isEmpty()) {
+			throw new AccessDeniedException("学生不属于所选学校");
+		}
+	}
+
 	public boolean canAccessStudent(EducationDataScope scope, StudentProfile student) {
 		return scope.fullAccess()
 				|| scope.studentIds().contains(student.getId())
@@ -362,9 +370,9 @@ public class EducationDataScopeService {
 			TeacherTeachingAssignment assignment) {
 		if (scope.fullAccess()
 				|| scope.teacherIds().contains(assignment.getTeacherId())
-				|| scope.administrativeClassIds().contains(
-						assignment.getAdministrativeClassId())
-				|| scope.gradeIds().contains(assignment.getGradeId())) {
+				|| (assignment.getAdministrativeClassId() != null
+						&& scope.administrativeClassIds().contains(assignment.getAdministrativeClassId()))
+				|| (assignment.getGradeId() != null && scope.gradeIds().contains(assignment.getGradeId()))) {
 			return;
 		}
 		throw new AccessDeniedException("无权访问该任教关系");
@@ -560,6 +568,9 @@ public class EducationDataScopeService {
 	public void assertReservableClassroom(String username, String classroomId) {
 		Classroom classroom = classrooms.findById(classroomId)
 				.orElseThrow(() -> new IllegalArgumentException("教室不存在"));
+		if (!Boolean.TRUE.equals(classroom.getEnabled())) {
+			throw new IllegalArgumentException("教室已停用");
+		}
 		if (!canReserveClassroom(username, classroom)) {
 			throw new AccessDeniedException("无权申请该教室");
 		}

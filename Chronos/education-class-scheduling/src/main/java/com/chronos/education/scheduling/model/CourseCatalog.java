@@ -2,7 +2,12 @@ package com.chronos.education.scheduling.model;
 
 import com.chronos.model.pojo.BaseEntity;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import java.util.Set;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -15,6 +20,9 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_course_catalog")
 public class CourseCatalog extends BaseEntity {
+	@Column(name = "organization_id", length = 64)
+	private String organizationId;
+
 	@Column(name = "course_code", length = 64, nullable = false, unique = true)
 	private String courseCode;
 
@@ -23,6 +31,15 @@ public class CourseCatalog extends BaseEntity {
 
 	@Column(name = "subject_id", length = 64)
 	private String subjectId;
+
+	@ElementCollection(fetch = FetchType.EAGER)
+	@CollectionTable(name = "edu_course_catalog_major", joinColumns = @JoinColumn(name = "course_id"))
+	@Column(name = "major_id", nullable = false, length = 64)
+	private Set<String> majorIds;
+
+	public boolean appliesToMajor(String majorId) {
+		return "GENERAL".equals(courseCategory) || (majorIds != null && majorIds.contains(majorId));
+	}
 
 	@Column(name = "course_category", length = 32, nullable = false)
 	private String courseCategory = "PROFESSIONAL";

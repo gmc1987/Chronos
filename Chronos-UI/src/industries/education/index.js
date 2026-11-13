@@ -1,4 +1,5 @@
 // 行业页面也按路由拆包，未启用教育模板时不会进入核心首屏包。
+const AdminClassroomManagement = () => import('../../modules/education/pages/AdminClassroomManagement.vue')
 const AdminClassScheduling = () => import('../../modules/education/pages/AdminClassScheduling.vue')
 const AdminSchedulingAi = () => import('../../modules/education/pages/AdminSchedulingAi.vue')
 const AdminExamCenter = () => import('../../modules/education/pages/AdminExamCenter.vue')
@@ -10,6 +11,7 @@ const AdminHolidays = () => import('../../modules/education/pages/AdminHolidays.
 const AdminCourses = () => import('../../modules/education/pages/AdminCourses.vue')
 const AdminMajors = () => import('../../modules/education/pages/AdminMajors.vue')
 const AdminAdministrativeClasses = () => import('../../modules/education/pages/AdminAdministrativeClasses.vue')
+const TeacherPersonnelWorkbench = () => import('../../modules/education/pages/TeacherPersonnelWorkbench.vue')
 const AdminTeachers = () => import('../../modules/education/pages/AdminTeachers.vue')
 const AdminStudents = () => import('../../modules/education/pages/AdminStudents.vue')
 const AdminAdmissions = () => import('../../modules/education/pages/AdminAdmissions.vue')
@@ -21,6 +23,7 @@ const AdminKnowledgeBases = () => import('../../modules/education/pages/AdminKno
 const AdminEducationAgents = () => import('../../modules/education/pages/AdminEducationAgents.vue')
 const AdminTeachingClassMembers = () => import('../../modules/education/pages/AdminTeachingClassMembers.vue')
 const AdminTeachingCenter = () => import('../../modules/education/pages/AdminTeachingCenter.vue')
+const AdminTermCoursePlans = () => import('../../modules/education/pages/AdminTermCoursePlans.vue')
 const AdminAcademicLifecycle = () => import('../../modules/education/pages/AdminAcademicLifecycle.vue')
 const AdminInternships = () => import('../../modules/education/pages/AdminInternships.vue')
 const AdminTeachingPlan = () => import('../../modules/education/pages/AdminTeachingPlan.vue')
@@ -43,7 +46,9 @@ export const educationIndustry = {
     { path: '/admin/education/holidays', name: 'admin-education-holidays', component: AdminHolidays },
     { path: '/admin/education/courses', name: 'admin-education-courses', component: AdminCourses },
     { path: '/admin/education/majors', name: 'admin-education-majors', component: AdminMajors },
+    { path: '/admin/education/classroom-management', name: 'admin-education-classroom-management', component: AdminClassroomManagement },
     { path: '/admin/education/classes', name: 'admin-education-classes', component: AdminAdministrativeClasses },
+    { path: '/admin/education/teacher-personnel', name: 'admin-education-teacher-personnel', component: TeacherPersonnelWorkbench },
     { path: '/admin/education/teachers', name: 'admin-education-teachers', component: AdminTeachers },
     { path: '/admin/education/students', name: 'admin-education-students', component: AdminStudents },
     { path: '/admin/education/admissions', name: 'admin-education-admissions', component: AdminAdmissions },
@@ -62,7 +67,15 @@ export const educationIndustry = {
     { path: '/admin/education/teaching-class-members', name: 'admin-education-teaching-class-members', component: AdminTeachingClassMembers },
     { path: '/admin/education/teaching-center', name: 'admin-education-teaching-center', component: AdminTeachingCenter },
     { path: '/admin/education/academic-lifecycle', name: 'admin-education-academic-lifecycle', component: AdminAcademicLifecycle,
-      meta: { requiredPermissions: ['education:academic-program:view', 'education:term-registration:view', 'education:course-enrollment:view', 'education:graduation-audit:view'] } },
+      props: { section: 'programs' }, meta: { requiredPermissions: ['education:academic-program:view'] } },
+    { path: '/admin/education/term-course-plans', name: 'admin-education-term-course-plans', component: AdminTermCoursePlans,
+      meta: { requiredPermissions: ['education:term-course-plan:view', 'education:term-course-plan:manage'] } },
+    { path: '/admin/education/term-registrations', name: 'admin-education-term-registrations', component: AdminAcademicLifecycle,
+      props: { section: 'registrations' }, meta: { requiredPermissions: ['education:term-registration:view'] } },
+    { path: '/admin/education/course-enrollments', name: 'admin-education-course-enrollments', component: AdminAcademicLifecycle,
+      props: { section: 'enrollments' }, meta: { requiredPermissions: ['education:course-enrollment:view'] } },
+    { path: '/admin/education/graduation-audits', name: 'admin-education-graduation-audits', component: AdminAcademicLifecycle,
+      props: { section: 'graduation' }, meta: { requiredPermissions: ['education:graduation-audit:view'] } },
     { path: '/admin/education/internships', name: 'admin-education-internships', component: AdminInternships,
       meta: { requiredPermissions: ['education:internship:view'] } },
     {

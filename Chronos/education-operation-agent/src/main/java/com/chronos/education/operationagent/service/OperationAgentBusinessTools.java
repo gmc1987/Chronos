@@ -16,7 +16,6 @@ import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
-import com.chronos.Idao.IEmployeeRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.AdmissionCandidateRepository;
@@ -71,7 +70,7 @@ public class OperationAgentBusinessTools {
 	private final StudentProfileRepository students;
 	private final StudentAccountProvisioningService studentAccounts;
 	private final EducationUserBindingRepository bindings;
-	private final IEmployeeRepository employees;
+	private final OperationAgentTeacherOnboardingTool teacherOnboarding;
 	private final TeacherAcademicProfileRepository teachers;
 	private final AcademicDataService academicData;
 	private final AcademicCalendarService academicCalendar;
@@ -96,7 +95,7 @@ public class OperationAgentBusinessTools {
 			AdmissionImportService admissionImports, ManagedFileService managedFiles, KnowledgeService knowledge,
 			AdmissionCandidateRepository admissionCandidates, AdministrativeClassRepository administrativeClasses,
 			StudentProfileRepository students, StudentAccountProvisioningService studentAccounts,
-			EducationUserBindingRepository bindings, IEmployeeRepository employees,
+			EducationUserBindingRepository bindings, OperationAgentTeacherOnboardingTool teacherOnboarding,
 			TeacherAcademicProfileRepository teachers, AcademicDataService academicData,
 			AcademicCalendarService academicCalendar, OfficialHolidayImportService officialHolidays,
 			TeacherTeachingAssignmentRepository teachingAssignments, CourseCatalogRepository courses,
@@ -116,7 +115,7 @@ public class OperationAgentBusinessTools {
 		this.students = students;
 		this.studentAccounts = studentAccounts;
 		this.bindings = bindings;
-		this.employees = employees;
+		this.teacherOnboarding = teacherOnboarding;
 		this.teachers = teachers;
 		this.academicData = academicData;
 		this.academicCalendar = academicCalendar;
@@ -167,7 +166,7 @@ public class OperationAgentBusinessTools {
 		case "admission.accommodation.plan" -> accommodationPlan(config);
 		case "admission.accommodation.assign.batch" -> accommodationAssign(config, actor);
 		case "student.account.provision.batch" -> provisionStudentAccounts(config);
-		case "teacher.onboarding.batch" -> onboardTeachers(config);
+		case OperationAgentTeacherOnboardingTool.CODE -> teacherOnboarding.execute(config, actor);
 		case "teaching.assignment.generate" -> generateTeachingAssignments(config);
 		case "teaching.offering.generate" -> generateTeachingOfferings(config);
 		case "teaching.readiness.check" -> teachingReadiness(config);
@@ -191,25 +190,30 @@ public class OperationAgentBusinessTools {
 	}
 
 	/**
-	 * 学期创建必须复用教务领域服务，以保持机构编码、同机构唯一性和当前学期切换规则一致。
-	 * 智能体检查点会先用 dryRun 生成候选证据，发起人确认后才写入正式数据。
+	 * 学期创建必须复用教务领域服务，以保持机构编码、同机构唯一性和当前学期切换规则一致。 智能体检查点会先用 dryRun
+	 * 生成候选证据，发起人确认后才写入正式数据。
 	 */
 	private Map<String, Object> createAcademicTerm(Map<String, Object> config) {
 		String organizationId = required(config.get("organizationId"), "目标机构");
 		String localTermCode = required(config.get("localTermCode"), "校内学期编码");
 		int separator = localTermCode.indexOf(':');
-		if (separator >= 0) localTermCode = localTermCode.substring(separator + 1).trim();
+		if (separator >= 0)
+			localTermCode = localTermCode.substring(separator + 1).trim();
 		String termName = required(config.get("termName"), "学期名称");
 		String academicYear = required(config.get("academicYear"), "学年");
 		int termNo = number(config.get("termNo"), 0);
 		int weekCount = number(config.get("weekCount"), 0);
-		if (termNo < 1 || termNo > 3) throw new IllegalArgumentException("学期序号必须在 1-3 之间");
-		if (weekCount < 1 || weekCount > 60) throw new IllegalArgumentException("教学周数必须在 1-60 之间");
+		if (termNo < 1 || termNo > 3)
+			throw new IllegalArgumentException("学期序号必须在 1-3 之间");
+		if (weekCount < 1 || weekCount > 60)
+			throw new IllegalArgumentException("教学周数必须在 1-60 之间");
 		LocalDate startDate = requiredDate(config.get("startDate"), "开始日期");
 		LocalDate endDate = requiredDate(config.get("endDate"), "结束日期");
-		if (!startDate.isBefore(endDate)) throw new IllegalArgumentException("学期开始日期必须早于结束日期");
+		if (!startDate.isBefore(endDate))
+			throw new IllegalArgumentException("学期开始日期必须早于结束日期");
 
-		String orgCode = jdbc.queryForObject("select org_code from t_organization where id=?", String.class, organizationId);
+		String orgCode = jdbc.queryForObject("select org_code from t_organization where id=?", String.class,
+				organizationId);
 		String qualifiedCode = required(orgCode, "机构编码") + ":" + localTermCode;
 		boolean exists = terms.existsByOrganizationIdAndLocalTermCode(organizationId, localTermCode);
 		Map<String, Object> candidate = new LinkedHashMap<>();
@@ -250,14 +254,8 @@ public class OperationAgentBusinessTools {
 		AcademicTerm created = academicData.saveTerm(null, command);
 		candidate.put("id", created.getId());
 		candidate.put("termCode", created.getTermCode());
-		return Map.of(
-				"dryRun", false,
-				"created", true,
-				"termId", created.getId(),
-				"termCode", created.getTermCode(),
-				"localTermCode", created.getLocalTermCode(),
-				"message", "学年学期创建成功",
-				"rows", List.of(candidate));
+		return Map.of("dryRun", false, "created", true, "termId", created.getId(), "termCode", created.getTermCode(),
+				"localTermCode", created.getLocalTermCode(), "message", "学年学期创建成功", "rows", List.of(candidate));
 	}
 
 	private Map<String, Object> prepareAcademicCalendar(Map<String, Object> config) {
@@ -266,17 +264,15 @@ public class OperationAgentBusinessTools {
 		AcademicTerm term = termId.startsWith("candidate:") ? null : requireAcademicTerm(termId, config);
 		LocalDate startDate = term == null ? requiredDate(config.get("startDate"), "开始日期") : term.getStartDate();
 		LocalDate endDate = term == null ? requiredDate(config.get("endDate"), "结束日期") : term.getEndDate();
-		if (startDate == null || endDate == null) throw new IllegalArgumentException("目标学期的起止日期未维护");
-		if (startDate.isAfter(endDate)) throw new IllegalArgumentException("教学日历开始日期不能晚于结束日期");
-		List<Integer> years = java.util.stream.IntStream.rangeClosed(startDate.getYear(), endDate.getYear())
-				.boxed().toList();
+		if (startDate == null || endDate == null)
+			throw new IllegalArgumentException("目标学期的起止日期未维护");
+		if (startDate.isAfter(endDate))
+			throw new IllegalArgumentException("教学日历开始日期不能晚于结束日期");
+		List<Integer> years = java.util.stream.IntStream.rangeClosed(startDate.getYear(), endDate.getYear()).boxed()
+				.toList();
 		if (bool(config.get("dryRun"), false) || termId.startsWith("candidate:")) {
-			return Map.of(
-					"dryRun", true,
-					"valid", true,
-					"termId", termId,
-					"years", years,
-					"message", "教学日历候选已生成；正式执行时将同步已公布且可核验的国务院节假日安排");
+			return Map.of("dryRun", true, "valid", true, "termId", termId, "years", years, "message",
+					"教学日历候选已生成；正式执行时将同步已公布且可核验的国务院节假日安排");
 		}
 		List<Map<String, Object>> imported = new ArrayList<>();
 		List<String> warnings = new ArrayList<>();
@@ -290,15 +286,10 @@ public class OperationAgentBusinessTools {
 			}
 		}
 		if (imported.isEmpty()) {
-			throw new IllegalStateException("教学日历同步失败，所有目标年度均未导入。"
-					+ String.join("。", warnings));
+			throw new IllegalStateException("教学日历同步失败，所有目标年度均未导入。" + String.join("。", warnings));
 		}
-		return Map.of(
-				"dryRun", false,
-				"termId", termId,
-				"imported", imported,
-				"warnings", warnings,
-				"message", warnings.isEmpty() ? "教学日历已同步" : "部分年度已同步，未同步年度见警告");
+		return Map.of("dryRun", false, "termId", termId, "imported", imported, "warnings", warnings, "message",
+				warnings.isEmpty() ? "教学日历已同步" : "部分年度已同步，未同步年度见警告");
 	}
 
 	private Map<String, Object> configureBellSchedule(Map<String, Object> config, String actor) {
@@ -312,17 +303,18 @@ public class OperationAgentBusinessTools {
 		String scheduleCode = text(config.get("scheduleCode"));
 		if (scheduleCode.isBlank()) {
 			String termCode = term == null ? termId.substring("candidate:".length()) : term.getTermCode();
-			scheduleCode = "AGENT-" + Integer.toUnsignedString((termCode + ':' + campusId + ':' + scheduleName).hashCode(), 36);
+			scheduleCode = "AGENT-"
+					+ Integer.toUnsignedString((termCode + ':' + campusId + ':' + scheduleName).hashCode(), 36);
 		}
-		List<Map<String, Object>> rows = periods.stream().map(value -> Map.<String, Object>of(
-				"periodNo", value.get("periodNo"), "periodName", value.get("periodName"),
-				"daySegment", value.get("daySegment"), "startTime", value.get("startTime"),
-				"endTime", value.get("endTime"))).toList();
+		List<Map<String, Object>> rows = periods.stream()
+				.map(value -> Map.<String, Object>of("periodNo", value.get("periodNo"), "periodName",
+						value.get("periodName"), "daySegment", value.get("daySegment"), "startTime",
+						value.get("startTime"), "endTime", value.get("endTime")))
+				.toList();
 		if (bool(config.get("dryRun"), false) || termId.startsWith("candidate:")) {
-			return Map.of("dryRun", true, "valid", true, "termId", termId, "campusId", campusId,
-					"scheduleCode", scheduleCode, "scheduleName", scheduleName, "rows", rows,
-					"message", bool(config.get("generatedPeriods"), false)
-							? "已根据提供的规则和缺省设置计算节次，请核对各节起止时间后确认"
+			return Map.of("dryRun", true, "valid", true, "termId", termId, "campusId", campusId, "scheduleCode",
+					scheduleCode, "scheduleName", scheduleName, "rows", rows, "message",
+					bool(config.get("generatedPeriods"), false) ? "已根据提供的规则和缺省设置计算节次，请核对各节起止时间后确认"
 							: "校区作息候选已生成，等待发起人确认写入");
 		}
 		BellSchedule schedule = new BellSchedule();
@@ -344,9 +336,9 @@ public class OperationAgentBusinessTools {
 			period.setSchedulable(bool(value.get("schedulable"), true));
 			academicCalendar.saveBellPeriod(null, period);
 		}
-		return Map.of("dryRun", false, "created", true, "termId", termId, "campusId", campusId,
-				"scheduleId", created.getId(), "scheduleCode", created.getScheduleCode(),
-				"periodCount", periods.size(), "message", "校区作息方案创建成功");
+		return Map.of("dryRun", false, "created", true, "termId", termId, "campusId", campusId, "scheduleId",
+				created.getId(), "scheduleCode", created.getScheduleCode(), "periodCount", periods.size(), "message",
+				"校区作息方案创建成功");
 	}
 
 	private String academicTermId(Map<String, Object> config) {
@@ -375,14 +367,17 @@ public class OperationAgentBusinessTools {
 		List<Map<String, Object>> result = new ArrayList<>();
 		Set<Integer> numbers = new LinkedHashSet<>();
 		for (Object item : source) {
-			if (!(item instanceof Map<?, ?> raw)) throw new IllegalArgumentException("节次时间格式不正确");
+			if (!(item instanceof Map<?, ?> raw))
+				throw new IllegalArgumentException("节次时间格式不正确");
 			Map<String, Object> period = new LinkedHashMap<>();
 			raw.forEach((key, field) -> period.put(String.valueOf(key), field));
 			int periodNo = number(period.get("periodNo"), 0);
-			if (periodNo < 1 || !numbers.add(periodNo)) throw new IllegalArgumentException("节次序号必须大于 0 且不能重复");
+			if (periodNo < 1 || !numbers.add(periodNo))
+				throw new IllegalArgumentException("节次序号必须大于 0 且不能重复");
 			LocalTime start = LocalTime.parse(required(period.get("startTime"), "开始时间"));
 			LocalTime end = LocalTime.parse(required(period.get("endTime"), "结束时间"));
-			if (!start.isBefore(end)) throw new IllegalArgumentException("节次开始时间必须早于结束时间");
+			if (!start.isBefore(end))
+				throw new IllegalArgumentException("节次开始时间必须早于结束时间");
 			period.put("periodNo", periodNo);
 			period.put("periodName", required(period.get("periodName"), "节次名称"));
 			period.put("daySegment", required(period.get("daySegment"), "时段"));
@@ -397,8 +392,10 @@ public class OperationAgentBusinessTools {
 		List<String> ids = jdbc.queryForList(
 				"select id from t_organization where status=1 and (id=? or org_code=? or organization_name=?)",
 				String.class, reference, reference, reference);
-		if (ids.isEmpty()) throw new IllegalArgumentException("适用校区不存在或已停用：" + reference);
-		if (ids.size() > 1) throw new IllegalArgumentException("适用校区不唯一，请使用校区编码或 ID");
+		if (ids.isEmpty())
+			throw new IllegalArgumentException("适用校区不存在或已停用：" + reference);
+		if (ids.size() > 1)
+			throw new IllegalArgumentException("适用校区不唯一，请使用校区编码或 ID");
 		String campusId = ids.getFirst();
 		Long belongs = jdbc.queryForObject("""
 				with recursive tree as (
@@ -408,7 +405,8 @@ public class OperationAgentBusinessTools {
 				)
 				select count(*) from tree where id=?
 				""", Long.class, organizationId, campusId);
-		if (belongs == null || belongs == 0) throw new IllegalArgumentException("适用校区不属于目标机构");
+		if (belongs == null || belongs == 0)
+			throw new IllegalArgumentException("适用校区不属于目标机构");
 		dataScopes.requireOrganization(authentication(actor), campusId);
 		return campusId;
 	}
@@ -427,16 +425,15 @@ public class OperationAgentBusinessTools {
 		dataScopes.requireOrganization(authentication(actor), organizationId);
 		boolean dryRun = bool(config.get("dryRun"), true);
 		boolean syncAccounts = "employees".equals(type) && bool(config.get("syncAccounts"), true);
-		boolean disableInactive = "employees".equals(type)
-				&& bool(config.get("disableInactiveAccounts"), false);
+		boolean disableInactive = "employees".equals(type) && bool(config.get("disableInactiveAccounts"), false);
 		var authentication = authentication(actor);
 		var file = managedFiles.read(fileId, authentication);
 		if (!file.filename().toLowerCase(java.util.Locale.ROOT).endsWith(".xlsx")) {
 			throw new IllegalArgumentException("目录业务文件必须是 xlsx 文件");
 		}
-		Map<String, Object> result = new LinkedHashMap<>(directoryImports.importBytes(
-				type, file.content(), dryRun, organizationId,
-				new EmployeeImportService.ImportOptions(syncAccounts, disableInactive, "AGENT", dryRun)));
+		Map<String, Object> result = new LinkedHashMap<>(
+				directoryImports.importBytes(type, file.content(), dryRun, organizationId,
+						new EmployeeImportService.ImportOptions(syncAccounts, disableInactive, "AGENT", dryRun)));
 		result.put("managedFileId", fileId);
 		result.put("filename", file.filename());
 		result.put("syncAccounts", syncAccounts);
@@ -449,15 +446,19 @@ public class OperationAgentBusinessTools {
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("semesterCode", semesterCode);
 		result.put("organizationId", organizationId);
-		result.put("courseOfferingCount", count(semesterCode.isBlank()
-				? "select count(*) from edu_course_offering where campus_id=?"
-				: "select count(*) from edu_course_offering where semester_code = ? and campus_id = ?",
-				semesterCode.isBlank() ? new Object[] { organizationId } : new Object[] { semesterCode, organizationId }));
-		result.put("activeClassCount", count("select count(*) from edu_administrative_class where status='ACTIVE' and campus_id=?", organizationId));
-		result.put("activeStudentCount",
-				count("select count(*) from edu_student_profile student join edu_administrative_class class on class.id=student.administrative_class_id where student.enrollment_status='ACTIVE' and class.campus_id=?", organizationId));
-		result.put("activeTeacherCount",
-				count("select count(distinct teacher.id) from edu_teacher_profile teacher join t_employee_assignment assignment on assignment.employee_id=teacher.employee_id where teacher.enabled=true and teacher.employment_status='ACTIVE' and assignment.organization_id=? and assignment.status=1", organizationId));
+		result.put("courseOfferingCount",
+				count(semesterCode.isBlank() ? "select count(*) from edu_course_offering where campus_id=?"
+						: "select count(*) from edu_course_offering where semester_code = ? and campus_id = ?",
+						semesterCode.isBlank() ? new Object[] { organizationId }
+								: new Object[] { semesterCode, organizationId }));
+		result.put("activeClassCount", count(
+				"select count(*) from edu_administrative_class where status='ACTIVE' and campus_id=?", organizationId));
+		result.put("activeStudentCount", count(
+				"select count(*) from edu_student_profile student join edu_administrative_class class on class.id=student.administrative_class_id where student.enrollment_status='ACTIVE' and class.campus_id=?",
+				organizationId));
+		result.put("activeTeacherCount", count(
+				"select count(distinct teacher.id) from edu_teacher_profile teacher join t_employee_assignment assignment on assignment.employee_id=teacher.employee_id where teacher.enabled=true and teacher.employment_status='ACTIVE' and assignment.organization_id=? and assignment.status=1",
+				organizationId));
 		return result;
 	}
 
@@ -498,7 +499,9 @@ public class OperationAgentBusinessTools {
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("admissionYear", year);
 		result.put("organizationId", organizationId);
-		result.put("total", count("select count(*) from edu_admission_candidate where admission_year=? and organization_id=?", year, organizationId));
+		result.put("total",
+				count("select count(*) from edu_admission_candidate where admission_year=? and organization_id=?", year,
+						organizationId));
 		result.put("admitted", count(
 				"select count(*) from edu_admission_candidate where admission_year=? and organization_id=? and admission_status='ADMITTED'",
 				year, organizationId));
@@ -528,7 +531,9 @@ public class OperationAgentBusinessTools {
 		long assigned = count(
 				"select count(*) from edu_student_accommodation assignment join edu_student_profile student on student.id=assignment.student_id join edu_administrative_class class on class.id=student.administrative_class_id where assignment.semester_code=? and assignment.status='ACTIVE' and class.campus_id=?",
 				semester, organizationId);
-		long beds = count("select count(*) from edu_dorm_bed bed join edu_dorm_room room on room.id=bed.room_id join edu_dorm_building building on building.id=room.building_id where bed.status='AVAILABLE' and building.organization_id=?", organizationId);
+		long beds = count(
+				"select count(*) from edu_dorm_bed bed join edu_dorm_room room on room.id=bed.room_id join edu_dorm_building building on building.id=room.building_id where bed.status='AVAILABLE' and building.organization_id=?",
+				organizationId);
 		List<Map<String, Object>> unassigned = jdbc.queryForList(
 				"""
 						select student.id, student.student_no, student.student_name
@@ -646,8 +651,12 @@ public class OperationAgentBusinessTools {
 				throw new IllegalArgumentException("住宿分配候选格式不正确");
 			String studentId = text(pair.get("studentId"));
 			String bedId = text(pair.get("bedId"));
-			if (count("select count(*) from edu_student_profile student join edu_administrative_class class on class.id=student.administrative_class_id where student.id=? and class.campus_id=?", studentId, organizationId) != 1
-					|| count("select count(*) from edu_dorm_bed bed join edu_dorm_room room on room.id=bed.room_id join edu_dorm_building building on building.id=room.building_id where bed.id=? and building.organization_id=?", bedId, organizationId) != 1) {
+			if (count(
+					"select count(*) from edu_student_profile student join edu_administrative_class class on class.id=student.administrative_class_id where student.id=? and class.campus_id=?",
+					studentId, organizationId) != 1
+					|| count(
+							"select count(*) from edu_dorm_bed bed join edu_dorm_room room on room.id=bed.room_id join edu_dorm_building building on building.id=room.building_id where bed.id=? and building.organization_id=?",
+							bedId, organizationId) != 1) {
 				throw new IllegalArgumentException("住宿分配候选包含其他机构的学生或床位");
 			}
 			accommodations.assign(new AccommodationService.AssignmentCommand(semester, studentId, bedId), actor);
@@ -658,7 +667,8 @@ public class OperationAgentBusinessTools {
 
 	private Map<String, Object> assignAdmissionClasses(Map<String, Object> config) {
 		var preview = attachedAdmissionPreview(config, "拟分班");
-		if (preview != null) return preview;
+		if (preview != null)
+			return preview;
 		int year = number(config.get("admissionYear"), Year.now().getValue());
 		int limit = bounded(config.get("batchLimit"), 100, 500);
 		int targetSize = bounded(config.get("targetClassSize"), 50, 200);
@@ -668,7 +678,8 @@ public class OperationAgentBusinessTools {
 
 	private Map<String, Object> reviewAdmissions(Map<String, Object> config, String actor) {
 		var preview = attachedAdmissionPreview(config, "资格复查");
-		if (preview != null) return preview;
+		if (preview != null)
+			return preview;
 		int year = number(config.get("admissionYear"), Year.now().getValue());
 		int limit = bounded(config.get("batchLimit"), 100, 500);
 		return preparationExecutions.reviewAdmissions(year, limit, bool(config.get("dryRun"), false), actor,
@@ -677,7 +688,8 @@ public class OperationAgentBusinessTools {
 
 	private Map<String, Object> enrollAdmissions(Map<String, Object> config) {
 		var preview = attachedAdmissionPreview(config, "报到建档与账号开通");
-		if (preview != null) return preview;
+		if (preview != null)
+			return preview;
 		int year = number(config.get("admissionYear"), Year.now().getValue());
 		int limit = bounded(config.get("batchLimit"), 50, 200);
 		return preparationExecutions.enrollAdmissions(year, limit, bool(config.get("dryRun"), false),
@@ -686,7 +698,8 @@ public class OperationAgentBusinessTools {
 
 	/** 空集合表示只处理零人，绝不能退化成整年级操作；引用缺失则拒绝执行。 */
 	private List<String> admissionCandidateScope(Map<String, Object> config) {
-		if (!config.containsKey("candidateNos")) return null;
+		if (!config.containsKey("candidateNos"))
+			return null;
 		if (!(config.get("candidateNos") instanceof List<?> values)) {
 			throw new IllegalArgumentException("新生处理范围缺失，请先完成名册校验");
 		}
@@ -696,7 +709,8 @@ public class OperationAgentBusinessTools {
 	/** 未正式导入的名册也应能核对后续对象，不能用当前库的零条记录伪装成候选完成。 */
 	private Map<String, Object> attachedAdmissionPreview(Map<String, Object> config, String stage) {
 		if (!bool(config.get("dryRun"), false) || !config.containsKey("importRows")
-				|| !Boolean.TRUE.equals(config.get("importWasDryRun"))) return null;
+				|| !Boolean.TRUE.equals(config.get("importWasDryRun")))
+			return null;
 		admissionCandidateScope(config);
 		if (!(config.get("importRows") instanceof List<?> rows)) {
 			throw new IllegalArgumentException("新生名册候选证据缺失");
@@ -711,21 +725,25 @@ public class OperationAgentBusinessTools {
 		result.put("succeeded", 0);
 		result.put("valid", eligible == rows.size());
 		result.put("rows", rows);
-		result.put("message", eligible == rows.size()
-				? "基于已校验名册生成候选；正式导入及前置步骤完成后，将重新核验并仅处理这些考生。尚未创建学籍或账号。"
+		result.put("message", eligible == rows.size() ? "基于已校验名册生成候选；正式导入及前置步骤完成后，将重新核验并仅处理这些考生。尚未创建学籍或账号。"
 				: "部分名册尚缺专业或拟分班，请先补全分班候选；未写入正式数据。");
 		return result;
 	}
 
 	private Map<String, Object> accountBindingCheck(Map<String, Object> config) {
 		String organizationId = required(config.get("organizationId"), "目标机构");
-		long activeStudents = count("select count(*) from edu_student_profile student join edu_administrative_class class on class.id=student.administrative_class_id where student.enrollment_status='ACTIVE' and class.campus_id=?", organizationId);
+		long activeStudents = count(
+				"select count(*) from edu_student_profile student join edu_administrative_class class on class.id=student.administrative_class_id where student.enrollment_status='ACTIVE' and class.campus_id=?",
+				organizationId);
 		long studentBindings = count(
-				"select count(distinct binding.profile_id) from edu_user_profile_binding binding join edu_student_profile student on student.id=binding.profile_id join edu_administrative_class class on class.id=student.administrative_class_id where binding.profile_type='STUDENT' and binding.status='ACTIVE' and class.campus_id=?", organizationId);
+				"select count(distinct binding.profile_id) from edu_user_profile_binding binding join edu_student_profile student on student.id=binding.profile_id join edu_administrative_class class on class.id=student.administrative_class_id where binding.profile_type='STUDENT' and binding.status='ACTIVE' and class.campus_id=?",
+				organizationId);
 		long activeTeachers = count(
-				"select count(distinct teacher.id) from edu_teacher_profile teacher join t_employee_assignment assignment on assignment.employee_id=teacher.employee_id where teacher.enabled=true and teacher.employment_status='ACTIVE' and assignment.status=1 and assignment.organization_id=?", organizationId);
+				"select count(distinct teacher.id) from edu_teacher_profile teacher join t_employee_assignment assignment on assignment.employee_id=teacher.employee_id where teacher.enabled=true and teacher.employment_status='ACTIVE' and assignment.status=1 and assignment.organization_id=?",
+				organizationId);
 		long teacherBindings = count(
-				"select count(distinct binding.profile_id) from edu_user_profile_binding binding join edu_teacher_profile teacher on teacher.id=binding.profile_id join t_employee_assignment assignment on assignment.employee_id=teacher.employee_id where binding.profile_type='TEACHER' and binding.status='ACTIVE' and assignment.status=1 and assignment.organization_id=?", organizationId);
+				"select count(distinct binding.profile_id) from edu_user_profile_binding binding join edu_teacher_profile teacher on teacher.id=binding.profile_id join t_employee_assignment assignment on assignment.employee_id=teacher.employee_id where binding.profile_type='TEACHER' and binding.status='ACTIVE' and assignment.status=1 and assignment.organization_id=?",
+				organizationId);
 		return Map.of("activeStudents", activeStudents, "boundStudentAccounts", studentBindings,
 				"missingStudentBindings", Math.max(0, activeStudents - studentBindings), "activeTeachers",
 				activeTeachers, "boundTeacherAccounts", teacherBindings, "missingTeacherBindings",
@@ -734,15 +752,17 @@ public class OperationAgentBusinessTools {
 
 	private Map<String, Object> provisionStudentAccounts(Map<String, Object> config) {
 		var preview = attachedAdmissionPreview(config, "学生账号开通");
-		if (preview != null) return preview;
+		if (preview != null)
+			return preview;
 		List<String> candidateNos = admissionCandidateScope(config);
 		int limit = bounded(config.get("batchLimit"), 100, 500);
 		boolean dryRun = bool(config.get("dryRun"), false);
 		String organizationId = required(config.get("organizationId"), "目标机构");
 		var missing = students.findAllByOrderByStudentNo().stream()
 				.filter(value -> candidateNos == null || candidateNos.contains(value.getCandidateNo()))
-				.filter(value -> "ACTIVE".equals(value.getEnrollmentStatus())).filter(value -> bindings
-						.findByProfileTypeAndProfileIdAndStatus("STUDENT", value.getId(), "ACTIVE").isEmpty())
+				.filter(value -> "ACTIVE".equals(value.getEnrollmentStatus()))
+				.filter(value -> bindings.findByProfileTypeAndProfileIdAndStatus("STUDENT", value.getId(), "ACTIVE")
+						.isEmpty())
 				.filter(value -> administrativeClasses.findById(value.getAdministrativeClassId())
 						.map(item -> organizationId.equals(item.getCampusId())).orElse(false))
 				.limit(limit).toList();
@@ -756,61 +776,6 @@ public class OperationAgentBusinessTools {
 			}
 		}
 		return Map.of("missingFound", missing.size(), "provisioned", created, "batchLimit", limit, "dryRun", dryRun);
-	}
-
-	private Map<String, Object> onboardTeachers(Map<String, Object> config) {
-		int limit = bounded(config.get("batchLimit"), 200, 200);
-		boolean dryRun = bool(config.get("dryRun"), false);
-		Set<String> requested = stringSet(config.get("employeeIds"));
-		String organizationId = required(config.get("organizationId"), "目标机构");
-		Set<String> organizationEmployees = new LinkedHashSet<>(jdbc.queryForList(
-				"select distinct employee_id from t_employee_assignment where organization_id=? and status=1",
-				String.class, organizationId));
-		// 综合教职工名册通常把员工类型统一为STAFF，任教资格须同时读取机构内有效教学岗位。
-		Set<String> teachingEmployees = new LinkedHashSet<>(jdbc.queryForList("""
-				select distinct a.employee_id from t_employee_assignment a
-				join t_position p on p.id=a.position_id and p.organization_id=a.organization_id
-				where a.organization_id=? and a.status=1 and p.status=1 and p.position_category='TEACHING'
-				and (a.effective_from is null or a.effective_from<=current_date)
-				and (a.effective_to is null or a.effective_to>=current_date)
-				""", String.class, organizationId));
-		var allEligible = employees.findAll().stream()
-				.filter(value -> organizationEmployees.contains(value.getId()))
-				.filter(value -> "ACTIVE".equalsIgnoreCase(value.getEmploymentStatus()))
-				.filter(value -> requested.isEmpty()
-						? Set.of("TEACHER", "FACULTY").contains(text(value.getEmployeeType()).toUpperCase())
-								|| teachingEmployees.contains(value.getId())
-						: requested.contains(value.getId()) || requested.contains(value.getEmployeeCode()))
-				.sorted(Comparator.comparing(value -> value.getEmployeeCode())).toList();
-		var eligible = allEligible.stream().limit(limit).toList();
-		int profileCreated = 0;
-		int accountProvisioned = 0;
-		for (var employee : eligible) {
-			var profile = teachers.findByEmployeeId(employee.getId()).orElse(null);
-			if (profile == null) {
-				if (dryRun) {
-					profileCreated++;
-					accountProvisioned++;
-					continue;
-				}
-				TeacherAcademicProfile command = new TeacherAcademicProfile();
-				command.setEmployeeId(employee.getId());
-				command.setSpecialty(text(config.getOrDefault("defaultSpecialty", "待完善")));
-				command.setMaxWeeklyLessons(number(config.get("maxWeeklyLessons"), 20));
-				command.setMaxDailyLessons(number(config.get("maxDailyLessons"), 6));
-				command.setMaxConsecutiveLessons(number(config.get("maxConsecutiveLessons"), 4));
-				profile = academicData.saveTeacher(null, command);
-				profileCreated++;
-			}
-			if (bindings.findByProfileTypeAndProfileIdAndStatus("TEACHER", profile.getId(), "ACTIVE").isEmpty()) {
-				if (!dryRun)
-					academicData.bindTeacherAccount(profile.getId());
-				accountProvisioned++;
-			}
-		}
-		return Map.of("eligibleEmployees", eligible.size(), "eligibleTotal", allEligible.size(),
-				"remainingCount", Math.max(0, allEligible.size() - eligible.size()),
-				"profileCreated", profileCreated, "accountProvisioned", accountProvisioned, "batchLimit", limit, "dryRun", dryRun);
 	}
 
 	private Map<String, Object> generateTeachingOfferings(Map<String, Object> config) {
@@ -844,7 +809,8 @@ public class OperationAgentBusinessTools {
 			var teacher = teachers.findByTeacherNo(teacherNo).filter(
 					value -> Boolean.TRUE.equals(value.getEnabled()) && "ACTIVE".equals(value.getEmploymentStatus()))
 					.orElseThrow(() -> new IllegalArgumentException("教师不存在或未启用：" + teacherNo));
-			if (count("select count(*) from t_employee_assignment where employee_id=? and organization_id=? and status=1",
+			if (count(
+					"select count(*) from t_employee_assignment where employee_id=? and organization_id=? and status=1",
 					teacher.getEmployeeId(), organizationId) == 0)
 				throw new IllegalArgumentException("教师不属于目标机构：" + teacherNo);
 			var subject = subjects.findBySubjectCode(subjectCode)
@@ -894,10 +860,13 @@ public class OperationAgentBusinessTools {
 	private Map<String, Object> teachingReadiness(Map<String, Object> config) {
 		String semester = text(config.get("semesterCode"));
 		String organizationId = required(config.get("organizationId"), "目标机构");
-		long taskCount = semester.isBlank() ? count("select count(*) from edu_course_offering where campus_id=?", organizationId)
-				: count("select count(*) from edu_course_offering where semester_code=? and campus_id=?", semester, organizationId);
-		long scheduleCount = semester.isBlank()
-				? count("select count(*) from edu_schedule_entry entry join edu_course_offering offering on offering.id=entry.offering_id where offering.campus_id=?", organizationId)
+		long taskCount = semester.isBlank()
+				? count("select count(*) from edu_course_offering where campus_id=?", organizationId)
+				: count("select count(*) from edu_course_offering where semester_code=? and campus_id=?", semester,
+						organizationId);
+		long scheduleCount = semester.isBlank() ? count(
+				"select count(*) from edu_schedule_entry entry join edu_course_offering offering on offering.id=entry.offering_id where offering.campus_id=?",
+				organizationId)
 				: count("select count(*) from edu_schedule_entry entry join edu_course_offering offering on offering.id=entry.offering_id where entry.semester_code=? and entry.status<>'CANCELLED' and offering.campus_id=?",
 						semester, organizationId);
 		long missingMembers = semester.isBlank() ? 0
@@ -936,7 +905,8 @@ public class OperationAgentBusinessTools {
 				.filter(value -> actor.equals(value.ownerUsername())).filter(value -> value.unscheduledLessons() == 0)
 				.max(Comparator.comparing(ScheduleCandidateView::totalScore))
 				.orElseThrow(() -> new IllegalStateException("没有可提交且已完整排课的候选方案"));
-		if (bool(config.get("dryRun"), false)) return scheduleCheckpointPreview(semester, candidate, "待确认提交审核");
+		if (bool(config.get("dryRun"), false))
+			return scheduleCheckpointPreview(semester, candidate, "待确认提交审核");
 		var submitted = autoScheduling.submitReview(candidate.id(), actor);
 		return Map.of("semesterCode", semester, "candidateId", submitted.id(), "reviewStatus",
 				submitted.reviewStatus());
@@ -948,7 +918,8 @@ public class OperationAgentBusinessTools {
 		ScheduleCandidateView candidate = candidatesCreatedByCurrentRun(config, semester).stream()
 				.filter(value -> "SUBMITTED".equals(value.reviewStatus())).findFirst()
 				.orElseThrow(() -> new IllegalStateException("没有待审核候选方案"));
-		if (bool(config.get("dryRun"), false)) return scheduleCheckpointPreview(semester, candidate, "待独立审核");
+		if (bool(config.get("dryRun"), false))
+			return scheduleCheckpointPreview(semester, candidate, "待独立审核");
 		var reviewed = autoScheduling.review(candidate.id(), true, "学期运营智能体异人审核通过", actor);
 		return Map.of("semesterCode", semester, "candidateId", reviewed.id(), "reviewStatus", reviewed.reviewStatus(),
 				"reviewedBy", actor);
@@ -960,7 +931,8 @@ public class OperationAgentBusinessTools {
 		ScheduleCandidateView candidate = candidatesCreatedByCurrentRun(config, semester).stream()
 				.filter(value -> "APPROVED".equals(value.reviewStatus()) && "CANDIDATE".equals(value.status()))
 				.findFirst().orElseThrow(() -> new IllegalStateException("没有审核通过且尚未应用的候选方案"));
-		if (bool(config.get("dryRun"), false)) return scheduleCheckpointPreview(semester, candidate, "待确认应用到课表草稿");
+		if (bool(config.get("dryRun"), false))
+			return scheduleCheckpointPreview(semester, candidate, "待确认应用到课表草稿");
 		var applied = autoScheduling.apply(candidate.id(), actor);
 		return Map.of("semesterCode", semester, "candidateId", applied.id(), "status", applied.status());
 	}
@@ -976,7 +948,8 @@ public class OperationAgentBusinessTools {
 			}
 			Set<String> ids = new LinkedHashSet<>();
 			for (Object item : generated) {
-				if (item instanceof Map<?, ?> row && row.get("id") instanceof String id) ids.add(id);
+				if (item instanceof Map<?, ?> row && row.get("id") instanceof String id)
+					ids.add(id);
 			}
 			return autoScheduling.list(semester).stream().filter(value -> ids.contains(value.id())).toList();
 		}
@@ -996,10 +969,11 @@ public class OperationAgentBusinessTools {
 				.filter(value -> value.generatedAt() != null && !value.generatedAt().isBefore(startedAt)).toList();
 	}
 
-	private Map<String, Object> scheduleCheckpointPreview(String semester, ScheduleCandidateView candidate, String message) {
+	private Map<String, Object> scheduleCheckpointPreview(String semester, ScheduleCandidateView candidate,
+			String message) {
 		return Map.of("semesterCode", semester, "candidateId", candidate.id(), "reviewStatus", candidate.reviewStatus(),
-				"status", candidate.status(), "score", candidate.totalScore(), "unscheduledLessons", candidate.unscheduledLessons(),
-				"dryRun", true, "message", message);
+				"status", candidate.status(), "score", candidate.totalScore(), "unscheduledLessons",
+				candidate.unscheduledLessons(), "dryRun", true, "message", message);
 	}
 
 	private Map<String, Object> publishSchedule(Map<String, Object> config, String actor) {
@@ -1017,7 +991,8 @@ public class OperationAgentBusinessTools {
 		String semester = required(config.get("semesterCode"), "学期编码");
 		String organizationId = required(config.get("organizationId"), "目标机构");
 		requireTermOrganization(semester, organizationId);
-		long offeringCount = count("select count(*) from edu_course_offering where semester_code=? and status='ACTIVE' and campus_id=?",
+		long offeringCount = count(
+				"select count(*) from edu_course_offering where semester_code=? and status='ACTIVE' and campus_id=?",
 				semester, organizationId);
 		long gradebooks = count(
 				"select count(*) from edu_gradebook gradebook join edu_course_offering offering on offering.id=gradebook.offering_id where offering.semester_code=? and offering.campus_id=?",
@@ -1026,7 +1001,8 @@ public class OperationAgentBusinessTools {
 				"select count(*) from edu_gradebook gradebook join edu_course_offering offering on offering.id=gradebook.offering_id where offering.semester_code=? and offering.campus_id=? and gradebook.status='PUBLISHED'",
 				semester, organizationId);
 		long pendingChanges = count(
-				"select count(*) from edu_student_status_change change join edu_student_profile student on student.id=change.student_id join edu_administrative_class class on class.id=student.administrative_class_id where change.status in ('PENDING','APPROVED_PENDING') and class.campus_id=?", organizationId);
+				"select count(*) from edu_student_status_change change join edu_student_profile student on student.id=change.student_id join edu_administrative_class class on class.id=student.administrative_class_id where change.status in ('PENDING','APPROVED_PENDING') and class.campus_id=?",
+				organizationId);
 		long deadOutbox = count("select count(*) from edu_domain_event_outbox where status='DEAD'");
 		return Map.of("semesterCode", semester, "courseOfferings", offeringCount, "gradebookCount", gradebooks,
 				"publishedGradebooks", published, "unpublishedGradebooks", Math.max(0, gradebooks - published),
@@ -1043,8 +1019,10 @@ public class OperationAgentBusinessTools {
 		String semester = required(config.get("semesterCode"), "学期编码");
 		String organizationId = required(config.get("organizationId"), "目标机构");
 		requireTermOrganization(semester, organizationId);
-		long plans = count("select count(*) from edu_exam_plan where semester_code=? and organization_id=?", semester, organizationId);
-		long publishedPlans = count("select count(*) from edu_exam_plan where semester_code=? and organization_id=? and status='PUBLISHED'",
+		long plans = count("select count(*) from edu_exam_plan where semester_code=? and organization_id=?", semester,
+				organizationId);
+		long publishedPlans = count(
+				"select count(*) from edu_exam_plan where semester_code=? and organization_id=? and status='PUBLISHED'",
 				semester, organizationId);
 		long sessions = count(
 				"select count(*) from edu_exam_session session join edu_exam_plan plan on plan.id=session.plan_id where plan.semester_code=? and plan.organization_id=?",
@@ -1090,10 +1068,12 @@ public class OperationAgentBusinessTools {
 		String organizationId = required(config.get("organizationId"), "目标机构");
 		requireTermOrganization(semester, organizationId);
 		long pendingStatusChanges = count(
-				"select count(*) from edu_student_status_change change join edu_student_profile student on student.id=change.student_id join edu_administrative_class class on class.id=student.administrative_class_id where change.status in ('PENDING','APPROVED_PENDING') and class.campus_id=?", organizationId);
+				"select count(*) from edu_student_status_change change join edu_student_profile student on student.id=change.student_id join edu_administrative_class class on class.id=student.administrative_class_id where change.status in ('PENDING','APPROVED_PENDING') and class.campus_id=?",
+				organizationId);
 		long deadEvents = count("select count(*) from edu_domain_event_outbox where status='DEAD'");
 		long activeOfferings = count(
-				"select count(*) from edu_course_offering where semester_code=? and status='ACTIVE' and campus_id=?", semester, organizationId);
+				"select count(*) from edu_course_offering where semester_code=? and status='ACTIVE' and campus_id=?",
+				semester, organizationId);
 		return Map.of("semesterCode", semester, "activeOfferings", activeOfferings, "pendingStudentStatusChanges",
 				pendingStatusChanges, "deadDomainEvents", deadEvents, "readyForArchive",
 				activeOfferings > 0 && pendingStatusChanges == 0 && deadEvents == 0, "message", "归档写入由教务管理员在归档菜单确认后执行");
@@ -1114,12 +1094,14 @@ public class OperationAgentBusinessTools {
 				.limit(limit).toList();
 		// 候选执行只返回可核对名单，绝不调用会创建学籍异动申请的领域写接口。
 		if (bool(config.get("dryRun"), false)) {
-			List<Map<String, Object>> rows = targets.stream().map(student -> Map.<String, Object>of(
-					"studentId", student.getId(), "studentNo", student.getStudentNo(),
-					"graduatingAdmissionYear", admissionYear, "effectiveDate", effectiveDate.toString())).toList();
-			return Map.of("dryRun", true, "valid", true, "graduatingAdmissionYear", admissionYear,
-					"targetCount", targets.size(), "candidateCount", rows.size(), "createdRequests", 0,
-					"rows", rows, "message", "毕业候选名单已生成，尚未创建正式学籍异动申请");
+			List<Map<String, Object>> rows = targets.stream()
+					.map(student -> Map.<String, Object>of("studentId", student.getId(), "studentNo",
+							student.getStudentNo(), "graduatingAdmissionYear", admissionYear, "effectiveDate",
+							effectiveDate.toString()))
+					.toList();
+			return Map.of("dryRun", true, "valid", true, "graduatingAdmissionYear", admissionYear, "targetCount",
+					targets.size(), "candidateCount", rows.size(), "createdRequests", 0, "rows", rows, "message",
+					"毕业候选名单已生成，尚未创建正式学籍异动申请");
 		}
 		int created = 0;
 		int skipped = 0;
@@ -1135,7 +1117,8 @@ public class OperationAgentBusinessTools {
 			}
 		}
 		return Map.of("graduatingAdmissionYear", admissionYear, "effectiveDate", effectiveDate, "targetCount",
-				targets.size(), "createdRequests", created, "skipped", skipped, "errors", errors, "valid", errors.isEmpty());
+				targets.size(), "createdRequests", created, "skipped", skipped, "errors", errors, "valid",
+				errors.isEmpty());
 	}
 
 	private void requireTermOrganization(String semesterCode, String organizationId) {
@@ -1161,13 +1144,16 @@ public class OperationAgentBusinessTools {
 			List<String> ids = jdbc.queryForList(
 					"select id from t_organization where status=1 and (id=? or org_code=? or organization_name=?)",
 					String.class, reference, reference, reference);
-			if (ids.isEmpty()) throw new IllegalArgumentException("目标机构不存在或已停用：" + reference);
-			if (ids.size() > 1) throw new IllegalArgumentException("目标机构不唯一，请使用机构编码或 ID");
+			if (ids.isEmpty())
+				throw new IllegalArgumentException("目标机构不存在或已停用：" + reference);
+			if (ids.size() > 1)
+				throw new IllegalArgumentException("目标机构不唯一，请使用机构编码或 ID");
 			dataScopes.requireOrganization(authentication(actor), ids.getFirst());
 			return ids.getFirst();
 		}
 		Set<String> visible = dataScopes.visibleOrganizationIds(authentication(actor));
-		if (visible != null && visible.size() == 1) return visible.iterator().next();
+		if (visible != null && visible.size() == 1)
+			return visible.iterator().next();
 		throw new IllegalArgumentException("请明确指定本次智能体任务的目标机构");
 	}
 
@@ -1204,7 +1190,8 @@ public class OperationAgentBusinessTools {
 	}
 
 	private LocalDate requiredDate(Object value, String label) {
-		if (value == null || text(value).isBlank()) throw new IllegalArgumentException(label + "不能为空");
+		if (value == null || text(value).isBlank())
+			throw new IllegalArgumentException(label + "不能为空");
 		return date(value, null);
 	}
 

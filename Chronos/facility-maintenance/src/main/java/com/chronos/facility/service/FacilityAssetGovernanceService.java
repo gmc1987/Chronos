@@ -61,6 +61,19 @@ public class FacilityAssetGovernanceService {
 		return assets.findById(id).orElseThrow(() -> new IllegalArgumentException("资产不存在")).getOrganizationId();
 	}
 
+	public String planOrganization(String id) {
+		return assetOrganization(plans.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("保养计划不存在")).getAssetId());
+	}
+
+	public String materialOrganization(String id) {
+		return materials.findById(id).orElseThrow(() -> new IllegalArgumentException("维修物料不存在")).getOrganizationId();
+	}
+
+	public String incidentOrganization(String id) {
+		return incidents.findById(id).orElseThrow(() -> new IllegalArgumentException("后勤安全事件不存在")).getOrganizationId();
+	}
+
 	@Transactional(readOnly = true)
 	public FacilityAsset assetByQr(String token) {
 		return assets.findByQrToken(token)
@@ -95,6 +108,12 @@ public class FacilityAssetGovernanceService {
 	@Transactional(readOnly = true)
 	public List<PreventiveMaintenancePlan> plans() {
 		return plans.findAllByOrderByNextDueDate();
+	}
+
+	@Transactional(readOnly = true)
+	public List<PreventiveMaintenancePlan> plans(java.util.Collection<String> organizationIds) {
+		if (organizationIds == null) return plans();
+		return organizationIds.isEmpty() ? List.of() : plans.findScopedPlans(organizationIds);
 	}
 
 	@Transactional
@@ -140,6 +159,12 @@ public class FacilityAssetGovernanceService {
 		return transactions.findAllByOrderByCreateTimeDesc();
 	}
 
+	@Transactional(readOnly = true)
+	public List<InventoryTransaction> transactions(java.util.Collection<String> organizationIds) {
+		if (organizationIds == null) return transactions();
+		return organizationIds.isEmpty() ? List.of() : transactions.findScopedTransactions(organizationIds);
+	}
+
 	@Transactional
 	public InventoryTransaction adjustInventory(InventoryCommand command, String actor) {
 		require(command != null, "库存流水不能为空");
@@ -181,10 +206,17 @@ public class FacilityAssetGovernanceService {
 		return incidents.findAllByOrderByOccurredAtDesc();
 	}
 
+	@Transactional(readOnly = true)
+	public List<FacilitySafetyIncident> incidents(java.util.Collection<String> organizationIds) {
+		if (organizationIds == null) return incidents();
+		return organizationIds.isEmpty() ? List.of() : incidents.findScopedIncidents(organizationIds);
+	}
+
 	@Transactional
 	public FacilitySafetyIncident reportIncident(IncidentCommand command, String actor) {
 		String severity = enumValue(command.severity(), Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL"), null, "安全事件等级无效");
 		FacilitySafetyIncident value = new FacilitySafetyIncident();
+		value.setOrganizationId(command.organizationId());
 		value.setRepairOrderId(trim(command.repairOrderId()));
 		value.setAssetId(trim(command.assetId()));
 		value.setOccurredAt(command.occurredAt() == null ? LocalDateTime.now() : command.occurredAt());
@@ -241,6 +273,6 @@ public class FacilityAssetGovernanceService {
 			String referenceType, String referenceId, String reason, String idempotencyKey) {
 	}
 	public record IncidentCommand(String repairOrderId, String assetId, LocalDateTime occurredAt,
-			String severity, String description, String emergencyAction) {
+			String severity, String description, String emergencyAction, String organizationId) {
 	}
 }

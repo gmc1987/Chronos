@@ -1,56 +1,18 @@
 <template>
-  <el-select v-model="employeeOrganizationId" filterable clearable
-    placeholder="选择新建教师档案的所属机构" style="width: 320px; margin-bottom: 10px"
-    @change="crudRevision++">
-    <el-option v-for="item in organizationOptions" :key="item.id"
-      :label="item.organizationName" :value="item.id" />
-  </el-select>
-  <AcademicCrudPage
-    :key="crudRevision"
+  <el-button type="primary" @click="$router.push('/admin/education/teacher-personnel')">前往教师人事工作台</el-button>
+  <AcademicCrudPage searchable organization-scoped import-kind="TEACHER_PROFILES" permission-prefix="education:teacher:business"
     title="教师档案"
     description="维护教师专业方向、所属单位和最大周课时。可用时间在排课约束中维护。"
     entity-label="教师档案"
     :columns="columns"
     :fields="fields"
     :defaults="defaults"
-    :lookups="lookups"
     :loader="listEducationTeachers"
-    :creator="createEducationTeacher"
+    :allow-create="false"
     :updater="updateEducationTeacher"
     :deleter="deleteEducationTeacher"
     :row-actions="rowActions"
   />
-  <el-dialog v-model="changeDialog" title="登记教师任职异动" width="620px">
-    <el-alert :title="`教师：${selectedTeacher?.teacherName || '-'}`" type="info" :closable="false" />
-    <el-form label-width="110px" class="change-form">
-      <el-form-item label="异动类型"
-        ><el-select v-model="changeForm.changeType"
-          ><el-option label="单位调动" value="TRANSFER" /><el-option label="停职" value="SUSPEND" /><el-option
-            label="复职"
-            value="RESUME" /><el-option label="离职" value="TERMINATE" /></el-select
-      ></el-form-item>
-      <el-form-item v-if="changeForm.changeType === 'TRANSFER'" label="目标单位">
-        <el-select v-model="changeForm.targetDepartmentId" filterable>
-          <el-option
-            v-for="item in organizationOptions"
-            :key="item.id"
-            :label="item.organizationName"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="生效日期"
-        ><el-date-picker v-model="changeForm.effectiveDate" value-format="YYYY-MM-DD"
-      /></el-form-item>
-      <el-form-item label="异动原因"
-        ><el-input v-model="changeForm.reason" type="textarea" :rows="4" maxlength="1000" show-word-limit
-      /></el-form-item>
-    </el-form>
-    <template #footer
-      ><el-button @click="changeDialog = false">取消</el-button
-      ><el-button type="primary" @click="submitChange">确认登记</el-button></template
-    >
-  </el-dialog>
   <el-drawer v-model="historyDrawer" title="教师任职异动记录" size="760px">
     <el-table :data="changeHistory" border>
       <el-table-column prop="changeType" label="类型" width="100"
@@ -78,29 +40,24 @@
   </el-drawer>
 </template>
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AcademicCrudPage from '../components/AcademicCrudPage.vue'
-import { todayLocalDate } from '../../../utils/localDate'
 import {
-  bindEducationTeacherAccount,
   cancelTeacherEmploymentChange,
-  createEducationTeacher,
   deleteEducationTeacher,
   listEducationTeachers,
   listTeacherEmploymentChanges,
   orgList,
-  registerTeacherEmploymentChange,
   resetUserPassword,
   unbindEducationTeacherAccount,
   updateEducationTeacher,
-  userByEmployee,
-  employees
+  userByEmployee
 } from '../../../api/admin'
 const columns = [
   { prop: 'teacherNo', label: '教师编号', width: 130 },
   { prop: 'teacherName', label: '姓名', width: 100 },
-  { prop: 'specialty', label: '专业方向', minWidth: 150 },
+  { prop: 'specialty', label: '专业方向', dictCode: 'EDU_TEACHER_SPECIALTY', minWidth: 150 },
   { prop: 'accountUsername', label: '绑定账号', width: 150 },
   { prop: 'accountStatus', label: '账号状态', width: 110 },
   { prop: 'employmentStatus', label: '任职状态', width: 110 },
@@ -108,10 +65,15 @@ const columns = [
   { prop: 'maxDailyLessons', label: '日课时上限', width: 120 },
   { prop: 'maxConsecutiveLessons', label: '连续课时上限', width: 130 }
 ]
-const fields = [
-  { prop: 'employeeId', label: '教职工', lookup: 'employees', labelProp: 'employeeName', immutableOnEdit: true },
-  { prop: 'departmentId', label: '所属单位 ID', immutableOnEdit: true },
-  { prop: 'specialty', label: '专业方向' },
+const fields = computed(() => [
+  {
+    prop: 'departmentId',
+    label: '所属单位',
+    options: organizationOptions.value.map(item => ({ value: item.id, label: item.organizationName })),
+    readOnlyDisplay: id => organizationOptions.value.find(item => item.id === id)?.organizationName
+      || (id ? '单位名称不可用' : '未设置'),
+  },
+  { prop: 'specialty', label: '专业方向', dictCode: 'EDU_TEACHER_SPECIALTY' },
   { prop: 'maxWeeklyLessons', label: '周课时上限', type: 'number', min: 1 },
   {
     prop: 'maxDailyLessons',
@@ -127,11 +89,7 @@ const fields = [
     min: 1,
     max: 10
   }
-]
-const employeeOrganizationId = ref('')
-const lookups = [{ key: 'employees', loader: () => employeeOrganizationId.value
-  ? employees({ organizationId: employeeOrganizationId.value })
-  : Promise.resolve({ data: [] }), labelProp: 'employeeName' }]
+])
 const defaults = {
   maxWeeklyLessons: 20,
   maxDailyLessons: 6,
@@ -159,28 +117,10 @@ const resetTeacherPassword = async (row) => {
   await resetUserPassword(account.data.id, value)
   ElMessage.success('密码已重置，用户下次登录须修改密码')
 }
-const changeDialog = ref(false),
-  crudRevision = ref(0),
-  historyDrawer = ref(false),
-  selectedTeacher = ref(null),
-  changeHistory = ref([]),
-  organizationOptions = ref([])
-const changeForm = reactive({
-  changeType: '',
-  targetDepartmentId: '',
-  effectiveDate: '',
-  reason: ''
-})
-const openChange = (row) => {
-  selectedTeacher.value = row
-  Object.assign(changeForm, {
-    changeType: '',
-    targetDepartmentId: '',
-    effectiveDate: todayLocalDate(),
-    reason: ''
-  })
-  changeDialog.value = true
-}
+const historyDrawer = ref(false)
+const selectedTeacher = ref(null)
+const changeHistory = ref([])
+const organizationOptions = ref([])
 const openHistory = async (row) => {
   selectedTeacher.value = row
   const response = await listTeacherEmploymentChanges(row.id, {
@@ -189,16 +129,6 @@ const openHistory = async (row) => {
   })
   changeHistory.value = response.data?.content || []
   historyDrawer.value = true
-}
-const submitChange = async () => {
-  if (!changeForm.changeType || !changeForm.reason.trim()) return ElMessage.warning('请选择异动类型并填写原因')
-  if (changeForm.changeType === 'TRANSFER' && !changeForm.targetDepartmentId) return ElMessage.warning('请输入目标单位')
-  await registerTeacherEmploymentChange(selectedTeacher.value.id, {
-    ...changeForm
-  })
-  changeDialog.value = false
-  ElMessage.success('教师任职异动已登记')
-  crudRevision.value += 1
 }
 const cancelChange = async (row) => {
   await ElMessageBox.confirm('确认取消该待生效任职异动？', '提示', {
@@ -216,9 +146,7 @@ const changeTypeName = (value) =>
     TERMINATE: '离职'
   })[value] || value
 const rowActions = [
-  { label: '任职异动', run: openChange, successMessage: false, reload: false },
   { label: '异动记录', run: openHistory, successMessage: false, reload: false },
-  { label: '重新绑定', run: (row) => bindEducationTeacherAccount(row.id) },
   {
     label: '解除绑定',
     type: 'warning',
@@ -231,8 +159,3 @@ onMounted(async () => {
   organizationOptions.value = response.data?.content || []
 })
 </script>
-<style scoped>
-.change-form {
-  margin-top: 20px;
-}
-</style>

@@ -12,7 +12,17 @@ class OperationAgentToolCatalogTest {
 
 	@Test
 	void exposesTheCompleteOpeningAndClosingLifecycleWithGovernanceMetadata() {
-		assertThat(catalog.all()).hasSize(60);
+		assertThat(catalog.all()).extracting(OperationAgentToolCatalog.ToolDefinition::code)
+				.doesNotHaveDuplicates()
+				.contains(OperationAgentTeacherOnboardingTool.CODE)
+				.doesNotContain(OperationAgentToolCatalog.RETIRED_TEACHER_TOOL);
+		assertThat(catalog.require(OperationAgentTeacherOnboardingTool.CODE).checkpointMode())
+				.isEqualTo(OperationAgentCheckpointMode.INITIATOR_CONFIRM);
+		assertThat(catalog.executionOrder("iam.employee.import.managed-file"))
+				.isLessThan(catalog.executionOrder(OperationAgentTeacherOnboardingTool.CODE));
+		assertThatThrownBy(() -> catalog.require(OperationAgentToolCatalog.RETIRED_TEACHER_TOOL))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("旧版教师直接建档");
 		assertThat(catalog.require("academic.term.create").checkpointMode())
 				.isEqualTo(OperationAgentCheckpointMode.INITIATOR_CONFIRM);
 		assertThat(catalog.require("academic.term.create").writeTool()).isTrue();

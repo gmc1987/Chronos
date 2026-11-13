@@ -4,6 +4,7 @@
     "pages/workbench/index",
     "pages/applications/index",
     "pages/workflow/index",
+    "pages/teacher-personnel/index",
     "pages/profile/index",
     "pages/records/index",
     "pages/detail/index",

@@ -45,7 +45,7 @@ public class TeacherEmploymentChangeController {
 			@RequestBody TeacherEmploymentChangeCommand command,
 			Principal principal) {
 		scopes.assertFullAccess(scopes.resolve(principal.getName()));
-		return ok(service.register(teacherId, command, principal.getName()));
+		throw new IllegalStateException("请在教师业务工作台发起审批");
 	}
 
 	@PostMapping("/admin/education/teacher-employment-changes/{id}/cancel")

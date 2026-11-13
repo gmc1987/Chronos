@@ -8,6 +8,9 @@ import com.chronos.education.scheduling.model.Major;
 import java.util.Optional;
 
 public interface MajorRepository extends JpaRepository<Major, String> {
+	List<Major> findByOrganizationIdOrderByMajorCode(String organizationId);
+	List<Major> findByOrganizationIdInOrOrganizationIdIsNullOrderByMajorCode(java.util.Collection<String> organizationIds);
+
 	Optional<Major> findByMajorCode(String majorCode);
 	List<Major> findAllByOrderByMajorCode();
 	Page<Major> findAllByOrderByMajorCode(Pageable pageable);

@@ -68,11 +68,17 @@ public class AcademicDataController {
 	@GetMapping("/admin/education/terms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
 	public ResultData<?> terms(
+			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String organizationId,
 			Authentication authentication) {
 		var organizationIds = directoryScopes.resolveQueryOrganizations(authentication, organizationId);
+		if (keyword != null && !keyword.isBlank()) {
+			var matches = service.terms(organizationIds).stream().filter(item -> matches(keyword, item.getLocalTermCode(), item.getTermCode(), item.getTermName(), item.getAcademicYear())).toList();
+			return page == null && size == null ? ok(matches) : ok(PageView.from(matches,
+					page == null ? 0 : page, size == null ? 10 : size));
+		}
 		return page == null && size == null
 				? ok(service.terms(organizationIds))
 				: ok(PageView.from(service.terms(
@@ -129,51 +135,88 @@ public class AcademicDataController {
 	@GetMapping("/admin/education/grades")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:grade:view','education:grade:manage')")
 	public ResultData<?> grades(
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null
-				? ok(service.grades())
-				: ok(PageView.from(service.grades(
-						page == null ? 0 : page,
-						size == null ? 10 : size)));
+			@RequestParam(required = false) Integer size,
+			Authentication authentication) {
+		var visible = service.visibleGrades(directoryScopes.resolveQueryOrganizations(authentication, organizationId)).stream()
+				.filter(item -> matches(keyword, item.getGradeCode(), item.getGradeName(), item.getEnrollmentYear(), item.getEducationStage()))
+				.toList();
+		return page == null && size == null ? ok(visible) : ok(PageView.from(visible,
+				page == null ? 0 : page, size == null ? 10 : size));
 	}
+
+	@GetMapping("/admin/education/grades/options")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:grade:view','education:grade:manage','education:student:view','education:student:manage')")
+	public ResultData<?> gradeOptions(Authentication authentication) {
+		return ok(service.visibleGrades(directoryScopes.visibleOrganizationIds(authentication)).stream()
+				.map(grade -> new GradeOption(grade.getId(), grade.getGradeCode(), grade.getGradeName(), grade.getEnrollmentYear()))
+				.toList());
+	}
+
+	public record GradeOption(String id, String gradeCode, String gradeName, Integer enrollmentYear) {}
 
 	@PostMapping("/admin/education/grades")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:grade:create','education:grade:manage')")
-	public ResultData<EducationGrade> createGrade(@RequestBody EducationGrade command) {
+	public ResultData<EducationGrade> createGrade(@RequestBody EducationGrade command, Authentication authentication) {
+		command.setOrganizationId(directoryScopes.resolveOrganization(authentication, command.getOrganizationId()));
 		return ok(service.saveGrade(null, command));
 	}
 
 	@PutMapping("/admin/education/grades/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:grade:update','education:grade:manage')")
 	public ResultData<EducationGrade> updateGrade(
-			@PathVariable String id,
-			@RequestBody EducationGrade command) {
+			@PathVariable String id, @RequestBody EducationGrade command, Authentication authentication) {
+		requireGradeWriteAccess(id, authentication);
 		return ok(service.saveGrade(id, command));
 	}
 
 	@DeleteMapping("/admin/education/grades/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:grade:delete','education:grade:manage')")
-	public ResultData<Void> deleteGrade(@PathVariable String id) {
+	public ResultData<Void> deleteGrade(@PathVariable String id, Authentication authentication) {
+		requireGradeWriteAccess(id, authentication);
 		service.deleteGrade(id);
 		return ok(null);
+	}
+
+	private void requireGradeWriteAccess(String id, Authentication authentication) {
+		String owner = service.gradeById(id).getOrganizationId();
+		if (owner != null) {
+			directoryScopes.requireOrganization(authentication, owner);
+		} else if (directoryScopes.visibleOrganizationIds(authentication) != null) {
+			throw new org.springframework.security.access.AccessDeniedException("共享年级只能由平台管理员维护");
+		}
 	}
 
 	@GetMapping("/admin/education/subjects")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:subject:view','education:subject:manage')")
 	public ResultData<?> subjects(
+			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null
-				? ok(service.subjects())
-				: ok(PageView.from(service.subjects(
-						page == null ? 0 : page,
-						size == null ? 10 : size)));
+			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String organizationId,
+			@RequestParam(defaultValue = "false") boolean includeShared,
+			Authentication authentication) {
+		List<Subject> rows;
+		if (organizationId != null && !organizationId.isBlank()) {
+			directoryScopes.requireOrganization(authentication, organizationId);
+			rows = includeShared ? service.visibleSubjects(java.util.Set.of(organizationId))
+					: service.subjects(organizationId);
+		} else {
+			rows = service.visibleSubjects(directoryScopes.visibleOrganizationIds(authentication));
+		}
+		if (keyword != null && !keyword.isBlank()) {
+			rows = rows.stream().filter(item -> matches(keyword, item.getSubjectCode(), item.getSubjectName(), item.getSubjectCategory())).toList();
+		}
+		return page == null && size == null ? ok(rows) : ok(PageView.from(rows,
+				page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/subjects")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:subject:create','education:subject:manage')")
-	public ResultData<Subject> createSubject(@RequestBody Subject command) {
+	public ResultData<Subject> createSubject(@RequestBody Subject command, Authentication authentication) {
+		command.setOrganizationId(directoryScopes.resolveOrganization(authentication, command.getOrganizationId()));
 		return ok(service.saveSubject(null, command));
 	}
 
@@ -181,13 +224,15 @@ public class AcademicDataController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:subject:update','education:subject:manage')")
 	public ResultData<Subject> updateSubject(
 			@PathVariable String id,
-			@RequestBody Subject command) {
+			@RequestBody Subject command, Authentication authentication) {
+		requireCatalogWrite(authentication, service.subjectById(id).getOrganizationId());
 		return ok(service.saveSubject(id, command));
 	}
 
 	@DeleteMapping("/admin/education/subjects/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:subject:delete','education:subject:manage')")
-	public ResultData<Void> deleteSubject(@PathVariable String id) {
+	public ResultData<Void> deleteSubject(@PathVariable String id, Authentication authentication) {
+		requireCatalogWrite(authentication, service.subjectById(id).getOrganizationId());
 		service.deleteSubject(id);
 		return ok(null);
 	}
@@ -195,66 +240,114 @@ public class AcademicDataController {
 	@GetMapping("/admin/education/courses")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:view','education:course:manage')")
 	public ResultData<?> courses(
+			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null
-				? ok(service.courses())
-				: ok(PageView.from(service.courses(
-						page == null ? 0 : page,
-						size == null ? 10 : size)));
+			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String organizationId,
+			@RequestParam(defaultValue = "false") boolean includeShared,
+			Authentication authentication) {
+		List<CourseCatalog> rows;
+		if (organizationId != null && !organizationId.isBlank()) {
+			directoryScopes.requireOrganization(authentication, organizationId);
+			rows = includeShared ? service.visibleCourses(java.util.Set.of(organizationId))
+					: service.courses(organizationId);
+		} else {
+			rows = service.visibleCourses(directoryScopes.visibleOrganizationIds(authentication));
+		}
+		if (keyword != null && !keyword.isBlank()) {
+			rows = rows.stream().filter(item -> matches(keyword, item.getCourseCode(), item.getCourseName(), item.getCourseCategory())).toList();
+		}
+		return page == null && size == null ? ok(rows) : ok(PageView.from(rows,
+				page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/courses")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:create','education:course:manage')")
-	public ResultData<CourseCatalog> createCourse(@RequestBody CourseCatalog command) {
+	public ResultData<CourseCatalog> createCourse(@RequestBody CourseCatalog command, Authentication authentication) {
+		command.setOrganizationId(directoryScopes.resolveOrganization(authentication, command.getOrganizationId()));
 		return ok(service.saveCourse(null, command));
 	}
 
 	@PutMapping("/admin/education/courses/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:update','education:course:manage')")
-	public ResultData<CourseCatalog> updateCourse(@PathVariable String id, @RequestBody CourseCatalog command) {
+	public ResultData<CourseCatalog> updateCourse(@PathVariable String id, @RequestBody CourseCatalog command, Authentication authentication) {
+		requireCatalogWrite(authentication, service.courseById(id).getOrganizationId());
 		return ok(service.saveCourse(id, command));
 	}
 
 	@GetMapping("/admin/education/majors")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:view','education:class:manage')")
 	public ResultData<?> majors(
+			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) Integer page,
-			@RequestParam(required = false) Integer size) {
-		return page == null && size == null
-				? ok(service.majors())
-				: ok(PageView.from(service.majors(
-						page == null ? 0 : page,
-						size == null ? 10 : size)));
+			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String organizationId,
+			@RequestParam(defaultValue = "false") boolean includeShared,
+			Authentication authentication) {
+		List<Major> rows;
+		if (organizationId != null && !organizationId.isBlank()) {
+			directoryScopes.requireOrganization(authentication, organizationId);
+			rows = includeShared ? service.visibleMajors(java.util.Set.of(organizationId))
+					: service.majors(organizationId);
+		} else {
+			rows = service.visibleMajors(directoryScopes.visibleOrganizationIds(authentication));
+		}
+		if (keyword != null && !keyword.isBlank()) {
+			rows = rows.stream().filter(item -> matches(keyword, item.getMajorCode(), item.getMajorName())).toList();
+		}
+		return page == null && size == null ? ok(rows) : ok(PageView.from(rows,
+				page == null ? 0 : page, size == null ? 10 : size));
 	}
 
 	@PostMapping("/admin/education/majors")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:create','education:class:manage')")
-	public ResultData<Major> createMajor(@RequestBody Major command) {
+	public ResultData<Major> createMajor(@RequestBody Major command, Authentication authentication) {
+		command.setOrganizationId(directoryScopes.resolveOrganization(authentication, command.getOrganizationId()));
 		return ok(service.saveMajor(null, command));
 	}
 
 	@PutMapping("/admin/education/majors/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:update','education:class:manage')")
-	public ResultData<Major> updateMajor(@PathVariable String id, @RequestBody Major command) {
+	public ResultData<Major> updateMajor(@PathVariable String id, @RequestBody Major command, Authentication authentication) {
+		requireCatalogWrite(authentication, service.majorById(id).getOrganizationId());
 		return ok(service.saveMajor(id, command));
 	}
 
 	@DeleteMapping("/admin/education/majors/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:delete','education:class:manage')")
-	public ResultData<Void> deleteMajor(@PathVariable String id) {
+	public ResultData<Void> deleteMajor(@PathVariable String id, Authentication authentication) {
+		requireCatalogWrite(authentication, service.majorById(id).getOrganizationId());
 		service.deleteMajor(id);
 		return ok(null);
+	}
+
+	private void requireCatalogWrite(Authentication authentication, String organizationId) {
+		if (organizationId != null) {
+			directoryScopes.requireOrganization(authentication, organizationId);
+		} else if (directoryScopes.visibleOrganizationIds(authentication) != null) {
+			throw new org.springframework.security.access.AccessDeniedException("共享目录只能由全局管理员修改");
+		}
 	}
 
 	@GetMapping("/admin/education/administrative-classes")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:class:view','education:class:manage')")
 	public ResultData<?> administrativeClasses(
 			@RequestParam(required = false) String campusId,
+			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
 			Authentication authentication) {
 		var scope = dataScopes.resolve(authentication.getName());
+		if (keyword != null && !keyword.isBlank()) {
+			var selected = campusId;
+			if (selected != null && !selected.isBlank()) dataScopes.assertCampusAccess(scope, selected);
+			var visible = selected == null || selected.isBlank() ? service.administrativeClasses(scope)
+					: service.administrativeClassesInCampus(selected);
+			var matching = visible.stream()
+					.filter(item -> matches(keyword, item.getClassCode(), item.getClassName(), item.getGradeYear())).toList();
+			return page == null && size == null ? ok(matching) : ok(PageView.from(matching,
+					page == null ? 0 : page, size == null ? 10 : size));
+		}
 		if (campusId != null && !campusId.isBlank()) {
 			dataScopes.assertCampusAccess(scope, campusId);
 			return page == null && size == null
@@ -316,6 +409,8 @@ public class AcademicDataController {
 			@RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String classId,
 			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String organizationId,
+			@RequestParam(required = false) String excludeEnrolledOfferingId,
 			Authentication authentication) {
 		boolean privacyVisible = authorization.any(
 				authentication,
@@ -329,10 +424,19 @@ public class AcademicDataController {
 					.map(student -> StudentProfileView.from(student, privacyVisible))
 					.toList());
 		}
-		if (keyword != null && !keyword.isBlank()) {
+		if (excludeEnrolledOfferingId != null) {
+			if (organizationId == null || organizationId.isBlank()) {
+				throw new IllegalArgumentException("请选择机构");
+			}
+			if (!authorization.any(authentication, "education:course:view", "education:course:manage")) {
+				throw new org.springframework.security.access.AccessDeniedException("无权查询教学班成员");
+			}
+			dataScopes.assertOfferingAccess(scope, excludeEnrolledOfferingId);
+		}
+		if (organizationId != null || (keyword != null && !keyword.isBlank())) {
 			return ok(PageView.from(service.scheduleStudentOptions(
 				scope, keyword, page == null ? 0 : page,
-				size == null ? 10 : size)
+				size == null ? 10 : size, dataScopes.scheduleOrganizationCampuses(scope, organizationId), excludeEnrolledOfferingId)
 				.map(student -> StudentProfileView.from(student, privacyVisible))));
 		}
 		if (page == null && size == null) {
@@ -420,10 +524,27 @@ public class AcademicDataController {
 	@GetMapping("/admin/education/teachers")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:view','education:teacher:business:manage')")
 	public ResultData<?> teachers(
+			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String organizationId,
 			Authentication authentication) {
 		var scope = dataScopes.resolve(authentication.getName());
+		if (keyword != null && !keyword.isBlank()) {
+			var selected = organizationId;
+			if (selected != null && !selected.isBlank()) directoryScopes.requireOrganization(authentication, selected);
+			var visible = selected == null || selected.isBlank() ? service.teachers(scope) : service.teachers(scope, selected);
+			var matching = visible.stream()
+					.filter(item -> matches(keyword, item.getTeacherNo(), item.getTeacherName(), item.getSpecialty(), item.getEmploymentStatus())).toList();
+			return page == null && size == null ? ok(matching) : ok(PageView.from(matching,
+					page == null ? 0 : page, size == null ? 10 : size));
+		}
+		if (organizationId != null && !organizationId.isBlank()) {
+			directoryScopes.requireOrganization(authentication, organizationId);
+			var visible = service.teachers(scope, organizationId);
+			return page == null && size == null ? ok(visible) : ok(PageView.from(visible,
+					page == null ? 0 : page, size == null ? 10 : size));
+		}
 		return page == null && size == null
 				? ok(service.teachers(scope))
 				: ok(PageView.from(service.teachers(
@@ -454,7 +575,7 @@ public class AcademicDataController {
 	@PostMapping("/admin/education/teachers/{id}/account")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teacher:business:update','education:teacher:business:manage')")
 	public ResultData<TeacherAcademicProfile> bindTeacherAccount(@PathVariable String id) {
-		return ok(service.bindTeacherAccount(id));
+		throw new IllegalStateException("请通过教师入职审批开通账号");
 	}
 
 	@DeleteMapping("/admin/education/teachers/{id}/account")
@@ -603,8 +724,40 @@ public class AcademicDataController {
 	public ResultData<?> teachingAssignments(
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String organizationId,
+			@RequestParam(required = false) String teacherId,
+			@RequestParam(required = false) String academicTermId,
+			@RequestParam(required = false) String keyword,
 			Authentication authentication) {
 		var scope = dataScopes.resolve(authentication.getName());
+		boolean organizationSelected = organizationId != null && !organizationId.isBlank();
+		if (organizationSelected) {
+			directoryScopes.requireOrganization(authentication, organizationId);
+		}
+		boolean teacherSelected = teacherId != null && !teacherId.isBlank();
+		boolean termSelected = academicTermId != null && !academicTermId.isBlank();
+		if (teacherSelected || termSelected || keyword != null && !keyword.isBlank()) {
+			var visible = organizationSelected
+					? service.teachingAssignments(scope, organizationId) : service.teachingAssignments(scope);
+			var matching = visible.stream()
+					.filter(item -> !teacherSelected || teacherId.equals(item.getTeacherId()))
+					.filter(item -> !termSelected || academicTermId.equals(item.getAcademicTermId()))
+					.filter(item -> matches(keyword, item.getTeacherName(), item.getAssignmentRole()))
+					.toList();
+			if (page == null && size == null) return ok(matching);
+			long enabledWeeklyLessons = matching.stream()
+					.filter(item -> Boolean.TRUE.equals(item.getEnabled()) && item.getWeeklyLessons() != null)
+					.mapToLong(TeacherTeachingAssignment::getWeeklyLessons)
+					.sum();
+			return ok(new TeachingAssignmentSearchResult(
+					PageView.from(matching, page == null ? 0 : page, size == null ? 10 : size),
+					enabledWeeklyLessons));
+		}
+		if (organizationSelected) {
+			var visible = service.teachingAssignments(scope, organizationId);
+			return page == null && size == null ? ok(visible) : ok(PageView.from(visible,
+					page == null ? 0 : page, size == null ? 10 : size));
+		}
 		return page == null && size == null
 				? ok(service.teachingAssignments(scope))
 				: ok(PageView.from(service.teachingAssignments(
@@ -612,6 +765,9 @@ public class AcademicDataController {
 						page == null ? 0 : page,
 						size == null ? 10 : size)));
 	}
+
+	public record TeachingAssignmentSearchResult(
+			PageView<TeacherTeachingAssignment> page, long enabledWeeklyLessons) {}
 
 	@PostMapping("/admin/education/teaching-assignments")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching-assignment:create','education:teaching-assignment:manage')")
@@ -650,12 +806,16 @@ public class AcademicDataController {
 
 	@GetMapping("/admin/education/teaching-class-members")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:view','education:course:manage')")
-	public ResultData<List<TeachingClassMember>> members(
+	public ResultData<?> members(
 			@RequestParam String offeringId,
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size,
 			Authentication authentication) {
-		return ok(dataScopes.visibleMembers(
-				dataScopes.resolve(authentication.getName()),
-				service.members(offeringId)));
+		var scope = dataScopes.resolve(authentication.getName());
+		if (page == null && size == null) {
+			return ok(dataScopes.visibleMembers(scope, service.members(offeringId)));
+		}
+		return ok(service.members(offeringId, scope, page == null ? 0 : page, size == null ? 20 : size));
 	}
 
 	@PostMapping("/admin/education/course-offerings/{offeringId}/enroll")
@@ -680,6 +840,13 @@ public class AcademicDataController {
 				dataScopes.resolve(authentication.getName()),
 				command.get("studentId"));
 		return ok(service.withdraw(offeringId, command.get("studentId")));
+	}
+
+	private boolean matches(String keyword, Object... fields) {
+		if (keyword == null || keyword.isBlank()) return true;
+		String text = keyword.trim().toLowerCase(java.util.Locale.ROOT);
+		return java.util.Arrays.stream(fields).filter(java.util.Objects::nonNull)
+				.anyMatch(value -> value.toString().toLowerCase(java.util.Locale.ROOT).contains(text));
 	}
 
 	private <T> ResultData<T> ok(T data) {

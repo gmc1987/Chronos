@@ -71,6 +71,9 @@ public class CourseOffering extends BaseEntity {
 	@Column(name = "administrative_class_id", length = 64)
 	private String administrativeClassId;
 
+	@Column(name = "term_course_plan_id", length = 64)
+	private String termCoursePlanId;
+
 	@Column(name = "status", length = 24, nullable = false)
 	private String status = "ACTIVE";
 }

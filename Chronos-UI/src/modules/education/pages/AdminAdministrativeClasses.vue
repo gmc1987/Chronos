@@ -1,5 +1,5 @@
 <template>
-  <AcademicCrudPage campus-scoped title="班级管理" description="维护行政班、年级、专业和班主任关系" entity-label="行政班" :columns="columns" :fields="fields" :defaults="defaults" :lookups="lookups" :loader="listAdministrativeClasses" :creator="createAdministrativeClass" :updater="updateAdministrativeClass" :deleter="deleteAdministrativeClass" />
+  <AcademicCrudPage searchable campus-scoped import-kind="CLASSES" permission-prefix="education:class" title="班级管理" description="维护行政班、年级、专业和班主任关系" entity-label="行政班" :columns="columns" :fields="fields" :defaults="defaults" :lookups="lookups" :loader="listAdministrativeClasses" :creator="createAdministrativeClass" :updater="updateAdministrativeClass" :deleter="deleteAdministrativeClass" />
 </template>
 <script setup>
 import AcademicCrudPage from '../components/AcademicCrudPage.vue'
@@ -21,8 +21,8 @@ const fields = [
 ]
 const defaults = { status: 'ACTIVE' }
 const lookups = [
-  { key: 'grades', loader: listEducationGrades, labelProp: 'gradeName' },
-  { key: 'majors', loader: listEducationMajors, labelProp: 'majorName' },
+  { key: 'grades', campusScoped: true, loader: organizationId => listEducationGrades({ organizationId }), labelProp: 'gradeName' },
+  { key: 'majors', campusScoped: true, loader: organizationId => listEducationMajors({ organizationId, includeShared: true }), labelProp: 'majorName' },
   { key: 'teachers', loader: campusId => campusId ? listHeadTeacherCandidates({ campusId }) : Promise.resolve({ data: [] }), dependentOn: 'campusId', labelProp: 'teacherName' },
 ]
 </script>

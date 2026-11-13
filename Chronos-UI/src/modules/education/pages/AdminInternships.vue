@@ -3,18 +3,16 @@
     <header><div><h2>实习实训管理</h2><p>管理单位准入、岗位、三方资料、学生安排、过程巡查、考核与安全事件。</p></div></header>
     <el-alert type="warning" :closable="false" title="单位、学生安排和考核均须异人审批；协议、知情同意与保险凭证缺一不可。" />
     <div class="query-bar">
-      <el-select v-model="schoolId" placeholder="选择学校" filterable style="width:300px" @change="reload">
-        <el-option v-for="item in schools" :key="item.id" :label="item.organizationName || item.orgName" :value="item.id" />
-      </el-select>
-      <el-select v-model="termCode" placeholder="选择学期" filterable style="width:280px" @change="reloadPlacements">
+      <OrganizationSelect v-model="schoolId" school-only placeholder="请选择学校" style="width:300px" />
+      <el-select v-model="termCode" :disabled="!schoolId || !terms.length" placeholder="选择学期" filterable style="width:280px" @change="reloadPlacements">
         <el-option v-for="item in terms" :key="item.id" :label="`${item.termName}（${item.termCode}）`" :value="item.termCode" />
       </el-select>
-      <el-button @click="reload">刷新</el-button>
+      <el-button :disabled="!schoolId" @click="reload">刷新</el-button>
     </div>
 
     <el-tabs v-model="tab">
       <el-tab-pane label="实习单位" name="companies">
-        <div class="tab-actions"><el-button type="primary" @click="companyDialog = true">新增单位</el-button></div>
+        <div class="tab-actions"><el-button type="primary" :disabled="!schoolId" @click="companyDialog = true">新增单位</el-button></div>
         <el-table :data="companies" border>
           <el-table-column prop="companyCode" label="单位编码" width="150" /><el-table-column prop="companyName" label="单位名称" min-width="210" />
           <el-table-column prop="creditCode" label="统一信用代码" width="180" /><el-table-column prop="contactName" label="联系人" width="100" />
@@ -71,15 +69,16 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listAcademicTerms, listEducationStudents, lookupEducationStudents, orgList } from '../../../api/admin'
+import { listAcademicTerms, listEducationStudents, lookupEducationStudents } from '../../../api/admin'
 import { activateInternshipPlacement, closeInternshipIncident, createInternshipActivity, createInternshipCompany, createInternshipPlacement, createInternshipPosition, decideInternshipAssessment, decideInternshipCompany, decideInternshipPlacement, internshipActivities, internshipAssessment, internshipCompanies, internshipIncidents, internshipPlacements, internshipPositions, reportInternshipIncident, submitInternshipAssessment, submitInternshipCompany, submitInternshipPlacement } from '../api/internships'
 
 const unwrap = response => response?.data?.content || response?.data || []
 const errorMessage = error => error?.response?.data?.msg || error?.message || '操作失败'
 const tab = ref('companies'); const schoolId = ref(''); const termCode = ref('')
-const schools = ref([]); const terms = ref([]); const students = ref([]); const companies = ref([]); const positions = ref([]); const placements = ref([])
+const terms = ref([]); const students = ref([]); const companies = ref([]); const positions = ref([]); const placements = ref([])
 const studentLabels = ref(new Map())
 const selectedPlacement = ref(null); const activities = ref([]); const assessment = ref(null); const incidents = ref([])
 const companyDialog = ref(false); const positionDialog = ref(false); const placementDialog = ref(false); const activityDialog = ref(false); const assessmentDialog = ref(false); const incidentDialog = ref(false)
@@ -96,15 +95,35 @@ const positionName = id => positions.value.find(item => item.id === id)?.positio
 const studentName = id => studentLabels.value.get(id) || '学生信息不可见'
 const formatDateTime = value => value ? String(value).replace('T', ' ').replace(/\.\d+/, '').replace(/Z$/, '') : '-'
 const reloadPlacements = async () => {
-  if (!schoolId.value || !termCode.value) return
-  placements.value = unwrap(await internshipPlacements(schoolId.value, termCode.value))
-  const ids = [...new Set(placements.value.map(item => item.studentId).filter(Boolean))]
+  const id = schoolId.value
+  const term = termCode.value
+  if (!id || !term) return
+  const rows = unwrap(await internshipPlacements(id, term))
+  const ids = [...new Set(rows.map(item => item.studentId).filter(Boolean))]
   const batches = Array.from({ length: Math.ceil(ids.length / 100) }, (_, index) => ids.slice(index * 100, index * 100 + 100))
   const results = batches.length ? (await Promise.all(batches.map(batch => lookupEducationStudents(batch)))).flatMap(unwrap) : []
+  if (schoolId.value !== id || termCode.value !== term) return
+  placements.value = rows
   studentLabels.value = new Map(results.map(item => [item.id, `${item.studentName}（${item.studentNo}）`]))
 }
-const reload = async () => { if (!schoolId.value) return; try { [companies.value, positions.value] = await Promise.all([internshipCompanies(schoolId.value).then(unwrap), internshipPositions(schoolId.value).then(unwrap)]); await reloadPlacements() } catch (error) { ElMessage.error(errorMessage(error)) } }
-const searchStudents = async keyword => { students.value = unwrap(await listEducationStudents({ page: 0, size: 10, keyword, schoolId: schoolId.value })) }
+const reload = async () => {
+  const id = schoolId.value
+  if (!id) return
+  try {
+    const [companyRows, positionRows] = await Promise.all([
+      internshipCompanies(id).then(unwrap), internshipPositions(id).then(unwrap),
+    ])
+    if (schoolId.value !== id) return
+    companies.value = companyRows
+    positions.value = positionRows
+    await reloadPlacements()
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+}
+const searchStudents = async keyword => {
+  const id = schoolId.value
+  const response = await listEducationStudents({ page: 0, size: 10, keyword, organizationId: id })
+  if (schoolId.value === id) students.value = unwrap(response)
+}
 const saveCompany = async () => { try { await createInternshipCompany({ schoolId: schoolId.value, ...companyForm }); companyDialog.value = false; ElMessage.success('实习单位草稿已创建'); await reload() } catch (error) { ElMessage.error(errorMessage(error)) } }
 const submitCompany = async row => { try { await submitInternshipCompany(row.id); ElMessage.success('准入申请已提交'); await reload() } catch (error) { ElMessage.error(errorMessage(error)) } }
 const decideCompany = async (row, approved) => { try { let comment = ''; if (!approved) comment = (await ElMessageBox.prompt('填写驳回原因', '单位准入审核')).value; await decideInternshipCompany(row.id, { approved, comment }); ElMessage.success(approved ? '单位准入已批准' : '单位准入已驳回'); await reload() } catch (error) { if (!['cancel', 'close'].includes(error)) ElMessage.error(errorMessage(error)) } }
@@ -122,7 +141,26 @@ const saveAssessment = async () => { try { await submitInternshipAssessment(sele
 const decideAssessmentRow = async approved => { try { await decideInternshipAssessment(assessment.value.id, { approved, comment: '' }); ElMessage.success(approved ? '实习考核已批准' : '实习考核已驳回'); await loadProcess(); await reloadPlacements() } catch (error) { ElMessage.error(errorMessage(error)) } }
 const saveIncident = async () => { try { await reportInternshipIncident(selectedPlacement.value.id, incidentForm); incidentDialog.value = false; ElMessage.success('安全事件已上报'); await loadProcess() } catch (error) { ElMessage.error(errorMessage(error)) } }
 const closeIncidentRow = async row => { try { const comment = (await ElMessageBox.prompt('填写结案说明', '安全事件结案')).value; await closeInternshipIncident(row.id, comment); ElMessage.success('安全事件已结案'); await loadProcess() } catch (error) { if (!['cancel', 'close'].includes(error)) ElMessage.error(errorMessage(error)) } }
-onMounted(async () => { try { const [orgs, termResult] = await Promise.all([orgList({ page: 0, size: 500 }), listAcademicTerms({ page: 0, size: 100 })]); schools.value = unwrap(orgs).filter(item => (item.organizationType || item.orgType) === 'SCHOOL'); terms.value = unwrap(termResult); schoolId.value = schools.value[0]?.id || ''; termCode.value = (terms.value.find(item => item.currentTerm) || terms.value[0])?.termCode || ''; await reload() } catch (error) { ElMessage.error(errorMessage(error)) } })
+watch(schoolId, async organizationId => {
+  termCode.value = ''
+  for (const rows of [terms, companies, positions, placements, students, activities, incidents]) rows.value = []
+  for (const dialog of [companyDialog, positionDialog, placementDialog, activityDialog, assessmentDialog, incidentDialog]) dialog.value = false
+  studentLabels.value = new Map()
+  selectedPlacement.value = null
+  assessment.value = null
+  positionForm.companyId = ''
+  Object.assign(placementForm, { studentId: '', positionId: '' })
+  if (!organizationId) return
+  try {
+    const termResult = await listAcademicTerms({ organizationId })
+    if (schoolId.value !== organizationId) return
+    terms.value = unwrap(termResult)
+    termCode.value = (terms.value.find(item => item.currentTerm) || terms.value[0])?.termCode || ''
+    await reload()
+  } catch (error) {
+    if (schoolId.value === organizationId) ElMessage.error(errorMessage(error))
+  }
+})
 </script>
 
 <style scoped>

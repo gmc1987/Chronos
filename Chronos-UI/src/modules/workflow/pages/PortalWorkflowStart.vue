@@ -16,9 +16,10 @@
 </template>
 <script setup>
 import { computed,onMounted,ref } from 'vue';import { ElMessage } from 'element-plus';import { useRouter } from 'vue-router';import DynamicForm from '../components/DynamicForm.vue';import { listAvailableWorkflows,getWorkflowStartForm,startWorkflow } from '../../../api/admin'
+const props = defineProps({ flowCodePrefix: String })
 const router=useRouter(),flows=ref([]),selectedId=ref(''),schema=ref(null),formData=ref({}),businessKey=ref(''),loading=ref(false),submitting=ref(false),uploading=ref(false),error=ref('')
 const selectedFlow=computed(()=>flows.value.find(f=>f.id===selectedId.value))
-const load=async()=>{loading.value=true;error.value='';try{const res=await listAvailableWorkflows();flows.value=res?.data||[];if(flows.value.length)await selectFlow(flows.value[0].id)}catch(e){error.value=`流程加载失败：${e?.message||'请求失败'}`}finally{loading.value=false}}
+const load=async()=>{loading.value=true;error.value='';try{const res=await listAvailableWorkflows();flows.value=(res?.data||[]).filter(flow => !props.flowCodePrefix || flow.flowCode?.startsWith(props.flowCodePrefix));if(flows.value.length)await selectFlow(flows.value[0].id)}catch(e){error.value=`流程加载失败：${e?.message||'请求失败'}`}finally{loading.value=false}}
 const selectFlow=async(id)=>{selectedId.value=id;schema.value=null;try{const res=await getWorkflowStartForm(id);schema.value=res?.data;reset()}catch(e){error.value=`表单加载失败：${e?.message||'请求失败'}`}}
 const reset=()=>{formData.value={};businessKey.value='';(schema.value?.fields||[]).forEach(f=>{if(f.fieldType==='CHECKBOX')formData.value[f.fieldKey]=[];if(f.fieldType==='BOOLEAN')formData.value[f.fieldKey]=false})}
 const submit = async () => {

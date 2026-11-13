@@ -34,6 +34,9 @@
         <el-button v-if="s.row.admissionStatus==='ADMITTED'" link @click="openEdit(s.row)">编辑</el-button>
         <el-button v-if="s.row.admissionStatus==='ADMITTED'" v-permission="['education:admission:review','education:admission:manage']" link type="success" @click="review(s.row,true)">复查通过</el-button>
         <el-button v-if="s.row.admissionStatus==='ADMITTED'" v-permission="['education:admission:review','education:admission:manage']" link type="danger" @click="review(s.row,false)">复查退回</el-button>
+        <el-button v-if="s.row.admissionStatus === 'ENROLLED' && s.row.studentId"
+          v-permission="['education:term-registration:view']" link type="primary"
+          @click="$router.push({ name: 'admin-education-term-registrations', query: { schoolId: s.row.organizationId, studentId: s.row.studentId, admissionYear: String(s.row.admissionYear) } })">发起首学期注册</el-button>
         <el-button v-if="s.row.admissionStatus==='VERIFIED'" v-permission="['education:admission:enroll','education:admission:manage']" link type="primary" @click="openEnroll(s.row)">报到建档</el-button>
         <el-button v-if="s.row.admissionStatus==='ENROLLED'" v-permission="['education:admission:register','education:admission:manage']" link type="primary" @click="openRegistration(s.row)">登记注册结果</el-button>
       </div></template></AdaptiveActionColumn>

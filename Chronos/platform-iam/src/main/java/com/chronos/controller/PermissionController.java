@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -35,7 +36,8 @@ public class PermissionController {
 			@RequestParam(defaultValue = "10") int size) {
 		PageRequest pageRequest = PageRequest.of(
 				Math.max(page, 0),
-				Math.min(Math.max(size, 1), 200));
+				Math.min(Math.max(size, 1), 200),
+				Sort.by("id"));
 		PageView<Permission> items = PageView.from(
 				this.permissionService.pagePermissions(dto, (Pageable) pageRequest));
 		return ResultData.<PageView<Permission>>builder()

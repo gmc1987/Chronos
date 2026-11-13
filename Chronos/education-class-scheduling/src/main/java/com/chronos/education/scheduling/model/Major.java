@@ -15,6 +15,9 @@ import lombok.Setter;
 @NoArgsConstructor
 @Table(name = "edu_major")
 public class Major extends BaseEntity {
+	@Column(name = "organization_id", length = 64)
+	private String organizationId;
+
 	@Column(name = "major_code", length = 64, nullable = false, unique = true)
 	private String majorCode;
 

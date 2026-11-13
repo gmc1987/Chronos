@@ -28,11 +28,14 @@ public class OperationAgentSkillCatalog {
 						"admission.class.assign.batch", "admission.review.batch",
 						"admission.enroll.batch", "student.account.provision.batch",
 						"account.binding.check"));
-		add(values, "staff.onboarding", "教职工入职与账号开通",
-				"接入教职工和任职数据，建立档案、账号、基础角色并核验绑定",
-				Set.of("教师", "教职工", "员工", "入职", "工号", "账号", "任职"),
-				List.of("iam.employee.import.managed-file", "teacher.onboarding.batch",
-						"account.binding.check"));
+		add(values, "staff.onboarding", "教职工与任职初始化",
+				"从文件导入教职工和任职，可同步普通员工账号和基础角色",
+				Set.of("教职工", "员工", "工号", "名册", "普通账号", "任职"),
+				List.of("iam.employee.import.managed-file", "account.binding.check"));
+		add(values, "teacher.personnel.onboarding", "教师入职审批申请",
+				"仅在明确要求办理教师入职时，生成指定人员的申请草稿，经发起人确认后提交独立审批",
+				Set.of("教师入职", "教师建档", "开通教师权限"),
+				List.of(OperationAgentTeacherOnboardingTool.CODE));
 		add(values, "organization.maintenance", "组织岗位与负责人维护",
 				"维护组织部门、负责人、岗位和职级基础数据",
 				Set.of("组织", "部门", "负责人", "岗位", "职级"),

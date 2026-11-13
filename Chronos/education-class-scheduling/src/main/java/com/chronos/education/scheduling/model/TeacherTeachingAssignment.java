@@ -29,6 +29,9 @@ public class TeacherTeachingAssignment extends BaseEntity {
 	@Column(name = "subject_id", length = 64, nullable = false)
 	private String subjectId;
 
+	@Column(name = "course_id", length = 64)
+	private String courseId;
+
 	@Column(name = "grade_id", length = 64)
 	private String gradeId;
 

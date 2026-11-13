@@ -53,12 +53,14 @@ public class SemesterPreparationManualController {
 
 	@PostMapping("/course-offerings/generate-from-assignments")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:course:create','education:course:manage','education:scheduling:manage')")
-	public ResultData<Map<String, Object>> generateOfferings(@RequestBody OfferingGenerationCommand command) {
+	public ResultData<Map<String, Object>> generateOfferings(@RequestBody OfferingGenerationCommand command,
+			Authentication authentication) {
 		if (command.semesterCode() == null || command.semesterCode().isBlank()) {
 			throw new IllegalArgumentException("请选择学期");
 		}
 		return ok(execution.generateOfferings(command.semesterCode().trim(),
-				command.batchLimit() == null ? 100 : command.batchLimit(), command.dryRun()));
+				command.batchLimit() == null ? 100 : command.batchLimit(), command.dryRun(),
+				organization(authentication, command.organizationId())));
 	}
 
 	private int year(BatchActionCommand command) {

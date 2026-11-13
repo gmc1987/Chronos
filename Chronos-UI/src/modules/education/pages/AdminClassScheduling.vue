@@ -6,26 +6,16 @@
         <p>按教学班安排教师、教室、星期、节次和授课周次，保存时自动检查冲突。</p>
       </div>
       <div class="scheduling-header-actions">
-        <el-select
-          v-if="showOrganizationSelector"
-          v-model="organizationId"
-          aria-label="课表机构"
-          placeholder="选择课表机构"
-          style="width: 210px"
-          filterable
-          @change="changeOrganization"
-        >
-          <el-option v-for="org in scheduleOrganizations" :key="org.id" :label="org.organizationName" :value="org.id" />
-        </el-select>
-        <el-tag v-else-if="scheduleOrganizations.length === 1" effect="plain">{{ scheduleOrganizations[0].organizationName }}</el-tag>
-        <SchedulingModeSwitch :semester-code="semesterCode" />
+        <OrganizationSelect v-model="organizationId" context-key="education-scheduling"
+          school-or-campus-only placeholder="选择课表机构" style="width:210px" />
+        <SchedulingModeSwitch :semester-code="semesterCode" :organization-id="organizationId" />
         <el-select v-model="semesterCode" placeholder="选择学期" :disabled="!terms.length" @change="loadAll">
           <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
         </el-select>
       </div>
     </header>
 
-    <el-empty v-if="organizationId && !semesterCode" description="所选机构暂无可用学期" />
+    <el-empty v-if="!organizationId || !semesterCode" :description="organizationId ? '所选机构暂无可用学期' : '请选择课表机构'" />
     <el-tabs v-else v-model="activeTab">
       <el-tab-pane v-if="!reviewOnly" label="周课表" name="schedule">
         <div class="schedule-toolbar">
@@ -361,7 +351,7 @@
       </el-tab-pane>
 
       <el-tab-pane v-if="!reviewOnly" label="教学任务" name="offerings">
-        <div class="toolbar"><el-button type="primary" @click="openOffering()">新增教学任务</el-button><el-button @click="router.push('/admin/education/teaching-class-members')">教学班成员</el-button></div>
+        <div class="toolbar"><el-button type="primary" @click="openOffering()">新增教学任务</el-button><el-button @click="router.push({ name: 'admin-education-teaching-class-members', query: { organizationId, semesterCode } })">教学班成员</el-button></div>
         <el-table :data="offerings">
           <el-table-column prop="offeringCode" label="教学班编码" />
           <el-table-column prop="courseName" label="课程" />
@@ -396,19 +386,15 @@
       </el-tab-pane>
 
       <el-tab-pane v-if="!reviewOnly" label="教室" name="classrooms">
-        <div class="toolbar"><el-button type="primary" @click="openClassroom()">新增教室</el-button></div>
+        <div class="toolbar">
+          <el-button type="primary" @click="router.push({ name: 'admin-education-classroom-management', query: { organizationId } })">前往教室管理</el-button>
+        </div>
         <el-table :data="classrooms">
           <el-table-column prop="roomCode" label="编码" />
           <el-table-column prop="roomName" label="名称" />
           <el-table-column prop="buildingName" label="教学楼" />
           <el-table-column prop="roomType" label="类型" />
           <el-table-column prop="capacity" label="容量" width="90" />
-          <AdaptiveActionColumn label="操作" width="140">
-            <template #default="scope">
-              <el-button link @click="openClassroom(scope.row)">编辑</el-button>
-              <el-button link type="danger" @click="removeClassroom(scope.row)">删除</el-button>
-            </template>
-          </AdaptiveActionColumn>
         </el-table>
         <el-pagination
           v-model:current-page="classroomPage"
@@ -515,7 +501,7 @@
     <el-dialog v-model="entryDialog" title="课表安排" width="600px">
       <el-form label-width="90px">
         <el-form-item label="教学任务"><el-select v-model="entryForm.offeringId" filterable @change="selectEntryOffering"><el-option v-for="item in offeringOptions" :key="item.id" :label="`${item.courseName} / ${item.teachingClassName} / ${item.teacherName}`" :value="item.id" /></el-select></el-form-item>
-        <el-form-item label="教室"><el-select v-model="entryForm.classroomId" filterable><el-option v-for="item in classroomOptions" :key="item.id" :label="`${item.roomName}（${item.capacity}人）`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="教室"><el-select v-model="entryForm.classroomId" filterable><el-option v-for="item in classroomOptions" :key="item.id" :label="`${item.buildingName ? item.buildingName + ' · ' : ''}${item.roomName}（${item.capacity}人）`" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="星期"><el-select v-model="entryForm.dayOfWeek"><el-option v-for="day in 7" :key="day" :label="`星期${dayName(day)}`" :value="day" /></el-select></el-form-item>
         <el-form-item label="节次">
           <el-select v-if="availablePeriods.length" v-model="entryForm.periodNo">
@@ -588,18 +574,7 @@
       <template #footer><el-button @click="offeringDialog = false">取消</el-button><el-button type="primary" @click="saveOffering">保存</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="classroomDialog" title="教室" width="560px">
-      <el-form label-width="90px">
-        <el-form-item label="教室编码"><el-input v-model="classroomForm.roomCode" /></el-form-item>
-        <el-form-item label="教室名称"><el-input v-model="classroomForm.roomName" /></el-form-item>
-        <el-form-item label="教学楼"><el-input v-model="classroomForm.buildingName" /></el-form-item>
-        <el-form-item label="所属校区"><el-select v-model="classroomForm.campusId" filterable><el-option v-for="item in campuses" :key="item.id" :label="orgName(item)" :value="item.id" /></el-select></el-form-item>
-        <el-form-item label="教室类型"><el-select v-model="classroomForm.roomType"><el-option v-for="item in roomTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
-        <el-form-item label="设备编码"><el-input v-model="classroomForm.equipmentCodes" placeholder="例如 PROJECTOR,COMPUTER" /></el-form-item>
-        <el-form-item label="容量"><el-input-number v-model="classroomForm.capacity" :min="1" /></el-form-item>
-      </el-form>
-      <template #footer><el-button @click="classroomDialog = false">取消</el-button><el-button type="primary" @click="saveClassroom">保存</el-button></template>
-    </el-dialog>
+
 
     <el-dialog v-model="candidateDialog" title="生成自动排课候选方案" width="660px">
       <el-form label-width="110px">
@@ -714,21 +689,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ScheduleGrid from '../components/ScheduleGrid.vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminRoles, getAdminUsername, hasAdminPermission } from '../../../store/auth'
+import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
 import { todayLocalDate } from '../../../utils/localDate'
 import {
   applyScheduleCandidate,
   batchRetryCourseAdjustmentIncidents,
-  createClassroom,
   createCourseOffering,
   configureCombinedOffering,
   createScheduleEntry,
-  deleteClassroom,
   deleteCourseOffering,
   deleteCombinedOffering,
   deleteScheduleEntry,
@@ -761,7 +735,6 @@ import {
   syncCombinedOffering,
   retryCourseAdjustmentIncident,
   rollbackScheduleVersion,
-  updateClassroom,
   updateCourseOffering,
   updateScheduleEntry,
   dictionaryOptions,
@@ -782,7 +755,6 @@ import {
   cancelScheduleDateException,
   restoreScheduleDateException,
   orgList,
-  orgOptions,
   updateTeacherTimeConstraint,
   updateClassroomUnavailableSlot,
 } from '../../../api/admin'
@@ -792,7 +764,7 @@ const reviewOnly = hasAdminPermission('education:scheduling:review') && !hasAdmi
 const semesterCode = ref(typeof route.query.semesterCode === 'string' ? route.query.semesterCode : '')
 const scheduleFileInput = ref(null)
 const router = useRouter()
-const activeTab = ref(reviewOnly ? 'candidates' : ['schedule', 'date-schedule', 'versions', 'quality', 'policy', 'candidates'].includes(route.query.schedulingTab)
+const activeTab = ref(reviewOnly ? 'candidates' : ['schedule', 'date-schedule', 'versions', 'quality', 'policy', 'candidates', 'offerings'].includes(route.query.schedulingTab)
   ? route.query.schedulingTab : 'schedule')
 const scheduleView = ref('grid')
 const offerings = ref([])
@@ -800,18 +772,7 @@ const classrooms = ref([])
 const offeringOptions = ref([])
 const classroomOptions = ref([])
 const terms = ref([])
-const scheduleOrganizations = ref([])
-const organizationId = ref('')
-const superAdmin = getAdminRoles().some(role =>
-  (typeof role === 'string' ? role : role?.roleCode)?.toUpperCase() === 'SUPER_ADMIN')
-const showOrganizationSelector = computed(() =>
-  scheduleOrganizations.value.length > 1 || (superAdmin && scheduleOrganizations.value.length === 1))
-const changeOrganization = () => {
-  semesterCode.value = ''
-  terms.value = []
-  clearSemesterData()
-  return loadAll()
-}
+const organizationId = ref(typeof route.query.organizationId === 'string' ? route.query.organizationId : '')
 const courses = ref([])
 const teachers = ref([])
 const students = ref([])
@@ -871,7 +832,6 @@ const combinedSaving = ref(false)
 const combinedOffering = ref(null)
 const combinedInfo = ref(null)
 const combinedClassIds = ref([])
-const classroomDialog = ref(false)
 const candidateDialog = ref(false)
 const candidateGenerating = ref(false)
 const constraintDialog = ref(false)
@@ -883,7 +843,6 @@ const diffTitle = ref('方案差异')
 const currentDiff = ref(null)
 const entryForm = reactive({})
 const offeringForm = reactive({})
-const classroomForm = reactive({})
 const candidateForm = reactive({})
 const constraintForm = reactive({})
 const roomConstraintForm = reactive({})
@@ -1092,21 +1051,8 @@ const loadAll = async () => {
   scheduleScopeFullAccess.value = false
   let termResponse
   try {
-    if (!scheduleOrganizations.value.length) {
-      const [termResult, orgResult] = await Promise.all([listAcademicTerms(), orgOptions()])
-      if (sequence !== loadSequence) return
-      const availableTerms = responseList(termResult)
-      const termOrganization = (availableTerms.find(item => item.termCode === semesterCode.value)
-        || availableTerms.find(item => item.currentTerm) || availableTerms[0])?.organizationId
-      scheduleOrganizations.value = responseList(orgResult).filter(org =>
-        ['SCHOOL', 'CAMPUS'].includes(org.organizationType)
-        || availableTerms.some(term => term.organizationId === org.id))
-      organizationId.value = scheduleOrganizations.value.find(org => org.id === termOrganization)?.id
-        || scheduleOrganizations.value[0]?.id || ''
-      termResponse = { data: availableTerms.filter(term => !organizationId.value || term.organizationId === organizationId.value) }
-    } else {
-      termResponse = await listAcademicTerms({ organizationId: organizationId.value || undefined })
-    }
+    if (!organizationId.value) return
+    termResponse = await listAcademicTerms({ organizationId: organizationId.value })
   } catch (error) {
     if (sequence !== loadSequence) return
     terms.value = []
@@ -1136,7 +1082,7 @@ const loadAll = async () => {
   const studentOptionsRequest = scheduleDimension.value === 'STUDENT'
     ? loadStudentOptions() : Promise.resolve()
   const results = await Promise.allSettled([
-    listCourseCatalog(),
+    listCourseCatalog({ organizationId: organizationId.value }),
     dictionaryOptions('EDU_ROOM_TYPE'),
     scheduleScopeFullAccess.value ? listScheduleVersions(semesterCode.value) : Promise.resolve({ data: [] }),
     scheduleScopeFullAccess.value ? listScheduleCandidates(semesterCode.value) : Promise.resolve({ data: [] }),
@@ -1377,9 +1323,6 @@ const syncCombined = async () => {
   finally { combinedSaving.value = false }
 }
 const removeOffering = async (row) => { await ElMessageBox.confirm('确认删除该教学任务？', '删除'); await (row.offeringMode === 'COMBINED' ? deleteCombinedOffering(row.id) : deleteCourseOffering(row.id)); await loadAll() }
-const openClassroom = (row) => { reset(classroomForm, row ? { ...row } : { capacity: 40, roomType: roomTypes.value[0]?.value || '', enabled: true }); classroomDialog.value = true }
-const saveClassroom = async () => { await (classroomForm.id ? updateClassroom(classroomForm.id, classroomForm) : createClassroom(classroomForm)); classroomDialog.value = false; ElMessage.success('教室已保存'); await loadAll() }
-const removeClassroom = async (row) => { await ElMessageBox.confirm('确认删除该教室？', '删除'); await deleteClassroom(row.id); await loadAll() }
 const openConstraint = row => { reset(constraintForm, row ? { ...row } : { dayOfWeek: 1, periodNo: 1, constraintType: 'FORBIDDEN', weight: 10 }); constraintDialog.value = true }
 const saveConstraint = async () => { const payload = { ...constraintForm, semesterCode: semesterCode.value }; await (constraintForm.id ? updateTeacherTimeConstraint(constraintForm.id, payload) : createTeacherTimeConstraint(payload)); constraintDialog.value = false; ElMessage.success('教师时间约束已保存'); await loadAll() }
 const removeConstraint = async row => { await ElMessageBox.confirm('确认删除该教师时间约束？', '删除'); await deleteTeacherTimeConstraint(row.id); await loadAll() }
@@ -1698,9 +1641,13 @@ const rollbackVersion = async row => {
   ElMessage.success('课表已回滚并生成新版本')
   await Promise.all([loadAll(), loadVersions()])
 }
-onMounted(async () => {
+watch(organizationId, async (id, previousId) => {
+  if (previousId) semesterCode.value = ''
+  terms.value = []
+  clearSemesterData()
   await loadAll()
-  if (!reviewOnly && scheduleScopeFullAccess.value) await loadIncidents()
+  if (id !== organizationId.value) return
+  if (id && !reviewOnly && scheduleScopeFullAccess.value) await loadIncidents()
   const { dateAction, sourceEntryId, sourceDate } = route.query
   if (activeTab.value === 'date-schedule' && typeof sourceEntryId === 'string'
     && typeof sourceDate === 'string') {
@@ -1715,6 +1662,8 @@ onMounted(async () => {
       ElMessage.info('该日期课次已变化，请从最新待处理清单重新选择')
     }
   }
+}, { immediate: true })
+onMounted(() => {
   generationJobTimer = window.setInterval(() => {
     if (activeTab.value === 'candidates'
       && generationJobs.value.some(job => ['QUEUED', 'RUNNING'].includes(job.status))) {

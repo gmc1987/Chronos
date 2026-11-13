@@ -41,6 +41,9 @@ Page({
     if (item.kind === 'tab') return wx.switchTab({ url: item.target })
     if (item.kind === 'repair') return wx.navigateTo({ url: item.target })
     if (item.kind === 'records') return wx.navigateTo({ url: `/pages/records/index?title=${encodeURIComponent(item.title)}&path=${encodeURIComponent(item.path)}&form=${item.form || ''}` })
+    if (item.nativeFeatureCode === 'TEACHER_PERSONNEL' || item.code === 'EDU_TEACHER_PERSONNEL') {
+      return wx.navigateTo({ url: '/pages/teacher-personnel/index' })
+    }
     const aliases = {
       WORKFLOW_TASKS: '流程中心', DOCUMENTS: '公文中心', FILES: '文件中心',
       MEETINGS: '会议', BUSINESS_TRIPS: '出差', KNOWLEDGE: '知识中心', AI_CENTER: 'AI 智能中心',

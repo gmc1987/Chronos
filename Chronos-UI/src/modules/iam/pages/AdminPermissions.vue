@@ -47,7 +47,7 @@ import { useOrganizationEmployees } from '../useOrganizationEmployees'
 import { nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listRoles, roleDetail, menuTree, permissions, updateRole, orgList, organizationUnits } from '../api'
-import { listAdministrativeClasses, listEducationGrades } from '../../../api/admin'
+import { listAdministrativeClasses, listEducationGradeOptions } from '../../../api/admin'
 
 const roles = ref([]), roleTotal = ref(0), rolePage = ref(1), roleSize = ref(10), currentRoleId = ref(''), activeTab = ref('menu'), menuTreeRef = ref(null), menuTreeData = ref([])
 const actionPermissionIds = ref(new Set()), workflowPermissions = ref([]), workflowPermissionIds = ref([])
@@ -65,23 +65,37 @@ const mapMenus = (nodes, actions) => nodes.map((menu) => {
   return { key: `menu:${menu.id}`, id: menu.id, type: 'menu', label: menu.menuName || menu.name, children: [...children, ...operationNodes] }
 })
 
+const loadPermissionCatalog = async permissionType => {
+  const items = []
+  const size = 200
+  let page = 0
+  let totalPages = 1
+  while (page < totalPages) {
+    const { data } = await permissions({ page, size, permissionType, status: 1 })
+    items.push(...data.content)
+    totalPages = data.totalPages
+    page += 1
+  }
+  return items
+}
+
 const loadCatalogs = async () => {
-  const [menusRes, actionsRes, workflowsRes, dataRes, orgRes] = await Promise.all([
+  const [menusRes, actions, workflows, dataScopes, orgRes] = await Promise.all([
     menuTree(),
-    permissions({ page: 0, size: 500, permissionType: 'MENU_ACTION' }),
-    permissions({ page: 0, size: 500, permissionType: 'WORKFLOW' }),
-    permissions({ page: 0, size: 500, permissionType: 'DATA' }),
+    loadPermissionCatalog('MENU_ACTION'),
+    loadPermissionCatalog('WORKFLOW'),
+    loadPermissionCatalog('DATA'),
     orgList({ page: 0, size: 500 })
   ])
   // 班级、年级属于教育行业扩展资源。医院模板没有对应接口时，
   // 不能因此阻断菜单权限、流程权限和通用数据权限的授权页面。
   const [classResult, gradeResult] = await Promise.allSettled([
     listAdministrativeClasses(),
-    listEducationGrades()
+    listEducationGradeOptions()
   ])
-  const actions = (actionsRes?.data?.content || []).filter((item) => item.status === 1)
-  actionPermissionIds.value = new Set(actions.map((item) => item.id)); workflowPermissions.value = (workflowsRes?.data?.content || []).filter((item) => item.status === 1)
-  dataScopeTypes.value = (dataRes?.data?.content || []).filter((item) => item.status === 1).map((item) => ({ label: item.permissionName, value: item.scopeType }))
+  actionPermissionIds.value = new Set(actions.map((item) => item.id))
+  workflowPermissions.value = workflows
+  dataScopeTypes.value = dataScopes.map((item) => ({ label: item.permissionName, value: item.scopeType }))
   organizations.value = orgRes?.data?.content || orgRes?.data || []
   educationClasses.value = classResult.status === 'fulfilled'
     ? classResult.value?.data?.content || classResult.value?.data || []

@@ -5,67 +5,8 @@
       <button class="collapse-btn" aria-label="收起导航" @click="collapsed = !collapsed">{{ collapsed ? '›' : '‹' }}</button>
     </div>
     <nav class="admin-nav">
-      <template v-for="item in topLinks" :key="item.id || item.path">
-        <RouterLink
-          v-if="item.path"
-          :to="item.path"
-          class="admin-nav-item"
-          active-class="admin-route-active"
-          exact-active-class="admin-route-exact-active"
-          :class="{ active: isActive(item.path), bubbling: bubbleKey === item.path }"
-          @click="triggerBubble(item.path)"
-        >
-          <span class="label">{{ item.name }}</span>
-          <span class="initial">{{ item.name.charAt(0) }}</span>
-        </RouterLink>
-        <div
-          v-else
-          class="admin-nav-item disabled-link"
-          title="该菜单尚未配置页面路由"
-        >
-          <span class="label">{{ item.name }}</span>
-          <span class="initial">{{ item.name.charAt(0) }}</span>
-        </div>
-      </template>
-
-      <div v-for="group in groups" :key="group.name">
-        <div
-          class="admin-nav-item group-link"
-          :class="{ bubbling: group.bubble }"
-          @click="toggleGroup(group)"
-        >
-          <span class="label">{{ group.name }}</span>
-          <span class="initial">{{ group.name.charAt(0) }}</span>
-          <span class="caret" :class="{ open: group.open }">▾</span>
-        </div>
-        <div v-if="group.open" class="admin-nav-children">
-          <template
-            v-for="child in group.children"
-            :key="child.id || child.path"
-          >
-            <RouterLink
-              v-if="child.path"
-              :to="child.path"
-              class="admin-nav-item child"
-              active-class="admin-route-active"
-              exact-active-class="admin-route-exact-active"
-              :class="{ active: isActive(child.path), bubbling: bubbleKey === child.path }"
-              @click="triggerBubble(child.path)"
-            >
-              <span class="label">{{ child.name }}</span>
-              <span class="initial">{{ child.name.charAt(0) }}</span>
-            </RouterLink>
-            <div
-              v-else
-              class="admin-nav-item child disabled-link"
-              title="该菜单尚未配置页面路由"
-            >
-              <span class="label">{{ child.name }}</span>
-              <span class="initial">{{ child.name.charAt(0) }}</span>
-            </div>
-          </template>
-        </div>
-      </div>
+      <AdminSidebarNode v-for="item in menuItems" :key="item.id" :item="item"
+        :active="isActive" :bubble-key="bubbleKey" @navigate="triggerBubble" />
     </nav>
   </aside>
 </template>
@@ -73,6 +14,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import AdminSidebarNode from './AdminSidebarNode.vue'
 import { currentAdminNavigation } from '../../api/admin'
 import { industryBranding } from '../../industries/core'
 
@@ -81,7 +23,7 @@ const branding = industryBranding
 const collapsed = ref(false)
 const bubbleKey = ref('')
 
-const topLinks = ref([])
+const menuItems = ref([])
 
 const mapAdminPath = (path) => {
   if (!path) return ''
@@ -95,30 +37,12 @@ const mapAdminPath = (path) => {
   return `/admin${path}`
 }
 
-const leafLinks = (nodes = []) => nodes.flatMap((item) => {
-  const children = item.children || []
-  if (children.length) return leafLinks(children)
-  const path = mapAdminPath(item.path)
-  return item.menuName ? [{ id: item.id, name: item.menuName, path }] : []
-})
-
-const normalizeMenus = (menus = []) => {
-  const menuGroups = []
-  const rootLinks = []
-  menus.forEach((item) => {
-    const children = leafLinks(item.children || [])
-    if ((item.children || []).length) {
-      menuGroups.push({ id: item.id, name: item.menuName, path: mapAdminPath(item.path), children })
-    }
-    else {
-      const path = mapAdminPath(item.path)
-      if (item.menuName) rootLinks.push({ id: item.id, name: item.menuName, path })
-    }
-  })
-  return { menuGroups, rootLinks }
-}
-
-const groups = ref([])
+const normalizeMenus = (menus = []) => menus.filter(item => item.menuName).map(item => ({
+  id: item.id,
+  name: item.menuName,
+  path: mapAdminPath(item.path),
+  children: normalizeMenus(item.children || []),
+}))
 
 onMounted(async () => {
   let menus = []
@@ -128,16 +52,8 @@ onMounted(async () => {
   } catch {
     // 导航必须来自服务端的菜单与角色授权关系，请求失败时不展示固定菜单。
   }
-  const normalized = normalizeMenus(menus)
-  topLinks.value = normalized.rootLinks
-  groups.value = normalized.menuGroups.map((group) => ({
-    ...group,
-    // 后台导航默认全部收起，避免首次进入页面时展开过多菜单占满侧栏。
-    // 用户仍可通过点击一级菜单按需展开，切换路由不会强制改变其手动状态。
-    open: false,
-    bubble: false,
-    children: group.children || [],
-  }))
+  const nodes = normalizeMenus(menus)
+  menuItems.value = [...nodes.filter(node => !node.children.length), ...nodes.filter(node => node.children.length)]
 })
 
 // 菜单路径只匹配自身及其真正的下级路由，避免 /homework 同时匹配 /homework-analysis。
@@ -154,18 +70,4 @@ const triggerBubble = (key) => {
     }
   }, 450)
 }
-const toggleGroup = (group) => {
-  group.open = !group.open
-  group.bubble = true
-  setTimeout(() => {
-    group.bubble = false
-  }, 450)
-}
 </script>
-
-<style scoped>
-.disabled-link {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-</style>

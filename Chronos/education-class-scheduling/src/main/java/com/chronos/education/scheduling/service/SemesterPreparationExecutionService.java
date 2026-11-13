@@ -1,5 +1,6 @@
 package com.chronos.education.scheduling.service;
 
+import com.chronos.education.academic.service.TermCoursePlanService;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.AdmissionCandidateRepository;
@@ -39,6 +40,7 @@ public class SemesterPreparationExecutionService {
 	private final ClassSchedulingService scheduling;
 	private final AcademicDataService academicData;
 	private final JdbcTemplate jdbc;
+	private final TermCoursePlanService termCoursePlans;
 
 	public SemesterPreparationExecutionService(
 			AdmissionCandidateRepository admissionCandidates,
@@ -52,7 +54,7 @@ public class SemesterPreparationExecutionService {
 			TeacherAcademicProfileRepository teachers,
 			ClassSchedulingService scheduling,
 			AcademicDataService academicData,
-			JdbcTemplate jdbc) {
+			JdbcTemplate jdbc, TermCoursePlanService termCoursePlans) {
 		this.admissionCandidates = admissionCandidates;
 		this.administrativeClasses = administrativeClasses;
 		this.students = students;
@@ -65,6 +67,7 @@ public class SemesterPreparationExecutionService {
 		this.scheduling = scheduling;
 		this.academicData = academicData;
 		this.jdbc = jdbc;
+		this.termCoursePlans = termCoursePlans;
 	}
 
 	/** Agent 入口：按年度执行同一套分班规则。 */
@@ -237,10 +240,13 @@ public class SemesterPreparationExecutionService {
 		if (organizationId != null && !organizationId.equals(term.getOrganizationId())) {
 			throw new IllegalArgumentException("学期不属于当前智能体任务的目标机构");
 		}
+		var planned = termCoursePlans.generateExistingPlans(term, limit, dryRun);
+		if (!planned.isEmpty()) return planned;
 		var existing = new ArrayList<>(offerings.findBySemesterCodeOrderByOfferingCode(semesterCode).stream()
 				.filter(value -> organizationId == null || organizationId.equals(value.getCampusId())).toList());
 		var catalogBySubject = courses.findAll().stream()
 				.filter(value -> Boolean.TRUE.equals(value.getEnabled()) && value.getSubjectId() != null)
+				.filter(value -> value.getOrganizationId() == null || Objects.equals(term.getOrganizationId(), value.getOrganizationId()))
 				.collect(Collectors.groupingBy(value -> value.getSubjectId()));
 		var assignments = teachingAssignments.findAllByOrderByCreateTimeDesc().stream()
 				.filter(value -> term.getId().equals(value.getAcademicTermId()))
@@ -257,6 +263,10 @@ public class SemesterPreparationExecutionService {
 		List<Map<String, Object>> proposals = new ArrayList<>();
 		for (var assignment : assignments) {
 			var matchingCourses = catalogBySubject.getOrDefault(assignment.getSubjectId(), List.of());
+			if (assignment.getCourseId() != null) {
+				matchingCourses = matchingCourses.stream()
+						.filter(course -> assignment.getCourseId().equals(course.getId())).toList();
+			}
 			if (matchingCourses.size() != 1) {
 				ambiguousCourse++;
 				continue;

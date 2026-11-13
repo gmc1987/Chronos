@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAdminUsername } from '../../../store/auth'
 import {
   createParentMeeting, listAdminParentMeetings, listAdministrativeClasses,
-  listEducationGrades, listEducationStudents, listMeetingRooms, publishParentMeeting,
+  listEducationGradeOptions, listEducationStudents, listMeetingRooms, publishParentMeeting,
 } from '../../../api/admin'
 
 const meetings = ref([])
@@ -23,7 +23,7 @@ const scopeOptions = computed(() => form.value.scopeType === 'CLASS' ? classes.v
 async function load() {
   const [meetingResponse, classResponse, gradeResponse, studentResponse, roomResponse] = await Promise.all([
     listAdminParentMeetings(), listAdministrativeClasses(),
-    listEducationGrades({ page: 0, size: 200 }), listEducationStudents({ page: 0, size: 200 }),
+    listEducationGradeOptions(), listEducationStudents({ page: 0, size: 200 }),
     listMeetingRooms(),
   ])
   meetings.value = unwrap(meetingResponse)

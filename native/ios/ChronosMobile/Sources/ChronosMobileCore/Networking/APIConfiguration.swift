@@ -11,10 +11,10 @@ public struct ChronosAPIConfiguration: Sendable {
 
     public static var fromEnvironment: Self {
         #if DEBUG
-        let defaultAPI = "http://192.168.0.104:8080"
-        let defaultPortal = "http://192.168.0.104:5173"
+        let defaultAPI = "http://101.37.189.25/api"
+        let defaultPortal = "http://101.37.189.25"
         #else
-        let defaultAPI = "https://api.examp                                                                         ```le.invalid"
+        let defaultAPI = "https://api.example.invalid"
         let defaultPortal = "https://portal.example.invalid"
         #endif
         let configuredAPI = Bundle.main.object(forInfoDictionaryKey: "ChronosAPIBaseURL") as? String

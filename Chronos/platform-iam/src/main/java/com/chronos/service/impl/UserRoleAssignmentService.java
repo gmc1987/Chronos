@@ -104,6 +104,16 @@ public class UserRoleAssignmentService {
 		reconcileEffectiveRoles(account);
 	}
 
+	@Transactional
+	public void removeManualRoleSource(AdminUser account, String sourceKey) {
+		var matched = sources.findByUserIdAndSourceType(account.getId(), MANUAL).stream()
+				.filter(source -> sourceKey.equals(source.getSourceKey())).toList();
+		if (matched.isEmpty()) return;
+		sources.deleteAll(matched);
+		sources.flush();
+		reconcileEffectiveRoles(account);
+	}
+
 	@Transactional(readOnly = true)
 	public Set<String> manualRoleIds(String userId) {
 		return sources.findByUserIdAndSourceType(userId, MANUAL).stream()

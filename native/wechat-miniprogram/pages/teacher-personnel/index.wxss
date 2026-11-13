@@ -1,0 +1,6 @@
+.tabs { position:sticky; top:0; z-index:5; display:flex; gap:8rpx; padding:18rpx 24rpx; background:#f4f7f8; }
+.tab { flex:1; padding:18rpx 4rpx; border-radius:20rpx; color:#71808a; text-align:center; font-size:25rpx; }
+.tab.active { color:#087b68; background:#fff; font-weight:650; }
+.list-page { padding-top: 8rpx; }
+.workflow-line { display:flex; justify-content:space-between; gap:20rpx; margin-top:12rpx; color:#71808a; font-size:24rpx; }
+.workflow-line text:last-child { color:#17202a; text-align:right; }

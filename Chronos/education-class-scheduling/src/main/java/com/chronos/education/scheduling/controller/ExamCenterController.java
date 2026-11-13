@@ -453,9 +453,10 @@ public class ExamCenterController {
 
 	@GetMapping("/admin/education/exam/invigilation-changes")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:exam:invigilation:view','education:exam:invigilation:manage')")
-	public ResultData<List<ExamInvigilationChange>> changes(Authentication authentication) {
+	public ResultData<List<ExamInvigilationChange>> changes(
+			@RequestParam(required = false) String organizationId, Authentication authentication) {
 		requireFullAccess(authentication);
-		return ok(service.pendingChanges());
+		return ok(service.pendingChanges(organizationId, authentication.getName()));
 	}
 
 	@GetMapping("/admin/education/exam/teachers/{teacherId}/qualifications")

@@ -6,19 +6,20 @@ import {
   listAcademicTerms,
   listAdministrativeClasses,
   listEducationGrades,
+  listCourseCatalog,
   listEducationSubjects,
   listEducationTeachers,
   listTeachingAssignments,
   updateTeachingAssignment,
-  generateOfferingsFromAssignments,
 } from '../../../api/admin'
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 const columns = [
   { prop: 'academicTermId', label: '学期', lookup: 'terms' },
   { prop: 'teacherName', label: '教师' },
   { prop: 'subjectId', label: '学科', lookup: 'subjects' },
+  { prop: 'courseId', label: '课程', lookup: 'courses' },
   { prop: 'gradeId', label: '年级', lookup: 'grades' },
   { prop: 'administrativeClassId', label: '行政班', lookup: 'classes' },
   { prop: 'assignmentRole', label: '任教角色', dictCode: 'EDU_TEACHING_ROLE' },
@@ -29,6 +30,8 @@ const fields = [
   { prop: 'academicTermId', label: '学期', lookup: 'terms', labelProp: 'termName' },
   { prop: 'teacherId', label: '教师', lookup: 'teachers', labelProp: 'teacherName' },
   { prop: 'subjectId', label: '学科', lookup: 'subjects', labelProp: 'subjectName' },
+  { prop: 'courseId', label: '课程（可选）', lookup: 'courses', labelProp: 'courseName', clearable: true,
+    optionFilter: (course, form) => course.enabled && course.subjectId === form.subjectId },
   { prop: 'gradeId', label: '年级', lookup: 'grades', labelProp: 'gradeName' },
   { prop: 'administrativeClassId', label: '行政班', lookup: 'classes', labelProp: 'className' },
   { prop: 'assignmentRole', label: '任教角色', dictCode: 'EDU_TEACHING_ROLE' },
@@ -37,85 +40,78 @@ const fields = [
 ]
 
 const lookups = [
-  { key: 'terms', loader: listAcademicTerms, labelProp: 'termName' },
-  { key: 'teachers', loader: listEducationTeachers, labelProp: 'teacherName' },
-  { key: 'subjects', loader: listEducationSubjects, labelProp: 'subjectName' },
-  { key: 'grades', loader: listEducationGrades, labelProp: 'gradeName' },
-  { key: 'classes', loader: listAdministrativeClasses, labelProp: 'className' },
+  { key: 'terms', campusScoped: true, loader: organizationId => listAcademicTerms({ organizationId }), labelProp: 'termName' },
+  { key: 'teachers', campusScoped: true, loader: organizationId => listEducationTeachers({ organizationId }), labelProp: 'teacherName' },
+  { key: 'subjects', campusScoped: true, loader: organizationId => listEducationSubjects({ organizationId, includeShared: true }), labelProp: 'subjectName' },
+  { key: 'courses', campusScoped: true, loader: organizationId => listCourseCatalog({ organizationId, includeShared: true }), labelProp: 'courseName' },
+  { key: 'grades', campusScoped: true, loader: organizationId => listEducationGrades({ organizationId }), labelProp: 'gradeName' },
+  { key: 'classes', campusScoped: true, loader: campusId => listAdministrativeClasses({ campusId }), labelProp: 'className' },
 ]
 
-const generationDialog = ref(false)
-const generationLoading = ref(false)
-const generationPreview = ref(null)
-const generationTerms = ref([])
-const generationForm = reactive({ semesterCode: '', batchLimit: 100 })
-const openGeneration = () => { generationPreview.value = null; generationDialog.value = true }
-const previewGeneration = async () => {
-  if (!generationForm.semesterCode) return ElMessage.warning('请选择学期')
-  generationLoading.value = true
-  try { generationPreview.value = (await generateOfferingsFromAssignments({ ...generationForm, dryRun: true })).data || {} }
-  finally { generationLoading.value = false }
+const route = useRoute()
+const organizationId = ref(typeof route.query.organizationId === 'string' ? route.query.organizationId : '')
+const teacherId = ref('')
+const academicTermId = ref(typeof route.query.academicTermId === 'string' ? route.query.academicTermId : '')
+const loadAssignments = async ({ campusId, ...params }) => {
+  const response = await listTeachingAssignments({
+    ...params,
+    organizationId: campusId,
+    teacherId: teacherId.value,
+    academicTermId: academicTermId.value,
+  })
+  const result = response.data
+  return result?.page
+    ? { ...response, data: { ...result.page, enabledWeeklyLessons: result.enabledWeeklyLessons } }
+    : response
 }
-const executeGeneration = async () => {
-  await ElMessageBox.confirm(`确认根据候选结果生成 ${generationPreview.value?.creatable || 0} 个教学任务并同步行政班学生？`, '生成教学任务', { type: 'warning' })
-  generationLoading.value = true
-  try {
-    const result = (await generateOfferingsFromAssignments({ ...generationForm, dryRun: false })).data || {}
-    ElMessage.success(`已生成 ${result.created || 0} 个教学任务`)
-    generationDialog.value = false
-  } finally { generationLoading.value = false }
-}
-onMounted(async () => {
-  generationTerms.value = (await listAcademicTerms()).data || []
-  const current = generationTerms.value.find(item => item.currentTerm) || generationTerms.value[0]
-  generationForm.semesterCode = current?.termCode || ''
-})
+watch(organizationId, () => {
+  teacherId.value = ''
+  academicTermId.value = ''
+}, { flush: 'sync' })
 </script>
 
 <template>
-  <AcademicCrudPage
+  <AcademicCrudPage searchable import-kind="ASSIGNMENTS" permission-prefix="education:teaching-assignment"
+    v-model:campus-id="organizationId"
+    campus-scoped
     title="教师任教关系"
-    description="按学期维护教师承担的学科、年级、行政班和周课时"
+    description="按学期维护任课范围。为指定课程分配教师时请选择课程，教学任务在学期开课计划中生成。"
     entity-label="任教关系"
     :columns="columns"
     :fields="fields"
     :defaults="{ assignmentRole: 'TEACHER', weeklyLessons: 0, enabled: true }"
-    :loader="listTeachingAssignments"
+    :loader="loadAssignments"
     :creator="createTeachingAssignment"
     :updater="updateTeachingAssignment"
     :deleter="deleteTeachingAssignment"
     :lookups="lookups"
   >
-    <template #actions><el-button type="primary" plain @click="openGeneration">生成教学任务</el-button></template>
-  </AcademicCrudPage>
-  <el-dialog v-model="generationDialog" title="根据任教关系生成教学任务" width="900px">
-    <el-alert type="info" :closable="false" title="先预览候选教学任务；确认后才会创建任务，并把行政班在籍学生同步为教学班成员。" />
-    <el-form inline class="generation-form">
-      <el-form-item label="学期"><el-select v-model="generationForm.semesterCode" filterable><el-option v-for="item in generationTerms" :key="item.id" :label="item.termName" :value="item.termCode" /></el-select></el-form-item>
-      <el-form-item label="本批上限"><el-input-number v-model="generationForm.batchLimit" :min="1" :max="500" /></el-form-item>
-      <el-form-item><el-button type="primary" :loading="generationLoading" @click="previewGeneration">生成候选结果</el-button></el-form-item>
-    </el-form>
-    <template v-if="generationPreview">
-      <el-descriptions :column="4" border class="generation-summary">
-        <el-descriptions-item label="任教关系">{{ generationPreview.assignments || 0 }}</el-descriptions-item>
-        <el-descriptions-item label="可生成">{{ generationPreview.creatable || 0 }}</el-descriptions-item>
-        <el-descriptions-item label="已存在">{{ generationPreview.alreadyExists || 0 }}</el-descriptions-item>
-        <el-descriptions-item label="课程匹配异常">{{ generationPreview.ambiguousCourse || 0 }}</el-descriptions-item>
-      </el-descriptions>
-      <el-table :data="generationPreview.proposals || []" border max-height="360">
-        <el-table-column prop="className" label="行政班" min-width="170" />
-        <el-table-column prop="courseName" label="课程" min-width="160" />
-        <el-table-column prop="teacherName" label="任课教师" min-width="120" />
-        <el-table-column prop="studentCount" label="学生数" width="90" />
-        <el-table-column prop="weeklyLessons" label="周课时" width="90" />
-      </el-table>
+    <template #actions>
+      <el-button v-permission="['education:term-course-plan:view','education:term-course-plan:manage']" type="primary" plain
+        @click="$router.push({ name: 'admin-education-term-course-plans', query: { organizationId } })">前往学期开课计划</el-button>
     </template>
-    <template #footer><el-button @click="generationDialog=false">取消</el-button><el-button type="primary" :disabled="!generationPreview?.creatable" :loading="generationLoading" @click="executeGeneration">确认生成</el-button></template>
-  </el-dialog>
+    <template #filters="{ lookups: options, reload }">
+      <el-select v-model="teacherId" class="assignment-filter" aria-label="按教师查询"
+        placeholder="全部教师（可搜索姓名或工号）" :disabled="!organizationId" clearable filterable @change="reload">
+        <el-option v-for="teacher in options.teachers || []" :key="teacher.id" :value="teacher.id"
+          :label="teacher.teacherNo ? teacher.teacherName + '（' + teacher.teacherNo + '）' : teacher.teacherName" />
+      </el-select>
+      <el-select v-model="academicTermId" class="assignment-filter" aria-label="按学期查询"
+        placeholder="全部学期" :disabled="!organizationId" clearable filterable @change="reload">
+        <el-option v-for="term in options.terms || []" :key="term.id" :value="term.id" :label="term.termName" />
+      </el-select>
+    </template>
+    <template #summary="{ data, loading }">
+      <div v-if="teacherId && data && !loading" class="assignment-summary" role="status">
+        <span>共 <strong>{{ data.totalElements }}</strong> 条任教关系</span>
+        <span v-if="academicTermId">启用关系周课时合计 <strong>{{ data.enabledWeeklyLessons }}</strong> 节</span>
+        <span v-else>选择学期可查看该学期的周课时合计</span>
+      </div>
+    </template>
+  </AcademicCrudPage>
 </template>
 
 <style scoped>
-.generation-form { margin-top: 18px; }
-.generation-form .el-select { width: 240px; }
-.generation-summary { margin-bottom: 14px; }
+.assignment-filter { width: 260px; }
+.assignment-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 10px; }
 </style>

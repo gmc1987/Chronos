@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { watch, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   analyzeAcademicSchedule,
@@ -12,6 +13,7 @@ import {
 } from '../../../api/admin'
 
 const terms = ref([])
+const organizationId = ref('')
 const semesterCode = ref('')
 const requestText = ref('')
 const proposals = ref([])
@@ -22,9 +24,10 @@ const page = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
-const load = async () => {
-  const response = await listAcademicTerms()
-  terms.value = response.data || []
+const load = async id => {
+  const response = await listAcademicTerms({ organizationId: id })
+  if (organizationId.value !== id) return
+  terms.value = response.data?.content || response.data || []
   if (!semesterCode.value) {
     const current = terms.value.find(item => item.currentTerm) || terms.value[0]
     semesterCode.value = current?.termCode || ''
@@ -33,8 +36,13 @@ const load = async () => {
 }
 
 const loadProposals = async () => {
+  proposals.value = []
+  total.value = 0
+  analysis.value = null
   if (!semesterCode.value) return
-  const response = await listSchedulingAgentProposals(semesterCode.value, { page: page.value - 1, size: pageSize.value })
+  const term = semesterCode.value
+  const response = await listSchedulingAgentProposals(term, { page: page.value - 1, size: pageSize.value })
+  if (term !== semesterCode.value) return
   proposals.value = response.data?.content || response.data || []
   total.value = response.data?.totalElements ?? proposals.value.length
   analysis.value = null
@@ -87,8 +95,9 @@ const reject = async row => {
 const analyze = async () => {
   analyzing.value = true
   try {
-    const response = await analyzeAcademicSchedule(semesterCode.value)
-    analysis.value = response.data
+    const term = semesterCode.value
+    const response = await analyzeAcademicSchedule(term)
+    if (semesterCode.value === term) analysis.value = response.data
   } finally {
     analyzing.value = false
   }
@@ -98,7 +107,15 @@ const statusType = status => ({ DRAFT: 'warning', CONFIRMED: 'primary', APPLIED:
 const displayStatus = row => row.appliedConstraintId ? '已应用' : ({ DRAFT: '草稿', CONFIRMED: '已确认待应用', APPLIED: '已应用', REJECTED: '已驳回' })[row.status] || row.status
 const changeSemester = () => { page.value = 1; loadProposals() }
 
-onMounted(load)
+watch(organizationId, async id => {
+  semesterCode.value = ''
+  terms.value = []
+  proposals.value = []
+  analysis.value = null
+  total.value = 0
+  page.value = 1
+  if (id) await load(id)
+})
 </script>
 
 <template>
@@ -108,7 +125,8 @@ onMounted(load)
         <h2>教育智能体</h2>
         <p>排课 Agent 生成待确认草稿，教务 Agent 只读分析课表和教师负荷。</p>
       </div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="changeSemester">
+      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
+      <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="changeSemester">
         <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
       </el-select>
     </header>
@@ -128,7 +146,7 @@ onMounted(load)
             :rows="3"
             placeholder="例如：张老师星期三第3节不能排课；李老师周五第1节优先排课"
           />
-          <el-button type="primary" :loading="proposing" @click="propose">生成约束草稿</el-button>
+          <el-button type="primary" :disabled="!semesterCode" :loading="proposing" @click="propose">生成约束草稿</el-button>
         </div>
         <el-table :data="proposals" border>
           <el-table-column prop="teacherName" label="教师" width="120" />
@@ -170,7 +188,7 @@ onMounted(load)
           :closable="false"
         />
         <div class="analysis-toolbar">
-          <el-button type="primary" :loading="analyzing" @click="analyze">运行教务分析</el-button>
+          <el-button type="primary" :disabled="!semesterCode" :loading="analyzing" @click="analyze">运行教务分析</el-button>
         </div>
         <template v-if="analysis">
           <el-descriptions :column="3" border>

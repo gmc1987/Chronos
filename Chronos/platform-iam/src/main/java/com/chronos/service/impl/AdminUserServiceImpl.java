@@ -176,8 +176,11 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		String stableEmployeeId = employee.getId();
 		AdminUser existing = adminUserRepository.findByEmployeeId(stableEmployeeId).orElse(null);
 		if (existing == null && !stableEmployeeId.equals(employeeId)) existing = adminUserRepository.findByEmployeeId(employeeId).orElse(null);
+		Role teacherRole = roleRepository.findByRoleCode("TEACHER");
+		if (teacherRole == null) teacherRole = roleRepository.findByRoleCode("EDU_TEACHER");
 		if (existing != null) {
 			roleAssignments.ensureBaseAccountRole(existing);
+			roleAssignments.ensureManualRole(existing, teacherRole, "TEACHER_PROVISIONING");
 			return new TeacherAccountProvisioning(existing.getUsername(), stableEmployeeId, false);
 		}
 		String username = employee.getEmployeeCode();
@@ -192,8 +195,7 @@ public class AdminUserServiceImpl implements IAdminUserService, ITeacherAccountP
 		if (baseRole == null || !Integer.valueOf(1).equals(baseRole.getStatus())) {
 			throw new IllegalStateException("基础角色 ROLE_PLATFORM_USER 不存在或未启用");
 		}
-		Role teacherRole = roleRepository.findByRoleCode("TEACHER");
-		if (teacherRole == null) teacherRole = roleRepository.findByRoleCode("EDU_TEACHER");
+
 		user.setRoles(new HashSet<>(Set.of(baseRole)));
 		adminUserRepository.save(user);
 		roleAssignments.ensureBaseAccountRole(user);

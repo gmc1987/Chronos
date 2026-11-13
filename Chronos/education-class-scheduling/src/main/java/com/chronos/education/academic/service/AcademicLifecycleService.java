@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,12 +100,73 @@ public class AcademicLifecycleService {
 	public ProgramView createProgram(ProgramCommand command, String actor) {
 		validateProgram(command);
 		assertSchool(actor, command.schoolId());
-		majors.findById(command.majorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
+		validateProgramMajor(command);
 		if (programs.existsBySchoolIdAndProgramCodeAndVersionNo(command.schoolId(), command.programCode().trim(), 1)) {
 			throw new IllegalStateException("培养方案编码已存在");
 		}
 		AcademicProgram program = new AcademicProgram();
 		program.setSchoolId(command.schoolId());
+		applyProgramFields(program, command);
+		program = programs.save(program);
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_CREATE", "programId=" + program.getId());
+		return view(program);
+	}
+
+	@Transactional
+	public ProgramView updateProgram(String id, Long rowVersion, ProgramCommand command, String actor) {
+		AcademicProgram program = mutableProgram(id, actor);
+		assertProgramVersion(program, rowVersion);
+		validateProgram(command);
+		if (!program.getSchoolId().equals(command.schoolId())) {
+			throw new IllegalArgumentException("培养方案所属学校不能变更");
+		}
+		validateProgramMajor(command);
+		String code = command.programCode().trim();
+		if (!program.getProgramCode().equals(code)
+				&& programs.existsBySchoolIdAndProgramCodeAndVersionNo(program.getSchoolId(), code, program.getVersionNo())) {
+			throw new IllegalStateException("培养方案编码已存在");
+		}
+		if (!program.getMajorId().equals(command.majorId())) {
+			var courseIds = programCourses.findByProgramIdOrderBySuggestedTermNoAscSortOrderAsc(id).stream()
+					.map(AcademicProgramCourse::getCourseId).toList();
+			if (courses.findAllById(courseIds).stream().anyMatch(course -> !course.appliesToMajor(command.majorId()))) {
+				throw new IllegalArgumentException("已有方案课程不适用于所选专业，不能变更专业");
+			}
+		}
+		applyProgramFields(program, command);
+		programs.saveAndFlush(program);
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_UPDATE", "programId=" + id);
+		return view(program);
+	}
+
+	@Transactional
+	public void deleteProgram(String id, Long rowVersion, String actor) {
+		AcademicProgram program = mutableProgram(id, actor);
+		assertProgramVersion(program, rowVersion);
+		try {
+			programCourses.deleteDraftCourses(id);
+			programs.delete(program);
+			programs.flush();
+		} catch (DataIntegrityViolationException exception) {
+			throw new IllegalStateException("培养方案或其课程已被业务记录引用，无法删除", exception);
+		}
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_DELETE", "programId=" + id);
+	}
+
+	private void assertProgramVersion(AcademicProgram program, Long rowVersion) {
+		if (!Objects.equals(program.getRowVersion(), rowVersion)) {
+			throw new IllegalStateException("培养方案已变更，请刷新后再操作");
+		}
+	}
+
+	private void validateProgramMajor(ProgramCommand command) {
+		var major = majors.findById(command.majorId()).orElseThrow(() -> new IllegalArgumentException("专业不存在"));
+		if (major.getOrganizationId() != null && !command.schoolId().equals(major.getOrganizationId())) {
+			throw new IllegalArgumentException("专业不属于所选学校");
+		}
+	}
+
+	private void applyProgramFields(AcademicProgram program, ProgramCommand command) {
 		program.setMajorId(command.majorId());
 		program.setCohortYear(command.cohortYear());
 		program.setEducationLevel(normalize(command.educationLevel()));
@@ -113,9 +175,84 @@ public class AcademicLifecycleService {
 		program.setMinimumCredits(command.minimumCredits());
 		program.setEffectiveStartDate(command.effectiveStartDate());
 		program.setEffectiveEndDate(command.effectiveEndDate());
-		program = programs.save(program);
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_CREATE", "programId=" + program.getId());
-		return view(program);
+	}
+
+	@Transactional
+	public List<String> importProgramRows(String schoolId, List<List<String>> rows, boolean courseRows, boolean dryRun,
+			String actor) {
+		assertSchool(actor, schoolId);
+		var errors = new ArrayList<String>();
+		var writes = new ArrayList<Runnable>();
+		var keys = new HashSet<List<String>>();
+		var schoolPrograms = programs.findBySchoolIdOrderByCohortYearDescProgramCode(schoolId);
+		for (var row : rows) {
+			try {
+				if (courseRows) {
+					var drafts = schoolPrograms.stream()
+							.filter(program -> row.get(1).equals(program.getProgramCode()) && "DRAFT".equals(program.getStatus()))
+							.toList();
+					if (drafts.size() != 1) throw new IllegalArgumentException("未能唯一匹配草稿方案编码");
+					var program = drafts.getFirst();
+					var course = courses.findByCourseCode(row.get(2))
+							.filter(item -> isProgramCourseEligible(item, program))
+							.orElseThrow(() -> new IllegalArgumentException("课程不存在、未启用或不适用于方案专业"));
+					String nature = normalize(row.get(4));
+					int term = Integer.parseInt(row.get(3));
+					var credits = row.get(5).isBlank() ? null : new BigDecimal(row.get(5));
+					if (term < 1 || !COURSE_NATURES.contains(nature)
+							|| credits != null && (credits.signum() < 0 || credits.compareTo(new BigDecimal("999999.99")) > 0 || credits.scale() > 2)) {
+						throw new IllegalArgumentException("请检查建议学期、课程性质和计入学分");
+					}
+					if (programCourses.findByProgramIdAndCourseId(program.getId(), course.getId()).isPresent()
+							|| !keys.add(List.of(program.getId(), course.getId()))) {
+						throw new IllegalArgumentException("方案课程已存在或文件内重复");
+					}
+					var command = new ProgramCourseCommand(course.getId(), term, nature, credits, List.of(), null, null);
+					writes.add(() -> addCourse(program.getId(), command, actor));
+				} else {
+					var major = majors.findByMajorCode(row.get(1))
+							.filter(item -> Boolean.TRUE.equals(item.getEnabled()))
+							.filter(item -> item.getOrganizationId() == null || schoolId.equals(item.getOrganizationId()))
+							.orElseThrow(() -> new IllegalArgumentException("专业不存在或不可用"));
+					var command = new ProgramCommand(schoolId, major.getId(), Integer.parseInt(row.get(2)), row.get(3),
+							row.get(4), row.get(5), new BigDecimal(row.get(6)), null, null);
+					validateProgram(command);
+					if (command.programCode().length() > 64 || command.programName().length() > 200
+							|| command.minimumCredits().compareTo(new BigDecimal("999999.99")) > 0
+							|| command.minimumCredits().scale() > 2) {
+						throw new IllegalArgumentException("方案编码、名称或最低学分超出允许范围");
+					}
+					if (schoolPrograms.stream().anyMatch(program -> program.getProgramCode().equals(command.programCode()))
+							|| !keys.add(List.of(command.programCode()))) {
+						throw new IllegalArgumentException("方案编码已存在或文件内重复");
+					}
+					writes.add(() -> createProgram(command, actor));
+				}
+			} catch (NumberFormatException exception) {
+				errors.add("第 " + row.getFirst() + " 行：年份、学期或学分格式无效");
+			} catch (IllegalArgumentException exception) {
+				errors.add("第 " + row.getFirst() + " 行：" + exception.getMessage());
+			}
+		}
+		if (!dryRun && errors.isEmpty()) writes.forEach(Runnable::run);
+		return errors;
+	}
+
+	@Transactional(readOnly = true)
+	public List<CourseCatalog> programCourseOptions(String id, String actor) {
+		var program = programs.findById(id).orElseThrow(() -> new IllegalArgumentException("培养方案不存在"));
+		assertSchool(actor, program.getSchoolId());
+		var added = programCourses.findByProgramIdOrderBySuggestedTermNoAscSortOrderAsc(id).stream()
+				.map(AcademicProgramCourse::getCourseId).collect(Collectors.toSet());
+		return courses.findByOrganizationIdInOrOrganizationIdIsNullOrderByCourseCode(List.of(program.getSchoolId())).stream()
+				.filter(course -> isProgramCourseEligible(course, program) && !added.contains(course.getId()))
+				.toList();
+	}
+
+	private boolean isProgramCourseEligible(CourseCatalog course, AcademicProgram program) {
+		return Boolean.TRUE.equals(course.getEnabled())
+				&& (course.getOrganizationId() == null || program.getSchoolId().equals(course.getOrganizationId()))
+				&& course.appliesToMajor(program.getMajorId());
 	}
 
 	@Transactional
@@ -123,6 +260,9 @@ public class AcademicLifecycleService {
 		AcademicProgram program = mutableProgram(programId, actor);
 		CourseCatalog course = courses.findById(command.courseId())
 				.orElseThrow(() -> new IllegalArgumentException("课程不存在"));
+		if (!isProgramCourseEligible(course, program)) {
+			throw new IllegalArgumentException("请选择启用的公共基础课或适用于本专业的课程");
+		}
 		String nature = normalize(command.courseNature());
 		if (!COURSE_NATURES.contains(nature)) {
 			throw new IllegalArgumentException("课程性质不支持");
@@ -162,20 +302,53 @@ public class AcademicLifecycleService {
 	@Transactional
 	public ProgramView submitProgram(String id, String actor) {
 		AcademicProgram program = mutableProgram(id, actor);
-		List<AcademicProgramCourse> items = programCourses.findByProgramIdOrderBySuggestedTermNoAscSortOrderAsc(id);
+		validateProgramSubmission(program);
+		return view(markProgramSubmitted(program, actor, LocalDateTime.now()));
+	}
+
+	@Transactional
+	public int submitPrograms(ProgramBatchSubmitCommand command, String actor) {
+		assertSchool(actor, command.schoolId());
+		List<String> ids = command.programIds();
+		if (ids == null || ids.isEmpty() || ids.stream().anyMatch(id -> id == null || id.isBlank())) {
+			throw new IllegalArgumentException("请选择要提交的培养方案");
+		}
+		// 按固定顺序加锁，先校验整批方案，再写入状态和审计记录。
+		List<AcademicProgram> selected = new ArrayList<>();
+		for (String id : ids.stream().distinct().sorted().toList()) {
+			AcademicProgram program = programs.findForUpdate(id)
+					.filter(item -> command.schoolId().equals(item.getSchoolId()))
+					.orElseThrow(() -> new IllegalArgumentException("所选培养方案不存在或不属于当前学校，请刷新后重试"));
+			if (!"DRAFT".equals(program.getStatus())) {
+				throw new IllegalStateException("方案 " + program.getProgramCode() + " 已不处于草稿状态，请刷新后重试");
+			}
+			validateProgramSubmission(program);
+			selected.add(program);
+		}
+		LocalDateTime submittedAt = LocalDateTime.now();
+		selected.forEach(program -> markProgramSubmitted(program, actor, submittedAt));
+		return selected.size();
+	}
+
+	private void validateProgramSubmission(AcademicProgram program) {
+		List<AcademicProgramCourse> items = programCourses.findByProgramIdOrderBySuggestedTermNoAscSortOrderAsc(program.getId());
+		String prefix = "方案 " + program.getProgramCode() + "：";
 		if (items.isEmpty()) {
-			throw new IllegalStateException("培养方案至少需要一门课程");
+			throw new IllegalStateException(prefix + "培养方案至少需要一门课程");
 		}
 		BigDecimal credits = items.stream().map(AcademicProgramCourse::getCredits)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
 		if (credits.compareTo(program.getMinimumCredits()) < 0) {
-			throw new IllegalStateException("方案课程学分低于毕业最低学分");
+			throw new IllegalStateException(prefix + "课程学分低于毕业最低学分");
 		}
+	}
+
+	private AcademicProgram markProgramSubmitted(AcademicProgram program, String actor, LocalDateTime submittedAt) {
 		program.setStatus("SUBMITTED");
 		program.setSubmittedBy(actor);
-		program.setSubmittedAt(LocalDateTime.now());
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_SUBMIT", "programId=" + id);
-		return view(programs.save(program));
+		program.setSubmittedAt(submittedAt);
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_SUBMIT", "programId=" + program.getId());
+		return programs.save(program);
 	}
 
 	@Transactional
@@ -208,17 +381,22 @@ public class AcademicLifecycleService {
 	@Transactional
 	public TermRegistration submitRegistration(RegistrationCommand command, String actor) {
 		assertSchool(actor, command.schoolId());
-		dataScopes.assertStudentAccess(dataScopes.resolve(actor), command.studentId());
-		terms.findByTermCode(command.termCode()).orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		var scope = dataScopes.resolve(actor);
+		dataScopes.assertStudentAccess(scope, command.studentId());
+		terms.findByTermCode(command.termCode())
+				.filter(term -> command.schoolId().equals(term.getOrganizationId()))
+				.orElseThrow(() -> new IllegalArgumentException("所选学校下没有该学期"));
 		StudentProfile student = students.findById(command.studentId())
 				.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+		dataScopes.assertStudentInSchool(scope, command.schoolId(), student);
 		if (!"ACTIVE".equals(student.getEnrollmentStatus())) {
 			throw new IllegalStateException("学生当前学籍状态不可注册");
 		}
 		AcademicProgram program = programs.findById(command.programId())
 				.orElseThrow(() -> new IllegalArgumentException("培养方案不存在"));
 		if (!"PUBLISHED".equals(program.getStatus()) || !command.schoolId().equals(program.getSchoolId())
-				|| !Objects.equals(student.getMajorId(), program.getMajorId())) {
+				|| !Objects.equals(student.getMajorId(), program.getMajorId())
+				|| !Objects.equals(student.getGradeYear(), program.getCohortYear())) {
 			throw new IllegalStateException("学生没有适用的已发布培养方案");
 		}
 		TermRegistration registration = registrations
@@ -523,7 +701,8 @@ public class AcademicLifecycleService {
 		return new ProgramView(program.getId(), program.getSchoolId(), program.getMajorId(),
 				program.getCohortYear(), program.getEducationLevel(), program.getProgramCode(),
 				program.getProgramName(), program.getVersionNo(), program.getMinimumCredits(),
-				program.getTotalHours(), program.getStatus(), program.getRowVersion(), items);
+				program.getTotalHours(), program.getStatus(), program.getRowVersion(),
+				program.getEffectiveStartDate(), program.getEffectiveEndDate(), items);
 	}
 
 	private Map<String, Object> snapshotProgram(AcademicProgram program) {
@@ -563,13 +742,18 @@ public class AcademicLifecycleService {
 				|| command.programName() == null || command.programName().isBlank()) {
 			throw new IllegalArgumentException("学校、专业、方案编码和名称不能为空");
 		}
+		if (command.programCode().trim().length() > 64 || command.programName().trim().length() > 200) {
+			throw new IllegalArgumentException("方案编码最多 64 个字符，方案名称最多 200 个字符");
+		}
 		if (command.cohortYear() == null || command.cohortYear() < 2000) {
 			throw new IllegalArgumentException("适用入学年份无效");
 		}
 		if (!EDUCATION_LEVELS.contains(normalize(command.educationLevel()))) {
 			throw new IllegalArgumentException("培养层次不支持");
 		}
-		if (command.minimumCredits() == null || command.minimumCredits().signum() < 0) {
+		if (command.minimumCredits() == null || command.minimumCredits().signum() < 0
+				|| command.minimumCredits().compareTo(new BigDecimal("999999.99")) > 0
+				|| command.minimumCredits().stripTrailingZeros().scale() > 2) {
 			throw new IllegalArgumentException("最低毕业学分无效");
 		}
 		if (command.effectiveStartDate() != null && command.effectiveEndDate() != null

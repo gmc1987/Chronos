@@ -487,6 +487,7 @@ export const updateScheduleDateException = (id, payload) => http.put(`/admin/edu
 export const cancelScheduleDateException = (id) => http.delete(`/admin/education/schedule-date-exceptions/${id}`)
 export const listScheduleDateExceptionHistory = (semesterCode) => http.get(`/admin/education/schedule-date-exceptions/history?${qs({ semesterCode })}`)
 export const restoreScheduleDateException = (id) => http.post(`/admin/education/schedule-date-exceptions/${id}/restore`)
+export const listEducationGradeOptions = () => http.get('/admin/education/grades/options')
 export const listEducationGrades = (params) => http.get(`/admin/education/grades?${qs(params)}`)
 export const createEducationGrade = (payload) => http.post('/admin/education/grades', payload)
 export const updateEducationGrade = (id, payload) => http.put(`/admin/education/grades/${id}`, payload)
@@ -576,7 +577,7 @@ export const decideExamPublishedChange = (changeId, approve) =>
   http.post(`/admin/education/exam/published-changes/${changeId}/decide`, {
     approve
   })
-export const listInvigilationChanges = () => http.get('/admin/education/exam/invigilation-changes')
+export const listInvigilationChanges = organizationId => http.get(`/admin/education/exam/invigilation-changes?${qs({ organizationId })}`)
 export const requestInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilations/${id}/change-requests`, payload)
 export const decideInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilation-changes/${id}/decide`, payload)
 export const emergencyInvigilationChange = (id, payload) => http.post(`/admin/education/exam/invigilations/${id}/emergency-change`, payload)
@@ -747,7 +748,7 @@ export const explainAiSchedulingCandidate = (id, candidateId) => http.get(
  */
 export const cancelAiSchedulingRun = (id) => http.post(`/admin/education/scheduling/ai/runs/${encodeURIComponent(id)}/cancel`)
 
-export const listTeachingClassMembers = (offeringId) => http.get(`/admin/education/teaching-class-members?${qs({ offeringId })}`)
+export const listTeachingClassMembers = (offeringId, params = {}) => http.get(`/admin/education/teaching-class-members?${qs({ ...params, offeringId })}`)
 export const enrollTeachingClassStudent = (offeringId, studentId) =>
   http.post(`/admin/education/course-offerings/${offeringId}/enroll`, {
     studentId

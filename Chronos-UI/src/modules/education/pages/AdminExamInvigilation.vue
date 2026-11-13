@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { watch, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   addExamTeacherQualification,
@@ -26,6 +27,7 @@ import {
 } from '../../../api/admin'
 
 const terms = ref([])
+const organizationId = ref('')
 const semesterCode = ref('')
 const plans = ref([])
 const sessions = ref([])
@@ -70,7 +72,10 @@ async function run(action, success) {
 }
 
 async function loadPlans() {
-  plans.value = semesterCode.value ? unwrap(await listExamPlans(semesterCode.value)) : []
+  const term = semesterCode.value
+  const rows = term ? unwrap(await listExamPlans(term)) : []
+  if (term !== semesterCode.value) return
+  plans.value = rows
   selectedPlan.value = plans.value.find((item) => item.id === selectedPlan.value?.id) || null
   if (selectedPlan.value) await selectPlan(selectedPlan.value)
 }
@@ -79,7 +84,9 @@ async function selectPlan(plan) {
   selectedPlan.value = plan
   selectedSession.value = null
   selectedRoom.value = null
-  sessions.value = plan ? unwrap(await listExamSessions(plan.id)) : []
+  const rows = plan ? unwrap(await listExamSessions(plan.id)) : []
+  if (selectedPlan.value !== plan) return
+  sessions.value = rows
   rooms.value = []
   assignments.value = []
   standbys.value = []
@@ -88,7 +95,9 @@ async function selectPlan(plan) {
 async function selectSession(session) {
   selectedSession.value = session
   selectedRoom.value = null
-  rooms.value = session ? unwrap(await listExamRooms(session.id)) : []
+  const rows = session ? unwrap(await listExamRooms(session.id)) : []
+  if (selectedSession.value !== session) return
+  rooms.value = rows
   assignments.value = []
   standbys.value = session ? unwrap(await listExamStandbys(session.id)) : []
 }
@@ -99,7 +108,10 @@ async function selectRoom(room) {
 }
 
 async function refreshChanges() {
-  changes.value = unwrap(await listInvigilationChanges())
+  const id = organizationId.value
+  if (!id) return
+  const response = await listInvigilationChanges(id)
+  if (id === organizationId.value) changes.value = unwrap(response)
 }
 
 async function loadQualifications() {
@@ -233,21 +245,36 @@ async function saveEmergency() {
   }, '应急替补已完成')
 }
 
-onMounted(() => run(async () => {
-  const [termResult, teacherResult, classroomResult, subjectResult] = await Promise.all([
-    listAcademicTerms(),
-    listEducationTeachers(),
-    listClassrooms(),
-    listEducationSubjects(),
-  ])
-  terms.value = unwrap(termResult)
-  teachers.value = unwrap(teacherResult)
-  classrooms.value = unwrap(classroomResult)
-  subjects.value = unwrap(subjectResult)
-  semesterCode.value = terms.value.find((item) => item.currentTerm)?.termCode
-    || terms.value[0]?.termCode || ''
-  await Promise.all([loadPlans(), refreshChanges()])
-}))
+watch(organizationId, id => {
+  for (const dialog of [assignDialog, emergencyDialog, standbyDialog]) dialog.value = false
+  teachers.value = []
+  availableTeachers.value = []
+  classrooms.value = []
+  semesterCode.value = ''
+  terms.value = []
+  plans.value = []
+  selectPlan(null)
+  changes.value = []
+  qualifications.value = []
+  qualificationTeacherId.value = ''
+  if (!id) return
+  return run(async () => {
+    const [termResult, teacherResult, classroomResult, subjectResult] = await Promise.all([
+      listAcademicTerms({ organizationId: id }),
+      listEducationTeachers({ organizationId: id }),
+      listClassrooms({ organizationId: id }),
+      listEducationSubjects(),
+    ])
+    if (id !== organizationId.value) return
+    terms.value = unwrap(termResult)
+    teachers.value = unwrap(teacherResult)
+    classrooms.value = unwrap(classroomResult)
+    subjects.value = unwrap(subjectResult)
+    semesterCode.value = terms.value.find((item) => item.currentTerm)?.termCode
+      || terms.value[0]?.termCode || ''
+    await Promise.all([loadPlans(), refreshChanges()])
+  })
+})
 </script>
 
 <template>
@@ -257,7 +284,8 @@ onMounted(() => run(async () => {
         <h2>监考排班与调换</h2>
         <p>按考试计划、场次和考场安排监考；处理教师调换和应急替补。</p>
       </div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="loadPlans">
+      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
+      <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="loadPlans">
         <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
       </el-select>
     </header>

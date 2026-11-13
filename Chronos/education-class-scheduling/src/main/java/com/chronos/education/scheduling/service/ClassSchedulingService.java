@@ -93,6 +93,13 @@ public class ClassSchedulingService {
 						|| !value.getSemesterCode().equals(command.getSemesterCode()))) {
 			throw new IllegalStateException("合班课不能直接变更校区或学期，请重新创建教学任务");
 		}
+		if (value.getTermCoursePlanId() != null
+				&& (!java.util.Objects.equals(value.getSemesterCode(), command.getSemesterCode())
+					|| !java.util.Objects.equals(value.getAdministrativeClassId(), command.getAdministrativeClassId())
+					|| !java.util.Objects.equals(value.getCourseCode(), command.getCourseCode())
+					|| !java.util.Objects.equals(value.getCampusId(), command.getCampusId()))) {
+			throw new IllegalArgumentException("开课计划生成的任务不能变更学期、机构、行政班或课程");
+		}
 		value.setSemesterCode(command.getSemesterCode().trim());
 		value.setOfferingCode(command.getOfferingCode().trim());
 		value.setCourseCode(command.getCourseCode().trim());
@@ -144,8 +151,11 @@ public class ClassSchedulingService {
 				: classrooms.findById(id).orElseThrow(() -> new IllegalArgumentException("教室不存在"));
 		value.setRoomCode(required(command.getRoomCode(), "教室编码"));
 		value.setRoomName(required(command.getRoomName(), "教室名称"));
+		if (id != null && !java.util.Objects.equals(value.getCampusId(), command.getCampusId())) {
+			throw new IllegalArgumentException("教室所属校区不可修改");
+		}
 		value.setCampusId(command.getCampusId());
-		value.setBuildingName(command.getBuildingName());
+		if (value.getFloorId() == null) value.setBuildingName(command.getBuildingName());
 		value.setCapacity(positive(command.getCapacity(), "教室容量"));
 		value.setRoomType(command.getRoomType() == null ? "STANDARD" : command.getRoomType());
 		value.setEquipmentCodes(command.getEquipmentCodes());
@@ -155,8 +165,8 @@ public class ClassSchedulingService {
 
 	@Transactional
 	public void deleteClassroom(String id) {
-		if (entries.countByClassroomId(id) > 0) {
-			throw new IllegalStateException("教室已有课表安排，不能删除");
+		if (entries.countByClassroomId(id) > 0 || classrooms.hasOtherBusinessReferences(id)) {
+			throw new IllegalStateException("教室已被业务记录引用，请停用教室");
 		}
 		classrooms.deleteById(id);
 	}

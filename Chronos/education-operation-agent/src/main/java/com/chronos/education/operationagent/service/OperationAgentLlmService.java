@@ -91,7 +91,10 @@ public class OperationAgentLlmService {
 			semesterCode 是校内编码，例如 2026-2027-2；未指定时返回 null，由系统使用当前学期。
 			用户已明确学年和学期序号时，必须同时填写顶层semesterCode和创建参数localTermCode，不能只填写toolConfigs。
 			2026年度第二学期按2026-2027-2理解；存在歧义不要猜测。
-			toolConfigs 仅为学期维护返回用户要求的工具键 academic.term.create、academic.calendar.prepare、academic.bell.configure。
+			学期维护在 toolConfigs 返回用户要求的工具键 academic.term.create、academic.calendar.prepare、academic.bell.configure。
+			组织部门、岗位、职级、教职工及任职初始化都不依赖学期，单独办理教师入职也不依赖学期，requiresSemester=false。
+			仅初始化教职工及任职时选 staff.onboarding；人员是教师或要求同步普通账号，也不等于办理教师入职。
+			明确要求办理教师入职、创建正式教师档案或开通教师权限时选 teacher.personnel.onboarding，在 toolConfigs.teacher.onboarding.request 保留 employeeCodes（工号字符串数组）、effectiveDate、reason。只填用户已提供的值，多轮补充时保留已知值。
 			创建工具参数为 localTermCode,academicYear,termNo,termName,startDate,endDate,weekCount；
 			作息工具参数为 campusId、scheduleName，以及 periods 或 periodRules。只有用户逐节提供完整时间时才输出 periods（每节包含 periodNo,periodName,daySegment,startTime,endTime；daySegment为MORNING/AFTERNOON/EVENING）。
 			用户提供节数、起止时间、课长、课间或午休规则时，使用 periodRules，字段为 periodCount、morningCount、startTime、endTime、periodMinutes、breakMinutes、lunchMinutes（午休是最后一节上午课到第一节下午课的完整间隔）。只填已明确的字段，平台计算节次；未知的可选字段省略。方案编码由平台生成；方案名称缺省时平台自动命名，不要追问。
@@ -103,7 +106,7 @@ public class OperationAgentLlmService {
 			只要业务目标明确，即使缺少日期或节次，也返回对应的工具键及已知参数，交由平台追问缺项。
 			用户要求创建作息且没有指定节次规则时，也返回作息工具键，平台会生成供确认的标准作息候选。
 			平台的候选模式通过同一个业务工具的dryRun=true实现，不需要独立“候选工具”。
-			教职工文件导入、账号开通、教师建档等技能可使用候选模式；用户要求先预览不是目标不明确，不得据此追问是否改为正式写入。
+			教职工文件导入、普通账号开通、教师入职申请等技能可使用候选模式；用户要求先预览不是目标不明确，不得据此追问是否改为正式写入。
 			平台在生成候选后负责正式写入、提交和发布的确认。用户已明确业务目标并补齐资料时，直接进入候选规划，needsClarification=false，不要在识别阶段再询问“是否提交或送审”。
 			例如首轮要求成绩更正并在本人确认后送教务审核，第二轮补齐更正原因，应保留原成绩编号、目标分数和送审目标，直接进入规划，仍由平台在候选结果后要求确认。
 			用户明确要求先等补充、不开始执行，或尚无法确定业务目标时，needsClarification=true，question给出具体追问；不要擅自启动任务。
@@ -279,6 +282,7 @@ public class OperationAgentLlmService {
 			20. 发起已有流程时用 toolConfig.flowId 及 toolConfig.formData 对象。若提供可发起流程目录，使用其中的 id；否则仅使用用户明确提供的定义编号。formData 的键用表单定义的 fieldKey，将用户已给值映射进去，不要求用户提供JSON或内部键。
 			21. “提交审核”“交独立审核”指发起流程后进入工作流待办，由实际审核人办理。只有用户明确要求办理已有待办时才使用 workflow.task.complete；workflow.instance.start 不返回 taskId。
 			22. 宿舍资源维护使用 toolConfig.resources 扁平数组，每间房一行，字段为 buildingCode、buildingName、genderPolicy、roomNo、floorNo、bedCount。不得嵌套 rooms 或使用 roomCode。genderPolicy 使用 MIXED（混住）、MALE（男生）或 FEMALE（女生）。
+			23. 组织人事初始化只安排对应的 IAM 文件导入；教职工为教师也不要自动提交入职。用户明确办理教师入职才使用 teacher.onboarding.request，参数 employeeCodes（工号字符串数组）、effectiveDate（YYYY-MM-DD）、reason（申请说明）、organizationId（目标学校）。文件导入与明确的教师入职同时请求时，先安排导入，后安排入职申请。该工具只提交审批，不自动批准，也不直接建档。
 			只能从本轮原子 Tool 目录选择步骤。业务审批资格属于对应业务，不使用 IAM 角色核查来判断任务办理资格。
 			只检查能否审核成绩册时，使用 grade.review.check，填写 gradebookId 和 taskId；不要安排实际审批。
 			发起成绩更正使用 grade.change.request。toolConfig 顶层填写 gradebookId，change 对象填写 courseGradeId（原成绩记录编号）、afterScore（更正后的分数）和 reason（更正原因）。发起并交教务审核只安排提交，不代办独立审核。
@@ -315,6 +319,12 @@ public class OperationAgentLlmService {
 			if (authorized.contains(toolCode)) continue;
 			OperationAgentToolCatalog.ToolDefinition definition = tools.require(toolCode);
 			Map<String, Object> config = objectMap(node.path("toolConfig"));
+			if (intent != null && OperationAgentTeacherOnboardingTool.CODE.equals(toolCode)) {
+				Map<String, Object> recognized = objectMap(intent.path("toolConfigs").path(toolCode));
+				for (String key : List.of("employeeCodes", "effectiveDate", "reason")) {
+					if (recognized.get(key) != null) config.put(key, recognized.get(key));
+				}
+			}
 			if ("workflow.task.complete".equals(toolCode) && plannedTools.contains("workflow.instance.start")
 					&& "${workflow.instance.start.taskId}".equals(config.get("taskId"))) {
 				// 发起流程会产生待办，但不会向发起人返回可供代办的审核任务。
@@ -525,7 +535,9 @@ public class OperationAgentLlmService {
 			selected.add("admission.accommodation.check");
 			selected.add("admission.accommodation.plan");
 		}
-		if (containsAny(goal, "教师入职", "教师账号", "教师档案")) selected.add("teacher.onboarding.batch");
+		if (containsAny(goal, "教师入职", "教师建档", "教师档案", "开通教师权限")) {
+			selected.add(OperationAgentTeacherOnboardingTool.CODE);
+		}
 		if (containsAny(goal, "教师分工", "任课", "教学任务")) selected.add("teaching.assignment.generate");
 		if (containsAny(goal, "开课", "教学班", "选课")) selected.add("teaching.offering.generate");
 		if (containsAny(goal, "排课", "课表")) {

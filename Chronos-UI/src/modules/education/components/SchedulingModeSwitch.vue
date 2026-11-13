@@ -6,6 +6,7 @@ import { hasAdminPermission } from '../../../store/auth'
 const props = defineProps({
   semesterCode: { type: String, default: '' },
   runId: { type: String, default: '' },
+  organizationId: { type: String, default: '' },
 })
 const SCHEDULING_PATH = '/admin/education/scheduling'
 const AI_PATH = `${SCHEDULING_PATH}/ai`
@@ -24,6 +25,7 @@ const switchMode = (enabled) => {
   return router.push({
     path: enabled ? AI_PATH : SCHEDULING_PATH,
     query: {
+      ...(props.organizationId ? { organizationId: props.organizationId } : {}),
       ...(typeof semesterCode === 'string' && semesterCode ? { semesterCode } : {}),
       ...(typeof runId === 'string' && runId ? { aiRunId: runId } : {}),
     },

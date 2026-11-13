@@ -186,15 +186,18 @@ public class OperationAgentRunner {
 							== OperationAgentCheckpointMode.INITIATOR_CONFIRM;
 					String waitingStatus = initiatorConfirmation ? "WAITING_CONFIRMATION" : "WAITING_APPROVAL";
 					step.setStatus(waitingStatus);
+					boolean teacherOnboarding = OperationAgentTeacherOnboardingTool.CODE.equals(step.getToolCode());
 					step.setMessage(initiatorConfirmation
-							? "候选结果已生成，等待任务发起人确认写入"
+							? (teacherOnboarding ? "入职申请草稿已生成，等待发起人确认提交"
+									: "候选结果已生成，等待任务发起人确认写入")
 							: "候选结果已生成，等待非发起人独立复核");
 					stepRuns.save(step);
 					move(run, waitingStatus);
 					run.setCurrentStepOrder(step.getStepOrder());
 					run.setCurrentStepName(step.getStepName());
 					run.setNextAction(initiatorConfirmation
-							? "请核对“" + step.getStepName() + "”候选结果并确认写入"
+							? (teacherOnboarding ? "请核对教师入职申请草稿并确认提交"
+									: "请核对“" + step.getStepName() + "”候选结果并确认写入")
 							: "请由独立审核人复核“" + step.getStepName() + "”后继续");
 					runs.save(run);
 					events.append(runId,
@@ -343,7 +346,9 @@ public class OperationAgentRunner {
 				step.setResultJson(mapper.writeValueAsString(result));
 				step.setStatus("SUCCEEDED");
 				step.setProgress(100);
-				step.setMessage("步骤执行成功，证据已保存");
+				step.setMessage(OperationAgentTeacherOnboardingTool.CODE.equals(step.getToolCode())
+						&& "SUBMITTED".equals(result.get("status"))
+						? "入职申请已提交，等待业务审批" : "步骤执行成功，证据已保存");
 				step.setCompletedAt(LocalDateTime.now());
 				stepRuns.save(step);
 				events.append(run.getId(), "STEP_SUCCEEDED", "SUCCESS", "完成：" + step.getStepName(),
@@ -380,6 +385,7 @@ public class OperationAgentRunner {
 		// Internal execution context keeps downstream scheduling steps bound to
 		// candidates created by this run instead of accidentally selecting an older plan.
 		config.put("__runId", run.getId());
+		config.put("__stepRunId", step.getId());
 		config.put("__runStartedAt", run.getStartedAt().toString());
 		for (OperationAgentCondition condition : conditions.findByRunIdOrderByConditionVersion(run.getId())) {
 			Map<String, Object> parsed = mapper.readValue(

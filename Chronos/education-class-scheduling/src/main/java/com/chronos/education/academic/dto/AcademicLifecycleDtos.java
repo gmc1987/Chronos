@@ -32,6 +32,9 @@ public final class AcademicLifecycleDtos {
 			Integer sortOrder) {
 	}
 
+	public record ProgramBatchSubmitCommand(String schoolId, List<String> programIds) {
+	}
+
 	public record ProgramView(
 			String id,
 			String schoolId,
@@ -45,6 +48,8 @@ public final class AcademicLifecycleDtos {
 			Integer totalHours,
 			String status,
 			Long rowVersion,
+			LocalDate effectiveStartDate,
+			LocalDate effectiveEndDate,
 			List<ProgramCourseView> courses) {
 	}
 

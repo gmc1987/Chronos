@@ -118,7 +118,7 @@ import {
   dictionaryOptions,
   exportEducationStudents,
   listAdministrativeClasses,
-  listEducationGrades,
+  listEducationGradeOptions,
   listEducationMajors,
   listEducationStudents,
   listStudentStatusChanges,
@@ -234,7 +234,7 @@ const fields = [
 ]
 const defaults = { enrollmentStatus: 'ACTIVE', registrationStatus: 'NOT_SUBMITTED' }
 const lookups = [
-  { key: 'grades', loader: listEducationGrades, labelProp: 'gradeName' },
+  { key: 'grades', loader: listEducationGradeOptions, labelProp: 'gradeName' },
   { key: 'majors', loader: listEducationMajors, labelProp: 'majorName' },
   { key: 'classes', loader: listAdministrativeClasses, labelProp: 'className' },
 ]

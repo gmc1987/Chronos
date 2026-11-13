@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { watch, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createExamPaperItem,
@@ -22,6 +23,7 @@ import {
 } from '../../../api/admin'
 
 const terms = ref([])
+const organizationId = ref('')
 const semesterCode = ref('')
 const plans = ref([])
 const sessions = ref([])
@@ -58,14 +60,19 @@ async function run(action, success) {
 }
 
 async function loadPlans() {
-  plans.value = semesterCode.value ? unwrap(await listExamPlans(semesterCode.value)) : []
+  const term = semesterCode.value
+  const rows = term ? unwrap(await listExamPlans(term)) : []
+  if (term !== semesterCode.value) return
+  plans.value = rows
   await selectPlan(null)
 }
 
 async function selectPlan(plan) {
   selectedPlan.value = plan
   selectedSession.value = null
-  sessions.value = plan ? unwrap(await listExamSessions(plan.id)) : []
+  const rows = plan ? unwrap(await listExamSessions(plan.id)) : []
+  if (selectedPlan.value !== plan) return
+  sessions.value = rows
   await selectSession(null)
 }
 
@@ -231,24 +238,36 @@ async function transitionScores(action) {
   }, publishing ? '成绩已发布并完成错题沉淀' : '逐题成绩已确认')
 }
 
-onMounted(() => run(async () => {
-  const [termResult, subjectResult] = await Promise.all([
-    listAcademicTerms(),
-    listEducationSubjects(),
-  ])
-  terms.value = unwrap(termResult)
-  subjects.value = unwrap(subjectResult)
-  semesterCode.value = terms.value.find((item) => item.currentTerm)?.termCode
-    || terms.value[0]?.termCode || ''
-  await loadPlans()
-}))
+watch(organizationId, id => {
+  itemDialog.value = false
+  batchDialog.value = false
+  students.value = []
+  semesterCode.value = ''
+  terms.value = []
+  plans.value = []
+  selectPlan(null)
+  if (!id) return
+  return run(async () => {
+    const [termResult, subjectResult] = await Promise.all([
+      listAcademicTerms({ organizationId: id }),
+      listEducationSubjects(),
+    ])
+    if (id !== organizationId.value) return
+    terms.value = unwrap(termResult)
+    subjects.value = unwrap(subjectResult)
+    semesterCode.value = terms.value.find((item) => item.currentTerm)?.termCode
+      || terms.value[0]?.termCode || ''
+    await loadPlans()
+  })
+})
 </script>
 
 <template>
   <div class="exam-page">
     <header class="page-header">
       <div><h2>试卷分析</h2><p>基于场次试卷题目和考生逐题实得分统计，不将未评分考生计为零分。</p></div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="loadPlans">
+      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
+      <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="loadPlans">
         <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
       </el-select>
     </header>

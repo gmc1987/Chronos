@@ -114,7 +114,7 @@
 				placeholder="确认说明（可选）" />
 			  <div class="agent-approval-card__actions">
 				<el-button :loading="reviewing" @click="refreshApprovalEvidence">刷新候选结果</el-button>
-				<el-button type="success" :loading="reviewing" :disabled="approvalHasErrors" @click="confirmCheckpoint">确认写入</el-button>
+				<el-button type="success" :loading="reviewing" :disabled="approvalHasErrors" @click="confirmCheckpoint">{{ teacherOnboardingConfirmation ? '确认提交入职审批' : '确认写入' }}</el-button>
 			  </div>
 			</template>
 			<el-alert v-else-if="isOwner && detail.checkpoint?.mode === 'DUAL_CONTROL'" type="warning" :closable="false" show-icon>
@@ -156,7 +156,13 @@
                   <span class="agent-step__dot"></span>
                   <div class="agent-step__content">
                     <strong>{{ step.stepOrder }}. {{ step.stepName }}</strong>
-                    <small>{{ statusLabel(step.status) }} · {{ step.message || '等待执行' }}</small>
+                    <small>{{ statusLabel(step.status) }} · {{ isSubmittedTeacherOnboarding(step) ? '已提交入职申请' : step.message || '等待执行' }}</small>
+                    <template v-if="isSubmittedTeacherOnboarding(step)">
+                      <small v-for="item in detail.teacherOnboardingCases" :key="item.instanceId">
+                        {{ item.employeeName }} · {{ teacherOnboardingState(item.status) }}
+                      </small>
+                      <router-link to="/portal/education/teacher-personnel" @click="$emit('close')">查看入职审批和生效状态</router-link>
+                    </template>
 					<details v-if="step.resultJson" class="agent-step-evidence">
 					  <summary>查看执行证据</summary>
 					  <pre>{{ prettyEvidence(step.resultJson) }}</pre>
@@ -266,6 +272,13 @@ const chatUploadRef = ref(null)
 const pendingSemesterCode = ref('')
 const pendingSemesterAction = ref('')
 const pendingConversationMessages = ref([])
+watch(chatOrganizationId, (organizationId, previousOrganizationId) => {
+  if (!previousOrganizationId || organizationId === previousOrganizationId) return
+  pendingSemesterCode.value = ''
+  pendingSemesterAction.value = ''
+  pendingConversationMessages.value = []
+})
+
 const reviewComment = ref('')
 const reviewing = ref(false)
 let poller
@@ -284,6 +297,7 @@ const canReview = hasAdminPermission('education:operation-agent:review')
 const currentStatus = computed(() => detail.value?.overview?.run?.status)
 const isOwner = computed(() => detail.value?.overview?.run?.ownerUsername === username)
 const pendingApprovalStep = computed(() => detail.value?.steps?.find(step => ['WAITING_CONFIRMATION', 'WAITING_APPROVAL', 'WAITING_WORKFLOW'].includes(step.status)) || null)
+const teacherOnboardingConfirmation = computed(() => pendingApprovalStep.value?.toolCode === 'teacher.onboarding.request')
 const approvalTool = computed(() => tools.value.find(tool => tool.code === pendingApprovalStep.value?.toolCode))
 const approvalEvidence = computed(() => parseEvidence(pendingApprovalStep.value?.resultJson))
 const approvalEvidenceRows = computed(() => approvalEvidence.value?.rows || approvalEvidence.value?.assignments
@@ -294,7 +308,8 @@ const evidenceLabels = {
   username: '用户名', roleCode: '角色编码', roleName: '角色名称', operation: '操作', sourceKey: '授权来源',
   sessionId: '考试场次', roomId: '考场', classroomId: '教室', examDate: '考试日期', startTime: '开始时间',
   componentId: '成绩项目', studentId: '学生', rawScore: '成绩', specialStatus: '特殊状态', remark: '备注',
-  organizationId: '目标机构', localTermCode: '校内学期编码', termCode: '机构学期编码',
+  employeeCode: '工号', employeeName: '教职工姓名', organizationName: '学校', effectiveDate: '生效日期',
+  reason: '申请说明', status: '状态', organizationId: '目标机构', localTermCode: '校内学期编码', termCode: '机构学期编码',
   termName: '学期名称', academicYear: '学年', termNo: '学期序号', startDate: '开始日期',
   endDate: '结束日期', weekCount: '教学周数', currentTerm: '当前学期',
 }
@@ -483,7 +498,8 @@ async function sendChat() {
   const request = chatText.value.trim()
   if (!request) return ElMessage.warning('请先告诉智能体希望完成的工作')
   let semesterCode = null
-  let confirmNonCurrent = false
+  const confirmNonCurrent = pendingSemesterAction.value === 'TERM_CONFIRMED'
+    || (pendingSemesterAction.value === 'CONFIRM_NON_CURRENT' && request === '是的')
   let createMissingTerm = false
   if (pendingSemesterCode.value) {
     if (pendingSemesterAction.value === 'CREATE_TERM_INPUT_REQUIRED') {
@@ -539,13 +555,12 @@ async function sendChat() {
 	  chatMessages.value.push({ role: 'agent', text: '已取消本次任务。' })
 	  return
 	}
-    if (['NEED_INTENT', 'CONFIRM_NON_CURRENT', 'CONFIRM_CREATE', 'CREATE_TERM_INPUT_REQUIRED', 'NEED_CURRENT_TERM', 'NEED_TERM_SELECTION', 'CONFLICT'].includes(response.status)) {
+    if (['NEED_INTENT', 'CONFIRM_NON_CURRENT', 'CONFIRM_CREATE', 'CREATE_TERM_INPUT_REQUIRED', 'NEED_CURRENT_TERM', 'NEED_TERM_SELECTION', 'NEED_ORGANIZATION', 'NEED_EXISTING_TERM', 'TERM_EXISTS', 'CONFLICT'].includes(response.status)) {
       const resolution = response.resolution || {}
 	  if (pendingConversationMessages.value.at(-1) !== request) pendingConversationMessages.value.push(request)
 	  pendingSemesterAction.value = response.status
-      if (resolution.termCode) {
-        pendingSemesterCode.value = resolution.termCode
-      }
+      pendingSemesterCode.value = resolution.termCode || ''
+      if (response.status === 'TERM_EXISTS') pendingConversationMessages.value = []
       chatMessages.value.push({ role: 'agent', text: resolution.message || '请先确认本次处理的学期。' })
       return
     }
@@ -553,10 +568,10 @@ async function sendChat() {
       const required = response.draft?.requiredInputs || []
 	  if (pendingConversationMessages.value.at(-1) !== request) pendingConversationMessages.value.push(request)
 	  const resolution = response.resolution || {}
-	  if (resolution.creationRequested && resolution.termCode) {
-		pendingSemesterCode.value = resolution.termCode
-		pendingSemesterAction.value = 'CREATE_TERM_INPUT_REQUIRED'
-	  }
+      if (resolution.termCode) {
+        pendingSemesterCode.value = resolution.termCode
+        pendingSemesterAction.value = resolution.creationRequested ? 'CREATE_TERM_INPUT_REQUIRED' : 'TERM_CONFIRMED'
+      }
       const detailText = required.length
         ? `我还需要你补充：${required.map(item => `${item.label}（${item.prompt}）`).join('；')}`
         : '我还需要更多业务资料才能安全开始，请补充目标范围或相关数据。'
@@ -738,7 +753,10 @@ async function resume() { await resumeOperationAgentRun(selectedRunId.value); aw
 async function retry() { await retryOperationAgentRun(selectedRunId.value); await loadRun(); ElMessage.success('已从失败步骤重新执行') }
 async function confirmCheckpoint() {
 	try {
-		await ElMessageBox.confirm('确认候选结果无误并写入正式业务数据？系统会记录确认人、候选版本和时间。', '确认写入', { type: 'warning' })
+		const message = teacherOnboardingConfirmation.value
+      ? '确认提交教师入职申请？审批通过且到达生效日后，系统会建立教师档案并开通教师权限。'
+      : '确认候选结果无误并写入正式业务数据？系统会记录确认人、候选版本和时间。'
+    await ElMessageBox.confirm(message, teacherOnboardingConfirmation.value ? '提交入职审批' : '确认写入', { type: 'warning' })
 	} catch (error) {
 		if (error === 'cancel' || error === 'close') return
 		throw error
@@ -857,6 +875,11 @@ const statusLabel = status => ({
   WAITING_WORKFLOW: '等待业务流程', COMPLETED: '已完成',
   SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消', SKIPPED: '已跳过',
   WAITING_INPUT: '等待补充资料',
+}[status] || status)
+const isSubmittedTeacherOnboarding = step => step.toolCode === 'teacher.onboarding.request' && parseEvidence(step.resultJson)?.status === 'SUBMITTED'
+const teacherOnboardingState = status => ({
+  REVIEWING: '审批中', APPROVED: '已批准待生效', APPLIED: '已建档并授权',
+  REJECTED: '已驳回', CANCELLED: '已撤回', APPLY_FAILED: '生效异常',
 }[status] || status)
 const readinessLabel = key => ({
   organizationId: '目标机构', semesterCode: '学期', admissionYear: '入学年份', termExists: '学期已建立', activeClassCount: '启用行政班',

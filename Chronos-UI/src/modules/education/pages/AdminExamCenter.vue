@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { computed, watch, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -32,6 +33,7 @@ import {
 } from '../../../api/admin'
 
 const route = useRoute()
+const organizationId = ref('')
 const semesterCode = ref('')
 const terms = ref([])
 const examTypes = ref([])
@@ -105,13 +107,14 @@ async function run(action, message) {
   }
 }
 
-async function loadLookups() {
+async function loadLookups(id) {
   const [termResult, subjectResult, classroomResult, examTypeResult] = await Promise.all([
-    listAcademicTerms(),
+    listAcademicTerms({ organizationId: id }),
     listEducationSubjects(),
-    listClassrooms(),
+    listClassrooms({ organizationId: organizationId }),
     dictionaryOptions('EDU_EXAM_TYPE'),
   ])
+  if (id !== organizationId.value) return
   terms.value = unwrap(termResult)
   subjects.value = unwrap(subjectResult)
   classrooms.value = unwrap(classroomResult)
@@ -126,14 +129,17 @@ async function loadLookups() {
 async function loadOfferingOptions() {
   if (!semesterCode.value) return
   const [courseResult, offeringResult] = await Promise.all([
-    listCourseCatalog({}), listCourseOfferings(semesterCode.value),
+    listCourseCatalog({}), listCourseOfferings(semesterCode.value, { organizationId: organizationId.value }),
   ])
   courses.value = unwrap(courseResult)
   offerings.value = unwrap(offeringResult)
 }
 
 async function loadPlans() {
-  plans.value = semesterCode.value ? unwrap(await listExamPlans(semesterCode.value)) : []
+  const term = semesterCode.value
+  const rows = term ? unwrap(await listExamPlans(term)) : []
+  if (term !== semesterCode.value) return
+  plans.value = rows
   const requestedPlan = route.query.examPlanId
   const current = plans.value.find((item) => item.id === selectedPlan.value?.id)
     || (typeof requestedPlan === 'string'
@@ -143,13 +149,17 @@ async function loadPlans() {
 
 async function selectPlan(plan) {
   selectedPlan.value = plan
-  sessions.value = plan ? unwrap(await listExamSessions(plan.id)) : []
   conflicts.value = []
   suspensionImpacts.value = []
-  suspensionRequests.value = plan
-    ? unwrap(await listExamSuspensionRequests(plan.id)) : []
-  publishedChanges.value = plan
-    ? unwrap(await listExamPublishedChanges(plan.id)) : []
+  const [sessionRows, requestRows, changeRows] = plan ? await Promise.all([
+    listExamSessions(plan.id).then(unwrap),
+    listExamSuspensionRequests(plan.id).then(unwrap),
+    listExamPublishedChanges(plan.id).then(unwrap),
+  ]) : [[], [], []]
+  if (selectedPlan.value !== plan) return
+  sessions.value = sessionRows
+  suspensionRequests.value = requestRows
+  publishedChanges.value = changeRows
   suspensionScope.value = ['TERM', 'MIDTERM', 'ACADEMIC'].includes(plan?.examType)
     ? 'SCHOOL_WIDE' : 'AFFECTED_ONLY'
 }
@@ -376,9 +386,18 @@ async function publish() {
   }, '考试计划已发布')
 }
 
-onMounted(() => {
+watch(organizationId, id => {
+  for (const key of Object.keys(dialogs)) dialogs[key] = false
+  offerings.value = []
+  classrooms.value = []
+  semesterCode.value = ''
+  terms.value = []
+  plans.value = []
+  selectPlan(null)
+  if (!id) return
   run(async () => {
-    await loadLookups()
+    await loadLookups(id)
+    if (id !== organizationId.value) return
     await loadPlans()
   })
 })
@@ -391,7 +410,8 @@ onMounted(() => {
         <h2>考试计划管理</h2>
         <p>先确定场次与考生，再配置考场和监考；发布前检查与日期课表的冲突。</p>
       </div>
-      <el-select v-model="semesterCode" placeholder="选择学期" @change="loadPlans">
+      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
+      <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="loadPlans">
         <el-option
           v-for="term in terms"
           :key="term.id"
@@ -406,7 +426,7 @@ onMounted(() => {
           <el-button
             v-permission="['education:exam:plan:create', 'education:exam:plan:manage']"
             type="primary"
-            @click="openPlan()">新增计划</el-button>
+            :disabled="!semesterCode" @click="openPlan()">新增计划</el-button>
         </div>
         <el-table :data="plans" border highlight-current-row @current-change="selectPlan">
           <el-table-column prop="planName" label="计划名称" min-width="180" />
@@ -717,7 +737,7 @@ onMounted(() => {
               <el-option
                 v-for="room in classrooms"
                 :key="room.id"
-                :label="`${room.roomName}（容量 ${room.capacity}）`"
+                :label="`${room.buildingName ? room.buildingName + ' · ' : ''}${room.roomName}（容量 ${room.capacity}）`"
                 :value="room.id" />
             </el-select>
           </el-form-item>

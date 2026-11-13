@@ -39,6 +39,7 @@ import com.chronos.education.scheduling.model.TeacherTimeConstraint;
 import com.chronos.education.scheduling.service.AutoSchedulingService;
 import com.chronos.education.scheduling.service.AcademicDataService;
 import com.chronos.education.scheduling.service.ClassSchedulingService;
+import com.chronos.education.scheduling.service.ClassroomManagementService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.SchedulePlanVersionService;
 import com.chronos.education.scheduling.service.ScheduleExcelService;
@@ -49,6 +50,7 @@ import com.chronos.education.scheduling.service.SchedulePolicyService;
 @RestController
 public class ClassSchedulingController {
 	private final ClassSchedulingService service;
+	private final ClassroomManagementService classroomManagement;
 	private final AcademicDataService academicData;
 	private final SchedulePlanVersionService planVersions;
 	private final AutoSchedulingService autoScheduling;
@@ -67,7 +69,8 @@ public class ClassSchedulingController {
 			ScheduleExcelService scheduleExcel,
 			ScheduleQualityAnalysisService qualityAnalysis,
 			SchedulePolicyService schedulePolicies,
-			ScheduleGenerationJobService generationJobs) {
+			ScheduleGenerationJobService generationJobs,
+			ClassroomManagementService classroomManagement) {
 		this.service = service;
 		this.academicData = academicData;
 		this.planVersions = planVersions;
@@ -77,6 +80,7 @@ public class ClassSchedulingController {
 		this.qualityAnalysis = qualityAnalysis;
 		this.schedulePolicies = schedulePolicies;
 		this.generationJobs = generationJobs;
+		this.classroomManagement = classroomManagement;
 	}
 
 	@GetMapping("/admin/education/schedule-dimension-options")
@@ -373,6 +377,7 @@ public class ClassSchedulingController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
 	public ResultData<?> offerings(
 			@RequestParam String semesterCode,
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
 			Authentication authentication) {
@@ -380,6 +385,10 @@ public class ClassSchedulingController {
 		List<CourseOffering> visible = dataScopes.visibleOfferings(
 				scope,
 				service.offerings(semesterCode));
+		var campuses = dataScopes.scheduleOrganizationCampuses(scope, organizationId);
+		if (campuses != null) {
+			visible = visible.stream().filter(item -> campuses.contains(item.getCampusId())).toList();
+		}
 		return page == null && size == null
 				? ok(visible)
 				: ok(PageView.from(
@@ -426,12 +435,16 @@ public class ClassSchedulingController {
 	@GetMapping("/admin/education/classrooms")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:resource:venue:view','education:resource:venue:manage')")
 	public ResultData<?> classrooms(
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) Integer page,
 			@RequestParam(required = false) Integer size,
 			Authentication authentication) {
-		List<Classroom> visible = dataScopes.visibleClassrooms(
-				dataScopes.resolve(authentication.getName()),
-				service.classrooms());
+		var scope = dataScopes.resolve(authentication.getName());
+		List<Classroom> visible = dataScopes.visibleClassrooms(scope, service.classrooms());
+		var campuses = dataScopes.scheduleOrganizationCampuses(scope, organizationId);
+		if (campuses != null) {
+			visible = visible.stream().filter(item -> campuses.contains(item.getCampusId())).toList();
+		}
 		return page == null && size == null
 				? ok(visible)
 				: ok(PageView.from(
@@ -448,7 +461,8 @@ public class ClassSchedulingController {
 		dataScopes.assertClassroomAccess(
 				dataScopes.resolve(authentication.getName()),
 				command);
-		return ok(service.saveClassroom(null, command));
+		command.setId(null);
+		return ok(classroomManagement.saveRoom(command.getCampusId(), command));
 	}
 
 	@PutMapping("/admin/education/classrooms/{id}")
@@ -460,7 +474,9 @@ public class ClassSchedulingController {
 		var scope = dataScopes.resolve(authentication.getName());
 		dataScopes.assertClassroomAccess(scope, id);
 		dataScopes.assertClassroomAccess(scope, command);
-		return ok(service.saveClassroom(id, command));
+		if (command.getFloorId() == null) return ok(service.saveClassroom(id, command));
+		command.setId(id);
+		return ok(classroomManagement.saveRoom(command.getCampusId(), command));
 	}
 
 	@DeleteMapping("/admin/education/classrooms/{id}")

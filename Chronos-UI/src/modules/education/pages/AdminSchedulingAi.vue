@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { todayLocalDate } from '../../../utils/localDate'
 import {
@@ -63,6 +64,7 @@ const form = reactive({
   startWeek: 1,
   endWeek: 20,
 })
+const organizationId = ref(typeof route.query.organizationId === 'string' ? route.query.organizationId : '')
 const terms = ref([])
 const offerings = ref([])
 const run = ref(null)
@@ -253,25 +255,35 @@ const loadRun = async (runId, sequence = runRequestSequence.value) => {
   }
 }
 
+let offeringsRequest = 0
 const loadOfferings = async () => {
+  const request = ++offeringsRequest
   if (!form.semesterCode) {
     offerings.value = []
     return
   }
   loadingOfferings.value = true
   try {
-    offerings.value = unwrapList(await listCourseOfferings(form.semesterCode, { page: 0, size: 200 }))
+    const response = await listCourseOfferings(form.semesterCode, {
+      organizationId: organizationId.value, page: 0, size: 200,
+    })
+    if (request === offeringsRequest) offerings.value = unwrapList(response)
   } catch (error) {
     showError(error)
   } finally {
-    loadingOfferings.value = false
+    if (request === offeringsRequest) loadingOfferings.value = false
   }
 }
 
-const loadInitial = async () => {
+let termsRequest = 0
+const loadInitial = async (id, useRouteTerm) => {
+  const request = ++termsRequest
+  if (!id) return
   try {
-    terms.value = unwrapList(await listAcademicTerms({ page: 0, size: 100 }))
-    const requestedTerm = route.query.semesterCode
+    const response = await listAcademicTerms({ organizationId: id })
+    if (request !== termsRequest) return
+    terms.value = unwrapList(response)
+    const requestedTerm = useRouteTerm ? route.query.semesterCode : undefined
     const today = todayLocalDate()
     const current = terms.value.find(term => term.termCode === requestedTerm)
       || terms.value.find(term => term.startDate <= today && term.endDate >= today)
@@ -557,11 +569,29 @@ const openExamPlans = plan => router.push({
   query: { semesterCode: form.semesterCode, ...(plan ? { examPlanId: plan.planId } : {}) },
 })
 
-onMounted(async () => {
-  await loadInitial()
+let loadedOrganization = false
+watch(organizationId, async id => {
+  const firstSelection = !loadedOrganization
+  if (id) loadedOrganization = true
+  ++runRequestSequence.value
+  ++offeringsRequest
+  stopPolling()
+  terms.value = []
+  offerings.value = []
+  loadingOfferings.value = false
+  form.semesterCode = ''
+  form.selectedOfferingIds = []
+  run.value = null
+  candidates.value = []
+  candidateSelection.value = []
+  dateImpact.value = null
+  dateImpactKey = ''
+  await loadInitial(id, firstSelection)
   const runId = route.query.aiRunId
-  if (typeof runId === 'string' && runId) await loadRun(runId)
-})
+  if (id && id === organizationId.value && firstSelection && typeof runId === 'string' && runId) {
+    await loadRun(runId)
+  }
+}, { immediate: true })
 onBeforeUnmount(() => {
   runRequestSequence.value += 1
   explanationRequestSequence += 1
@@ -577,7 +607,7 @@ onBeforeUnmount(() => {
         <p>用自然语言描述排课目标，逐步检查解析结果并查看候选方案。</p>
       </div>
       <div class="header-actions">
-        <SchedulingModeSwitch :semester-code="form.semesterCode" :run-id="run?.id" />
+        <SchedulingModeSwitch :semester-code="form.semesterCode" :organization-id="organizationId" :run-id="run?.id" />
         <el-tag :type="statusType">当前状态：{{ statusLabel }}</el-tag>
       </div>
     </header>
@@ -586,8 +616,12 @@ onBeforeUnmount(() => {
       <template #header><span class="card-title">创建排课 Run</span></template>
       <el-alert v-if="createError" :title="createError" type="error" show-icon :closable="false" />
       <el-form :model="form" label-width="110px" @submit.prevent="createRun">
+        <el-form-item label="机构" required>
+          <OrganizationSelect v-model="organizationId" context-key="education-scheduling"
+            school-or-campus-only style="max-width:320px" />
+        </el-form-item>
         <el-form-item label="学期" required>
-          <el-select v-model="form.semesterCode" placeholder="选择学期" filterable @change="changeSemester">
+          <el-select v-model="form.semesterCode" placeholder="选择学期" :disabled="!terms.length" filterable @change="changeSemester">
             <el-option v-for="term in terms" :key="term.id || term.termCode" :label="term.termName" :value="term.termCode" />
           </el-select>
         </el-form-item>

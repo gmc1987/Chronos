@@ -20,6 +20,8 @@ public class FacilitySafetyIncident extends BaseEntity {
 	private String repairOrderId;
 	@Column(name = "asset_id", length = 64)
 	private String assetId;
+	@Column(name = "organization_id", length = 64)
+	private String organizationId;
 	@Column(name = "occurred_at", nullable = false)
 	private LocalDateTime occurredAt;
 	@Column(nullable = false, length = 16)

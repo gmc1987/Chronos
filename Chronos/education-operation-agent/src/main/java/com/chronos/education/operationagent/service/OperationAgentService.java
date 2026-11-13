@@ -41,6 +41,7 @@ public class OperationAgentService {
 	private final ObjectMapper mapper;
 	private final IAuditLogService audit;
 	private final DirectoryDataScopeGuard dataScopes;
+	private final OperationAgentTeacherOnboardingTool teacherOnboarding;
 
 	public OperationAgentService(
 			OperationAgentPlanRepository plans,
@@ -58,7 +59,8 @@ public class OperationAgentService {
 			OperationAgentSemesterResolver semesterResolver,
 			ObjectMapper mapper,
 			IAuditLogService audit,
-			DirectoryDataScopeGuard dataScopes) {
+			DirectoryDataScopeGuard dataScopes,
+			OperationAgentTeacherOnboardingTool teacherOnboarding) {
 		this.plans = plans;
 		this.planSteps = planSteps;
 		this.runs = runs;
@@ -75,6 +77,7 @@ public class OperationAgentService {
 		this.mapper = mapper;
 		this.audit = audit;
 		this.dataScopes = dataScopes;
+		this.teacherOnboarding = teacherOnboarding;
 	}
 
 	public OperationAgentLlmService.DraftResult draftPlan(
@@ -341,6 +344,9 @@ public class OperationAgentService {
 		String planId = plan.getId();
 		List<OperationAgentPlanStep> steps = planSteps.findByPlanIdOrderByStepOrder(planId);
 		if (steps.isEmpty()) throw new IllegalStateException("执行计划没有可执行步骤");
+		for (var step : steps) {
+			toolCatalog.require(step.getToolCode());
+		}
 		OperationAgentRun run = new OperationAgentRun();
 		run.setPlanId(planId);
 		run.setPlanVersion(plan.getPlanVersion());
@@ -394,14 +400,25 @@ public class OperationAgentService {
 	public RunDetail detail(String id, Authentication authentication) {
 		OperationAgentRun run = ownedRun(id, authentication);
 		CheckpointView checkpoint = checkpointView(run, authentication);
+		List<OperationAgentStepRun> steps = stepRuns.findByRunIdOrderByStepOrder(id);
+		List<Map<String, Object>> onboardingCases = List.of();
+		if (authentication.getName().equals(run.getOwnerUsername())) {
+			onboardingCases = steps.stream()
+					.filter(step -> OperationAgentTeacherOnboardingTool.CODE.equals(step.getToolCode())
+							&& "SUCCEEDED".equals(step.getStatus())
+							&& !Boolean.TRUE.equals(readMap(step.getResultJson()).get("dryRun")))
+					.findFirst()
+					.map(step -> teacherOnboarding.casesForStep(step.getId(), authentication.getName()))
+					.orElseGet(List::of);
+		}
 		return new RunDetail(
 				runView(run),
-				stepRuns.findByRunIdOrderByStepOrder(id),
+				steps,
 				conditions.findByRunIdOrderByConditionVersion(id),
 				candidatePromotionAvailable(run),
 				checkpoint != null && checkpoint.mode() == OperationAgentCheckpointMode.DUAL_CONTROL
 						? notifications.eligibleReviewers(run.getOwnerUsername()) : List.of(),
-				checkpoint);
+				checkpoint, onboardingCases);
 	}
 
 	/**
@@ -414,6 +431,9 @@ public class OperationAgentService {
 		OperationAgentRun sourceRun = lockedOwnedRun(id, authentication);
 		if (!"COMPLETED".equals(sourceRun.getStatus())) {
 			throw new IllegalStateException("只有已完成的候选运行可以确认进入正式处理");
+		}
+		if (usesRetiredTeacherTool(sourceRun)) {
+			throw new IllegalStateException(OperationAgentToolCatalog.TEACHER_PLAN_UPGRADE_MESSAGE);
 		}
 		if (!candidatePromotionAvailable(sourceRun)) {
 			throw new IllegalStateException("当前运行不包含可转正式处理的候选结果");
@@ -606,6 +626,7 @@ public class OperationAgentService {
 				|| !"WAITING_CONFIRMATION".equals(step.getStatus())) {
 			throw new IllegalStateException("当前步骤不是发起人确认检查点");
 		}
+		toolCatalog.require(step.getToolCode());
 		validateEvidenceVersion(step, command);
 		validateEvidenceHasNoErrors(step);
 
@@ -907,6 +928,7 @@ public class OperationAgentService {
 						.filter(value -> !Set.of("SUCCEEDED", "SKIPPED").contains(value.getStatus()))
 						.findFirst()
 						.orElseThrow(() -> new IllegalStateException("没有可重试的失败步骤")));
+		toolCatalog.require(failedStep.getToolCode());
 		failedStep.setStatus("QUEUED");
 		failedStep.setProgress(0);
 		failedStep.setAttemptNo(0);
@@ -981,10 +1003,16 @@ public class OperationAgentService {
 		return new RunView(run, plan == null ? "已删除计划" : plan.getPlanName());
 	}
 
+	private boolean usesRetiredTeacherTool(OperationAgentRun run) {
+		return stepRuns.findByRunIdOrderByStepOrder(run.getId()).stream()
+				.anyMatch(step -> OperationAgentToolCatalog.RETIRED_TEACHER_TOOL.equals(step.getToolCode()));
+	}
+
 	private boolean candidatePromotionAvailable(OperationAgentRun run) {
-		if (!"COMPLETED".equals(run.getStatus()) || run.getPlanId() == null) return false;
+		if (!"COMPLETED".equals(run.getStatus()) || run.getPlanId() == null || usesRetiredTeacherTool(run)) return false;
 		for (OperationAgentPlanStep step : planSteps.findByPlanIdOrderByStepOrder(run.getPlanId())) {
-			if (!toolCatalog.require(step.getToolCode()).writeTool()) continue;
+			if (OperationAgentToolCatalog.RETIRED_TEACHER_TOOL.equals(step.getToolCode())
+					|| !toolCatalog.require(step.getToolCode()).writeTool()) continue;
 			if (Boolean.TRUE.equals(stepSnapshotConfig(run, step.getStepOrder()).get("dryRun"))) return true;
 		}
 		return false;
@@ -1207,7 +1235,8 @@ public class OperationAgentService {
 			List<OperationAgentCondition> conditions,
 			boolean candidatePromotionAvailable,
 			List<String> eligibleReviewers,
-			CheckpointView checkpoint) {}
+			CheckpointView checkpoint,
+			List<Map<String, Object>> teacherOnboardingCases) {}
 	public record CheckpointView(
 			OperationAgentCheckpointMode mode,
 			String label,

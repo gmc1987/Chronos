@@ -11,6 +11,9 @@ import com.chronos.education.operationagent.model.OperationAgentCheckpointMode;
 
 @Component
 public class OperationAgentToolCatalog {
+	static final String RETIRED_TEACHER_TOOL = "teacher.onboarding.batch";
+	static final String TEACHER_PLAN_UPGRADE_MESSAGE =
+			"此计划使用旧版教师直接建档步骤，请重新与智能体发起任务并确认新的教师入职申请";
 	private static final Map<String, ToolDefinition> TOOLS = tools();
 
 	private static Map<String, ToolDefinition> tools() {
@@ -48,7 +51,12 @@ public class OperationAgentToolCatalog {
 		add(values, "iam.employee.import.managed-file", "从业务文件建立教职工、任职和账号", "CRITICAL", true, true, 1, "修正文件后重新执行", false,
 				required("managedFileId", "教职工文件", "请上传教职工 XLSX 文件"),
 				required("organizationId", "目标机构", "请指定机构 ID、机构编码或准确名称"));
-		add(values, "teacher.onboarding.batch", "批量建立教师档案和账号", "CRITICAL", true, true, 1, "幂等重试", false);
+		add(values, OperationAgentTeacherOnboardingTool.CODE, "准备并提交教师入职申请", "HIGH", true, true, 1,
+				"核对工号、学校任职和审核员配置后重试", false,
+				required("organizationId", "目标学校", "请提供学校名称或编码"),
+				required("employeeCodes", "教职工工号", "请提供已登记的教职工工号"),
+				required("effectiveDate", "生效日期", "请提供 YYYY-MM-DD 格式的入职生效日期"),
+				required("reason", "入职申请说明", "请提供本次教师入职申请说明"));
 		add(values, "admission.import.managed-file", "从受管文件导入新生名册", "HIGH", true, true, 1, "修正文件后重新执行", false,
 				required("managedFileId", "新生名册", "请上传 XLSX 新生名册"));
 		add(values, "admission.data.check", "新生录取数据检查", "LOW", false, false, 2, "自动重试", false);
@@ -212,7 +220,7 @@ public class OperationAgentToolCatalog {
 				"semester.context.check", "knowledge.policy.search",
 				"iam.department.import.managed-file", "iam.position.import.managed-file",
 				"iam.job-level.import.managed-file", "iam.employee.import.managed-file",
-				"teacher.onboarding.batch").contains(toolCode))
+				OperationAgentTeacherOnboardingTool.CODE).contains(toolCode))
 			return new StageDefinition(1, "FOUNDATION", "基础数据准备");
 		if (Set.of("admission.import.managed-file", "admission.data.check").contains(toolCode))
 			return new StageDefinition(2, "ADMISSION_IMPORT", "新生数据接入");
@@ -253,6 +261,9 @@ public class OperationAgentToolCatalog {
 	}
 
 	public ToolDefinition require(String code) {
+		if (RETIRED_TEACHER_TOOL.equals(code)) {
+			throw new IllegalStateException(TEACHER_PLAN_UPGRADE_MESSAGE);
+		}
 		ToolDefinition value = TOOLS.get(code);
 		if (value == null) throw new IllegalArgumentException("未授权或未注册的业务工具：" + code);
 		return value;
@@ -273,6 +284,9 @@ public class OperationAgentToolCatalog {
 
 	private boolean incompleteStructuredInput(String code, String key, Object value) {
 		return switch (code + ":" + key) {
+		case OperationAgentTeacherOnboardingTool.CODE + ":employeeCodes" -> !(value instanceof List<?> codes)
+				|| codes.isEmpty() || codes.size() > 50
+				|| codes.stream().anyMatch(codeValue -> !(codeValue instanceof String text) || text.isBlank());
 		case "grade.scheme.upsert:scheme" -> lacksFields(value, "offeringId", "name", "totalScore",
 				"passScore", "components");
 		case "grade.gradebook.create:gradebook" -> lacksFields(value, "offeringId", "schemeId");

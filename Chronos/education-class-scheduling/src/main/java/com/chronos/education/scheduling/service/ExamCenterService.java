@@ -408,6 +408,22 @@ public class ExamCenterService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<ExamInvigilationChange> pendingChanges(String organizationId, String username) {
+		var scope = dataScopes.resolve(username);
+		if (organizationId != null && !organizationId.isBlank()) {
+			if (!scope.fullAccess() && !scope.schoolIds().contains(organizationId)
+					&& !scope.campusIds().contains(organizationId)) {
+				throw new org.springframework.security.access.AccessDeniedException("无权查看该机构的监考变更");
+			}
+			return changes.findPendingByOrganizationIds(java.util.Set.of(organizationId));
+		}
+		if (scope.fullAccess()) return pendingChanges();
+		var visible = new java.util.HashSet<>(scope.schoolIds());
+		visible.addAll(scope.campusIds());
+		return visible.isEmpty() ? List.of() : changes.findPendingByOrganizationIds(visible);
+	}
+
+	@Transactional(readOnly = true)
 	public List<ExamDutyView> myDuties(String username) {
 		return dataScopes.resolve(username).teacherIds().stream()
 				.flatMap(teacherId -> assignments

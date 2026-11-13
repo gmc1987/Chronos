@@ -10,6 +10,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.chronos.education.scheduling.model.Subject;
 
 public interface SubjectRepository extends JpaRepository<Subject, String> {
+	List<Subject> findByOrganizationIdOrderBySubjectCode(String organizationId);
+	List<Subject> findByOrganizationIdInOrOrganizationIdIsNullOrderBySubjectCode(java.util.Collection<String> organizationIds);
+
 	Optional<Subject> findBySubjectCode(String subjectCode);
 	List<Subject> findAllByOrderBySortOrderAscSubjectCodeAsc();
 	Page<Subject> findAllByOrderBySortOrderAscSubjectCodeAsc(Pageable pageable);

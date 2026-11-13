@@ -2,12 +2,19 @@
   <div class="page">
     <header>
       <div><h2>学年学期与校历</h2><p>统一维护学期、特殊教学日期以及各校区作息节次。</p></div>
-      <el-button type="primary" :disabled="!organizationId" @click="openTerm()">新增学期</el-button>
+      <div class="toolbar">
+        <AcademicCatalogImport v-if="activeTab === 'terms'" v-permission="['education:term:create','education:term:manage']"
+          kind="TERMS" label="学年学期" :organization-id="organizationId" @imported="loadTerms" />
+        <el-button type="primary" :disabled="!organizationId" @click="openTerm()">新增学期</el-button>
+      </div>
     </header>
     <el-tabs v-model="activeTab">
       <el-tab-pane label="学年学期" name="terms">
-		<div class="toolbar"><OrganizationSelect v-model="organizationId" context-key="education-academic-terms" school-or-campus-only style="width:260px" /></div>
-        <el-table :data="terms" border highlight-current-row @current-change="row => selectedTermId = row?.id || selectedTermId">
+		<div class="toolbar"><OrganizationSelect v-model="organizationId" context-key="education-academic-terms" school-or-campus-only style="width:260px" />
+          <el-input v-model="termKeyword" clearable placeholder="学期名称、编码或学年" style="width:220px" @keyup.enter="searchTerms" @clear="searchTerms" />
+          <el-button :disabled="!organizationId" @click="searchTerms">查询</el-button>
+        </div>
+        <el-table :data="termRows" border highlight-current-row @current-change="row => selectedTermId = row?.id || selectedTermId">
 		  <el-table-column prop="organizationId" label="所属机构" min-width="170"><template #default="s">{{ campusName(s.row.organizationId) }}</template></el-table-column>
 		  <el-table-column prop="localTermCode" label="校内学期编码" min-width="140" />
 		  <el-table-column prop="termCode" label="机构学期编码" min-width="210" />
@@ -20,6 +27,8 @@
           <el-table-column label="状态" width="90"><template #default="s"><el-tag :type="s.row.status === 'ARCHIVED' ? 'info' : 'success'">{{ s.row.status === 'ARCHIVED' ? '已归档' : '启用' }}</el-tag></template></el-table-column>
           <AdaptiveActionColumn label="操作" width="150"><template #default="s"><el-button link type="primary" :disabled="s.row.status === 'ARCHIVED'" @click.stop="openTerm(s.row)">编辑</el-button><el-button link type="warning" :disabled="s.row.status === 'ARCHIVED'" @click.stop="archiveTerm(s.row)">归档</el-button></template></AdaptiveActionColumn>
         </el-table>
+        <el-pagination v-model:current-page="termPage" v-model:page-size="termSize" :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next" :total="termTotal" @current-change="loadTermRows" @size-change="searchTerms" />
       </el-tab-pane>
       <el-tab-pane label="教学日历" name="calendar">
         <div class="toolbar">
@@ -71,6 +80,7 @@
 <script setup>
 import { h, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { academicTermArchiveReadiness, archiveAcademicTerm, createAcademicCalendarDay, createAcademicTerm, createBellPeriod, createBellSchedule, deleteAcademicCalendarDay, deleteBellPeriod, deleteBellSchedule, importAcademicCalendarDays, listAcademicCalendarDays, listAcademicTerms, listBellSchedules, orgOptions, updateAcademicCalendarDay, updateAcademicTerm, updateBellPeriod, updateBellSchedule } from '../../../api/admin'
 
@@ -82,10 +92,37 @@ const termDialog = ref(false); const dayDialog = ref(false); const bellDialog = 
 const termForm = reactive({}); const dayForm = reactive({}); const bellForm = reactive({}); const periodForm = reactive({})
 const reset = (target, value) => { Object.keys(target).forEach(key => delete target[key]); Object.assign(target, value) }
 const unwrap = response => response.data?.content || response.data || []
+const termKeyword = ref('')
+const termRows = ref([])
+const termPage = ref(1)
+const termSize = ref(10)
+const termTotal = ref(0)
+let termPageVersion = 0
+const loadTermRows = async () => {
+  const version = ++termPageVersion
+  if (!organizationId.value) {
+    termRows.value = []
+    termTotal.value = 0
+    return
+  }
+  const { data } = await listAcademicTerms({
+    organizationId: organizationId.value, keyword: termKeyword.value, page: termPage.value - 1, size: termSize.value,
+  })
+  if (version !== termPageVersion) return
+  termRows.value = data.content
+  termTotal.value = data.totalElements
+}
+const searchTerms = () => {
+  termPage.value = 1
+  return loadTermRows()
+}
 let termsSequence = 0
 const loadTerms = async () => {
   const sequence = ++termsSequence
-  const result = await listAcademicTerms({ organizationId: organizationId.value || undefined })
+  const [result] = await Promise.all([
+    organizationId.value ? listAcademicTerms({ organizationId: organizationId.value }) : Promise.resolve({ data: [] }),
+    loadTermRows(),
+  ])
   if (sequence !== termsSequence) return
   terms.value = unwrap(result)
   if (!terms.value.some(item => item.id === selectedTermId.value)) {
@@ -113,6 +150,10 @@ const loadDetails = async () => {
 }
 const openTerm = row => { reset(termForm, row ? { ...row } : { organizationId: organizationId.value || (campuses.value.length === 1 ? campuses.value[0].id : ''), localTermCode: '', termNo: 1, weekCount: 20, currentTerm: false, status: 'ACTIVE' }); termDialog.value = true }
 const changeOrganization = async () => {
+  termKeyword.value = ''
+  termPage.value = 1
+  termRows.value = []
+  termTotal.value = 0
   selectedTermId.value = ''
   terms.value = []
   days.value = []
@@ -200,5 +241,6 @@ watch(organizationId, changeOrganization)
 </script>
 
 <style scoped>
+.el-pagination { justify-content: flex-end; margin-top: 10px; }
 .page { padding: 24px; } header, .toolbar, .card-head { display: flex; align-items: center; justify-content: space-between; } header { margin-bottom: 18px; } h2 { margin: 0 0 6px; } p, .muted { margin: 0; color: #84909a; } .toolbar { justify-content: flex-start; gap: 12px; margin-bottom: 12px; } .toolbar .el-select { width: 260px; } .el-alert { margin-bottom: 12px; } .bell-card { margin-bottom: 14px; } .card-head > div { display: flex; align-items: center; gap: 10px; }
 </style>

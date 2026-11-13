@@ -27,12 +27,12 @@ const fields = [
 ]
 
 const lookups = [
-  { key: 'teachers', loader: listEducationTeachers, labelProp: 'teacherName' },
+  { key: 'teachers', campusScoped: true, loader: organizationId => listEducationTeachers({ organizationId }), labelProp: 'teacherName' },
 ]
 </script>
 
 <template>
-  <AcademicCrudPage
+  <AcademicCrudPage searchable organization-scoped import-kind="GRADES" permission-prefix="education:grade"
     title="年级管理"
     description="维护入学年级、教育阶段和年级负责人"
     entity-label="年级"

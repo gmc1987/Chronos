@@ -2,8 +2,11 @@
   <div class="page">
     <header><div><h2>节假日维护</h2><p>自动同步国务院公布的年度安排，再由学校确认教学日及参照课表。</p></div></header>
     <div class="toolbar">
-      <el-select v-model="termId" placeholder="选择学期" @change="loadDays"><el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.id" /></el-select>
-      <el-input-number v-model="year" :min="2000" :max="maxYear" @change="loadDays" />
+      <OrganizationSelect v-model="organizationId" context-key="education-holidays" school-or-campus-only style="width:240px" />
+      <el-select v-model="termId" :disabled="!organizationId || !terms.length" :loading="loadingTerms" placeholder="选择学期">
+        <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.id" />
+      </el-select>
+      <el-input-number v-model="year" :min="2000" :max="maxYear" />
       <el-button type="primary" :loading="importing" :disabled="!termId" @click="importOfficial">从公告数据导入</el-button>
       <el-button :disabled="!termId" @click="manualDialog = true">手动导入 JSON</el-button>
       <el-button :disabled="!termId" @click="openDay()">新增特殊日期</el-button>
@@ -11,7 +14,7 @@
     </div>
     <el-alert type="info" :closable="false" title="系统每日自动同步已公布的当年和下一年安排。自动同步不会覆盖人工修改；补班日默认不排学校课程，需指定参照课表日期后才能启用。" />
     <p class="sync-status">本学期自动导入 {{ autoCount }} 条；最近同步：{{ lastImportedAt || '尚无已公布数据' }}</p>
-    <el-table :data="visibleDays" border empty-text="当前年份没有节假日记录">
+    <el-table :data="visibleDays" border :empty-text="!organizationId ? '请先选择机构' : !termId ? '当前机构没有可选学期' : '当前年份没有节假日记录'">
       <el-table-column prop="calendarDate" label="日期" width="125" />
       <el-table-column prop="dayName" label="名称" min-width="130" />
       <el-table-column label="类别" width="120"><template #default="s">{{ typeName(s.row.dayType) }}</template></el-table-column>
@@ -43,12 +46,15 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import AdaptiveActionColumn from '../../../components/AdaptiveActionColumn.vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { todayLocalDate } from '../../../utils/localDate'
 import { createAcademicCalendarDay, importAcademicHolidays, listAcademicCalendarDays, listAcademicTerms, updateAcademicCalendarDay } from '../../../api/admin'
 
+const organizationId = ref('')
+const loadingTerms = ref(false)
 const terms = ref([])
 const termId = ref('')
 const year = ref(new Date().getFullYear())
@@ -63,14 +69,63 @@ const visibleDays = computed(() => days.value.filter(day => day.calendarDate?.st
 const autoCount = computed(() => visibleDays.value.filter(day => day.sourceType === 'AUTO').length)
 const lastImportedAt = computed(() => visibleDays.value.map(day => day.importedAt).filter(Boolean).sort().at(-1) || '')
 const typeName = type => ({ HOLIDAY: '休假', MAKEUP_WORKDAY: '调休补班', MAKEUP: '学校补课', EXAM: '考试', EVENT: '学校活动' }[type] || type)
-const loadDays = async () => { days.value = termId.value ? (await listAcademicCalendarDays(termId.value)).data || [] : [] }
+let daysRequest = 0
+async function loadDays() {
+  const request = ++daysRequest
+  const id = termId.value
+  const organization = organizationId.value
+  if (!id || !organization) return
+  try {
+    const response = await listAcademicCalendarDays(id, organization)
+    if (request === daysRequest && id === termId.value && organization === organizationId.value) {
+      days.value = response.data || []
+    }
+  } catch {
+    // The shared HTTP client displays request errors.
+  }
+}
 const showResult = result => ElMessage.success(`导入完成：新增 ${result.counts.inserted}、更新 ${result.counts.updated}、保留人工记录 ${result.counts.skipped}`)
 const importOfficial = async () => { importing.value = true; try { showResult((await importAcademicHolidays({ termId: termId.value, year: year.value, mode: 'AUTO' })).data); await loadDays() } finally { importing.value = false } }
 const importManual = async () => { importing.value = true; try { showResult((await importAcademicHolidays({ termId: termId.value, year: year.value, mode: 'MANUAL', content: manualContent.value })).data); manualDialog.value = false; await loadDays() } finally { importing.value = false } }
 const readFile = async event => { const file = event.target.files?.[0]; if (file) manualContent.value = await file.text() }
 const openDay = row => { Object.keys(dayForm).forEach(key => delete dayForm[key]); Object.assign(dayForm, row ? { ...row } : { academicTermId: termId.value, calendarDate: `${year.value}-01-01`, dayType: 'HOLIDAY', teachingDay: false }); dayDialog.value = true }
 const saveDay = async () => { const payload = { ...dayForm, scheduleDate: dayForm.teachingDay ? dayForm.scheduleDate || null : null }; await (dayForm.id ? updateAcademicCalendarDay(dayForm.id, payload) : createAcademicCalendarDay(payload)); dayDialog.value = false; ElMessage.success('已保存学校日期设置'); await loadDays() }
-onMounted(async () => { const response = await listAcademicTerms({ page: 0, size: 100 }); terms.value = response.data?.content || response.data || []; const today = todayLocalDate(); termId.value = (terms.value.find(term => term.startDate <= today && term.endDate >= today) || terms.value.find(term => term.currentTerm) || terms.value[0])?.id || ''; await loadDays() })
+let termsRequest = 0
+watch(organizationId, async id => {
+  const request = ++termsRequest
+  terms.value = []
+  termId.value = ''
+  days.value = []
+  loadingTerms.value = Boolean(id)
+  if (!id) return
+
+  try {
+    const response = await listAcademicTerms({ organizationId: id })
+    if (request !== termsRequest) return
+    terms.value = response.data?.content || response.data || []
+    const today = todayLocalDate()
+    const preferred = terms.value.find(term => term.startDate <= today && term.endDate >= today)
+      || terms.value.find(term => term.currentTerm)
+      || terms.value[0]
+    termId.value = preferred?.id || ''
+  } catch {
+    // The shared HTTP client displays request errors.
+  } finally {
+    if (request === termsRequest) loadingTerms.value = false
+  }
+})
+
+watch(termId, id => {
+  days.value = []
+  manualDialog.value = false
+  manualContent.value = ''
+  dayDialog.value = false
+  const term = terms.value.find(item => item.id === id)
+  const firstYear = Number(term?.startDate?.slice(0, 4))
+  const lastYear = Number(term?.endDate?.slice(0, 4))
+  if (firstYear && (year.value < firstYear || year.value > lastYear)) year.value = firstYear
+  loadDays()
+})
 </script>
 
 <style scoped>
@@ -78,7 +133,7 @@ onMounted(async () => { const response = await listAcademicTerms({ page: 0, size
 header { margin-bottom: 18px; }
 h2 { margin: 0 0 6px; }
 p { margin: 0 0 12px; color: #84909a; }
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
 .toolbar .el-select { width: 240px; }
 .el-alert { margin-bottom: 12px; }
 .sync-status { margin-bottom: 12px; }
