@@ -38,6 +38,7 @@ public class LeaveRecordService {
 	private final IEmployeeRepository employees;
 	private final StaffLeaveBalanceService leaveBalances;
 	private final ScheduleDateExceptionRepository dateExceptions;
+	private final ScheduleOccurrenceService occurrences;
 
 	public LeaveRecordService(
 			LeaveRequestRecordRepository records,
@@ -48,7 +49,7 @@ public class LeaveRecordService {
 			IAdminUserRepository users,
 			IEmployeeRepository employees,
 			StaffLeaveBalanceService leaveBalances,
-			ScheduleDateExceptionRepository dateExceptions) {
+			ScheduleDateExceptionRepository dateExceptions, ScheduleOccurrenceService occurrences) {
 		this.records = records;
 		this.bindings = bindings;
 		this.applicants = applicants;
@@ -58,6 +59,7 @@ public class LeaveRecordService {
 		this.employees = employees;
 		this.leaveBalances = leaveBalances;
 		this.dateExceptions = dateExceptions;
+		this.occurrences = occurrences;
 	}
 
 	@Transactional
@@ -176,8 +178,9 @@ public class LeaveRecordService {
 			var obsoleteSubstitutions = dateExceptions
 					.findByLeaveRecordIdAndExceptionTypeAndStatusAndSourceDateAfter(
 							record.getId(), "SUBSTITUTE", "ACTIVE", record.getActualEndDate());
-			obsoleteSubstitutions.forEach(value -> value.setStatus("CANCELLED"));
-			dateExceptions.saveAll(obsoleteSubstitutions);
+			obsoleteSubstitutions.stream().sorted(java.util.Comparator.comparing(
+					com.chronos.education.scheduling.model.ScheduleDateException::getSemesterCode))
+					.forEach(value -> occurrences.cancelException(value.getId()));
 		}
 		audit.log(username, "EDUCATION_LEAVE_CANCELLATION_DECIDE",
 				"leaveId=" + id + ",approved=" + approved);

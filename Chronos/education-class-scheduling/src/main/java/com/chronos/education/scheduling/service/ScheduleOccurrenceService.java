@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.chronos.education.scheduling.dao.AcademicCalendarDayRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
@@ -35,6 +36,7 @@ import com.chronos.education.scheduling.model.ScheduleOccurrenceView;
 import com.chronos.education.scheduling.model.PendingMakeupView;
 import com.chronos.education.scheduling.model.TeacherLeaveCoverageView;
 import com.chronos.education.scheduling.model.LeaveRequestRecord;
+import com.chronos.service.iService.IAuditLogService;
 
 /** 将周期课表展开为具体日期课表，并在读取时叠加停课、调课、代课和补课例外。 */
 @Service
@@ -57,6 +59,8 @@ public class ScheduleOccurrenceService {
 	private final EducationResourceTransactionLock resourceLock;
 	private final LeaveRequestRecordRepository leaveRecords;
 	private final TeacherAcademicProfileRepository teacherProfiles;
+	private final IAuditLogService audit;
+	private final TeachingHoursEvidenceStore teachingHours;
 
 	public ScheduleOccurrenceService(
 			AcademicTermRepository terms,
@@ -72,7 +76,8 @@ public class ScheduleOccurrenceService {
 			ExamResourceReservationService examReservations,
 			EducationResourceTransactionLock resourceLock,
 			LeaveRequestRecordRepository leaveRecords,
-			TeacherAcademicProfileRepository teacherProfiles) {
+			TeacherAcademicProfileRepository teacherProfiles,
+			IAuditLogService audit, TeachingHoursEvidenceStore teachingHours) {
 		this.terms = terms;
 		this.calendarDays = calendarDays;
 		this.entries = entries;
@@ -87,11 +92,22 @@ public class ScheduleOccurrenceService {
 		this.resourceLock = resourceLock;
 		this.leaveRecords = leaveRecords;
 		this.teacherProfiles = teacherProfiles;
+		this.audit = audit;
+		this.teachingHours = teachingHours;
 	}
 
 	@Transactional(readOnly = true)
 	public List<ScheduleOccurrenceView> occurrences(String semesterCode, LocalDate date) {
 		return occurrences(semesterCode, date, scheduling.schedule(semesterCode));
+	}
+
+	@Transactional(readOnly = true)
+	public List<ScheduleOccurrenceView> publishedOccurrencesBetween(
+			String semesterCode, LocalDate first, LocalDate last, List<ScheduleEntry> publishedEntries) {
+		List<ScheduleEntryView> schedule = publishedViews(semesterCode, publishedEntries);
+		return first.datesUntil(last.plusDays(1))
+				.flatMap(date -> occurrences(semesterCode, date, schedule).stream())
+				.toList();
 	}
 
 	/** 门户传入发布快照，避免管理端尚未发布的草稿出现在个人日期课表中。 */
@@ -100,6 +116,10 @@ public class ScheduleOccurrenceService {
 			String semesterCode,
 			LocalDate date,
 			List<ScheduleEntry> publishedEntries) {
+		return occurrences(semesterCode, date, publishedViews(semesterCode, publishedEntries));
+	}
+
+	private List<ScheduleEntryView> publishedViews(String semesterCode, List<ScheduleEntry> publishedEntries) {
 		Map<String, CourseOffering> offeringById = offerings
 				.findBySemesterCodeOrderByOfferingCode(semesterCode)
 				.stream()
@@ -110,14 +130,13 @@ public class ScheduleOccurrenceService {
 						.collect(Collectors.toSet()))
 				.stream()
 				.collect(Collectors.toMap(Classroom::getId, item -> item));
-		List<ScheduleEntryView> views = publishedEntries.stream()
+		return publishedEntries.stream()
 				.filter(item -> !"CANCELLED".equals(item.getStatus()))
 				.map(item -> view(
 						item,
 						offeringById.get(item.getOfferingId()),
 						classroomById.get(item.getClassroomId())))
 				.toList();
-		return occurrences(semesterCode, date, views);
 	}
 
 	private List<ScheduleOccurrenceView> occurrences(
@@ -201,6 +220,15 @@ public class ScheduleOccurrenceService {
 	/** 假期停课只影响具体发生日；未安置的课次在此列出，供教务提前或顺延补课。 */
 	@Transactional(readOnly = true)
 	public List<PendingMakeupView> pendingMakeups(String semesterCode) {
+		return pendingMakeups(semesterCode, scheduling.schedule(semesterCode));
+	}
+
+	@Transactional(readOnly = true)
+	public List<PendingMakeupView> publishedPendingMakeups(String semesterCode, List<ScheduleEntry> publishedEntries) {
+		return pendingMakeups(semesterCode, publishedViews(semesterCode, publishedEntries));
+	}
+
+	private List<PendingMakeupView> pendingMakeups(String semesterCode, List<ScheduleEntryView> weekly) {
 		AcademicTerm term = term(semesterCode);
 		List<AcademicCalendarDay> days = calendarDays
 				.findByAcademicTermIdOrderByCalendarDate(term.getId());
@@ -209,15 +237,14 @@ public class ScheduleOccurrenceService {
 				.map(AcademicCalendarDay::getScheduleDate)
 				.filter(date -> date != null)
 				.collect(Collectors.toSet());
-		Set<String> settledCourses = exceptions
-				.findBySemesterCodeAndStatusOrderBySourceDateAsc(semesterCode, "ACTIVE")
-				.stream()
+		List<ScheduleDateException> active =
+				exceptions.findBySemesterCodeAndStatusOrderBySourceDateAsc(semesterCode, "ACTIVE");
+		Set<String> settledCourses = active.stream()
 				.filter(item -> "MAKEUP".equals(item.getExceptionType())
 						|| "CANCEL".equals(item.getExceptionType()))
 				.map(item -> item.getSourceEntryId() + "@" + item.getSourceDate())
 				.collect(Collectors.toSet());
-		List<ScheduleEntryView> weekly = scheduling.schedule(semesterCode);
-		return days.stream()
+		var holidayMakeups = days.stream()
 				.filter(day -> !Boolean.TRUE.equals(day.getTeachingDay()))
 				.filter(day -> !coveredDates.contains(day.getCalendarDate()))
 				.flatMap(day -> weekly.stream()
@@ -226,6 +253,19 @@ public class ScheduleOccurrenceService {
 								entry.id() + "@" + day.getCalendarDate()))
 						.map(entry -> new PendingMakeupView(day.getCalendarDate(), entry)))
 				.toList();
+		Set<String> arranged = active.stream().filter(item -> "MAKEUP".equals(item.getExceptionType()))
+				.map(item -> item.getSourceEntryId() + "@" + item.getSourceDate()).collect(Collectors.toSet());
+		Map<String, ScheduleEntryView> entriesById = weekly.stream()
+				.collect(Collectors.toMap(ScheduleEntryView::id, item -> item));
+		List<PendingMakeupView> pending = new ArrayList<>(holidayMakeups);
+		for (ScheduleDateException item : active) {
+			ScheduleEntryView entry = entriesById.get(item.getSourceEntryId());
+			if (item.isMakeupRequired() && entry != null
+					&& !arranged.contains(entry.id() + "@" + item.getSourceDate())) {
+				pending.add(new PendingMakeupView(item.getSourceDate(), entry, item.getId()));
+			}
+		}
+		return pending.stream().sorted(Comparator.comparing(PendingMakeupView::sourceDate)).toList();
 	}
 
 	/** 请假审批只生成待处理课次；教务指定代课教师时仍走日期例外和硬冲突校验。 */
@@ -317,13 +357,17 @@ public class ScheduleOccurrenceService {
 		if (!TYPES.contains(command.getExceptionType())) {
 			throw new IllegalArgumentException("不支持的课表例外类型");
 		}
+		resourceLock.lockSemester(source.getSemesterCode());
 		assertTermDate(term, command.getSourceDate(), "原上课日期");
-		boolean duplicateActive = exceptions
-				.findBySemesterCodeAndStatusOrderBySourceDateAsc(command.getSemesterCode(), "ACTIVE")
-				.stream()
+		guardConfirmedLesson(command);
+		if (id != null) guardConfirmedLesson(exception(id));
+		List<ScheduleDateException> sameSource = exceptions
+				.findBySemesterCodeAndStatusOrderBySourceDateAsc(command.getSemesterCode(), "ACTIVE").stream()
 				.filter(item -> id == null || !id.equals(item.getId()))
-				.anyMatch(item -> command.getSourceEntryId().equals(item.getSourceEntryId())
-						&& command.getSourceDate().equals(item.getSourceDate()));
+				.filter(item -> command.getSourceEntryId().equals(item.getSourceEntryId())
+						&& command.getSourceDate().equals(item.getSourceDate()))
+				.toList();
+		boolean duplicateActive = sameSource.stream().anyMatch(item -> !canCoexist(item, command));
 		if (duplicateActive) {
 			throw new IllegalStateException("该课程日期已有生效中的调整，请先撤销或编辑原记录");
 		}
@@ -373,8 +417,15 @@ public class ScheduleOccurrenceService {
 		value.setLeaveRecordId(command.getLeaveRecordId());
 		value.setWorkflowInstanceId(command.getWorkflowInstanceId());
 		value.setReason(required(command.getReason(), "变更原因不能为空"));
+		value.setMakeupRequired(command.isMakeupRequired() && "CANCEL".equals(command.getExceptionType()));
+		value.setMakeupSourceSuspensionId(sameSource.stream().filter(item -> canCoexist(item, command))
+				.map(ScheduleDateException::getId).findFirst().orElse(null));
 		value.setStatus("ACTIVE");
 		return exceptions.save(value);
+	}
+
+	private boolean canCoexist(ScheduleDateException first, ScheduleDateException second) {
+		return first.isMakeupRequired() && "MAKEUP".equals(second.getExceptionType());
 	}
 
 	private void assertLeaveLink(ScheduleDateException command, ScheduleEntry source) {
@@ -401,27 +452,48 @@ public class ScheduleOccurrenceService {
 	public void cancelException(String id) {
 		ScheduleDateException value = exceptions.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("课表日期例外不存在"));
+		resourceLock.lockSemester(value.getSemesterCode());
+		guardConfirmedLesson(value);
+		if (value.isMakeupRequired() && exceptions
+				.findBySemesterCodeAndStatusOrderBySourceDateAsc(value.getSemesterCode(), "ACTIVE").stream()
+				.anyMatch(item -> "MAKEUP".equals(item.getExceptionType())
+						&& value.getSourceEntryId().equals(item.getSourceEntryId())
+						&& value.getSourceDate().equals(item.getSourceDate()))) {
+			throw new IllegalStateException("请先撤销已安排的补课，再撤销停课");
+		}
 		value.setStatus("CANCELLED");
 		exceptions.save(value);
+		auditSuspension(value, "EDU_TEACHING_SUSPENSION_REVOKE");
 	}
 
 	@Transactional
 	public ScheduleDateException restoreException(String id) {
 		ScheduleDateException value = exception(id);
+		resourceLock.lockSemester(value.getSemesterCode());
+		guardConfirmedLesson(value);
 		ScheduleEntry source = entries.findById(value.getSourceEntryId())
 				.orElseThrow(() -> new IllegalArgumentException("源课表项不存在"));
 		boolean duplicateActive = exceptions
 				.findBySemesterCodeAndStatusOrderBySourceDateAsc(value.getSemesterCode(), "ACTIVE")
 				.stream()
+				.filter(item -> !canCoexist(item, value))
 				.anyMatch(item -> value.getSourceEntryId().equals(item.getSourceEntryId())
 						&& value.getSourceDate().equals(item.getSourceDate()));
 		if (duplicateActive) {
 			throw new IllegalStateException("该课程日期已有其他生效调整，不能恢复");
 		}
+		if (value.getMakeupSourceSuspensionId() != null) {
+			ScheduleDateException suspension = exception(value.getMakeupSourceSuspensionId());
+			if (!"ACTIVE".equals(suspension.getStatus()) || !suspension.isMakeupRequired()) {
+				throw new IllegalStateException("原停课记录已撤销或确认不补，不能恢复补课");
+			}
+		}
 		assertLeaveLink(value, source);
 		validateConflict(value, source, term(value.getSemesterCode()));
 		value.setStatus("ACTIVE");
-		return exceptions.save(value);
+		ScheduleDateException saved = exceptions.save(value);
+		auditSuspension(saved, "EDU_TEACHING_SUSPENSION_RESTORE");
+		return saved;
 	}
 
 	@Transactional(readOnly = true)
@@ -430,12 +502,45 @@ public class ScheduleOccurrenceService {
 				.orElseThrow(() -> new IllegalArgumentException("课表日期例外不存在"));
 	}
 
+	@Transactional
+	public void waiveSuspensionMakeup(String id) {
+		ScheduleDateException value = exception(id);
+		resourceLock.lockSemester(value.getSemesterCode());
+		if (!"ACTIVE".equals(value.getStatus()) || !value.isMakeupRequired()
+				|| exceptions.findBySemesterCodeAndStatusOrderBySourceDateAsc(value.getSemesterCode(), "ACTIVE")
+						.stream().anyMatch(item -> "MAKEUP".equals(item.getExceptionType())
+								&& value.getSourceEntryId().equals(item.getSourceEntryId())
+								&& value.getSourceDate().equals(item.getSourceDate()))) {
+			throw new IllegalStateException("当前课次没有可取消的待补课事项");
+		}
+		auditSuspension(value, "EDU_TEACHING_SUSPENSION_WAIVE_MAKEUP");
+		value.setMakeupRequired(false);
+		exceptions.save(value);
+	}
+
+	private void guardConfirmedLesson(ScheduleDateException change) {
+		// 日期变更和授课确认共用学期锁，保留已入账的实际授课记录。
+		if (teachingHours.hasConfirmation(change.getSemesterCode(), change.getSourceEntryId(), change.getSourceDate())
+				|| teachingHours.hasConfirmation(change.getSemesterCode(), change.getSourceEntryId(), change.getTargetDate())) {
+			throw new IllegalStateException("该课次已有授课确认，请先在教师课时台账作废确认");
+		}
+	}
+
+	private void auditSuspension(ScheduleDateException value, String action) {
+		if (!value.isMakeupRequired() && value.getMakeupSourceSuspensionId() == null) return;
+		var authentication = SecurityContextHolder.getContext().getAuthentication();
+		audit.log(authentication == null ? "SYSTEM" : authentication.getName(), action,
+				"exceptionId=" + value.getId() + ",semester=" + value.getSemesterCode()
+				+ ",sourceDate=" + value.getSourceDate());
+	}
+
 	private ScheduleOccurrenceView baseOccurrence(
 			ScheduleEntryView entry,
 			LocalDate date,
 			List<ScheduleDateException> values) {
 		ScheduleDateException exception = values.stream()
 				.filter(item -> entry.id().equals(item.getSourceEntryId()) && date.equals(item.getSourceDate()))
+				.filter(item -> !"MAKEUP".equals(item.getExceptionType()))
 				.findFirst()
 				.orElse(null);
 		String status = exception == null ? "SCHEDULED" : switch (exception.getExceptionType()) {

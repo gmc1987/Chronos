@@ -2,6 +2,9 @@ package com.chronos.education.operationagent.service;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +45,7 @@ public class OperationAgentService {
 	private final IAuditLogService audit;
 	private final DirectoryDataScopeGuard dataScopes;
 	private final OperationAgentTeacherOnboardingTool teacherOnboarding;
+	private final OperationAgentReviewScope reviewScope;
 
 	public OperationAgentService(
 			OperationAgentPlanRepository plans,
@@ -60,7 +64,8 @@ public class OperationAgentService {
 			ObjectMapper mapper,
 			IAuditLogService audit,
 			DirectoryDataScopeGuard dataScopes,
-			OperationAgentTeacherOnboardingTool teacherOnboarding) {
+			OperationAgentTeacherOnboardingTool teacherOnboarding,
+			OperationAgentReviewScope reviewScope) {
 		this.plans = plans;
 		this.planSteps = planSteps;
 		this.runs = runs;
@@ -78,6 +83,7 @@ public class OperationAgentService {
 		this.audit = audit;
 		this.dataScopes = dataScopes;
 		this.teacherOnboarding = teacherOnboarding;
+		this.reviewScope = reviewScope;
 	}
 
 	public OperationAgentLlmService.DraftResult draftPlan(
@@ -389,11 +395,30 @@ public class OperationAgentService {
 
 	@Transactional(readOnly = true)
 	public List<RunView> listRuns(Authentication authentication) {
-		List<OperationAgentRun> visible = hasReviewPermission(authentication)
-				? runs.findTop30ByOrderByCreateTimeDesc()
-				: runs.findTop30ByOwnerUsernameOrderByCreateTimeDesc(authentication.getName());
-		return visible.stream()
-				.map(this::runView).toList();
+		String username = authentication.getName();
+		if (!hasReviewPermission(authentication)) {
+			return runs.findTop30ByOwnerUsernameOrderByCreateTimeDesc(username).stream().map(this::runView).toList();
+		}
+		Set<String> organizations = dataScopes.visibleOrganizationIds(authentication);
+		if (organizations == null) {
+			return runs.findTop30ByOrderByCreateTimeDesc().stream().map(this::runView).toList();
+		}
+		if (organizations.isEmpty()) {
+			return runs.findTop30ByOwnerUsernameOrderByCreateTimeDesc(username).stream().map(this::runView).toList();
+		}
+		List<RunView> visible = new ArrayList<>();
+		var page = PageRequest.of(0, 100, Sort.by(Sort.Direction.DESC, "createTime", "id"));
+		while (true) {
+			var batch = runs.findAll(page);
+			for (OperationAgentRun run : batch) {
+				if (username.equals(run.getOwnerUsername()) || reviewScope.allows(run, organizations)) {
+					visible.add(runView(run));
+					if (visible.size() == 30) return visible;
+				}
+			}
+			if (!batch.hasNext()) return visible;
+			page = page.next();
+		}
 	}
 
 	@Transactional(readOnly = true)
@@ -417,7 +442,7 @@ public class OperationAgentService {
 				conditions.findByRunIdOrderByConditionVersion(id),
 				candidatePromotionAvailable(run),
 				checkpoint != null && checkpoint.mode() == OperationAgentCheckpointMode.DUAL_CONTROL
-						? notifications.eligibleReviewers(run.getOwnerUsername()) : List.of(),
+						? notifications.eligibleReviewers(run) : List.of(),
 				checkpoint, onboardingCases);
 	}
 
@@ -539,6 +564,7 @@ public class OperationAgentService {
 		}
 		OperationAgentRun run = runs.findLockedById(id)
 				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
+		requireRunReviewScope(run, authentication);
 		if (authentication.getName().equals(run.getOwnerUsername())) {
 			throw new IllegalStateException("计划负责人不能审核自己的智能体步骤");
 		}
@@ -595,6 +621,7 @@ public class OperationAgentService {
 		if (Set.of("APPROVE", "REJECT").contains(action)) {
 			OperationAgentRun reviewRun = runs.findLockedById(id)
 					.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
+			requireRunReviewScope(reviewRun, authentication);
 			OperationAgentStepRun reviewStep = stepRuns
 					.findByRunIdAndStepOrder(id, reviewRun.getCurrentStepOrder())
 					.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
@@ -679,6 +706,9 @@ public class OperationAgentService {
 	public RunDetail refreshApprovalEvidence(String id, Authentication authentication) {
 		OperationAgentRun run = runs.findLockedById(id)
 				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
+		if (!authentication.getName().equals(run.getOwnerUsername())) {
+			requireRunReviewScope(run, authentication);
+		}
 		OperationAgentStepRun step = stepRuns.findByRunIdAndStepOrder(id, run.getCurrentStepOrder())
 				.orElseThrow(() -> new IllegalStateException("当前步骤不存在"));
 		if (step.getCheckpointMode() == OperationAgentCheckpointMode.INITIATOR_CONFIRM) {
@@ -709,6 +739,7 @@ public class OperationAgentService {
 		if (comment.isBlank()) throw new IllegalArgumentException("驳回时必须填写审核意见");
 		OperationAgentRun run = runs.findLockedById(id)
 				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
+		requireRunReviewScope(run, authentication);
 		if (authentication.getName().equals(run.getOwnerUsername())) {
 			throw new IllegalStateException("计划负责人不能审核自己的智能体步骤");
 		}
@@ -863,13 +894,17 @@ public class OperationAgentService {
 			throw new IllegalStateException("当前步骤没有等待补充资料");
 		}
 		Map<String, Object> overrides = readMap(step.getConfigOverridesJson());
+		Map<String, Object> effective = stepSnapshotConfig(run, step.getStepOrder());
 		for (Map.Entry<String, Object> entry : command.values().entrySet()) {
 			if (entry.getKey() == null || entry.getKey().isBlank() || entry.getKey().startsWith("__")) {
 				throw new IllegalArgumentException("补充资料包含非法字段");
 			}
+			if ("organizationId".equals(entry.getKey())
+					&& !Objects.equals(effective.get("organizationId"), entry.getValue())) {
+				throw new IllegalArgumentException("补充资料不能修改本次运行的目标机构，请重新发起");
+			}
 			overrides.put(entry.getKey(), entry.getValue());
 		}
-		Map<String, Object> effective = stepSnapshotConfig(run, step.getStepOrder());
 		effective.putAll(overrides);
 		List<OperationAgentToolCatalog.InputRequirement> missing =
 				toolCatalog.missingInputs(step.getToolCode(), effective);
@@ -971,10 +1006,17 @@ public class OperationAgentService {
 	private OperationAgentRun ownedRun(String id, Authentication authentication) {
 		OperationAgentRun run = runs.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("运行实例不存在"));
-		if (!authentication.getName().equals(run.getOwnerUsername()) && !hasReviewPermission(authentication)) {
-			throw new IllegalStateException("无权查看该运行实例");
+		if (!authentication.getName().equals(run.getOwnerUsername())) {
+			requireRunReviewScope(run, authentication);
 		}
 		return run;
+	}
+
+	private void requireRunReviewScope(OperationAgentRun run, Authentication authentication) {
+		if (!hasReviewPermission(authentication)
+				|| !reviewScope.allows(run, dataScopes.visibleOrganizationIds(authentication))) {
+			throw new AccessDeniedException("无权访问该机构的智能体运行");
+		}
 	}
 
 	private boolean hasReviewPermission(Authentication authentication) {

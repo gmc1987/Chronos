@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.operationagent.model.OperationAgentRun;
 import com.chronos.education.operationagent.model.OperationAgentStepRun;
+import com.chronos.security.DirectoryDataScopeGuard;
 import com.chronos.workflow.WorkflowNotificationService;
 
 /** 将审批、失败和完成状态推送到现有可靠通知出箱。 */
@@ -14,16 +15,22 @@ public class OperationAgentNotificationService {
 	public static final String REVIEW_PERMISSION = "education:operation-agent:review";
 	private final IAdminUserRepository users;
 	private final WorkflowNotificationService notifications;
+	private final DirectoryDataScopeGuard dataScopes;
+	private final OperationAgentReviewScope reviewScope;
 
 	public OperationAgentNotificationService(
 			IAdminUserRepository users,
-			WorkflowNotificationService notifications) {
+			WorkflowNotificationService notifications,
+			DirectoryDataScopeGuard dataScopes,
+			OperationAgentReviewScope reviewScope) {
 		this.users = users;
 		this.notifications = notifications;
+		this.dataScopes = dataScopes;
+		this.reviewScope = reviewScope;
 	}
 
 	public void approvalRequired(OperationAgentRun run, OperationAgentStepRun step) {
-		var recipients = new LinkedHashSet<>(eligibleReviewers(run.getOwnerUsername()));
+		var recipients = new LinkedHashSet<>(eligibleReviewers(run));
 		notifications.enqueueUserEvents(
 				"EDUCATION_OPERATION_AGENT_APPROVAL",
 				run.getId(), recipients,
@@ -33,10 +40,12 @@ public class OperationAgentNotificationService {
 	}
 
 	/** Returns the active reviewers that can approve this owner's checkpoint. */
-	public List<String> eligibleReviewers(String ownerUsername) {
+	public List<String> eligibleReviewers(OperationAgentRun run) {
 		var recipients = new LinkedHashSet<>(users.findActiveUsernamesByPermissionCode(REVIEW_PERMISSION));
-		recipients.remove(ownerUsername);
-		return List.copyOf(recipients);
+		recipients.remove(run.getOwnerUsername());
+		return recipients.stream()
+				.filter(username -> reviewScope.allows(run, dataScopes.visibleOrganizationIds(username)))
+				.toList();
 	}
 
 	public void failed(OperationAgentRun run) {

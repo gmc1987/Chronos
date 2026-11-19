@@ -42,7 +42,7 @@ class CourseAdjustmentRecoveryControllerTest {
 
 		CourseAdjustmentIncidentBatchResult result = new CourseAdjustmentRecoveryController(
 				application,
-				scopes).batchRetry(
+				scopes, null, null).batchRetry(
 						new CourseAdjustmentIncidentBatchCommand(List.of(
 								"incident-1",
 								"incident-1",
@@ -55,7 +55,6 @@ class CourseAdjustmentRecoveryControllerTest {
 		assertEquals(List.of("incident-1", "incident-2"), result.items().stream()
 				.map(item -> item.id())
 				.toList());
-		verify(scopes).assertFullAccess(fullAccess());
 	}
 
 	@Test
@@ -69,7 +68,7 @@ class CourseAdjustmentRecoveryControllerTest {
 
 		CourseAdjustmentRecoveryController controller = new CourseAdjustmentRecoveryController(
 				application,
-				scopes);
+				scopes, null, null);
 
 		IllegalArgumentException exception = assertThrows(
 				IllegalArgumentException.class,
@@ -86,29 +85,22 @@ class CourseAdjustmentRecoveryControllerTest {
 		EducationDataScopeService scopes = mock(EducationDataScopeService.class);
 		Authentication authentication = mock(Authentication.class);
 		when(authentication.getName()).thenReturn("campus.teacher");
-		when(scopes.resolve("campus.teacher")).thenReturn(new EducationDataScope(
-				false,
-				Set.of("campus-a"),
-				Set.of(),
-				Set.of(),
-				Set.of()));
-		org.mockito.Mockito.doThrow(new AccessDeniedException("该操作需要全校数据权限"))
-				.when(scopes).assertFullAccess(
-						new EducationDataScope(
-								false,
-								Set.of("campus-a"),
-								Set.of(),
-								Set.of(),
-								Set.of()));
+		EducationDataScope scope = new EducationDataScope(false, Set.of("campus-a"), Set.of(), Set.of(), Set.of());
+		when(scopes.resolve("campus.teacher")).thenReturn(scope);
+		CourseAdjustmentRecord incident = record("incident-1", "FAILED", 0, "冲突");
+		incident.setScheduleEntryId("foreign-entry");
+		when(application.incident("incident-1")).thenReturn(incident);
+		org.mockito.Mockito.doThrow(new AccessDeniedException("无权操作外校课次"))
+				.when(scopes).assertScheduleEntryAccess(scope, "foreign-entry");
 
 		CourseAdjustmentRecoveryController controller = new CourseAdjustmentRecoveryController(
 				application,
-				scopes);
+				scopes, null, null);
 
 		assertThrows(
 				AccessDeniedException.class,
 				() -> controller.retry("incident-1", authentication));
-		org.mockito.Mockito.verifyNoInteractions(application);
+		verify(application, org.mockito.Mockito.never()).retry("incident-1", "campus.teacher");
 	}
 
 	private CourseAdjustmentRecord record(

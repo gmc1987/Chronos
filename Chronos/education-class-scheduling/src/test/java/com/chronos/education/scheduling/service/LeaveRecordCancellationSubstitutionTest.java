@@ -27,6 +27,7 @@ class LeaveRecordCancellationSubstitutionTest {
 	private LeaveRequestRecordRepository records;
 	private ScheduleDateExceptionRepository dateExceptions;
 	private StaffLeaveBalanceService balances;
+	private ScheduleOccurrenceService occurrences;
 	private LeaveRecordService service;
 
 	@BeforeEach
@@ -34,16 +35,19 @@ class LeaveRecordCancellationSubstitutionTest {
 		records = mock(LeaveRequestRecordRepository.class);
 		dateExceptions = mock(ScheduleDateExceptionRepository.class);
 		balances = mock(StaffLeaveBalanceService.class);
+		occurrences = mock(ScheduleOccurrenceService.class);
 		service = new LeaveRecordService(records, mock(EducationUserBindingRepository.class),
 				mock(EducationApplicantResolver.class), mock(WorkflowService.class),
 				mock(IAuditLogService.class), mock(IAdminUserRepository.class),
-				mock(IEmployeeRepository.class), balances, dateExceptions);
+				mock(IEmployeeRepository.class), balances, dateExceptions, occurrences);
 	}
 
 	@Test
 	void approvedEarlyReturnCancelsOnlyLinkedSubstitutionsAfterActualEnd() {
 		LeaveRequestRecord leave = pendingCancellation();
 		ScheduleDateException future = new ScheduleDateException();
+		future.setId("future-substitution");
+		future.setSemesterCode("term-1");
 		future.setStatus("ACTIVE");
 		future.setSourceDate(LocalDate.of(2026, 10, 22));
 		when(records.findLockedById("leave-1")).thenReturn(Optional.of(leave));
@@ -57,8 +61,7 @@ class LeaveRecordCancellationSubstitutionTest {
 		service.decideCancellation("reviewer", "leave-1", true, "返岗");
 
 		assertThat(leave.getStatus()).isEqualTo("PARTIALLY_CANCELLED");
-		assertThat(future.getStatus()).isEqualTo("CANCELLED");
-		verify(dateExceptions).saveAll(List.of(future));
+		verify(occurrences).cancelException("future-substitution");
 		verify(balances).refund(leave, new BigDecimal("3"), "reviewer", "销假审批通过返还");
 	}
 
@@ -71,7 +74,7 @@ class LeaveRecordCancellationSubstitutionTest {
 		service.decideCancellation("reviewer", "leave-1", false, "不通过");
 
 		assertThat(leave.getStatus()).isEqualTo("APPROVED");
-		verify(dateExceptions, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+		verify(occurrences, never()).cancelException(org.mockito.ArgumentMatchers.anyString());
 	}
 
 	private LeaveRequestRecord pendingCancellation() {

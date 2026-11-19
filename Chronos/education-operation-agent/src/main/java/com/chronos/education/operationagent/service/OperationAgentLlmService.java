@@ -99,6 +99,8 @@ public class OperationAgentLlmService {
 			作息工具参数为 campusId、scheduleName，以及 periods 或 periodRules。只有用户逐节提供完整时间时才输出 periods（每节包含 periodNo,periodName,daySegment,startTime,endTime；daySegment为MORNING/AFTERNOON/EVENING）。
 			用户提供节数、起止时间、课长、课间或午休规则时，使用 periodRules，字段为 periodCount、morningCount、startTime、endTime、periodMinutes、breakMinutes、lunchMinutes（午休是最后一节上午课到第一节下午课的完整间隔）。只填已明确的字段，平台计算节次；未知的可选字段省略。方案编码由平台生成；方案名称缺省时平台自动命名，不要追问。
 			campusId也接受用户明确给出的校区编码或准确名称，由平台查询解析；不要因不知道UUID而反复追问已提供的校区。只说“主校区”但无法确定具体名称时才询问。
+			用户明确说作息适用于已选目标机构本身，例如“本校”或“某大学本校”，campusId 固定输出 TARGET_ORGANIZATION，不要把“本校”拼进校区名称。用户明确指定下属校区时，保留该校区的准确名称或编码。
+			只有用户明确指定是否设为默认作息时，才输出 defaultSchedule 布尔值。没有指定时省略该字段，由平台根据已有默认方案决定。
 			保留早先已给出的字段，用户更正时以最新消息为准。“是的”承接之前确认，单独数字承接缺失周数。
 			缺失字段省略，禁止编造日期、机构、校区ID或节次。当前消息取消时 cancelled=true。
 			识别到教学日历和作息等多个目标时必须全部保留。
@@ -172,6 +174,9 @@ public class OperationAgentLlmService {
 			if (code.equals("academic.bell.configure")) {
 				config.putIfAbsent("scheduleName", localTermCode(command.semesterCode()) + " 校区作息");
 				config.remove("scheduleCode");
+				if ("TARGET_ORGANIZATION".equals(config.get("campusId")) || "本校".equals(config.get("campusId"))) {
+					config.put("campusId", command.organizationId());
+				}
 				if (!(config.get("periods") instanceof List<?> periods) || periods.isEmpty()) {
 					try {
 						config.put("periods", OperationAgentBellPeriods.generate(
@@ -950,7 +955,9 @@ public class OperationAgentLlmService {
 		result.append("""
 			IAM嵌套参数契约：
 			iam.user.upsert.user: {username,password,displayName,email,phone,status,organizationId,accountType}；status是整数1启用/0禁用，不使用enabled。维护用户时省略未变更字段。角色授予必须使用iam.authorization.assign，禁止放入user.roleIds。
+			teaching.suspension.preview 使用 semesterCode、startDate、endDate（日期为 YYYY-MM-DD），校区、专业、班级可选 campusId、majorId、classId，只使用已核实的 ID。未知 ID 应追问，不能省略所要求的范围。该工具只做影响预览，不执行停课。
 			iam.role.upsert.role: {roleCode,roleName,status,description,menuIds,permissionIds,workflowPermissionIds,dataScopes}；status为1/0。菜单和权限使用已核实的ID，未知时追问，禁止编造。
+			dataScopes 是对象数组。自定义机构使用 {scopeType:"CUSTOM_ORGANIZATION",organizationId:"已核实的机构ID"}；每个机构单独一项。
 			iam.authorization.assign: {username,roleCodes:[角色编码],sourceKey}；用户/角色可由本计划前序工具创建。最后使用iam.authorization.check核验。
 			动态表单参数契约：form.definition.upsert.form: {formKey,formName,version,description,fields:[{fieldKey,fieldLabel,fieldType,required,sortOrder}]}；普通文本用TEXT，required为布尔值。随后发布本次新建版本时，form.definition.publish.formId引用前序创建结果。
 			对指定的已有排课候选办理提交、审核和应用时，使用用户提供的candidateId，不重新生成候选。正式发布仍须经过确认。

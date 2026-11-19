@@ -82,7 +82,23 @@
     <el-dialog v-model="courseDialog" title="添加培养方案课程" width="620px"><el-form label-width="110px"><el-form-item label="课程"><el-select v-model="courseForm.courseId" :loading="courseOptionsLoading" no-data-text="请在课程管理中维护适用专业" filterable style="width:100%"><el-option v-for="item in courses" :key="item.id" :label="`${item.courseName}（${item.courseCode}）`" :value="item.id" /></el-select></el-form-item><el-form-item label="建议学期"><el-input-number v-model="courseForm.suggestedTermNo" :min="1" /></el-form-item><el-form-item label="课程性质"><el-select v-model="courseForm.courseNature"><el-option label="必修" value="REQUIRED" /><el-option label="选修" value="ELECTIVE" /><el-option label="限选" value="LIMITED_ELECTIVE" /></el-select></el-form-item><el-form-item label="计入学分"><el-input-number v-model="courseForm.credits" :min="0" :precision="2" /></el-form-item></el-form><template #footer><el-button @click="courseDialog=false">取消</el-button><el-button type="primary" :disabled="!courseForm.courseId" @click="saveCourse">保存</el-button></template></el-dialog>
     <el-dialog v-model="registrationDialog" title="提交学期注册" width="620px"><el-form label-width="100px"><el-form-item label="学生"><student-select v-model="registrationForm.studentId" :options="students" @search="searchStudents" /></el-form-item><el-form-item label="培养方案"><el-select v-model="registrationForm.programId" filterable style="width:100%"><el-option v-for="item in publishedPrograms" :key="item.id" :label="item.programName" :value="item.id" /></el-select></el-form-item></el-form><template #footer><el-button @click="registrationDialog=false">取消</el-button><el-button type="primary" @click="saveRegistration">提交</el-button></template></el-dialog>
     <el-dialog v-model="enrollmentDialog" title="办理选课" width="620px"><el-form label-width="100px"><el-form-item label="学生"><student-select v-model="enrollmentForm.studentId" :options="students" @search="searchStudents" /></el-form-item><el-form-item label="教学任务"><el-select v-model="enrollmentForm.offeringId" filterable remote :remote-method="searchOfferings" style="width:100%"><el-option v-for="item in offerings" :key="item.id" :label="`${item.courseName} / ${item.teachingClassName}`" :value="item.id" /></el-select></el-form-item></el-form><template #footer><el-button @click="enrollmentDialog=false">取消</el-button><el-button type="primary" @click="saveEnrollment">确认选课</el-button></template></el-dialog>
-    <el-dialog v-model="graduationDialog" title="生成毕业资格核验" width="620px"><el-form label-width="100px"><el-form-item label="学生"><student-select v-model="graduationForm.studentId" :options="students" @search="searchStudents" /></el-form-item><el-form-item label="培养方案"><el-select v-model="graduationForm.programId" filterable style="width:100%"><el-option v-for="item in publishedPrograms" :key="item.id" :label="item.programName" :value="item.id" /></el-select></el-form-item></el-form><template #footer><el-button @click="graduationDialog=false">取消</el-button><el-button type="primary" @click="saveGraduation">开始核验</el-button></template></el-dialog>
+    <el-dialog v-model="graduationDialog" title="生成毕业资格核验" width="620px">
+      <el-form label-width="100px">
+        <el-form-item label="学生">
+          <student-select v-model="graduationForm.studentId" :options="students" @search="searchStudents" />
+        </el-form-item>
+        <el-form-item label="培养方案">
+          <el-select v-model="graduationForm.programId" :disabled="!graduationForm.studentId" filterable
+            placeholder="选择适用培养方案" no-data-text="没有适用的已发布培养方案" style="width:100%">
+            <el-option v-for="item in graduationPrograms" :key="item.id" :label="item.programName" :value="item.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="graduationDialog=false">取消</el-button>
+        <el-button type="primary" :disabled="!graduationForm.programId" @click="saveGraduation">开始核验</el-button>
+      </template>
+    </el-dialog>
     <el-dialog :model-value="!!selectedGraduation" title="毕业审核详情" width="720px"
       @update:model-value="value => { if (!value) selectedGraduation = null }">
       <template v-if="selectedGraduation">
@@ -174,6 +190,12 @@ const unmetGraduationRequirements = computed(() => {
   }
 })
 const publishedPrograms = computed(() => programs.value.filter(item => item.status === 'PUBLISHED'))
+const graduationPrograms = computed(() => {
+  const student = students.value.find(item => item.id === graduationForm.studentId)
+  return student ? publishedPrograms.value.filter(program =>
+    program.majorId === student.majorId && program.cohortYear === student.gradeYear) : []
+})
+watch(() => graduationForm.studentId, () => { graduationForm.programId = '' })
 const message = error => error?.response?.data?.msg || error?.message || '操作失败'
 const studentName = id => studentLabels.value.get(id) || '学生信息不可见'
 const programName = id => programs.value.find(item => item.id === id)?.programName || '培养方案已归档'

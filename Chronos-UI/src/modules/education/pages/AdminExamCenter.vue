@@ -33,7 +33,7 @@ import {
 } from '../../../api/admin'
 
 const route = useRoute()
-const organizationId = ref('')
+const organizationId = ref(typeof route.query.organizationId === 'string' ? route.query.organizationId : '')
 const semesterCode = ref('')
 const terms = ref([])
 const examTypes = ref([])
@@ -400,7 +400,7 @@ watch(organizationId, id => {
     if (id !== organizationId.value) return
     await loadPlans()
   })
-})
+}, { immediate: true })
 </script>
 
 <template>

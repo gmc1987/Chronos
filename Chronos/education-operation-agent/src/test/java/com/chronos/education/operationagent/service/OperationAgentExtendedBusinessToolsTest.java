@@ -2,9 +2,12 @@ package com.chronos.education.operationagent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.chronos.Idao.IAdminUserRepository;
@@ -23,6 +26,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 class OperationAgentExtendedBusinessToolsTest {
 	private final AdminUserServiceImpl userService = mock(AdminUserServiceImpl.class);
@@ -31,11 +35,40 @@ class OperationAgentExtendedBusinessToolsTest {
 	private final IAdminUserRepository users = mock(IAdminUserRepository.class);
 	private final FormService forms = mock(FormService.class);
 	private final ExamCenterService exams = mock(ExamCenterService.class);
+	private final GradeCenterService grades = mock(GradeCenterService.class);
 	private final OperationAgentExtendedBusinessTools tools = new OperationAgentExtendedBusinessTools(
 			users, mock(IRoleRepository.class), userService, roleService, assignments,
 			mock(IFormDefinitionRepository.class), forms, mock(WorkflowService.class),
-			mock(GradeCenterService.class), mock(GradeProductionService.class), exams,
+			grades, mock(GradeProductionService.class), exams,
 			new ObjectMapper(), mock(DirectoryDataScopeGuard.class));
+
+	@Test
+	void gradeReviewRejectsAnIneligibleActorBeforeReadingEvidenceOrWriting() {
+		doThrow(new AccessDeniedException("请由当前审核人认领待办后再办理"))
+				.when(grades).checkReviewEligibility("book-1", "task-1", "reviewer");
+
+		for (boolean dryRun : List.of(true, false)) {
+			assertThatThrownBy(() -> tools.execute("grade.review",
+					Map.of("gradebookId", "book-1", "taskId", "task-1", "dryRun", dryRun), "reviewer"))
+					.isInstanceOf(AccessDeniedException.class)
+					.hasMessageContaining("认领待办");
+		}
+
+		verify(grades, times(2)).checkReviewEligibility("book-1", "task-1", "reviewer");
+		verifyNoMoreInteractions(grades);
+	}
+
+	@Test
+	void rolePreviewPreservesCustomOrganizationFromModelAlias() {
+		var scope = Map.of("type", "CUSTOM_ORGANIZATION", "organizationIds", List.of("school-1"));
+		var result = tools.execute("iam.role.upsert", Map.of("role", Map.of(
+				"roleCode", "SCHOOL_VIEWER", "roleName", "校内查看", "dataScopes", List.of(scope))), "admin");
+
+		assertThat(result).containsEntry("dataScopeCount", 1);
+		assertThat(new ObjectMapper().valueToTree(result.get("dataScopes")).get(0).get("organizationId").asText())
+				.isEqualTo("school-1");
+		verifyNoInteractions(roleService);
+	}
 
 	@Test
 	void unsavedFormCanPreviewPublicationButCannotPublish() {

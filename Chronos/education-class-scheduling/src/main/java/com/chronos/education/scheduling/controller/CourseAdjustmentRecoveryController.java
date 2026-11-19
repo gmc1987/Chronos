@@ -8,6 +8,9 @@ import com.chronos.education.scheduling.model.CourseAdjustmentIncidentBatchResul
 import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.service.CourseAdjustmentApplicationService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.education.scheduling.service.TeachingSuspensionService;
+import com.chronos.education.scheduling.service.ClassSchedulingService;
+import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,30 +30,47 @@ import org.springframework.web.bind.annotation.RestController;
 public class CourseAdjustmentRecoveryController {
 	private final CourseAdjustmentApplicationService applicationService;
 	private final EducationDataScopeService dataScopes;
+	private final TeachingSuspensionService suspensions;
+	private final ClassSchedulingService scheduling;
 
 	public CourseAdjustmentRecoveryController(
 			CourseAdjustmentApplicationService applicationService,
-			EducationDataScopeService dataScopes) {
+			EducationDataScopeService dataScopes,
+			TeachingSuspensionService suspensions, ClassSchedulingService scheduling) {
 		this.applicationService = applicationService;
 		this.dataScopes = dataScopes;
+		this.suspensions = suspensions;
+		this.scheduling = scheduling;
 	}
 
 	@GetMapping
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
 	public ResultData<PageView<CourseAdjustmentRecord>> failures(
 			@RequestParam(defaultValue = "FAILED") String status,
+			@RequestParam(required = false) String organizationId,
+			@RequestParam(required = false) String semesterCode,
 			@RequestParam(required = false) String adjustmentType,
 			@RequestParam(required = false) String keyword,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size,
 			Authentication authentication) {
-		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		var scope = dataScopes.resolve(authentication.getName());
+		java.util.Set<String> entries = null;
+		if (semesterCode != null) {
+			var allowed = suspensions.visibleOfferings(scope, organizationId, semesterCode);
+			entries = scheduling.schedule(semesterCode).stream()
+					.filter(item -> allowed.contains(item.offeringId()))
+					.map(item -> item.id()).collect(Collectors.toSet());
+		} else {
+			dataScopes.assertFullAccess(scope);
+		}
 		return ok(PageView.from(applicationService.incidents(
 				status,
 				adjustmentType,
 				keyword,
 				page,
-				size)));
+				size,
+				entries)));
 	}
 
 	@PostMapping("/{id}/retry")
@@ -58,7 +78,7 @@ public class CourseAdjustmentRecoveryController {
 	public ResultData<CourseAdjustmentRecord> retry(
 			@PathVariable String id,
 			Authentication authentication) {
-		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+		assertIncidentAccess(dataScopes.resolve(authentication.getName()), id);
 		try {
 			return ok(applicationService.retry(id, authentication.getName()));
 		} catch (RuntimeException exception) {
@@ -75,7 +95,6 @@ public class CourseAdjustmentRecoveryController {
 	public ResultData<CourseAdjustmentIncidentBatchResult> batchRetry(
 			@RequestBody CourseAdjustmentIncidentBatchCommand command,
 			Authentication authentication) {
-		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
 		LinkedHashSet<String> uniqueIds = new LinkedHashSet<>();
 		if (command != null && command.ids() != null) {
 			command.ids().stream()
@@ -90,6 +109,10 @@ public class CourseAdjustmentRecoveryController {
 			throw new IllegalArgumentException("单次最多重放100条调课事故");
 		}
 
+		var scope = dataScopes.resolve(authentication.getName());
+		for (String id : uniqueIds) {
+			assertIncidentAccess(scope, id);
+		}
 		List<CourseAdjustmentIncidentBatchItem> items = new ArrayList<>();
 		for (String id : uniqueIds) {
 			items.add(retryOne(id, authentication.getName()));
@@ -102,6 +125,12 @@ public class CourseAdjustmentRecoveryController {
 				succeeded,
 				items.size() - succeeded,
 				List.copyOf(items)));
+	}
+
+	private void assertIncidentAccess(com.chronos.education.scheduling.model.EducationDataScope scope, String id) {
+		if (!scope.fullAccess()) {
+			dataScopes.assertScheduleEntryAccess(scope, applicationService.incident(id).getScheduleEntryId());
+		}
 	}
 
 	private CourseAdjustmentIncidentBatchItem retryOne(String id, String actor) {

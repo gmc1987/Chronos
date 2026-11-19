@@ -1,5 +1,6 @@
 // 行业页面也按路由拆包，未启用教育模板时不会进入核心首屏包。
 const AdminClassroomManagement = () => import('../../modules/education/pages/AdminClassroomManagement.vue')
+const AdminTeachingHours = () => import('../../modules/education/pages/AdminTeachingHours.vue')
 const AdminClassScheduling = () => import('../../modules/education/pages/AdminClassScheduling.vue')
 const AdminSchedulingAi = () => import('../../modules/education/pages/AdminSchedulingAi.vue')
 const AdminExamCenter = () => import('../../modules/education/pages/AdminExamCenter.vue')
@@ -78,6 +79,8 @@ export const educationIndustry = {
       props: { section: 'graduation' }, meta: { requiredPermissions: ['education:graduation-audit:view'] } },
     { path: '/admin/education/internships', name: 'admin-education-internships', component: AdminInternships,
       meta: { requiredPermissions: ['education:internship:view'] } },
+    { path: '/admin/education/teaching-hours', name: 'admin-education-teaching-hours', component: AdminTeachingHours,
+      meta: { requiredPermissions: ['education:scheduling:view', 'education:scheduling:manage'] } },
     {
       path: '/admin/education/scheduling',
       name: 'admin-education-class-scheduling',

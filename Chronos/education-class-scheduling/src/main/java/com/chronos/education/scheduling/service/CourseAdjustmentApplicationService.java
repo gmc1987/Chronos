@@ -125,6 +125,11 @@ public class CourseAdjustmentApplicationService {
 	}
 
 	@Transactional(readOnly = true)
+	public CourseAdjustmentRecord incident(String id) {
+		return records.findById(id).orElseThrow(() -> new IllegalArgumentException("调课回写记录不存在"));
+	}
+
+	@Transactional(readOnly = true)
 	public List<CourseAdjustmentRecord> failures() {
 		return records.findByStatusOrderByCreateTimeDesc("FAILED");
 	}
@@ -135,9 +140,13 @@ public class CourseAdjustmentApplicationService {
 			String adjustmentType,
 			String keyword,
 			int page,
-			int size) {
+			int size,
+			java.util.Set<String> entryIds) {
 		Specification<CourseAdjustmentRecord> specification = (root, query, builder) -> {
 			var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+			if (entryIds != null) {
+				predicates.add(entryIds.isEmpty() ? builder.disjunction() : root.get("scheduleEntryId").in(entryIds));
+			}
 			if (hasText(status) && !"ALL".equalsIgnoreCase(status)) {
 				predicates.add(builder.equal(
 						builder.upper(root.get("status")),

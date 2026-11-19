@@ -5,6 +5,7 @@
     description="维护已完成报到建档的学生学籍；新生请从“新生入学”完成资格核验和建档"
     entity-label="学生"
     permission-prefix="education:student"
+    searchable
     :allow-create="false"
     :columns="columns"
     :fields="fields"

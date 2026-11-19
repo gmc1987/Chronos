@@ -52,7 +52,9 @@ class OperationAgentToolCatalogTest {
 		assertThat(catalog.require("iam.authorization.assign").writeTool()).isTrue();
 		assertThat(catalog.require("workflow.task.complete").approvalActorExecutes()).isTrue();
 		assertThat(catalog.require("exam.plan.publish").riskLevel()).isEqualTo("CRITICAL");
-		assertThat(catalog.require("grade.review").approvalActorExecutes()).isTrue();
+		assertThat(catalog.require("grade.review").checkpointMode())
+				.isEqualTo(OperationAgentCheckpointMode.INITIATOR_CONFIRM);
+		assertThat(catalog.require("grade.review").approvalActorExecutes()).isFalse();
 		assertThat(catalog.require("grade.change.review").businessStageCode()).isEqualTo("GRADE_OPERATION");
 		assertThat(catalog.executionOrder("admission.import.managed-file"))
 				.isLessThan(catalog.executionOrder("admission.data.check"));

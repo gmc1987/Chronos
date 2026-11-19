@@ -47,6 +47,10 @@ public class OperationAgentSkillCatalog {
 				List.of("teaching.assignment.generate", "teaching.offering.generate", "teaching.readiness.check", "scheduling.generate.full",
 						"scheduling.submit.best", "scheduling.review.submitted",
 						"scheduling.apply.approved", "scheduling.publish"));
+		add(values, "teaching.date-change", "教学变更影响预览",
+				"按学期、日期、校区、专业或行政班预览批量停课影响，并解释冲突",
+				Set.of("临时停课", "批量停课", "停课影响", "教学变更"),
+				List.of("teaching.suspension.preview"));
 		add(values, "admission.accommodation", "新生住宿资源与分配",
 				"核验宿舍资源，生成住宿候选并在确认后批量分配",
 				Set.of("住宿", "宿舍", "床位"),

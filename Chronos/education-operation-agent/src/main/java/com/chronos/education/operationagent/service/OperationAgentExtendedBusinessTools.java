@@ -160,7 +160,11 @@ public class OperationAgentExtendedBusinessTools {
 	}
 
 	private Map<String, Object> upsertRole(Map<String, Object> config, boolean dryRun) {
-		RoleDTO command = convert(statusSpec(payload(config, "role")), RoleDTO.class);
+		Map<String, Object> spec = statusSpec(payload(config, "role"));
+		if (spec.get("dataScopes") instanceof List<?> scopes) {
+			spec.put("dataScopes", normalizeRoleScopes(scopes));
+		}
+		RoleDTO command = convert(spec, RoleDTO.class);
 		if (blank(command.getRoleCode()) || blank(command.getRoleName())) {
 			throw new IllegalArgumentException("角色编码和名称不能为空");
 		}
@@ -170,11 +174,49 @@ public class OperationAgentExtendedBusinessTools {
 				"operation", existing == null ? "CREATE" : "UPDATE",
 				"menuCount", size(command.getMenuIds()), "permissionCount", size(command.getPermissionIds()),
 				"workflowPermissionCount", size(command.getWorkflowPermissionIds()),
-				"dataScopeCount", size(command.getDataScopes()), "dryRun", true);
+				"dataScopeCount", size(command.getDataScopes()),
+				"dataScopes", command.getDataScopes() == null ? List.of() : command.getDataScopes(), "dryRun", true);
 		if (existing == null) roleService.save(command); else roleService.update(command);
 		Role saved = roles.findByRoleCode(command.getRoleCode().trim());
 		return evidence("角色及业务授权已保存", "roleId", saved.getId(), "roleCode", saved.getRoleCode(),
 				"operation", existing == null ? "CREATED" : "UPDATED", "dryRun", false);
+	}
+
+	private List<Map<String, Object>> normalizeRoleScopes(List<?> scopes) {
+		List<Map<String, Object>> normalized = new ArrayList<>();
+		for (Object raw : scopes) {
+			if (!(raw instanceof Map<?, ?>)) {
+				throw new IllegalArgumentException("角色数据范围条目必须是对象");
+			}
+			Map<String, Object> scope = new LinkedHashMap<>(map(raw));
+			String scopeType = text(scope.get("scopeType"));
+			String alias = text(scope.remove("type"));
+			if (!scopeType.isEmpty() && !alias.isEmpty() && !scopeType.equals(alias)) {
+				throw new IllegalArgumentException("角色数据范围类型冲突");
+			}
+			scopeType = required(scopeType.isEmpty() ? alias : scopeType, "角色数据范围类型");
+			scope.put("scopeType", scopeType);
+			List<String> organizations = strings(scope.remove("organizationIds"));
+			if ("CUSTOM_ORGANIZATION".equals(scopeType)) {
+				String organization = text(scope.get("organizationId"));
+				if (!organization.isEmpty() && !organizations.isEmpty()
+						&& !organizations.stream().allMatch(organization::equals)) {
+					throw new IllegalArgumentException("角色数据范围中的机构值冲突");
+				}
+				if (organizations.isEmpty()) organizations = List.of(required(organization, "角色数据范围机构"));
+				for (String id : organizations) {
+					Map<String, Object> organizationScope = new LinkedHashMap<>(scope);
+					organizationScope.put("organizationId", id);
+					normalized.add(organizationScope);
+				}
+			} else {
+				if (!organizations.isEmpty()) {
+					throw new IllegalArgumentException("只有自定义机构范围支持机构列表");
+				}
+				normalized.add(scope);
+			}
+		}
+		return normalized;
 	}
 
 	private Map<String, Object> authorizationCheck(Map<String, Object> config, String actor) {
@@ -439,6 +481,8 @@ public class OperationAgentExtendedBusinessTools {
 		String id = required(config.get("gradebookId"), "成绩册 ID");
 		String taskId = required(config.get("taskId"), "审核任务 ID");
 		boolean approved = bool(config.get("approved"), true);
+		// 当前对话用户必须是已认领待办的独立审核人。预演和正式办理都校验最新资格。
+		grades.checkReviewEligibility(id, taskId, actor);
 		if (dryRun) return evidence("成绩复核候选已生成", "gradebookId", id, "taskId", taskId,
 				"approved", approved, "gradebook", grades.getGradebook(id, actor));
 		var value = grades.review(id, taskId, approved, text(config.get("comment")), actor);

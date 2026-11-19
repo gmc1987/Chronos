@@ -1,5 +1,8 @@
 package com.chronos.education.scheduling.service;
 
+import com.chronos.Idao.IEmployeeAssignmentRepository;
+import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.AdministrativeClassRepository;
 import com.chronos.education.scheduling.dao.BellPeriodRepository;
@@ -12,6 +15,8 @@ import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
+import com.chronos.education.scheduling.model.AcademicTerm;
+import com.chronos.education.scheduling.model.AdministrativeClass;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.BellPeriod;
 import com.chronos.education.scheduling.model.EducationUserBinding;
@@ -20,12 +25,15 @@ import com.chronos.education.scheduling.model.ScheduleEntryView;
 import com.chronos.education.scheduling.model.ScheduleOccurrenceView;
 import com.chronos.education.scheduling.model.StudentGuardianRelation;
 import com.chronos.education.scheduling.model.StudentProfile;
+import com.chronos.education.scheduling.model.TeacherAcademicProfile;
+import com.chronos.model.pojo.EmployeeAssignment;
 import com.chronos.portal.spi.PortalContribution;
 import com.chronos.portal.spi.PortalContributionProvider;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -50,6 +58,9 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 	private final TeachingClassMemberRepository teachingClassMembers;
 	private final StudentGuardianRepository guardians;
 	private final ScheduleOccurrenceService occurrences;
+	private final IEmployeeAssignmentRepository employeeAssignments;
+	private final IOrganizationRepository organizations;
+	private final IAdminUserRepository accounts;
 
 	public EducationPortalContributionProvider(
 			TeacherAcademicProfileRepository teachers,
@@ -64,7 +75,10 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 			EducationUserBindingRepository bindings,
 			TeachingClassMemberRepository teachingClassMembers,
 			StudentGuardianRepository guardians,
-			ScheduleOccurrenceService occurrences) {
+			ScheduleOccurrenceService occurrences,
+			IEmployeeAssignmentRepository employeeAssignments,
+			IOrganizationRepository organizations,
+			IAdminUserRepository accounts) {
 		this.teachers = teachers;
 		this.students = students;
 		this.classes = classes;
@@ -78,6 +92,9 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 		this.teachingClassMembers = teachingClassMembers;
 		this.guardians = guardians;
 		this.occurrences = occurrences;
+		this.employeeAssignments = employeeAssignments;
+		this.organizations = organizations;
+		this.accounts = accounts;
 	}
 
 	@Override
@@ -101,9 +118,13 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 				metric("班级", classes.count(), "/admin/education/administrative-classes?page=0&size=20"),
 				metric("教学任务", offerings.count())));
 		data.put("allRoute", "/portal/education/schedule");
-		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
+		Map<String, StudentContext> contexts = resolveStudentContexts(username);
+		String studentId = selectStudentId(contexts, null);
+		data.put("mySchedule", List.of());
+		currentPortalTerm(username, contexts.get(studentId), resolveTeacherProfileIds(username))
 				.ifPresent(term -> loadPersonalSchedule(
 						username,
+						studentId,
 						term.getTermCode(),
 						term.getTermName(),
 						data));
@@ -130,6 +151,7 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 
 	private void loadPersonalSchedule(
 			String username,
+			String studentId,
 			String semesterCode,
 			String termName,
 			Map<String, Object> data) {
@@ -139,7 +161,8 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 				.collect(Collectors.toMap(CourseOffering::getId, value -> value));
 		Map<String, Classroom> classroomById = classrooms.findAll().stream()
 				.collect(Collectors.toMap(Classroom::getId, value -> value));
-		Set<String> allowedOfferingIds = resolvePersonalOfferingIds(username, byId);
+		Set<String> allowedOfferingIds = studentId == null
+				? resolvePersonalOfferingIds(username, byId) : studentOfferingIds(studentId);
 		data.put("termName", termName);
 		// 门户只消费最近发布版本，防止排课员正在编辑的草稿提前对用户可见。
 		data.put("mySchedule", planVersions.latestPublishedEntries(semesterCode).stream()
@@ -207,7 +230,7 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 				.distinct()
 				.count());
 
-		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
+		currentPortalTerm(username, contexts.get(selectedStudentId), allTeacherIds)
 				.ifPresentOrElse(term -> {
 					LocalDate selectedDate = date == null ? LocalDate.now() : date;
 					Map<String, CourseOffering> byId = offerings
@@ -275,7 +298,7 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 		result.put("startDate", startDate);
 		result.put("endDate", endDate);
 
-		terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE")
+		currentPortalTerm(username, contexts.get(selectedStudentId), resolveTeacherProfileIds(username))
 				.ifPresentOrElse(term -> {
 					Map<String, CourseOffering> byId = offerings
 							.findBySemesterCodeOrderByOfferingCode(term.getTermCode())
@@ -406,6 +429,34 @@ public class EducationPortalContributionProvider implements PortalContributionPr
 				.map(EducationUserBinding::getProfileId)
 				.collect(Collectors.toSet());
 		return result;
+	}
+
+	private Optional<AcademicTerm> currentPortalTerm(String username, StudentContext student, Set<String> teacherIds) {
+		// 门户按已绑定学籍或教师的有效主任职选期，不能取整个系统最新启用的学期。
+		Optional<String> organizationId = student != null
+				? Optional.ofNullable(student.student().getAdministrativeClassId())
+						.flatMap(classes::findById).map(AdministrativeClass::getCampusId)
+				: teacherIds.stream().sorted()
+						.map(teachers::findById).flatMap(Optional::stream)
+						.filter(teacher -> Boolean.TRUE.equals(teacher.getEnabled()))
+						.map(TeacherAcademicProfile::getEmployeeId)
+						.filter(java.util.Objects::nonNull)
+						.map(id -> employeeAssignments.findCurrentPrimaryAssignment(id, LocalDate.now()))
+						.flatMap(Optional::stream).map(EmployeeAssignment::getOrganizationId).findFirst()
+						.or(() -> teacherIds.isEmpty() ? Optional.empty()
+								: Optional.ofNullable(accounts.findByUsername(username))
+										.map(account -> account.getOrganizationId()));
+		return organizationId.flatMap(organizations::findById)
+				.filter(org -> Integer.valueOf(1).equals(org.getStatus()))
+				.flatMap(org -> {
+					var parent = "CAMPUS".equals(org.getOrganizationType()) ? org.getParentOrgId() : null;
+					if (parent != null && !Integer.valueOf(1).equals(parent.getStatus())) {
+						return Optional.empty();
+					}
+					return terms.findFirstByOrganizationIdAndCurrentTermTrueAndStatusOrderByStartDateDesc(org.getId(), "ACTIVE")
+							.or(() -> parent == null ? Optional.empty()
+									: terms.findFirstByOrganizationIdAndCurrentTermTrueAndStatusOrderByStartDateDesc(parent.getId(), "ACTIVE"));
+				});
 	}
 
 	private Map<String, StudentContext> resolveStudentContexts(String username) {

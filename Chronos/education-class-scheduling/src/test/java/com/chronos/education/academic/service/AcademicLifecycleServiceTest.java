@@ -11,6 +11,7 @@ import com.chronos.education.grade.dao.GradebookRepository;
 import com.chronos.education.scheduling.dao.*;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.EducationDataScope;
+import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.model.TeachingClassMember;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
@@ -62,6 +63,26 @@ class AcademicLifecycleServiceTest {
 		assertThrows(AccessDeniedException.class,
 				() -> service.publishProgram("program-1", "author"));
 		verify(programs, never()).save(any());
+	}
+
+	@Test
+	void graduationRejectsProgramFromDifferentMajorOrCohort() {
+		AcademicProgram program = program("PUBLISHED");
+		program.setMajorId("major-1");
+		program.setCohortYear(2026);
+		StudentProfile student = new StudentProfile();
+		student.setId("student-1");
+		student.setMajorId("major-1");
+		student.setGradeYear(2024);
+		when(students.findById("student-1")).thenReturn(Optional.of(student));
+		when(programs.findById("program-1")).thenReturn(Optional.of(program));
+
+		GraduationAuditCommand command = new GraduationAuditCommand("school-1", "student-1", "program-1");
+		assertThrows(IllegalStateException.class, () -> service.evaluateGraduation(command, "operator"));
+		student.setGradeYear(2026);
+		student.setMajorId("major-2");
+		assertThrows(IllegalStateException.class, () -> service.evaluateGraduation(command, "operator"));
+		verifyNoInteractions(programCourses, graduationAudits);
 	}
 
 	@Test

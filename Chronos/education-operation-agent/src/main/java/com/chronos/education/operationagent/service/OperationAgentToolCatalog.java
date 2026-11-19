@@ -84,6 +84,11 @@ public class OperationAgentToolCatalog {
 				required("semesterCode", "学期", "请指定开课所属学期"));
 		add(values, "teaching.readiness.check", "教学任务与排课准备度检查", "LOW", false, false, 2, "自动重试", false,
 				required("semesterCode", "学期", "请指定需要检查的学期"));
+		add(values, "teaching.suspension.preview", "预览批量停课影响及冲突", "LOW", false, false, 1,
+				"核对学期和日期范围", false,
+				required("semesterCode", "学期", "请指定目标学期"),
+				required("startDate", "开始日期", "请提供停课开始日期"),
+				required("endDate", "结束日期", "请提供停课结束日期"));
 		add(values, "scheduling.generate.full", "按全部规则生成排课候选", "MEDIUM", false, true, 1, "修正教学任务后重试", false,
 				required("semesterCode", "学期", "请指定需要排课的学期"));
 		add(values, "scheduling.submit.best", "提交最优排课候选审核", "HIGH", true, true, 1, "幂等重试", false,
@@ -155,7 +160,7 @@ public class OperationAgentToolCatalog {
 		add(values, "grade.review.check", "只读检查当前账号是否可复核成绩册", "LOW", false, false, 1, "核对办理人", false,
 				required("gradebookId", "成绩册", "请指定待复核成绩册 ID"),
 				required("taskId", "审核任务", "请指定成绩复核任务 ID"));
-		add(values, "grade.review", "独立复核成绩册", "CRITICAL", true, true, 1, "由非任课教师审核", true,
+		add(values, "grade.review", "独立复核成绩册", "CRITICAL", true, true, 1, "由已认领待办的独立审核人确认", false,
 				required("gradebookId", "成绩册", "请指定待复核成绩册 ID"),
 				required("taskId", "审核任务", "请指定成绩复核任务 ID"));
 		add(values, "grade.publish", "发布审核通过的成绩", "CRITICAL", true, true, 1, "完成独立复核后重试", false,
@@ -201,7 +206,6 @@ public class OperationAgentToolCatalog {
 		}
 		if (Set.of(
 				"scheduling.review.submitted",
-				"grade.review",
 				"grade.change.review",
 				"admission.review.batch",
 				"iam.role.upsert",

@@ -269,7 +269,10 @@ public class AcademicCalendarService {
 
 	@Transactional
 	public BellSchedule saveBellSchedule(String id, BellSchedule command) {
-		requireTerm(command.getAcademicTermId());
+		AcademicTerm term = requireTerm(command.getAcademicTermId());
+		if (Boolean.TRUE.equals(command.getDefaultSchedule())) {
+			lockBellScheduleTerm(term);
+		}
 		BellSchedule value = id == null
 				? new BellSchedule()
 				: bellSchedules.findById(id)
@@ -278,9 +281,8 @@ public class AcademicCalendarService {
 		value.setScheduleName(required(command.getScheduleName(), "方案名称不能为空"));
 		value.setAcademicTermId(command.getAcademicTermId());
 		value.setCampusId(required(command.getCampusId(), "校区不能为空"));
-		value.setDefaultSchedule(Boolean.TRUE.equals(command.getDefaultSchedule()));
 		value.setStatus(command.getStatus() == null ? "ACTIVE" : command.getStatus());
-		if (Boolean.TRUE.equals(value.getDefaultSchedule())) {
+		if (Boolean.TRUE.equals(command.getDefaultSchedule())) {
 			// 同一学期、同一校区只能有一个默认作息，避免排课时产生歧义。
 			bellSchedules.findByAcademicTermIdAndCampusIdAndDefaultScheduleTrue(
 					command.getAcademicTermId(),
@@ -290,8 +292,33 @@ public class AcademicCalendarService {
 						item.setDefaultSchedule(false);
 						bellSchedules.save(item);
 					});
+			bellSchedules.flush();
 		}
+		value.setDefaultSchedule(Boolean.TRUE.equals(command.getDefaultSchedule()));
 		return bellSchedules.save(value);
+	}
+
+	public boolean hasDefaultBellSchedule(String termId, String campusId) {
+		return !bellSchedules.findByAcademicTermIdAndCampusIdAndDefaultScheduleTrue(termId, campusId).isEmpty();
+	}
+
+	@Transactional
+	public BellSchedule saveBellScheduleWithPeriods(
+			BellSchedule command, List<BellPeriod> periods, Boolean requestedDefault) {
+		lockBellScheduleTerm(requireTerm(command.getAcademicTermId()));
+		command.setDefaultSchedule(requestedDefault != null ? requestedDefault
+				: !hasDefaultBellSchedule(command.getAcademicTermId(), command.getCampusId()));
+		BellSchedule schedule = saveBellSchedule(null, command);
+		for (BellPeriod period : periods) {
+			period.setBellScheduleId(schedule.getId());
+			saveBellPeriod(null, period);
+		}
+		return schedule;
+	}
+
+	private void lockBellScheduleTerm(AcademicTerm term) {
+		terms.findForUpdateByTermCode(term.getTermCode())
+				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
 	}
 
 	@Transactional

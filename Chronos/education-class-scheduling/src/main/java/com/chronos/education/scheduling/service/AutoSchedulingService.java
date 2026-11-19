@@ -147,15 +147,16 @@ public class AutoSchedulingService {
 		}
 		String semesterCode = required(command == null ? null : command.semesterCode(), "学期编码");
 		SchedulePolicy policy = policyService.resolve(semesterCode);
-		int termWeeks = terms.findByTermCode(semesterCode)
-				.orElseThrow(() -> new IllegalArgumentException("学期不存在"))
-				.getWeekCount();
-		GenerationRequest request = validate(command, policy, termWeeks);
-		List<ScheduleEntry> baseline = current(request.semesterCode());
+		var term = terms.findByTermCode(semesterCode)
+				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		Set<String> campuses = versionService.termCampuses(term);
+		GenerationRequest request = validate(command, policy, term.getWeekCount());
+		List<ScheduleEntry> baseline = versionService.entriesInCampuses(current(request.semesterCode()), campuses);
 		String baselineHash = hash(baseline);
 		List<CourseOffering> semesterOfferings = offerings
 				.findBySemesterCodeOrderByOfferingCode(request.semesterCode()).stream()
 				.filter(offering -> "ACTIVE".equals(offering.getStatus()))
+				.filter(offering -> campuses.contains(offering.getCampusId()))
 				.toList();
 		Set<String> targetIds = targetOfferingIds(request, semesterOfferings);
 		if (targetIds.isEmpty()) {
@@ -265,8 +266,14 @@ public class AutoSchedulingService {
 
 	@Transactional(readOnly = true)
 	public List<ScheduleCandidateView> list(String semesterCode) {
+		return list(semesterCode, null);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ScheduleCandidateView> list(String semesterCode, Set<String> campuses) {
 		return candidates.findBySemesterCodeOrderByGeneratedAtDesc(required(semesterCode, "学期编码"))
 				.stream()
+				.filter(plan -> campuses == null || isWithinCampuses(plan, campuses))
 				.map(this::view)
 				.toList();
 	}
@@ -274,6 +281,24 @@ public class AutoSchedulingService {
 	@Transactional(readOnly = true)
 	public ScheduleCandidateView get(String candidateId) {
 		return view(candidate(candidateId));
+	}
+
+	@Transactional(readOnly = true)
+	public String candidateSemesterCode(String candidateId) {
+		return candidate(candidateId).getSemesterCode();
+	}
+
+	@Transactional(readOnly = true)
+	public void assertCandidateCampuses(String candidateId, Set<String> campuses) {
+		if (campuses != null && !isWithinCampuses(candidate(candidateId), campuses)) {
+			throw new org.springframework.security.access.AccessDeniedException("排课候选包含当前机构范围外的课程或教室，请联系排课管理员处理");
+		}
+	}
+
+	/** 历史方案可能沿用了跨机构的旧学期编码，需按快照引用核验实际归属。 */
+	private boolean isWithinCampuses(ScheduleCandidatePlan plan, Set<String> campuses) {
+		List<ScheduleEntry> snapshot = readEntries(plan.getSnapshotJson());
+		return versionService.entriesInCampuses(snapshot, campuses).size() == snapshot.size();
 	}
 
 	@Transactional(readOnly = true)
@@ -296,9 +321,18 @@ public class AutoSchedulingService {
 
 	@Transactional(readOnly = true)
 	public ScheduleDiffView preview(String candidateId) {
+		return preview(candidateId, null);
+	}
+
+	@Transactional(readOnly = true)
+	public ScheduleDiffView preview(String candidateId, Set<String> campuses) {
 		ScheduleCandidatePlan candidate = candidate(candidateId);
+		List<ScheduleEntry> baseline = current(candidate.getSemesterCode());
+		if (campuses != null) {
+			baseline = versionService.entriesInCampuses(baseline, campuses);
+		}
 		return diff(
-				current(candidate.getSemesterCode()),
+				baseline,
 				readEntries(candidate.getSnapshotJson()),
 				candidate.getSemesterCode());
 	}
@@ -323,13 +357,16 @@ public class AutoSchedulingService {
 		if (candidate.getUnscheduledLessons() > 0) {
 			throw new IllegalStateException("候选方案仍有未排课课时，不能应用");
 		}
-		terms.findForUpdateByTermCode(candidate.getSemesterCode())
+		var term = terms.findForUpdateByTermCode(candidate.getSemesterCode())
 				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		Set<String> campuses = versionService.termCampuses(term);
 		List<ScheduleEntry> baseline = current(candidate.getSemesterCode());
+		versionService.assertOrganizationEntries(baseline, campuses);
 		if (!candidate.getBaselineHash().equals(hash(baseline))) {
 			throw new IllegalStateException("当前课表在候选方案生成后已变化，请重新生成方案");
 		}
 		List<ScheduleEntry> snapshot = readEntries(candidate.getSnapshotJson());
+		versionService.assertOrganizationEntries(snapshot, campuses);
 		// 应用前重查已发布考试，避免已审核候选写入无法发布的草稿。
 		versionService.assertExamAvailability(snapshot);
 		Map<String, CourseOffering> currentOfferings = offerings

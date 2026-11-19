@@ -65,8 +65,10 @@ class AutoSchedulingServiceTest {
 		when(policyService.resolve("2026-2027-1")).thenReturn(policy);
 		when(entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc("2026-2027-1"))
 				.thenReturn(List.of());
+		var mixedOfferings = offerings(2);
+		mixedOfferings.get(1).setCampusId("foreign-school");
 		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-2027-1"))
-				.thenReturn(offerings(1));
+				.thenReturn(mixedOfferings);
 		when(classrooms.findByEnabledTrueOrderByRoomCode()).thenReturn(classrooms(1));
 		when(members.findByOfferingIdInAndEnrollmentStatus(anyList(), eq("ENROLLED")))
 				.thenReturn(List.of());
@@ -84,7 +86,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService,
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 
 		solver.generate(new AutoScheduleCommand("2026-2027-1", "全量", "FULL",
 				Set.of(), 1, null, null, null, null), "admin");
@@ -134,7 +136,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 
 		solver.generate(new AutoScheduleCommand("2026-2027-1", "校区隔离", "FULL",
 				Set.of(), 1, 1, 1, 1, 20), "admin");
@@ -177,7 +179,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 		var command = new AutoScheduleCommand("2026-2027-1", "集中偏好", "FULL",
 				Set.of(), 1, 2, 2, 1, 20);
 		var priority = new ScheduleRunConstraints(List.of(), List.of(), List.of(), List.of(),
@@ -230,7 +232,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 		var command = new AutoScheduleCommand("2026-2027-1", "周次", "FULL",
 				Set.of(), 1, 1, 1, 1, 20);
 		var run = new ScheduleRunConstraints(List.of(), List.of(), List.of(
@@ -290,7 +292,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 		var command = new AutoScheduleCommand("2026-2027-1", "临时锁课", "FULL",
 				Set.of(), 1, 1, 2, 1, 20);
 		var lock = new ScheduleRunConstraints(List.of(), List.of(), List.of(),
@@ -343,7 +345,7 @@ class AutoSchedulingServiceTest {
 				mock(ClassroomUnavailableSlotRepository.class), constraints,
 				mock(TeacherAcademicProfileRepository.class), members, terms, calendar,
 				policyService(), mock(com.chronos.Idao.IAdminUserRepository.class),
-				mock(IAuditLogService.class), mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(IAuditLogService.class), mock(EntityManager.class), versionService());
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				"2026-2027-1", "隔离验证", "FULL", Set.of(), 1, 1, 2, 1, 20);
 
@@ -422,7 +424,7 @@ class AutoSchedulingServiceTest {
 				mock(TeacherTimeConstraintRepository.class), mock(TeacherAcademicProfileRepository.class),
 				members, terms, calendar, policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class), mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 		var command = new AutoScheduleCommand("2026-2027-1", "连堂", "FULL",
 				Set.of(), 1, 1, 2, 1, 20);
 		var blockRule = new ScheduleRunConstraints(List.of(),
@@ -492,7 +494,7 @@ class AutoSchedulingServiceTest {
 				policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				"2026-2027-1",
 				"容量回归",
@@ -572,7 +574,7 @@ class AutoSchedulingServiceTest {
 				policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 		AutoScheduleCommand command = new AutoScheduleCommand(
 				"2026-2027-1",
 				"硬冲突回归",
@@ -620,7 +622,7 @@ class AutoSchedulingServiceTest {
 				policyService(),
 				mock(com.chronos.Idao.IAdminUserRepository.class),
 				mock(IAuditLogService.class),
-				mock(EntityManager.class), mock(SchedulePlanVersionService.class));
+				mock(EntityManager.class), versionService());
 
 		var result = service.list("2026-2027-1");
 
@@ -629,6 +631,16 @@ class AutoSchedulingServiceTest {
 			assertThat(candidate.metrics().scheduledLessons()).isZero();
 			assertThat(candidate.metrics().totalScore()).isZero();
 		});
+	}
+
+	private static SchedulePlanVersionService versionService() {
+		var service = mock(SchedulePlanVersionService.class);
+		var campuses = new HashSet<String>();
+		campuses.add("campus-1");
+		campuses.add(null); // 仅用于保留求解器对空校区房间的已有单元测试。
+		when(service.termCampuses(any())).thenReturn(campuses);
+		when(service.entriesInCampuses(anyList(), any())).thenAnswer(call -> call.getArgument(0));
+		return service;
 	}
 
 	private static SchedulePolicyService policyService() {

@@ -44,6 +44,9 @@ import com.chronos.education.scheduling.service.AdmissionImportService;
 import com.chronos.education.scheduling.service.AdmissionService;
 import com.chronos.education.scheduling.service.AutoSchedulingService;
 import com.chronos.education.scheduling.service.ClassSchedulingService;
+import com.chronos.education.scheduling.service.TeachingSuspensionService;
+import com.chronos.security.AdminUserDetailsService;
+import org.springframework.security.access.AccessDeniedException;
 import com.chronos.education.scheduling.service.OfficialHolidayImportService;
 import com.chronos.education.scheduling.service.SchedulePlanVersionService;
 import com.chronos.education.scheduling.service.SemesterPreparationExecutionService;
@@ -80,6 +83,8 @@ public class OperationAgentBusinessTools {
 	private final CourseOfferingRepository offerings;
 	private final AcademicTermRepository terms;
 	private final ClassSchedulingService scheduling;
+	private final TeachingSuspensionService teachingSuspensions;
+	private final AdminUserDetailsService userDetails;
 	private final AutoSchedulingService autoScheduling;
 	private final SchedulePlanVersionService scheduleVersions;
 	private final StudentStatusChangeService studentChanges;
@@ -104,7 +109,8 @@ public class OperationAgentBusinessTools {
 			StudentStatusChangeService studentChanges, SemesterPreparationExecutionService preparationExecutions,
 			SubjectRepository subjects, AccommodationService accommodations,
 			AccommodationImportService accommodationImports, DirectoryImportService directoryImports,
-			OperationAgentExtendedBusinessTools extendedTools, DirectoryDataScopeGuard dataScopes) {
+			OperationAgentExtendedBusinessTools extendedTools, DirectoryDataScopeGuard dataScopes,
+			TeachingSuspensionService teachingSuspensions, AdminUserDetailsService userDetails) {
 		this.jdbc = jdbc;
 		this.admissions = admissions;
 		this.admissionImports = admissionImports;
@@ -135,6 +141,8 @@ public class OperationAgentBusinessTools {
 		this.directoryImports = directoryImports;
 		this.extendedTools = extendedTools;
 		this.dataScopes = dataScopes;
+		this.teachingSuspensions = teachingSuspensions;
+		this.userDetails = userDetails;
 	}
 
 	public Map<String, Object> execute(String toolCode, Map<String, Object> config, String knowledgeBaseId,
@@ -170,6 +178,7 @@ public class OperationAgentBusinessTools {
 		case "teaching.assignment.generate" -> generateTeachingAssignments(config);
 		case "teaching.offering.generate" -> generateTeachingOfferings(config);
 		case "teaching.readiness.check" -> teachingReadiness(config);
+		case "teaching.suspension.preview" -> previewTeachingSuspension(config, actor);
 		case "scheduling.generate.full" -> generateFullSchedule(config, actor);
 		case "scheduling.submit.best" -> submitBestSchedule(config, actor);
 		case "scheduling.review.submitted" -> reviewSubmittedSchedule(config, actor);
@@ -311,9 +320,13 @@ public class OperationAgentBusinessTools {
 						value.get("periodName"), "daySegment", value.get("daySegment"), "startTime",
 						value.get("startTime"), "endTime", value.get("endTime")))
 				.toList();
+		Boolean requestedDefault = config.containsKey("defaultSchedule")
+				? bool(config.get("defaultSchedule"), false) : null;
 		if (bool(config.get("dryRun"), false) || termId.startsWith("candidate:")) {
+			boolean defaultSchedule = requestedDefault != null ? requestedDefault
+					: term == null || !academicCalendar.hasDefaultBellSchedule(termId, campusId);
 			return Map.of("dryRun", true, "valid", true, "termId", termId, "campusId", campusId, "scheduleCode",
-					scheduleCode, "scheduleName", scheduleName, "rows", rows, "message",
+				scheduleCode, "scheduleName", scheduleName, "rows", rows, "defaultSchedule", defaultSchedule, "message",
 					bool(config.get("generatedPeriods"), false) ? "已根据提供的规则和缺省设置计算节次，请核对各节起止时间后确认"
 							: "校区作息候选已生成，等待发起人确认写入");
 		}
@@ -322,22 +335,22 @@ public class OperationAgentBusinessTools {
 		schedule.setCampusId(campusId);
 		schedule.setScheduleCode(scheduleCode);
 		schedule.setScheduleName(scheduleName);
-		schedule.setDefaultSchedule(bool(config.get("defaultSchedule"), true));
 		schedule.setStatus("ACTIVE");
-		BellSchedule created = academicCalendar.saveBellSchedule(null, schedule);
+		List<BellPeriod> bellPeriods = new ArrayList<>();
 		for (Map<String, Object> value : periods) {
 			BellPeriod period = new BellPeriod();
-			period.setBellScheduleId(created.getId());
 			period.setPeriodNo(number(value.get("periodNo"), 0));
 			period.setPeriodName(required(value.get("periodName"), "节次名称"));
 			period.setDaySegment(required(value.get("daySegment"), "时段"));
 			period.setStartTime(LocalTime.parse(required(value.get("startTime"), "开始时间")));
 			period.setEndTime(LocalTime.parse(required(value.get("endTime"), "结束时间")));
 			period.setSchedulable(bool(value.get("schedulable"), true));
-			academicCalendar.saveBellPeriod(null, period);
+			bellPeriods.add(period);
 		}
+		BellSchedule created = academicCalendar.saveBellScheduleWithPeriods(schedule, bellPeriods, requestedDefault);
 		return Map.of("dryRun", false, "created", true, "termId", termId, "campusId", campusId, "scheduleId",
-				created.getId(), "scheduleCode", created.getScheduleCode(), "periodCount", periods.size(), "message",
+				created.getId(), "scheduleCode", created.getScheduleCode(), "periodCount", periods.size(),
+				"defaultSchedule", created.getDefaultSchedule(), "message",
 				"校区作息方案创建成功");
 	}
 
@@ -1131,6 +1144,31 @@ public class OperationAgentBusinessTools {
 	private long count(String sql, Object... args) {
 		Long value = jdbc.queryForObject(sql, Long.class, args);
 		return value == null ? 0 : value;
+	}
+
+	private Map<String, Object> previewTeachingSuspension(Map<String, Object> config, String actor) {
+		var account = userDetails.loadUserByUsername(actor);
+		if (!account.isEnabled() || !account.isAccountNonLocked()
+				|| account.getAuthorities().stream().noneMatch(authority ->
+						Set.of("education:scheduling:view", "education:scheduling:manage",
+								"ROLE_CODE_SUPER_ADMIN").contains(authority.getAuthority()))) {
+			throw new AccessDeniedException("当前账号没有查看教学变更的权限");
+		}
+		var selection = new TeachingSuspensionService.Selection(
+				required(config.get("organizationId"), "目标机构"),
+				required(config.get("semesterCode"), "学期"),
+				date(config.get("startDate"), null), date(config.get("endDate"), null),
+				optionalId(config.get("campusId")), optionalId(config.get("majorId")),
+				optionalId(config.get("classId")));
+		var preview = teachingSuspensions.preview(selection, actor);
+		return Map.of("impactCount", preview.impacts().size(),
+				"conflictCount", preview.impacts().stream().filter(item -> item.conflict() != null).count(),
+				"impacts", preview.impacts(), "message", "停课影响已预览，请在教学变更台核对并提交");
+	}
+
+	private String optionalId(Object value) {
+		String id = text(value);
+		return id.isBlank() ? null : id;
 	}
 
 	private boolean requiresOrganizationScope(String toolCode) {

@@ -22,6 +22,8 @@ public interface AcademicTermRepository extends JpaRepository<AcademicTerm, Stri
 	Page<AcademicTerm> findByOrganizationIdInOrderByStartDateDesc(java.util.Collection<String> organizationIds, Pageable pageable);
 	List<AcademicTerm> findByOrganizationIdOrderByStartDateDesc(String organizationId);
 	Optional<AcademicTerm> findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc(String status);
+	Optional<AcademicTerm> findFirstByOrganizationIdAndCurrentTermTrueAndStatusOrderByStartDateDesc(
+			String organizationId, String status);
 
 	Optional<AcademicTerm> findByTermCode(String termCode);
 	Optional<AcademicTerm> findByOrganizationIdAndLocalTermCode(String organizationId, String localTermCode);

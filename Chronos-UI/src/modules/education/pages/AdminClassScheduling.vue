@@ -120,10 +120,34 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="日期课表" name="date-schedule">
-        <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button></div>
-        <el-table :data="occurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.substituteTeacherId ? `${teacherName(s.row.substituteTeacherId)}（代 ${s.row.entry.teacherName}）` : s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
-        <h3>节假日待补课（{{ pendingMakeups.length }}）</h3>
+      <el-tab-pane v-if="!reviewOnly" label="教学变更台" name="date-schedule">
+        <div class="toolbar"><el-date-picker v-model="occurrenceDate" value-format="YYYY-MM-DD" @change="loadOccurrences" /><el-button @click="loadDateSchedule">刷新</el-button>
+          <TeachingSuspensionPanel :organization-id="organizationId" :semester-code="semesterCode"
+            :date="occurrenceDate" :administrative-classes="administrativeClasses" :campuses="campuses" :majors="changeMajors"
+            :can-apply="canChangeDates" @applied="loadDateSchedule" />
+          <el-select v-model="dateCampus" clearable filterable placeholder="全部校区" style="width: 150px">
+            <el-option v-for="item in dateCampuses" :key="item.id" :value="item.id" :label="item.organizationName" />
+          </el-select>
+          <el-select v-model="dateMajor" clearable filterable placeholder="全部专业" style="width: 150px">
+            <el-option v-for="item in changeMajors" :key="item.id" :value="item.id" :label="item.majorName" />
+          </el-select>
+          <el-select v-model="dateClass" clearable filterable placeholder="全部行政班" style="width: 150px">
+            <el-option v-for="item in dateClasses" :key="item.id" :value="item.id" :label="item.className" />
+          </el-select>
+          <el-select v-model="dateStatus" clearable placeholder="全部课次状态" style="width: 155px">
+            <el-option v-for="status in dateStatuses" :key="status" :value="status"
+              :label="occurrenceStatusName(status)" />
+          </el-select>
+          <el-button :disabled="!visibleOccurrences.length"
+            v-permission="['education:scheduling:view', 'education:scheduling:manage']"
+            @click="exportDateSchedule">导出日期课表</el-button>
+          <el-button @click="openIncidents">回写异常</el-button>
+          <el-button @click="router.push({ name: 'admin-education-teaching-hours', query: { organizationId, semesterCode } })">教师课时台账</el-button>
+          <el-button v-if="hasAdminPermission('education:exam:plan:view', 'education:exam:plan:manage')"
+            @click="router.push({ path: '/admin/education/exam/plans', query: { organizationId } })">考试占课</el-button>
+        </div>
+        <el-table :data="visibleOccurrences" border><el-table-column label="时间" width="110"><template #default="s">第 {{ s.row.effectivePeriodNo }} 节</template></el-table-column><el-table-column label="课程"><template #default="s">{{ s.row.entry.courseName }}</template></el-table-column><el-table-column label="教学班"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column><el-table-column label="教师"><template #default="s">{{ s.row.substituteTeacherId ? `${teacherName(s.row.substituteTeacherId)}（代 ${s.row.entry.teacherName}）` : s.row.entry.teacherName }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="s"><el-tag :type="occurrenceStatusType(s.row.occurrenceStatus)">{{ occurrenceStatusName(s.row.occurrenceStatus) }}</el-tag></template></el-table-column><el-table-column prop="reason" label="变更原因" /><AdaptiveActionColumn label="操作" width="100"><template #default="s"><el-button v-if="canChangeDates" link type="primary" @click="openDateException(s.row)">日期调整</el-button></template></AdaptiveActionColumn></el-table>
+        <h3>待补课（{{ pendingMakeups.length }}）</h3>
         <el-alert type="info" :closable="false" title="非教学日的原课次不会自动挤占后续课表；选择提前或顺延的目标日期、节次后按实际日期检查冲突。" />
         <el-table :data="pendingMakeups" border empty-text="当前没有待补课次">
           <el-table-column prop="sourceDate" label="原上课日期" width="130" />
@@ -131,7 +155,7 @@
           <el-table-column label="教学班" min-width="180"><template #default="s">{{ s.row.entry.teachingClassName }}</template></el-table-column>
           <el-table-column label="教师" width="120"><template #default="s">{{ s.row.entry.teacherName }}</template></el-table-column>
           <el-table-column label="原节次" width="90"><template #default="s">第 {{ s.row.entry.periodNo }} 节</template></el-table-column>
-          <AdaptiveActionColumn label="操作" width="170"><template #default="s"><el-button link type="primary" @click="openMakeup(s.row)">安排补课</el-button><el-button link @click="openWaiveMakeup(s.row)">确认不补</el-button></template></AdaptiveActionColumn>
+          <AdaptiveActionColumn label="操作" width="170"><template #default="s"><el-button v-if="canChangeDates" link type="primary" @click="openMakeup(s.row)">安排补课</el-button><el-button v-if="canChangeDates" link @click="openWaiveMakeup(s.row)">确认不补</el-button></template></AdaptiveActionColumn>
         </el-table>
         <h3>教师请假待代课（{{ pendingSubstitutions.length }}）</h3>
         <el-table :data="pendingSubstitutions" border empty-text="当前没有待安排代课的课次">
@@ -140,7 +164,7 @@
           <el-table-column label="教学班" min-width="180"><template #default="s">{{ s.row.occurrence.entry.teachingClassName }}</template></el-table-column>
           <el-table-column label="请假教师" width="120"><template #default="s">{{ s.row.occurrence.entry.teacherName }}</template></el-table-column>
           <el-table-column label="节次" width="90"><template #default="s">第 {{ s.row.occurrence.effectivePeriodNo }} 节</template></el-table-column>
-          <AdaptiveActionColumn label="操作" width="150"><template #default="s"><el-button v-if="s.row.occurrence.occurrenceStatus === 'SCHEDULED'" link type="primary" @click="openSubstitution(s.row)">安排代课</el-button><span v-else>先处理原日期调整</span></template></AdaptiveActionColumn>
+          <AdaptiveActionColumn label="操作" width="150"><template #default="s"><el-button v-if="canChangeDates && s.row.occurrence.occurrenceStatus === 'SCHEDULED'" link type="primary" @click="openSubstitution(s.row)">安排代课</el-button><span v-else-if="canChangeDates">先处理原日期调整</span></template></AdaptiveActionColumn>
         </el-table>
         <h3>日期调整历史</h3>
         <el-table :data="dateExceptionHistory" border>
@@ -152,8 +176,10 @@
           <el-table-column prop="status" label="状态" width="100" />
           <AdaptiveActionColumn label="操作" width="100">
             <template #default="scope">
-              <el-button v-if="scope.row.status === 'ACTIVE'" link type="danger" @click="cancelDateException(scope.row)">撤销</el-button>
-              <el-button v-else link type="primary" @click="restoreDateException(scope.row)">恢复</el-button>
+              <el-button v-if="scope.row.status === 'ACTIVE'"
+                v-permission="['education:scheduling:delete', 'education:scheduling:manage']"
+                link type="danger" @click="cancelDateException(scope.row)">撤销</el-button>
+              <el-button v-else-if="canChangeDates" link type="primary" @click="restoreDateException(scope.row)">恢复</el-button>
             </template>
           </AdaptiveActionColumn>
         </el-table>
@@ -248,11 +274,12 @@
         </el-form>
       </el-tab-pane>
 
-      <el-tab-pane v-if="reviewOnly || scheduleScopeFullAccess" label="自动排课候选" name="candidates">
+      <el-tab-pane v-if="canReviewCandidates || scheduleScopeFullAccess" label="自动排课候选" name="candidates">
         <div class="toolbar">
           <el-button @click="loadCandidates">刷新</el-button>
-          <el-button v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
+          <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
           <el-button
+            v-if="scheduleScopeFullAccess"
             v-permission="['education:scheduling:manage']"
             @click="openCandidateDialog">
             自定义生成 / 局部重排
@@ -267,8 +294,8 @@
           :closable="false"
           show-icon
         />
-        <h3>后台生成任务</h3>
-        <el-table :data="generationJobs" size="small" border>
+        <h3 v-if="scheduleScopeFullAccess">后台生成任务</h3>
+        <el-table v-if="scheduleScopeFullAccess" :data="generationJobs" size="small" border>
           <el-table-column prop="requestedBy" label="提交人" width="130" />
           <el-table-column label="状态" width="110"><template #default="s"><el-tag :type="jobStatusType(s.row.status)">{{ jobStatusName(s.row.status) }}</el-tag></template></el-table-column>
           <el-table-column label="进度" min-width="180"><template #default="s"><el-progress :percentage="s.row.progress || 0" /></template></el-table-column>
@@ -324,12 +351,13 @@
             <template #default="scope">
               <el-button link @click="showCandidateDiff(scope.row)">预览差异</el-button>
               <template v-if="scope.row.status === 'CANDIDATE'">
-                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link @click="editCandidateGovernance(scope.row)">协作信息</el-button>
-                <el-button v-if="['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link type="warning" @click="submitCandidateReview(scope.row)">提交审核</el-button>
+                <el-button v-if="scheduleScopeFullAccess && ['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link @click="editCandidateGovernance(scope.row)">协作信息</el-button>
+                <el-button v-if="scheduleScopeFullAccess && ['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link type="warning" @click="submitCandidateReview(scope.row)">提交审核</el-button>
                 <el-button v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername !== getAdminUsername()" v-permission="['education:scheduling:review', 'education:scheduling:manage']" link type="success" @click="reviewCandidate(scope.row, true)">通过</el-button>
                 <el-button v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername !== getAdminUsername()" v-permission="['education:scheduling:review', 'education:scheduling:manage']" link type="danger" @click="reviewCandidate(scope.row, false)">驳回</el-button>
                 <span v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername === getAdminUsername()">请其他审核员处理</span>
                 <el-button
+                  v-if="scheduleScopeFullAccess"
                   v-permission="['education:scheduling:manage']"
                   link
                   type="primary"
@@ -338,6 +366,7 @@
                   应用
                 </el-button>
                 <el-button
+                  v-if="scheduleScopeFullAccess"
                   v-permission="['education:scheduling:manage']"
                   link
                   type="danger"
@@ -423,7 +452,7 @@
         <el-table :data="roomConstraints" border><el-table-column label="教室"><template #default="s">{{ classroomName(s.row.classroomId) }}</template></el-table-column><el-table-column label="星期" width="90"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }}</template></el-table-column><el-table-column label="节次" width="120"><template #default="s">第 {{ s.row.startPeriod }}–{{ s.row.endPeriod }} 节</template></el-table-column><el-table-column prop="reason" label="原因" /><AdaptiveActionColumn label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openRoomConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeRoomConstraint(s.row)">删除</el-button></template></AdaptiveActionColumn></el-table>
       </el-tab-pane>
 
-	  <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="调课回写异常" name="incidents">
+	  <el-tab-pane v-if="!reviewOnly" label="调课回写异常" name="incidents">
 		<div class="incident-toolbar">
 		  <div class="incident-filters">
 			<el-select v-model="incidentStatus" class="incident-status" @change="searchIncidents">
@@ -452,6 +481,7 @@
 		  </div>
 		  <div>
 			<el-button
+			  v-if="canReplayIncidents"
 			  type="warning"
 			  :disabled="!incidentSelection.length"
 			  :loading="incidentBatchRetrying"
@@ -463,10 +493,13 @@
 		</div>
 		<el-empty v-if="!incidents.length" description="暂无待处理异常" />
 		<el-table v-else :data="incidents" @selection-change="incidentSelection = $event">
-		  <el-table-column type="selection" width="46" :selectable="row => row.status === 'FAILED'" />
+		  <el-table-column v-if="canReplayIncidents" type="selection" width="46" :selectable="row => row.status === 'FAILED'" />
 		  <el-table-column prop="workflowInstanceId" label="流程实例" min-width="210" />
 		  <el-table-column prop="adjustmentType" label="调整类型" width="110" />
-		  <el-table-column label="状态" width="100">
+          <el-table-column label="审批状态" width="100">
+            <template #default>已通过</template>
+          </el-table-column>
+		  <el-table-column label="回写状态" width="100">
 			<template #default="scope">
 			  <el-tag :type="scope.row.status === 'APPLIED' ? 'success' : 'danger'">
 				{{ scope.row.status === 'APPLIED' ? '已处理' : '待处理' }}
@@ -478,7 +511,7 @@
 		  <AdaptiveActionColumn label="操作" width="100">
 			<template #default="scope">
 			  <el-button
-				v-if="scope.row.status === 'FAILED'"
+				v-if="canReplayIncidents && scope.row.status === 'FAILED'"
 				link
 				type="primary"
 				@click="retryIncident(scope.row)">
@@ -692,6 +725,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ScheduleGrid from '../components/ScheduleGrid.vue'
+import TeachingSuspensionPanel from '../components/TeachingSuspensionPanel.vue'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -741,6 +775,7 @@ import {
   createTeacherTimeConstraint,
   createClassroomUnavailableSlot,
   createScheduleDateException,
+  waiveSuspensionMakeup,
   deleteClassroomUnavailableSlot,
   deleteTeacherTimeConstraint,
   listBellSchedules,
@@ -761,10 +796,13 @@ import {
 
 const route = useRoute()
 const reviewOnly = hasAdminPermission('education:scheduling:review') && !hasAdminPermission('education:scheduling:manage')
+const canReplayIncidents = hasAdminPermission('education:scheduling:manage')
+const canChangeDates = hasAdminPermission('education:scheduling:update', 'education:scheduling:manage')
+const canReviewCandidates = hasAdminPermission('education:scheduling:review', 'education:scheduling:manage')
 const semesterCode = ref(typeof route.query.semesterCode === 'string' ? route.query.semesterCode : '')
 const scheduleFileInput = ref(null)
 const router = useRouter()
-const activeTab = ref(reviewOnly ? 'candidates' : ['schedule', 'date-schedule', 'versions', 'quality', 'policy', 'candidates', 'offerings'].includes(route.query.schedulingTab)
+const activeTab = ref(reviewOnly ? 'candidates' : ['schedule', 'date-schedule', 'incidents', 'versions', 'quality', 'policy', 'candidates', 'offerings'].includes(route.query.schedulingTab)
   ? route.query.schedulingTab : 'schedule')
 const scheduleView = ref('grid')
 const offerings = ref([])
@@ -785,12 +823,26 @@ const selectedStudent = ref(null)
 let studentSearchTimer
 let studentOptionsSequence = 0
 const administrativeClasses = ref([])
+const changeMajors = ref([])
 const roomTypes = ref([])
 const campuses = ref([])
 const bellSchedules = ref([])
 const teacherConstraints = ref([])
 const roomConstraints = ref([])
 const occurrences = ref([])
+const dateStatus = ref('')
+const dateCampus = ref('')
+const dateMajor = ref('')
+const dateClass = ref('')
+let dateRequestSequence = 0
+const dateCampuses = computed(() => campuses.value.filter(item =>
+  item.id === organizationId.value || item.parentOrganizationId === organizationId.value
+    || administrativeClasses.value.some(row => row.campusId === item.id)))
+const dateClasses = computed(() => administrativeClasses.value.filter(item =>
+  (!dateCampus.value || item.campusId === dateCampus.value) && (!dateMajor.value || item.majorId === dateMajor.value)))
+const dateStatuses = ['SCHEDULED', 'CANCELLED', 'MOVED_OUT', 'MOVED_IN', 'SUBSTITUTED', 'MAKEUP']
+const visibleOccurrences = computed(() => occurrences.value.filter(row =>
+  !dateStatus.value || row.occurrenceStatus === dateStatus.value))
 const dateExceptionHistory = ref([])
 const occurrenceDate = ref(todayLocalDate())
 const schedule = ref([])
@@ -983,6 +1035,7 @@ const clearSemesterData = () => {
   courses.value = []
   versions.value = []
   candidates.value = []
+  candidateSelection.value = []
   generationJobs.value = []
   teacherConstraints.value = []
   roomConstraints.value = []
@@ -997,6 +1050,7 @@ const clearSemesterData = () => {
   teachers.value = []
   resetStudentOptions()
   administrativeClasses.value = []
+  changeMajors.value = []
   offeringOptions.value = []
   classroomOptions.value = []
   bellSchedules.value = []
@@ -1019,6 +1073,7 @@ const loadDimensionOptions = async () => {
     }
     teachers.value = dimensions.teachers || []
     administrativeClasses.value = dimensions.administrativeClasses || []
+    changeMajors.value = dimensions.majors || []
     offeringOptions.value = dimensions.teachingClasses || []
     classroomOptions.value = dimensions.classrooms || []
     scheduleScopeFullAccess.value = dimensions.fullAccess !== false
@@ -1044,6 +1099,7 @@ const loadAll = async () => {
   teachers.value = []
   resetStudentOptions()
   administrativeClasses.value = []
+  changeMajors.value = []
   offeringOptions.value = []
   classroomOptions.value = []
   dimensionOptionsLoading.value = false
@@ -1085,7 +1141,7 @@ const loadAll = async () => {
     listCourseCatalog({ organizationId: organizationId.value }),
     dictionaryOptions('EDU_ROOM_TYPE'),
     scheduleScopeFullAccess.value ? listScheduleVersions(semesterCode.value) : Promise.resolve({ data: [] }),
-    scheduleScopeFullAccess.value ? listScheduleCandidates(semesterCode.value) : Promise.resolve({ data: [] }),
+    (canReviewCandidates || scheduleScopeFullAccess.value) ? listScheduleCandidates(semesterCode.value) : Promise.resolve({ data: [] }),
     orgList({ page: 0, size: 200 }),
     currentTerm ? listBellSchedules(currentTerm.id) : Promise.resolve({ data: [] }),
     listTeacherTimeConstraints(semesterCode.value),
@@ -1116,7 +1172,7 @@ const loadAll = async () => {
     loadOfferingsPage(),
     loadClassroomsPage(),
     loadSchedule(),
-    scheduleScopeFullAccess.value ? loadDateSchedule() : Promise.resolve(),
+    !reviewOnly ? loadDateSchedule() : Promise.resolve(),
     scheduleScopeFullAccess.value ? loadQualityAnalysis() : Promise.resolve(),
     scheduleScopeFullAccess.value ? loadPolicy() : Promise.resolve(),
   ])
@@ -1171,20 +1227,35 @@ const savePolicy = async () => {
   ElMessage.success('本学期排课规则已保存')
   await loadQualityAnalysis()
 }
+const loadDateRows = async (target, request) => {
+  const organization = organizationId.value
+  const term = semesterCode.value
+  const response = await request(term, organization)
+  if (organization === organizationId.value && term === semesterCode.value) {
+    target.value = response.data || []
+  }
+}
 const loadOccurrences = async () => {
-  occurrences.value = occurrenceDate.value
-    ? (await listScheduleOccurrences(semesterCode.value, occurrenceDate.value)).data || []
-    : []
+  const date = occurrenceDate.value
+  const sequence = ++dateRequestSequence
+  const term = semesterCode.value
+  const organization = organizationId.value
+  occurrences.value = []
+  if (!date || !term || !organization) return
+  const response = await listScheduleOccurrences(term, date, organization, {
+    campusId: dateCampus.value || undefined, majorId: dateMajor.value || undefined, classId: dateClass.value || undefined,
+  })
+  if (sequence === dateRequestSequence && term === semesterCode.value && organization === organizationId.value) {
+    occurrences.value = response.data || []
+  }
 }
-const loadDateExceptionHistory = async () => {
-  dateExceptionHistory.value = (await listScheduleDateExceptionHistory(semesterCode.value)).data || []
-}
-const loadPendingMakeups = async () => {
-  pendingMakeups.value = (await listSchedulePendingMakeups(semesterCode.value)).data || []
-}
-const loadPendingSubstitutions = async () => {
-  pendingSubstitutions.value = (await listSchedulePendingSubstitutions(semesterCode.value)).data || []
-}
+watch([dateCampus, dateMajor], () => { dateClass.value = '' })
+watch([dateCampus, dateMajor, dateClass], () => {
+  if (activeTab.value === 'date-schedule') loadOccurrences()
+})
+const loadDateExceptionHistory = () => loadDateRows(dateExceptionHistory, listScheduleDateExceptionHistory)
+const loadPendingMakeups = () => loadDateRows(pendingMakeups, listSchedulePendingMakeups)
+const loadPendingSubstitutions = () => loadDateRows(pendingSubstitutions, listSchedulePendingSubstitutions)
 const loadDateSchedule = async () => Promise.all([loadOccurrences(), loadDateExceptionHistory(), loadPendingMakeups(), loadPendingSubstitutions()])
 const changeDimension = async () => {
   scheduleTargetId.value = ''
@@ -1237,6 +1308,18 @@ const saveBlob = (blob, filename) => {
   anchor.download = filename
   anchor.click()
   URL.revokeObjectURL(url)
+}
+const exportDateSchedule = () => {
+  const escapeCell = value => {
+    const cell = String(value ?? '')
+    return '"' + (/^[=+@\-\t\r]/.test(cell) ? "'" + cell : cell).replaceAll('"', '""') + '"'
+  }
+  const header = ['日期', '节次', '课程', '教学班', '教师', '状态', '变更原因']
+  const rows = visibleOccurrences.value.map(row => [row.date, row.effectivePeriodNo, row.entry.courseName,
+    row.entry.teachingClassName, row.substituteTeacherId ? teacherName(row.substituteTeacherId) : row.entry.teacherName,
+    occurrenceStatusName(row.occurrenceStatus), row.reason])
+  const content = [header, ...rows].map(row => row.map(escapeCell).join(',')).join('\r\n')
+  saveBlob(new Blob(['\uFEFF', content], { type: 'text/csv;charset=utf-8' }), `日期课表-${occurrenceDate.value}.csv`)
 }
 const downloadImportTemplate = async () => saveBlob(
   await downloadScheduleImportTemplate(),
@@ -1353,7 +1436,7 @@ const openMakeup = item => {
     targetDate: null,
     targetPeriodNo: item.entry.periodNo,
     targetClassroomId: item.entry.classroomId,
-    reason: '节假日停课补课',
+    reason: item.suspensionId ? '临时停课补课' : '节假日停课补课',
   })
   dateExceptionDialog.value = true
 }
@@ -1361,13 +1444,14 @@ const openWaiveMakeup = item => {
   dateExceptionError.value = ''
   reset(dateExceptionForm, {
     semesterCode: semesterCode.value,
+    suspensionId: item.suspensionId || undefined,
     sourceEntryId: item.entry.id,
     sourceDate: item.sourceDate,
     exceptionType: 'CANCEL',
     targetDate: null,
     targetPeriodNo: null,
     targetClassroomId: null,
-    reason: '节假日停课，学校确认不补课',
+    reason: item.suspensionId ? '临时停课，学校确认不补课' : '节假日停课，学校确认不补课',
   })
   dateExceptionDialog.value = true
 }
@@ -1390,7 +1474,11 @@ const openSubstitution = item => {
 const saveDateException = async () => {
   dateExceptionError.value = ''
   try {
-    await createScheduleDateException(dateExceptionForm)
+    if (dateExceptionForm.suspensionId && dateExceptionForm.exceptionType === 'CANCEL') {
+      await waiveSuspensionMakeup(dateExceptionForm.suspensionId)
+    } else {
+      await createScheduleDateException(dateExceptionForm)
+    }
     dateExceptionDialog.value = false
     ElMessage.success('日期课表调整已保存')
     await loadDateSchedule()
@@ -1409,14 +1497,23 @@ const restoreDateException = async row => {
   ElMessage.success('日期调整已恢复')
   await loadDateSchedule()
 }
+const openIncidents = () => { activeTab.value = 'incidents' }
+watch(activeTab, tab => {
+  if (tab === 'incidents' && semesterCode.value) searchIncidents()
+})
 const loadIncidents = async () => {
+  const organization = organizationId.value
+  const term = semesterCode.value
   const response = await listCourseAdjustmentIncidents({
+    organizationId: organization,
+    semesterCode: term,
     status: incidentStatus.value,
     adjustmentType: incidentAdjustmentType.value || undefined,
     keyword: incidentKeyword.value || undefined,
     page: incidentPage.value - 1,
     size: incidentPageSize.value,
   })
+  if (organization !== organizationId.value || term !== semesterCode.value) return
   incidents.value = response.data?.content || []
   incidentTotal.value = response.data?.totalElements || 0
   incidentSelection.value = []
@@ -1459,12 +1556,23 @@ const loadVersions = async () => {
   versions.value = (await listScheduleVersions(semesterCode.value)).data || []
 }
 const loadCandidates = async () => {
-  const [candidateResponse, jobResponse] = await Promise.all([
-    listScheduleCandidates(semesterCode.value),
-    listScheduleGenerationJobs(semesterCode.value),
-  ])
-  candidates.value = candidateResponse.data || []
-  generationJobs.value = jobResponse.data || []
+  const semester = semesterCode.value
+  if (!semester) return
+  try {
+    const [candidateResponse, jobResponse] = await Promise.all([
+      listScheduleCandidates(semester),
+      scheduleScopeFullAccess.value ? listScheduleGenerationJobs(semester) : Promise.resolve({ data: [] }),
+    ])
+    if (semester !== semesterCode.value) return
+    candidates.value = candidateResponse.data || []
+    generationJobs.value = jobResponse.data || []
+  } catch (error) {
+    if (semester === semesterCode.value) {
+      candidates.value = []
+      generationJobs.value = []
+      ElMessage.error(error.message)
+    }
+  }
 }
 const compareCandidates = async () => {
   candidateComparison.value = (await compareScheduleCandidates(
@@ -1643,11 +1751,14 @@ const rollbackVersion = async row => {
 }
 watch(organizationId, async (id, previousId) => {
   if (previousId) semesterCode.value = ''
+  dateCampus.value = ''
+  dateMajor.value = ''
+  dateClass.value = ''
   terms.value = []
   clearSemesterData()
   await loadAll()
   if (id !== organizationId.value) return
-  if (id && !reviewOnly && scheduleScopeFullAccess.value) await loadIncidents()
+  if (semesterCode.value && !reviewOnly && activeTab.value === 'incidents') await loadIncidents()
   const { dateAction, sourceEntryId, sourceDate } = route.query
   if (activeTab.value === 'date-schedule' && typeof sourceEntryId === 'string'
     && typeof sourceDate === 'string') {

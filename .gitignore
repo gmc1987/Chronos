@@ -1,2 +1,5 @@
 Chronos-UI/node_modules/
 Chronos-UI/dist/
+.env
+.env.docker
+release/

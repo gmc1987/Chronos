@@ -34,7 +34,13 @@ public class DirectoryDataScopeGuard {
 
 	/** Null means unrestricted; otherwise the returned set is the complete allow-list. */
 	public Set<String> visibleOrganizationIds(Authentication authentication) {
-		var context = context(authentication);
+		if (authentication == null || !authentication.isAuthenticated())
+			throw new AccessDeniedException("用户未登录");
+		return visibleOrganizationIds(authentication.getName());
+	}
+
+	public Set<String> visibleOrganizationIds(String username) {
+		var context = dataScopes.resolve(username);
 		if (context.fullAccess()) return null;
 		Set<String> result = new LinkedHashSet<>(context.organizationIds());
 		if (context.employeeId() != null) {

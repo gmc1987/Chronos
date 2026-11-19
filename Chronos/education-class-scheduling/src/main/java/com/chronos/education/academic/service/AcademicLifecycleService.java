@@ -531,6 +531,10 @@ public class AcademicLifecycleService {
 		if (!"PUBLISHED".equals(program.getStatus()) || !program.getSchoolId().equals(command.schoolId())) {
 			throw new IllegalStateException("只能按本校已发布培养方案审核");
 		}
+		if (!Objects.equals(student.getMajorId(), program.getMajorId())
+				|| !Objects.equals(student.getGradeYear(), program.getCohortYear())) {
+			throw new IllegalStateException("培养方案不适用于学生的专业或入学年份");
+		}
 		ReadinessView readiness = readiness(student, program);
 		GraduationAudit result = graduationAudits
 				.findFirstByStudentIdAndProgramIdAndStatusInOrderByCreateTimeDesc(

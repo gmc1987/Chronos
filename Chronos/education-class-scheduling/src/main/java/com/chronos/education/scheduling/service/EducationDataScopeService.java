@@ -415,6 +415,24 @@ public class EducationDataScopeService {
 		throw new AccessDeniedException("无权访问该学校督导数据");
 	}
 
+	public Set<String> scheduleReviewCampuses(String username, String organizationId) {
+		DataScopeContext scope = platformScopes.resolve(username);
+		if (scope.fullAccess()) {
+			return null;
+		}
+		// 候选方案覆盖整个学期所属机构，不能用校区权限推导全校审核权限。
+		if (!scope.organizationIds().contains(organizationId)) {
+			throw new AccessDeniedException("无权访问该机构的排课候选方案");
+		}
+		Set<String> campuses = new HashSet<>();
+		campuses.add(organizationId);
+		organizations.findByParentOrgId_Id(organizationId).stream()
+				.filter(item -> "CAMPUS".equals(item.getOrganizationType()) && Integer.valueOf(1).equals(item.getStatus()))
+				.map(Organization::getId)
+				.forEach(campuses::add);
+		return campuses;
+	}
+
 	public void assertCampusAccess(EducationDataScope scope, String campusId) {
 		if (scope.fullAccess() || scope.campusIds().contains(campusId)) {
 			return;

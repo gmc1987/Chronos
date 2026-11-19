@@ -1,5 +1,11 @@
 package com.chronos.education.scheduling.service;
 
+import com.chronos.Idao.IEmployeeAssignmentRepository;
+import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.education.scheduling.model.TeacherAcademicProfile;
+import com.chronos.model.pojo.EmployeeAssignment;
+import com.chronos.model.pojo.Organization;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,6 +53,8 @@ class EducationPortalScheduleCalendarTest {
 	private BellScheduleRepository bellSchedules;
 	private BellPeriodRepository bellPeriods;
 	private EducationPortalContributionProvider service;
+	private IEmployeeAssignmentRepository assignments;
+	private IOrganizationRepository organizations;
 
 	@BeforeEach
 	void setUp() {
@@ -59,6 +67,8 @@ class EducationPortalScheduleCalendarTest {
 		occurrences = mock(ScheduleOccurrenceService.class);
 		bellSchedules = mock(BellScheduleRepository.class);
 		bellPeriods = mock(BellPeriodRepository.class);
+		assignments = mock(IEmployeeAssignmentRepository.class);
+		organizations = mock(IOrganizationRepository.class);
 		service = new EducationPortalContributionProvider(
 				teachers,
 				mock(StudentProfileRepository.class),
@@ -72,25 +82,14 @@ class EducationPortalScheduleCalendarTest {
 				bindings,
 				mock(TeachingClassMemberRepository.class),
 				mock(StudentGuardianRepository.class),
-				occurrences);
+				occurrences,
+				assignments,
+				organizations,
+				mock(IAdminUserRepository.class));
 	}
 
 	@Test
 	void revokedTeacherBindingRemovesPortalIdentityAndPersonalSchedule() {
-		AcademicTerm term = new AcademicTerm();
-		term.setTermCode("2026-FALL");
-		term.setTermName("秋季学期");
-		when(terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE"))
-				.thenReturn(Optional.of(term));
-		CourseOffering offering = new CourseOffering();
-		ReflectionTestUtils.setField(offering, "id", "offering-1");
-		offering.setTeacherId("teacher-1");
-		when(offerings.findBySemesterCodeOrderByOfferingCode("2026-FALL"))
-				.thenReturn(List.of(offering));
-		ScheduleEntry entry = new ScheduleEntry();
-		entry.setOfferingId("offering-1");
-		when(planVersions.latestPublishedEntries("2026-FALL"))
-				.thenReturn(List.of(entry));
 		when(bindings.findByUsernameAndStatusOrderByProfileType("teacher", "ACTIVE"))
 				.thenReturn(List.of());
 
@@ -108,8 +107,20 @@ class EducationPortalScheduleCalendarTest {
 		ReflectionTestUtils.setField(term, "id", "term-1");
 		term.setTermCode("2026-FALL");
 		term.setTermName("2026年秋季学期");
-		when(terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE"))
+		when(terms.findFirstByOrganizationIdAndCurrentTermTrueAndStatusOrderByStartDateDesc("school-1", "ACTIVE"))
 				.thenReturn(Optional.of(term));
+		TeacherAcademicProfile teacher = new TeacherAcademicProfile();
+		teacher.setEmployeeId("employee-1");
+		when(teachers.findById("teacher-1")).thenReturn(Optional.of(teacher));
+		EmployeeAssignment assignment = new EmployeeAssignment();
+		assignment.setOrganizationId("school-1");
+		when(assignments.findCurrentPrimaryAssignment("employee-1", LocalDate.now()))
+				.thenReturn(Optional.of(assignment));
+		Organization school = new Organization();
+		ReflectionTestUtils.setField(school, "id", "school-1");
+		school.setOrganizationType("SCHOOL");
+		school.setStatus(1);
+		when(organizations.findById("school-1")).thenReturn(Optional.of(school));
 
 		CourseOffering offering = new CourseOffering();
 		ReflectionTestUtils.setField(offering, "id", "offering-1");
@@ -170,7 +181,7 @@ class EducationPortalScheduleCalendarTest {
 		AcademicTerm term = new AcademicTerm();
 		term.setTermCode("2026-FALL");
 		term.setTermName("2026年秋季学期");
-		when(terms.findFirstByCurrentTermTrueAndStatusOrderByStartDateDesc("ACTIVE"))
+		when(terms.findFirstByOrganizationIdAndCurrentTermTrueAndStatusOrderByStartDateDesc("school-1", "ACTIVE"))
 				.thenReturn(Optional.of(term));
 
 		CourseOffering offering = new CourseOffering();
@@ -188,6 +199,17 @@ class EducationPortalScheduleCalendarTest {
 		TeacherAcademicProfile substitute = new TeacherAcademicProfile();
 		ReflectionTestUtils.setField(substitute, "id", "teacher-substitute");
 		substitute.setTeacherName("代课教师");
+		substitute.setEmployeeId("employee-substitute");
+		when(teachers.findById("teacher-substitute")).thenReturn(Optional.of(substitute));
+		EmployeeAssignment assignment = new EmployeeAssignment();
+		assignment.setOrganizationId("school-1");
+		when(assignments.findCurrentPrimaryAssignment("employee-substitute", LocalDate.now()))
+				.thenReturn(Optional.of(assignment));
+		Organization school = new Organization();
+		ReflectionTestUtils.setField(school, "id", "school-1");
+		school.setOrganizationType("SCHOOL");
+		school.setStatus(1);
+		when(organizations.findById("school-1")).thenReturn(Optional.of(school));
 		when(teachers.findAll()).thenReturn(List.of(substitute));
 
 		ScheduleEntry entry = new ScheduleEntry();

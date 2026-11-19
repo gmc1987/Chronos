@@ -227,7 +227,7 @@ import {
   uploadOperationAgentBusinessAttachment,
 } from '../api'
 import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
-import { orgList } from '../../../api/admin'
+import { orgOptions } from '../../../api/admin'
 
 const props = defineProps({ open: Boolean })
 const router = useRouter()
@@ -371,9 +371,9 @@ watch(() => props.open, async value => {
 async function loadBase() {
   loading.value = true
   try {
-    // 审核员无需机构目录管理权限。可选的机构选择器不能阻断待审任务加载。
-    const organizationRequest = hasAdminPermission('iam:organization:view', 'iam:organization:manage', 'iam:role:authorize')
-      ? orgList({ page: 0, size: 500 })
+    // 对话使用账号数据范围内的机构选项，目录权限不参与筛选。
+    const organizationRequest = canExecute
+      ? orgOptions().catch(() => ({ data: [] }))
       : Promise.resolve({ data: [] })
     const [toolResult, planResult, runResult, organizationResult] = await Promise.all([
       fetchOperationAgentTools(), fetchOperationAgentPlans(), fetchOperationAgentRuns(), organizationRequest,
@@ -381,8 +381,10 @@ async function loadBase() {
     tools.value = toolResult.data || []
     plans.value = planResult.data || []
     runs.value = runResult.data || []
-	organizations.value = organizationResult.data?.content || organizationResult.data || []
-	if (!chatOrganizationId.value && organizations.value.length === 1) chatOrganizationId.value = organizations.value[0].id
+    organizations.value = organizationResult.data || []
+    if (!organizations.value.some(item => item.id === chatOrganizationId.value)) {
+      chatOrganizationId.value = organizations.value.length === 1 ? organizations.value[0].id : ''
+    }
     if (!selectedRunId.value && runs.value.length) selectedRunId.value = runs.value[0].run.id
     if (selectedRunId.value) await loadRun()
   } finally { loading.value = false }

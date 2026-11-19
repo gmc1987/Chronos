@@ -1,5 +1,6 @@
 package com.chronos.education.scheduling.service;
 
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.ClassroomRepository;
@@ -7,6 +8,8 @@ import com.chronos.education.scheduling.dao.ScheduleEntryRepository;
 import com.chronos.education.scheduling.dao.SchedulePlanVersionRepository;
 import com.chronos.education.scheduling.dao.TeachingClassMemberRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
+import com.chronos.education.scheduling.model.AcademicTerm;
+import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.model.SchedulePlanVersion;
 import com.chronos.education.scheduling.model.SchedulePlanVersionView;
@@ -17,7 +20,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -41,6 +46,7 @@ public class SchedulePlanVersionService {
 	private final TeachingClassMemberRepository members;
 	private final ExamResourceReservationService examReservations;
 	private final EducationResourceTransactionLock resourceLock;
+	private final IOrganizationRepository organizations;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
 	public SchedulePlanVersionService(
@@ -56,7 +62,8 @@ public class SchedulePlanVersionService {
 			ClassroomRepository classrooms,
 			TeachingClassMemberRepository members,
 			ExamResourceReservationService examReservations,
-			EducationResourceTransactionLock resourceLock) {
+			EducationResourceTransactionLock resourceLock,
+			IOrganizationRepository organizations) {
 		this.entries = entries;
 		this.versions = versions;
 		this.terms = terms;
@@ -70,6 +77,7 @@ public class SchedulePlanVersionService {
 		this.members = members;
 		this.examReservations = examReservations;
 		this.resourceLock = resourceLock;
+		this.organizations = organizations;
 	}
 
 	@Transactional(readOnly = true)
@@ -83,11 +91,12 @@ public class SchedulePlanVersionService {
 	public SchedulePlanVersion publish(String semesterCode, String actor) {
 		String semester = required(semesterCode);
 		resourceLock.lockSemester(semester);
-		lockTerm(semester);
+		Set<String> campuses = termCampuses(lockTerm(semester));
 		List<ScheduleEntry> current = entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(semester);
 		if (current.isEmpty()) {
 			throw new IllegalStateException("当前学期没有可发布的课表");
 		}
+		assertOrganizationEntries(current, campuses);
 		assertExamAvailability(current);
 		List<String> blockers = qualityAnalysis.publishBlockers(semester);
 		if (!blockers.isEmpty()) {
@@ -110,11 +119,13 @@ public class SchedulePlanVersionService {
 		SchedulePlanVersion source = versions.findById(versionId)
 				.orElseThrow(() -> new IllegalArgumentException("课表版本不存在"));
 		resourceLock.lockSemester(source.getSemesterCode());
-		lockTerm(source.getSemesterCode());
+		Set<String> campuses = termCampuses(lockTerm(source.getSemesterCode()));
 		List<ScheduleEntry> snapshot = read(source.getSnapshotJson());
+		assertOrganizationEntries(snapshot, campuses);
 		assertExamAvailability(snapshot);
 		List<ScheduleEntry> current = entries.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(
 				source.getSemesterCode());
+		assertOrganizationEntries(current, campuses);
 		Map<String, ScheduleEntry> currentById = current.stream()
 				.collect(Collectors.toMap(ScheduleEntry::getId, entry -> entry));
 		Map<String, Integer> originalPeriods = current.stream()
@@ -301,9 +312,45 @@ public class SchedulePlanVersionService {
 		return value.trim();
 	}
 
-	private void lockTerm(String semesterCode) {
-		terms.findForUpdateByTermCode(semesterCode)
+	private AcademicTerm lockTerm(String semesterCode) {
+		return terms.findForUpdateByTermCode(semesterCode)
 				.orElseThrow(() -> new IllegalArgumentException("学期不存在：" + semesterCode));
+	}
+
+	Set<String> termCampuses(AcademicTerm term) {
+		String organizationId = term.getOrganizationId();
+		if (organizationId == null || organizationId.isBlank()) {
+			throw new IllegalStateException("排课学期未绑定机构");
+		}
+		Set<String> campuses = new HashSet<>();
+		campuses.add(organizationId);
+		organizations.findByParentOrgId_Id(organizationId).stream()
+				.filter(item -> "CAMPUS".equals(item.getOrganizationType()) && Integer.valueOf(1).equals(item.getStatus()))
+				.forEach(item -> campuses.add(item.getId()));
+		return campuses;
+	}
+
+	List<ScheduleEntry> entriesInCampuses(List<ScheduleEntry> schedule, Set<String> campuses) {
+		if (schedule.isEmpty()) {
+			return List.of();
+		}
+		Set<String> allowedOfferings = offerings.findAllById(schedule.stream()
+						.map(ScheduleEntry::getOfferingId).filter(Objects::nonNull).distinct().toList()).stream()
+				.filter(item -> campuses.contains(item.getCampusId()))
+				.map(CourseOffering::getId).collect(Collectors.toSet());
+		Set<String> allowedRooms = classrooms.findAllById(schedule.stream()
+						.map(ScheduleEntry::getClassroomId).filter(Objects::nonNull).distinct().toList()).stream()
+				.filter(item -> campuses.contains(item.getCampusId()))
+				.map(Classroom::getId).collect(Collectors.toSet());
+		return schedule.stream().filter(item -> allowedOfferings.contains(item.getOfferingId())
+				&& allowedRooms.contains(item.getClassroomId())).toList();
+	}
+
+	void assertOrganizationEntries(List<ScheduleEntry> schedule, Set<String> campuses) {
+		// 历史混校记录必须先纠正归属，不能在应用或回滚时静默删除其他学校的课次。
+		if (entriesInCampuses(schedule, campuses).size() != schedule.size()) {
+			throw new IllegalStateException("课表包含机构范围外或归属不明的教学任务或教室，请先核对历史数据");
+		}
 	}
 
 	private void insertSnapshotEntry(ScheduleEntry entry) {

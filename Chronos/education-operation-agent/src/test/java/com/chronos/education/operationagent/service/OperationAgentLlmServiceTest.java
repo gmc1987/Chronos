@@ -86,7 +86,7 @@ class OperationAgentLlmServiceTest {
 	@Test
 	void bellDraftCalculatesEightPeriodsFromTheUsersTimeWindow() throws Exception {
 		var intent = new ObjectMapper().readTree("""
-				{"toolConfigs":{"academic.bell.configure":{"campusId":"school-1",
+				{"toolConfigs":{"academic.bell.configure":{"campusId":"TARGET_ORGANIZATION",
 				"scheduleCode":"model-generated-code","periodRules":{"periodCount":8,"morningCount":4,
 				"startTime":"09:00","endTime":"17:30","breakMinutes":10}}}}
 				""");
@@ -95,7 +95,9 @@ class OperationAgentLlmServiceTest {
 				"existing-term-id", false);
 		assertThat(draft.requiredInputs()).isEmpty();
 		var config = draft.plan().steps().getFirst().toolConfig();
-		assertThat(config).doesNotContainKey("scheduleCode").containsEntry("scheduleName", "2026-2027-1 校区作息");
+		assertThat(config).doesNotContainKey("scheduleCode")
+				.containsEntry("campusId", "school-1")
+				.containsEntry("scheduleName", "2026-2027-1 校区作息");
 		var periods = new ObjectMapper().valueToTree(config.get("periods"));
 		assertThat(periods.size()).isEqualTo(8);
 		assertThat(periods.get(0).path("endTime").asText()).isEqualTo("09:45");

@@ -3,6 +3,7 @@ package com.chronos.education.scheduling.controller;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.chronos.commons.model.ResultData;
+import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.model.AutoScheduleCommand;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.model.ClassroomUnavailableSlot;
@@ -59,6 +61,7 @@ public class ClassSchedulingController {
 	private final ScheduleQualityAnalysisService qualityAnalysis;
 	private final SchedulePolicyService schedulePolicies;
 	private final ScheduleGenerationJobService generationJobs;
+	private final AcademicTermRepository terms;
 
 	public ClassSchedulingController(
 			ClassSchedulingService service,
@@ -70,7 +73,8 @@ public class ClassSchedulingController {
 			ScheduleQualityAnalysisService qualityAnalysis,
 			SchedulePolicyService schedulePolicies,
 			ScheduleGenerationJobService generationJobs,
-			ClassroomManagementService classroomManagement) {
+			ClassroomManagementService classroomManagement,
+			AcademicTermRepository terms) {
 		this.service = service;
 		this.academicData = academicData;
 		this.planVersions = planVersions;
@@ -81,6 +85,7 @@ public class ClassSchedulingController {
 		this.schedulePolicies = schedulePolicies;
 		this.generationJobs = generationJobs;
 		this.classroomManagement = classroomManagement;
+		this.terms = terms;
 	}
 
 	@GetMapping("/admin/education/schedule-dimension-options")
@@ -108,8 +113,11 @@ public class ClassSchedulingController {
 			classes = classes.stream().filter(item -> campusIds.contains(item.getCampusId())).toList();
 			classrooms = classrooms.stream().filter(item -> campusIds.contains(item.getCampusId())).toList();
 		}
+		var majorIds = classes.stream().map(item -> item.getMajorId()).collect(java.util.stream.Collectors.toSet());
+		var majors = academicData.visibleMajors(organizationId == null ? null : java.util.Set.of(organizationId))
+				.stream().filter(item -> majorIds.contains(item.getId())).toList();
 		return ok(Map.of("fullAccess", scope.fullAccess(), "teachers", teachers, "teachingClasses", offerings,
-				"administrativeClasses", classes, "classrooms", classrooms));
+				"administrativeClasses", classes, "classrooms", classrooms, "majors", majors));
 	}
 
 	@GetMapping("/admin/education/schedule-student-options")
@@ -299,8 +307,7 @@ public class ClassSchedulingController {
 	public ResultData<List<ScheduleCandidateView>> scheduleCandidates(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
-		return ok(autoScheduling.list(semesterCode));
+		return ok(autoScheduling.list(semesterCode, requireCandidateTermAccess(authentication, semesterCode)));
 	}
 
 	@GetMapping("/admin/education/schedule-candidates/compare")
@@ -308,7 +315,12 @@ public class ClassSchedulingController {
 	public ResultData<List<ScheduleCandidateView>> compareCandidates(
 			@RequestParam List<String> ids,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		if (ids.size() < 2 || ids.size() > 5) {
+			throw new IllegalArgumentException("请选择 2 到 5 个候选方案进行对比");
+		}
+		for (String id : ids) {
+			requireCandidateAccess(authentication, id);
+		}
 		return ok(autoScheduling.compare(ids));
 	}
 
@@ -317,8 +329,7 @@ public class ClassSchedulingController {
 	public ResultData<ScheduleDiffView> candidatePreview(
 			@PathVariable String id,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
-		return ok(autoScheduling.preview(id));
+		return ok(autoScheduling.preview(id, requireCandidateAccess(authentication, id)));
 	}
 
 	@PutMapping("/admin/education/schedule-candidates/{id}/governance")
@@ -347,7 +358,7 @@ public class ClassSchedulingController {
 			@RequestParam boolean approved,
 			@RequestParam(required = false) String comment,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateAccess(authentication, id);
 		return ok(autoScheduling.review(
 				id,
 				approved,
@@ -631,5 +642,17 @@ public class ClassSchedulingController {
 
 	private void requireFullDataAccess(Authentication authentication) {
 		dataScopes.assertFullAccess(dataScopes.resolve(authentication.getName()));
+	}
+
+	private Set<String> requireCandidateAccess(Authentication authentication, String candidateId) {
+		Set<String> campuses = requireCandidateTermAccess(authentication, autoScheduling.candidateSemesterCode(candidateId));
+		autoScheduling.assertCandidateCampuses(candidateId, campuses);
+		return campuses;
+	}
+
+	private Set<String> requireCandidateTermAccess(Authentication authentication, String semesterCode) {
+		var term = terms.findByTermCode(semesterCode)
+				.orElseThrow(() -> new IllegalArgumentException("排课方案所属学期不存在"));
+		return dataScopes.scheduleReviewCampuses(authentication.getName(), term.getOrganizationId());
 	}
 }

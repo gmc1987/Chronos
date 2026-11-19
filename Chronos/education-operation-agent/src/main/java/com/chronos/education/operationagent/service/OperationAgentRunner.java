@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,6 +20,7 @@ import com.chronos.agent.AgentRunStateMachine;
 import com.chronos.agent.AgentRunStatus;
 import com.chronos.education.operationagent.dao.*;
 import com.chronos.education.operationagent.model.*;
+import com.chronos.security.AdminUserDetailsService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -36,6 +38,7 @@ public class OperationAgentRunner {
 	private final OperationAgentEventService events;
 	private final OperationAgentNotificationService notifications;
 	private final OperationAgentLlmService llm;
+	private final AdminUserDetailsService userDetails;
 	private final ObjectMapper mapper;
 	/**
 	 * 同一运行实例在单节点内只能有一个执行线程。审批、重试和调度可能在很短
@@ -56,6 +59,7 @@ public class OperationAgentRunner {
 			OperationAgentEventService events,
 			OperationAgentNotificationService notifications,
 			OperationAgentLlmService llm,
+			AdminUserDetailsService userDetails,
 			ObjectMapper mapper) {
 		this.executor = executor;
 		this.runs = runs;
@@ -68,6 +72,7 @@ public class OperationAgentRunner {
 		this.events = events;
 		this.notifications = notifications;
 		this.llm = llm;
+		this.userDetails = userDetails;
 		this.mapper = mapper;
 	}
 
@@ -380,6 +385,10 @@ public class OperationAgentRunner {
 		if (step.getConfigOverridesJson() != null && !step.getConfigOverridesJson().isBlank()) {
 			Map<String, Object> overrides = mapper.readValue(
 					step.getConfigOverridesJson(), new TypeReference<Map<String, Object>>() {});
+			if (overrides.containsKey("organizationId")
+					&& !java.util.Objects.equals(config.get("organizationId"), overrides.get("organizationId"))) {
+				throw new IllegalStateException("历史执行资料修改了目标机构，请重新发起运行");
+			}
 			config.putAll(overrides);
 		}
 		// Internal execution context keeps downstream scheduling steps bound to
@@ -521,7 +530,18 @@ public class OperationAgentRunner {
 			String objective) {
 		SecurityContext previous = SecurityContextHolder.getContext();
 		SecurityContext context = SecurityContextHolder.createEmptyContext();
-		context.setAuthentication(new UsernamePasswordAuthenticationToken(actor, "", java.util.List.of()));
+		if (Set.of("grade.review", "grade.review.check").contains(toolCode)) {
+			var reviewer = userDetails.loadUserByUsername(actor);
+			if (!reviewer.isEnabled() || !reviewer.isAccountNonLocked()
+					|| reviewer.getAuthorities().stream().noneMatch(
+							authority -> "education:score:review".equals(authority.getAuthority()))) {
+				throw new AccessDeniedException("当前账号没有成绩复核权限");
+			}
+			context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(actor, null,
+					reviewer.getAuthorities()));
+		} else {
+			context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(actor, null, List.of()));
+		}
 		SecurityContextHolder.setContext(context);
 		try {
 			return tools.execute(toolCode, config, knowledgeBaseId, objective, actor);

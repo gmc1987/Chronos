@@ -53,6 +53,12 @@ public class ScheduleDateException extends BaseEntity {
 	@Column(name = "reason", length = 500, nullable = false)
 	private String reason;
 
+	@Column(name = "makeup_required", nullable = false)
+	private boolean makeupRequired;
+
+	@Column(name = "makeup_source_suspension_id", length = 64)
+	private String makeupSourceSuspensionId;
+
 	@Column(name = "status", length = 24, nullable = false)
 	private String status = "ACTIVE";
 }
