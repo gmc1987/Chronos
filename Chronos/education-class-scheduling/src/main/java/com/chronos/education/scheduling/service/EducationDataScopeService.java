@@ -314,10 +314,14 @@ public class EducationDataScopeService {
 
 	public void assertStudentInSchool(EducationDataScope scope, String schoolId, StudentProfile student) {
 		var campuses = scheduleOrganizationCampuses(scope, schoolId);
-		if (student.getAdministrativeClassId() == null || classes.findById(student.getAdministrativeClassId())
-				.filter(item -> campuses.contains(item.getCampusId())).isEmpty()) {
+		if (!studentInCampuses(student, campuses)) {
 			throw new AccessDeniedException("学生不属于所选学校");
 		}
+	}
+
+	public boolean studentInCampuses(StudentProfile student, Set<String> campuses) {
+		return student.getAdministrativeClassId() != null && classes.findById(student.getAdministrativeClassId())
+				.map(item -> item.getCampusId() != null && campuses.contains(item.getCampusId())).orElse(false);
 	}
 
 	public boolean canAccessStudent(EducationDataScope scope, StudentProfile student) {
@@ -391,6 +395,30 @@ public class EducationDataScopeService {
 			return;
 		}
 		throw new AccessDeniedException("无权访问该教师数据");
+	}
+
+	public boolean teacherBelongsToTerm(TeacherAcademicProfile teacher, String termId, Set<String> campuses) {
+		return (teacher.getDepartmentId() != null && campuses.contains(teacher.getDepartmentId()))
+				|| (employeeAssignments != null
+						&& employeeAssignments.findCurrentAssignments(teacher.getEmployeeId(), LocalDate.now()).stream()
+								.anyMatch(assignment -> campuses.contains(assignment.getOrganizationId())))
+				|| assignments.findByTeacherIdAndEnabledTrue(teacher.getId()).stream()
+						.anyMatch(assignment -> termId.equals(assignment.getAcademicTermId()));
+	}
+
+	public void assertTeacherForTerm(EducationDataScope scope, String teacherId, String termId, Set<String> campuses) {
+		assertTeacherAccess(scope, teacherId);
+		var teacher = teachers.findById(teacherId)
+				.orElseThrow(() -> new IllegalArgumentException("教师不存在"));
+		if (!teacherBelongsToTerm(teacher, termId, campuses)) {
+			throw new AccessDeniedException("教师不属于所选机构学期");
+		}
+	}
+
+	public boolean classroomInCampuses(String classroomId, Set<String> campuses) {
+		return classrooms.findById(classroomId)
+				.map(classroom -> classroom.getCampusId() != null && campuses.contains(classroom.getCampusId()))
+				.orElse(false);
 	}
 
 	public boolean canAccessTeacher(EducationDataScope scope, String teacherId) {

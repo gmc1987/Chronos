@@ -1096,7 +1096,7 @@ public class ExamCenterService {
 		}
 		audit.log(actor, "EDUCATION_EXAM_SUSPENSION_REQUEST",
 				"planId=" + planId + ", requestId=" + request.getId()
-						+ ", count=" + impacts.size());
+						+ ", count=" + impacts.size(), plan.getOrganizationId());
 		examNotifications.suspensionRequested(request.getId(), plan.getPlanName());
 		return request;
 	}
@@ -1287,7 +1287,7 @@ public class ExamCenterService {
 		ExamPlan published = plans.save(plan);
 		examOperations.generateTickets(planId, actor);
 		audit.log(actor, "EDUCATION_EXAM_PUBLISH",
-				"planId=" + planId + ", semester=" + plan.getSemesterCode());
+				"planId=" + planId + ", semester=" + plan.getSemesterCode(), plan.getOrganizationId());
 		examNotifications.planPublished(published);
 		return published;
 	}
@@ -1359,7 +1359,7 @@ public class ExamCenterService {
 		ExamPublishedChange requested = publishedChanges.save(value);
 		audit.log(actor, "EDUCATION_EXAM_CHANGE_REQUEST",
 				"planId=" + planId + ", changeId=" + requested.getId()
-						+ ", type=" + requested.getChangeType());
+						+ ", type=" + requested.getChangeType(), plan.getOrganizationId());
 		examNotifications.publishedChangeRequested(
 				requested.getId(), plan.getPlanName());
 		return requested;
@@ -1403,7 +1403,7 @@ public class ExamCenterService {
 		ExamPublishedChange decided = publishedChanges.save(change);
 		audit.log(actor, "EDUCATION_EXAM_CHANGE_DECISION",
 				"changeId=" + changeId + ", status=" + decided.getStatus()
-						+ ", version=" + decided.getAppliedPlanVersion());
+						+ ", version=" + decided.getAppliedPlanVersion(), plan.getOrganizationId());
 		examNotifications.publishedChangeDecided(
 				decided, plan.getPlanName());
 		return decided;

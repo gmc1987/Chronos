@@ -17,6 +17,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
@@ -53,8 +55,19 @@ public class ManagedFileService {
 			String businessType,
 			String businessId,
 			Authentication authentication) {
-		String actor = authentication.getName();
-		validateDestination(businessType, businessId, actor);
+		validateDestination(businessType, businessId, authentication.getName());
+		return store(upload, businessType, businessId, authentication.getName());
+	}
+
+	/** Called only by a module after it validates the owning business scope. */
+	@Transactional
+	public ManagedFileView uploadRestricted(MultipartFile upload, String businessType, String businessId,
+			Authentication authentication) {
+		if (!restricted(businessType)) throw new IllegalArgumentException("无效的受限附件类型");
+		return store(upload, businessType, required(businessId, "业务编号"), authentication.getName());
+	}
+
+	private ManagedFileView store(MultipartFile upload, String businessType, String businessId, String actor) {
 		validate(upload);
 		String storedKey = null;
 		try {
@@ -81,6 +94,14 @@ public class ManagedFileService {
 			value.setExpiresAt(value.getBusinessId() == null ? LocalDateTime.now().plusHours(24) : null);
 			value = files.save(value);
 			audit.log(actor, "FILE_UPLOAD", "fileId=" + value.getId() + ", type=" + value.getBusinessType());
+			if (TransactionSynchronizationManager.isSynchronizationActive()) {
+				TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+					@Override
+					public void afterCompletion(int status) {
+						if (status == STATUS_ROLLED_BACK) deleteOrphan(key, null);
+					}
+				});
+			}
 			return ManagedFileView.from(value);
 		} catch (IllegalArgumentException exception) {
 			deleteOrphan(storedKey, exception);
@@ -100,6 +121,7 @@ public class ManagedFileService {
 			String businessId,
 			String actor) {
 		String type = required(businessType, "业务类型");
+		requirePublicAccess(type);
 		String targetId = required(businessId, "业务编号");
 		var ids = fileIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
 		// 锁定草稿后才检查归属，避免并发提交时同一个文件被绑定到两张单据。
@@ -176,9 +198,21 @@ public class ManagedFileService {
 		return new FileContent(file.getOriginalName(), file.getContentType(), storage.read(file.getStorageKey()));
 	}
 
+	/** Requires a verified business reference from the owning module. */
+	@Transactional(readOnly = true)
+	public FileContent readRestricted(String id, String businessType, String businessId, Authentication authentication) {
+		ManagedFile file = active(id);
+		if (!restricted(businessType) || !businessType.equals(file.getBusinessType())
+				|| !businessId.equals(file.getBusinessId()) || !authentication.getName().equals(file.getOwnerUsername())) {
+			throw new AccessDeniedException("附件不属于当前业务批次");
+		}
+		return new FileContent(file.getOriginalName(), file.getContentType(), storage.read(file.getStorageKey()));
+	}
+
 	@Transactional
 	public void delete(String id, Authentication authentication) {
 		ManagedFile file = active(id);
+		requirePublicAccess(file.getBusinessType());
 		boolean manage = authentication.getAuthorities().stream()
 				.anyMatch(value -> "file:manage".equals(value.getAuthority()));
 		boolean draftOwner = "WORKFLOW_FORM_DRAFT".equals(file.getBusinessType())
@@ -271,6 +305,7 @@ public class ManagedFileService {
 	}
 
 	private void assertReadable(ManagedFile file, Authentication authentication) {
+		requirePublicAccess(file.getBusinessType());
 		boolean allowed = authentication.getName().equals(file.getOwnerUsername())
 				|| authentication.getAuthorities().stream()
 						.anyMatch(value -> "file:manage".equals(value.getAuthority()))
@@ -283,7 +318,16 @@ public class ManagedFileService {
 		}
 	}
 
+	private boolean restricted(String businessType) {
+		return accessPolicies.stream().anyMatch(policy -> policy.restricted(businessType));
+	}
+
+	private void requirePublicAccess(String businessType) {
+		if (restricted(businessType)) throw new AccessDeniedException("请通过所属业务访问附件");
+	}
+
 	private void validateDestination(String businessType, String businessId, String actor) {
+		requirePublicAccess(businessType);
 		if ("WORKFLOW_FORM_DRAFT".equals(businessType)) {
 			if (businessId != null && !businessId.isBlank()) {
 				throw new IllegalArgumentException("草稿附件不能预先绑定业务编号");
@@ -361,7 +405,11 @@ public class ManagedFileService {
 		try {
 			storage.delete(storageKey);
 		} catch (RuntimeException cleanupFailure) {
-			original.addSuppressed(cleanupFailure);
+			if (original == null) {
+				log.warn("Could not remove attachment after transaction rollback", cleanupFailure);
+			} else {
+				original.addSuppressed(cleanupFailure);
+			}
 		}
 	}
 

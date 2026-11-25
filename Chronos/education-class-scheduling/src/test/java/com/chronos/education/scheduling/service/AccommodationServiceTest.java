@@ -70,8 +70,8 @@ class AccommodationServiceTest {
 
 	@Test
 	void assignmentRejectsBuildingGenderMismatchThroughSharedValidation() {
-		when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("edu_academic_term"), org.mockito.ArgumentMatchers.eq(Long.class),
-				org.mockito.ArgumentMatchers.eq("ORG:2026-1"), org.mockito.ArgumentMatchers.eq("org-1"))).thenReturn(1L);
+		when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("edu_academic_term"), org.mockito.ArgumentMatchers.eq(String.class),
+				org.mockito.ArgumentMatchers.eq("ORG:2026-1"), org.mockito.ArgumentMatchers.eq("org-1"))).thenReturn(java.util.List.of("term-1"));
 		when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("edu_student_profile student"), org.mockito.ArgumentMatchers.eq(Long.class),
 				org.mockito.ArgumentMatchers.eq("student-1"), org.mockito.ArgumentMatchers.eq("org-1"))).thenReturn(1L);
 		when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("edu_dorm_bed bed"), org.mockito.ArgumentMatchers.eq(Long.class),

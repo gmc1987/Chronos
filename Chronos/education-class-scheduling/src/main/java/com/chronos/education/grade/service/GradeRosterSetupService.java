@@ -123,7 +123,7 @@ public class GradeRosterSetupService {
 			member.setEnrolledAt(LocalDateTime.now());
 			members.save(member);
 		}
-		audit.log(actor, auditEvent, "offeringId=" + offering.getId() + ",schoolId=" + schoolId);
+		audit.log(actor, auditEvent, "offeringId=" + offering.getId(), schoolId);
 		return new Result(offering.getId(), offering.getStudentCount());
 	}
 

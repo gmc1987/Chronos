@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -45,6 +46,11 @@ public class AuditLogQueryService {
 	Specification<AuditLog> specification(AuditLogQuery query) {
 		return (root, criteriaQuery, builder) -> {
 			List<Predicate> predicates = new ArrayList<>();
+			if (query.organizationIds() != null) {
+				predicates.add(query.organizationIds().isEmpty()
+						? builder.disjunction()
+						: root.get("organizationId").in(query.organizationIds()));
+			}
 			contains(predicates, builder, root.get("username"), query.username());
 			contains(predicates, builder, root.get("action"), query.action());
 			contains(predicates, builder, root.get("detail"), query.keyword());
@@ -83,7 +89,7 @@ public class AuditLogQueryService {
 			Root<AuditLog> root,
 			CriteriaBuilder builder) {
 		List<String> prefixes = switch (domain == null ? "ALL" : domain.toUpperCase(Locale.ROOT)) {
-			case "EDUCATION" -> List.of("EDUCATION_", "SCHEDULING_AGENT_", "ACADEMIC_AGENT_");
+			case "EDUCATION" -> List.of("EDUCATION_", "EDU_", "EXAM_", "SCHEDULING_AGENT_", "ACADEMIC_AGENT_");
 			case "WORKFLOW" -> List.of("WORKFLOW_");
 			case "KNOWLEDGE" -> List.of("KNOWLEDGE_");
 			case "MESSAGE" -> List.of("MESSAGE_", "PUBLICATION_");
@@ -110,6 +116,11 @@ public class AuditLogQueryService {
 			String action,
 			String keyword,
 			LocalDateTime startTime,
-			LocalDateTime endTime) {
+			LocalDateTime endTime,
+			Set<String> organizationIds) {
+		public AuditLogQuery(String domain, String username, String action, String keyword,
+				LocalDateTime startTime, LocalDateTime endTime) {
+			this(domain, username, action, keyword, startTime, endTime, null);
+		}
 	}
 }

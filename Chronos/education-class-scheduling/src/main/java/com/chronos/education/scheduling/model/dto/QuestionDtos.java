@@ -7,7 +7,11 @@ import java.util.List;
 public final class QuestionDtos {
 	private QuestionDtos() {}
 	public record BankRequest(String offeringId, String courseId, String name, String description,
-			String visibility) {}
+			String visibility, String schoolId) {
+		public BankRequest(String offeringId, String courseId, String name, String description, String visibility) {
+			this(offeringId, courseId, name, description, visibility, null);
+		}
+	}
 	public record OptionRequest(String key, String text, Integer sortOrder, Boolean correct) {}
 	public record QuestionRequest(String bankId, String questionType, String difficulty, String stem,
 			BigDecimal score, String answer, String analysis, String answerSchemaJson,

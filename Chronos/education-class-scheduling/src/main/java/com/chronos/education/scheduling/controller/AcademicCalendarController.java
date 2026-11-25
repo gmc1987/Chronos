@@ -1,5 +1,6 @@
 package com.chronos.education.scheduling.controller;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -116,8 +117,10 @@ public class AcademicCalendarController {
 	@GetMapping("/admin/education/bell-schedules")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:view','education:term:manage')")
 	public ResultData<?> bellSchedules(@RequestParam String termId, Authentication authentication) {
-		requireCalendarTerm(authentication, termId);
-		return ok(service.bellSchedules(termId));
+		String organizationId = requireCalendarTerm(authentication, termId);
+		var campuses = dataScopes.scheduleOrganizationCampuses(dataScopes.resolve(authentication.getName()), organizationId);
+		return ok(service.bellSchedules(termId).stream()
+				.filter(value -> campuses.contains(value.schedule().getCampusId())).toList());
 	}
 
 	@PostMapping("/admin/education/bell-schedules")
@@ -134,7 +137,7 @@ public class AcademicCalendarController {
 			@RequestBody BellSchedule command,
 			Authentication authentication) {
 		String originalTermId = service.bellScheduleTermId(id);
-		requireCalendarTerm(authentication, originalTermId);
+		requireBellScheduleTarget(authentication, service.bellSchedule(id));
 		if (!originalTermId.equals(command.getAcademicTermId()))
 			throw new IllegalArgumentException("作息方案不能转移到其他学期");
 		requireBellScheduleTarget(authentication, command);
@@ -144,7 +147,7 @@ public class AcademicCalendarController {
 	@DeleteMapping("/admin/education/bell-schedules/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
 	public ResultData<?> deleteBellSchedule(@PathVariable String id, Authentication authentication) {
-		requireCalendarTerm(authentication, service.bellScheduleTermId(id));
+		requireBellScheduleTarget(authentication, service.bellSchedule(id));
 		service.deleteBellSchedule(id);
 		return ok(null);
 	}
@@ -152,7 +155,7 @@ public class AcademicCalendarController {
 	@PostMapping("/admin/education/bell-periods")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
 	public ResultData<?> createBellPeriod(@RequestBody BellPeriod command, Authentication authentication) {
-		requireCalendarTerm(authentication, service.bellScheduleTermId(command.getBellScheduleId()));
+		requireBellScheduleTarget(authentication, service.bellSchedule(command.getBellScheduleId()));
 		return ok(service.saveBellPeriod(null, command));
 	}
 
@@ -163,7 +166,7 @@ public class AcademicCalendarController {
 			@RequestBody BellPeriod command,
 			Authentication authentication) {
 		String originalScheduleId = service.bellPeriodScheduleId(id);
-		requireCalendarTerm(authentication, service.bellScheduleTermId(originalScheduleId));
+		requireBellScheduleTarget(authentication, service.bellSchedule(originalScheduleId));
 		if (!originalScheduleId.equals(command.getBellScheduleId()))
 			throw new IllegalArgumentException("节次不能转移到其他作息方案");
 		return ok(service.saveBellPeriod(id, command));
@@ -173,7 +176,7 @@ public class AcademicCalendarController {
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:term:update','education:term:manage')")
 	public ResultData<?> deleteBellPeriod(@PathVariable String id, Authentication authentication) {
 		String scheduleId = service.bellPeriodScheduleId(id);
-		requireCalendarTerm(authentication, service.bellScheduleTermId(scheduleId));
+		requireBellScheduleTarget(authentication, service.bellSchedule(scheduleId));
 		service.deleteBellPeriod(id);
 		return ok(null);
 	}
@@ -185,11 +188,11 @@ public class AcademicCalendarController {
 	}
 
 	private void requireBellScheduleTarget(Authentication authentication, BellSchedule command) {
-		String schoolId = requireCalendarTerm(authentication, command.getAcademicTermId());
-		String campusSchoolId = dataScopes.requireSchoolForCampus(
-				dataScopes.resolve(authentication.getName()), command.getCampusId());
-		if (!schoolId.equals(campusSchoolId))
-			throw new IllegalArgumentException("作息校区不属于所选学期机构");
+		String organizationId = requireCalendarTerm(authentication, command.getAcademicTermId());
+		var campuses = dataScopes.scheduleOrganizationCampuses(dataScopes.resolve(authentication.getName()), organizationId);
+		if (!campuses.contains(command.getCampusId())) {
+			throw new AccessDeniedException("作息校区不属于所选学期机构");
+		}
 	}
 
 	private <T> ResultData<T> ok(T data) {

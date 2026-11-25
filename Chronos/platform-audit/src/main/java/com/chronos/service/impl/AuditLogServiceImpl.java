@@ -20,10 +20,17 @@ public class AuditLogServiceImpl implements IAuditLogService {
 	@Transactional
 	@Override
 	public AuditLog log(String username, String action, String detail) {
+		return log(username, action, detail, null);
+	}
+
+	@Transactional
+	@Override
+	public AuditLog log(String username, String action, String detail, String organizationId) {
 		AuditLog auditLog = new AuditLog();
 		auditLog.setUsername(username);
 		auditLog.setAction(action);
 		auditLog.setDetail(detail);
+		auditLog.setOrganizationId(organizationId);
 		auditLog.setCreateTime(LocalDateTime.now());
 		return auditLogRepository.save(auditLog);
 	}

@@ -13,6 +13,7 @@ import java.util.function.Function;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -152,7 +153,8 @@ public class AcademicCatalogImportService {
 	public static ResponseEntity<byte[]> xlsx(byte[] content, String filename) {
 		return ResponseEntity.ok()
 				.header(HttpHeaders.CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-				.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
+				.header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+						.filename(filename, java.nio.charset.StandardCharsets.UTF_8).build().toString())
 				.body(content);
 	}
 

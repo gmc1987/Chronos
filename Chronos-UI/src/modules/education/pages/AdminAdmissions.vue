@@ -7,8 +7,9 @@
         <el-button v-permission="['education:admission:import','education:admission:manage']" @click="openBatch('CLASS_ASSIGNMENT')">批量拟分班</el-button>
         <el-button v-permission="['education:admission:review','education:admission:manage']" @click="openBatch('REVIEW')">批量资格复查</el-button>
         <el-button v-permission="['education:admission:enroll','education:admission:manage']" @click="openBatch('ENROLL')">批量报到建档</el-button>
-        <el-button v-permission="['education:admission:import','education:admission:manage']" @click="downloadTemplate">下载导入模板</el-button>
-        <el-upload v-permission="['education:admission:import','education:admission:manage']" :show-file-list="false" accept=".xlsx" :http-request="o=>uploadAdmissions(o.file)"><el-button>导入正式录取名册</el-button></el-upload>
+        <AcademicCatalogImport v-permission="['education:admission:import','education:admission:manage']"
+          kind="ADMISSIONS" label="正式录取名册" button-label="导入正式录取名册" :organization-id="organizationId"
+          template-url="/admin/education/admissions/import-template" @imported="load" />
         <el-button v-permission="['education:admission:import','education:admission:manage']" type="primary" @click="openEdit()">录入录取数据</el-button>
       </div>
     </header>
@@ -113,13 +114,14 @@
 </template>
 
 <script setup>
+import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { orgOptions } from '../../../api/admin'
 import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 import AdmissionCatalogSetup from '../components/AdmissionCatalogSetup.vue'
 import { handoverAdmissionAccount } from '../../../api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { batchAssignAdmissionClasses, batchEnrollAdmissions, batchReviewAdmissions, createAdmissionCandidate, downloadAdmissionImportTemplate, enrollAdmissionCandidate, importAdmissionCandidates, listAdministrativeClasses, listAdmissionCandidates, listEducationMajors, orgList, reviewAdmissionCandidate, updateAdmissionCandidate, updateAdmissionRegistration } from '../../../api/admin'
+import { batchAssignAdmissionClasses, batchEnrollAdmissions, batchReviewAdmissions, createAdmissionCandidate, enrollAdmissionCandidate, listAdministrativeClasses, listAdmissionCandidates, listEducationMajors, orgList, reviewAdmissionCandidate, updateAdmissionCandidate, updateAdmissionRegistration } from '../../../api/admin'
 
 const rows=ref([]),page=ref(1),size=ref(10),total=ref(0),majors=ref([]),classes=ref([]),editDialog=ref(false),enrollDialog=ref(false),registrationDialog=ref(false),active=ref(null),enrollClassId=ref('')
 const batchDialog=ref(false),batchLoading=ref(false),batchType=ref(''),batchPreview=ref(null)
@@ -182,8 +184,6 @@ async function handoverAccount(row) {
 }
 const openRegistration=row=>{active.value=row;Object.assign(registration,{status:row.registrationStatus==='NOT_SUBMITTED'?'PENDING':row.registrationStatus,nationalStudentNo:row.nationalStudentNo||'',errorMessage:row.registrationError||''});registrationDialog.value=true}
 const submitRegistration=async()=>{await updateAdmissionRegistration(active.value.id,{...registration});registrationDialog.value=false;ElMessage.success('学籍电子注册结果已登记');await load()}
-const downloadTemplate=async()=>{const blob=await downloadAdmissionImportTemplate();const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Chronos-正式录取名册模板.xlsx';a.click();URL.revokeObjectURL(url)}
-const uploadAdmissions=async file=>{if(!organizationId.value){ElMessage.warning('请先选择录取数据所属机构');return}const preview=await importAdmissionCandidates(file,true,organizationId.value);if(preview.data?.errors?.length){await ElMessageBox.alert(preview.data.errors.slice(0,20).join('\n'),'导入校验失败',{type:'error'});return}await ElMessageBox.confirm(`校验通过，共 ${preview.data?.successCount||0} 条正式录取数据，确认导入？`,'导入确认',{type:'warning'});await importAdmissionCandidates(file,false,organizationId.value);ElMessage.success('正式录取名册导入成功');await load()}
 const batchApi=()=>batchType.value==='CLASS_ASSIGNMENT'?batchAssignAdmissionClasses:batchType.value==='REVIEW'?batchReviewAdmissions:batchEnrollAdmissions
 const openBatch=type=>{batchType.value=type;batchPreview.value=null;batchDialog.value=true}
 const previewBatch=async()=>{if(!organizationId.value)return ElMessage.warning('请先选择招生数据所属机构');batchLoading.value=true;try{const r=await batchApi()({...batchForm,organizationId:organizationId.value,dryRun:true});batchPreview.value=r.data||{};if(!batchRows.value.length)ElMessage.warning('当前条件下没有可处理的候选数据')}finally{batchLoading.value=false}}

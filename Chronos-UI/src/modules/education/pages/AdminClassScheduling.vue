@@ -439,7 +439,12 @@
       </el-tab-pane>
 
       <el-tab-pane v-if="!reviewOnly" label="教师时间约束" name="constraints">
-        <div class="toolbar"><el-button type="primary" @click="openConstraint()">新增时间约束</el-button></div>
+        <div class="toolbar">
+          <el-button type="primary" @click="openConstraint()">新增时间约束</el-button>
+          <SchedulingImport resource="teacher-time-constraints" label="教师时间约束"
+            :organization-id="organizationId" :term-id="terms.find(term => term.termCode === semesterCode)?.id"
+            @imported="loadAll" />
+        </div>
         <el-table :data="teacherConstraints" border>
           <el-table-column label="教师" min-width="150"><template #default="s">{{ teacherName(s.row.teacherId) }}</template></el-table-column>
           <el-table-column label="时间" width="160"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }} 第 {{ s.row.periodNo }} 节</template></el-table-column>
@@ -724,6 +729,7 @@
 </template>
 
 <script setup>
+import SchedulingImport from '../components/SchedulingImport.vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ScheduleGrid from '../components/ScheduleGrid.vue'

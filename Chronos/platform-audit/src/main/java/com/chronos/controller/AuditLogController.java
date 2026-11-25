@@ -3,6 +3,7 @@ package com.chronos.controller;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -10,6 +11,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.chronos.commons.model.ResultData;
 import com.chronos.model.pojo.AuditLog;
+import com.chronos.service.iService.AuditOrganizationScope;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.service.impl.AuditLogExportService;
 import com.chronos.service.impl.AuditLogQueryService;
@@ -31,19 +34,22 @@ public class AuditLogController {
 	private final AuditLogQueryService service;
 	private final AuditLogExportService exportService;
 	private final IAuditLogService auditLogService;
+	private final AuditOrganizationScope organizationScope;
 
 	public AuditLogController(
 			AuditLogQueryService service,
 			AuditLogExportService exportService,
-			IAuditLogService auditLogService) {
+			IAuditLogService auditLogService, AuditOrganizationScope organizationScope) {
 		this.service = service;
 		this.exportService = exportService;
 		this.auditLogService = auditLogService;
+		this.organizationScope = organizationScope;
 	}
 
 	@GetMapping
 	public ResultData<AuditLogPage> query(
 			@RequestParam(defaultValue = "ALL") String domain,
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) String username,
 			@RequestParam(required = false) String action,
 			@RequestParam(required = false) String keyword,
@@ -52,7 +58,7 @@ public class AuditLogController {
 			@RequestParam(required = false)
 			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
 			@RequestParam(defaultValue = "0") int page,
-			@RequestParam(defaultValue = "20") int size) {
+			@RequestParam(defaultValue = "20") int size, Authentication authentication) {
 		validateTimeRange(startTime, endTime);
 		Page<AuditLog> result = service.query(
 				new AuditLogQuery(
@@ -61,7 +67,7 @@ public class AuditLogController {
 						action,
 						keyword,
 						startTime,
-						endTime),
+						endTime, allowedOrganizations(authentication, organizationId)),
 				page,
 				size);
 		return ResultData.<AuditLogPage>builder()
@@ -76,6 +82,7 @@ public class AuditLogController {
 			+ " and @iamAuthorization.has(authentication,'iam:audit:export')")
 	public ResponseEntity<byte[]> export(
 			@RequestParam(defaultValue = "ALL") String domain,
+			@RequestParam(required = false) String organizationId,
 			@RequestParam(required = false) String username,
 			@RequestParam(required = false) String action,
 			@RequestParam(required = false) String keyword,
@@ -91,12 +98,12 @@ public class AuditLogController {
 				action,
 				keyword,
 				startTime,
-				endTime);
+				endTime, allowedOrganizations(authentication, organizationId));
 		byte[] content = exportService.export(query);
 		auditLogService.log(
 				authentication.getName(),
 				"AUDIT_LOG_EXPORT",
-				"domain=" + domain + ", bytes=" + content.length);
+				"domain=" + domain + ", bytes=" + content.length, organizationId);
 		HttpHeaders headers = new HttpHeaders();
 		headers.setContentType(new MediaType("text", "csv", StandardCharsets.UTF_8));
 		headers.setContentDisposition(ContentDisposition.attachment()
@@ -105,6 +112,15 @@ public class AuditLogController {
 		return ResponseEntity.ok()
 				.headers(headers)
 				.body(content);
+	}
+
+	private Set<String> allowedOrganizations(Authentication authentication, String requested) {
+		Set<String> allowed = organizationScope.visibleOrganizationIds(authentication);
+		if (requested == null || requested.isBlank()) return allowed;
+		if (allowed != null && !allowed.contains(requested)) {
+			throw new AccessDeniedException("无权访问该机构审计日志");
+		}
+		return Set.of(requested);
 	}
 
 	private void validateTimeRange(LocalDateTime startTime, LocalDateTime endTime) {

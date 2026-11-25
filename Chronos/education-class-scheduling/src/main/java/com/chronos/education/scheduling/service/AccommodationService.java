@@ -228,8 +228,7 @@ public class AccommodationService {
 		String studentId = required(command.studentId(), "学生");
 		String bedId = required(command.bedId(), "床位");
 		String targetOrganization = required(organizationId, "所属机构");
-		ensureExists("select count(*) from edu_academic_term where term_code = ? and organization_id = ? and status = 'ACTIVE'",
-				semester, targetOrganization, "学期不存在、不属于所选机构或未启用");
+		lockAssignmentTerm(semester, targetOrganization);
 		ensureExists("""
 				select count(*) from edu_student_profile student
 				join edu_administrative_class class on class.id = student.administrative_class_id
@@ -252,6 +251,16 @@ public class AccommodationService {
 				id, semester, studentId, bedId, LocalDateTime.now(), actor, blankToNull(command.remark()));
 		auditLogs.log("ACCOMMODATION_ASSIGN", "STUDENT_ACCOMMODATION", id);
 		return jdbc.queryForMap("select * from edu_student_accommodation where id = ?", id);
+	}
+
+	/** Serializes bed assignment and batch revalidation within the same school term. */
+	void lockAssignmentTerm(String semester, String organizationId) {
+		if (jdbc.queryForList("""
+				select id from edu_academic_term
+				where term_code = ? and organization_id = ? and status = 'ACTIVE' for update
+				""", String.class, semester, organizationId).isEmpty()) {
+			throw new IllegalArgumentException("学期不存在、不属于所选机构或未启用");
+		}
 	}
 
 	private void validateGenderPolicy(String studentId, String bedId) {

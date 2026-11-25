@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import com.chronos.model.pojo.AuditLog;
+import com.chronos.service.iService.AuditOrganizationScope;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.service.impl.AuditLogExportService;
 import com.chronos.service.impl.AuditLogQueryService;
@@ -40,8 +41,9 @@ class AuditLogControllerTest {
 				null,
 				null,
 				null,
+				null,
 				0,
-				20);
+				20, null);
 
 		assertThat(result.getData().totalElements()).isEqualTo(1);
 		assertThat(result.getData().content())
@@ -61,10 +63,11 @@ class AuditLogControllerTest {
 				null,
 				null,
 				null,
+				null,
 				start,
 				end,
 				0,
-				20))
+				20, null))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("开始时间不能晚于结束时间");
 	}
@@ -73,6 +76,6 @@ class AuditLogControllerTest {
 		return new AuditLogController(
 				service,
 				mock(AuditLogExportService.class),
-				mock(IAuditLogService.class));
+				mock(IAuditLogService.class), mock(AuditOrganizationScope.class));
 	}
 }

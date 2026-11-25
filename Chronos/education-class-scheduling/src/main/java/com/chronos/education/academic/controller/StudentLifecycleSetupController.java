@@ -80,7 +80,7 @@ public class StudentLifecycleSetupController {
 		target.setClassCode(input.code().strip());
 		target.setClassName(input.name().strip());
 		var saved = academic.saveAdministrativeClass(null, target);
-		audit.log(actor.getName(), "EDU_STUDENT_CLASS_CREATE", "schoolId=" + schoolId + ", classId=" + saved.getId());
+		audit.log(actor.getName(), "EDU_STUDENT_CLASS_CREATE", "classId=" + saved.getId(), schoolId);
 		return ok(saved);
 	}
 
@@ -168,7 +168,7 @@ public class StudentLifecycleSetupController {
 			section.setStatus(CourseOffering.ENROLLMENT_ONLY);
 			offerings.save(section);
 		}
-		audit.log(actor.getName(), "EDU_STUDENT_SECTIONS_IMPORT", "schoolId=" + schoolId + ", rows=" + input.rows().size());
+		audit.log(actor.getName(), "EDU_STUDENT_SECTIONS_IMPORT", "rows=" + input.rows().size(), schoolId);
 		return ok(input.rows().size());
 	}
 

@@ -20,11 +20,15 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.chronos.education.scheduling.service.AccommodationService.AssignmentCommand;
+import com.chronos.file.service.ManagedFileService.FileContent;
+import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -38,11 +42,16 @@ public class AccommodationAssignmentImportService {
 	private final JdbcTemplate jdbc;
 	private final AccommodationService accommodations;
 	private final ObjectMapper json;
+	private final EducationImportArchive archive;
+	private final IAuditLogService audit;
 
-	public AccommodationAssignmentImportService(JdbcTemplate jdbc, AccommodationService accommodations, ObjectMapper json) {
+	public AccommodationAssignmentImportService(JdbcTemplate jdbc, AccommodationService accommodations, ObjectMapper json,
+			EducationImportArchive archive, IAuditLogService audit) {
 		this.jdbc = jdbc;
 		this.accommodations = accommodations;
 		this.json = json;
+		this.archive = archive;
+		this.audit = audit;
 	}
 
 	public byte[] template() {
@@ -75,12 +84,16 @@ public class AccommodationAssignmentImportService {
 	}
 
 	@Transactional
-	public PreviewResult preview(MultipartFile file, String organizationId, String termId, String templateVersion, String actor) {
-		if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择住宿人工分配 Excel 文件");
-		if (file.getSize() > MAX_FILE_SIZE) throw new IllegalArgumentException("导入文件不能超过10MB");
+	public PreviewResult preview(MultipartFile file, String organizationId, String termId, String templateVersion,
+			Authentication actor) {
 		if (!TEMPLATE_VERSION.equals(templateVersion)) throw new IllegalArgumentException("模板版本不受支持，请重新下载模板");
 		try {
-			return preview(file.getBytes(), organizationId, termId, templateVersion, actor);
+			byte[] content = archive.validate(file, MAX_FILE_SIZE);
+			PreviewResult result = preview(content, organizationId, termId, templateVersion, actor.getName());
+			var source = archive.store(result.previewId(), file, actor);
+			jdbc.update("update edu_accommodation_assignment_import_batch set source_file_id = ? where id = ?",
+					source.id(), result.previewId());
+			return result;
 		} catch (IOException exception) {
 			throw new IllegalArgumentException("无法读取住宿人工分配 Excel 文件", exception);
 		}
@@ -121,13 +134,20 @@ public class AccommodationAssignmentImportService {
 		String key = required(idempotencyKey, "幂等键");
 		if (key.length() > 128) throw new IllegalArgumentException("幂等键不能超过128个字符");
 		List<Map<String, Object>> prior = jdbc.queryForList("""
-				select id, commit_result from edu_accommodation_assignment_import_batch
+				select id, organization_id, term_id, template_version, commit_result from edu_accommodation_assignment_import_batch
 				where operator_id = ? and idempotency_key = ?
 				""", owner, key);
 		if (!prior.isEmpty()) {
-			if (!String.valueOf(prior.get(0).get("id")).equals(previewId))
+			Map<String, Object> committed = prior.getFirst();
+			if (!required(previewId, "预检批次").equals(committed.get("id"))) {
 				throw new IllegalArgumentException("该幂等键已用于其他预检批次");
-			return read(String.valueOf(prior.get(0).get("commit_result")), CommitResult.class);
+			}
+			if (!required(organizationId, "机构").equals(committed.get("organization_id"))
+					|| !required(termId, "学期").equals(committed.get("term_id"))
+					|| !TEMPLATE_VERSION.equals(templateVersion) || !templateVersion.equals(committed.get("template_version"))) {
+				throw new IllegalArgumentException("机构、学期或模板版本已切换，请重新预检");
+			}
+			return read(String.valueOf(committed.get("commit_result")), CommitResult.class);
 		}
 		Map<String, Object> batch = batchForUpdate(previewId);
 		requireBatchBinding(batch, owner, organizationId, termId, templateVersion);
@@ -141,7 +161,9 @@ public class AccommodationAssignmentImportService {
 		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> stored = read(String.valueOf(batch.get("rows_json")), List.class);
 		List<ParsedRow> parsed = stored.stream().map(this::storedRow).toList();
-		List<PreviewRow> current = validate(parsed, organizationId, String.valueOf(batch.get("term_code")));
+		String semesterCode = String.valueOf(batch.get("term_code"));
+		accommodations.lockAssignmentTerm(semesterCode, organizationId);
+		List<PreviewRow> current = validate(parsed, organizationId, semesterCode);
 		List<PreviewRow> invalid = current.stream().filter(row -> !row.errors().isEmpty()).toList();
 		if (!invalid.isEmpty())
 			throw new IllegalStateException("预检后学生或床位状态已变化，请重新预检（首个冲突在第" + invalid.get(0).rowNumber() + "行）");
@@ -163,8 +185,34 @@ public class AccommodationAssignmentImportService {
 				set status='COMMITTED', idempotency_key=?, commit_result=cast(? as jsonb), committed_at=?, updated_at=?
 				where id=?
 				""", key, write(result), Timestamp.valueOf(result.committedAt()), Timestamp.valueOf(result.committedAt()), previewId);
+		audit.log(owner, "EDUCATION_ACCOMMODATION_ASSIGNMENT_IMPORT",
+				"批次 " + previewId + "，新增 " + committed.size() + " 条", organizationId);
 		return result;
 	}
+
+	@Transactional(readOnly = true)
+	public FileContent source(String batchId, Authentication actor) {
+		var batch = batchRow(batchId, false);
+		if (!actor.getName().equals(batch.get("operator_id"))) throw new AccessDeniedException("导入批次不属于当前操作人");
+		return archive.read(batchId, (String) batch.get("source_file_id"), (String) batch.get("file_digest"), actor);
+	}
+
+	@Transactional(readOnly = true)
+	public History history(String organizationId, String termId, String actor, int page) {
+		resolveTerm(termId, organizationId);
+		var rows = jdbc.query("""
+				select id, status, source_file_id, (preview_result->>'totalCount')::int as row_count
+				from edu_accommodation_assignment_import_batch
+				where organization_id = ? and term_id = ? and operator_id = ?
+				order by created_at desc, id limit 21 offset ?
+				""", (row, index) -> new HistoryRow(row.getString("id"), row.getString("status"),
+						row.getInt("row_count"), row.getString("source_file_id") != null),
+				organizationId, termId, actor, Math.max(0, page) * 20L);
+		return new History(rows.stream().limit(20).toList(), rows.size() > 20);
+	}
+
+	public record HistoryRow(String id, String status, int rowCount, boolean sourceAvailable) {}
+	public record History(List<HistoryRow> content, boolean hasMore) {}
 
 	public BatchResult batch(String batchId, String actor) {
 		Map<String, Object> value = batchRow(batchId, false);

@@ -933,7 +933,8 @@ public class AcademicDataService {
 	}
 
 	private TeachingClassMember enrollInternal(String offeringId, String studentId, boolean fromCombined) {
-		var offering = offerings.findById(offeringId).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+		var offering = offerings.findForCombinedUpdate(offeringId)
+				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
 		if ("COMBINED".equals(offering.getOfferingMode()) != fromCombined) {
 			throw new IllegalStateException("合班课成员只能通过来源行政班同步维护");
 		}
@@ -971,7 +972,7 @@ public class AcademicDataService {
 		return members.save(member);
 	}
 
-	private void assertStudentScheduleAvailable(String studentId, String targetOfferingId) {
+	void assertStudentScheduleAvailable(String studentId, String targetOfferingId) {
 		List<ScheduleEntry> target = scheduleEntries.findByOfferingId(targetOfferingId);
 		for (TeachingClassMember membership : members.findByStudentIdAndEnrollmentStatus(studentId, "ENROLLED")) {
 			for (ScheduleEntry existing : scheduleEntries.findByOfferingId(membership.getOfferingId())) {

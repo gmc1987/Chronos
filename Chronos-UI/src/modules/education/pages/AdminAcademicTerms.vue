@@ -35,7 +35,9 @@
           <OrganizationSelect v-model="organizationId" context-key="education-academic-terms" school-or-campus-only style="width:260px" />
           <TermSelect v-model="selectedTermId" :terms="organizationId ? terms : []" @change="loadDetails" />
           <el-button type="primary" :disabled="!organizationId || !selectedTermId" @click="openDay()">新增特殊日期</el-button>
-          <el-button :disabled="!organizationId || !selectedTermId" @click="openCalendarImport">批量导入</el-button>
+          <el-button :disabled="!organizationId || !selectedTermId" @click="openCalendarImport">粘贴导入</el-button>
+          <SchedulingImport resource="calendar-days" label="教学日历" :organization-id="organizationId"
+            :term-id="selectedTermId" @imported="loadDetails" />
         </div>
         <el-alert type="info" :closable="false" title="法定补班不自动等于学校补课。学校确认教学日后，为周末补课指定参照课表日期。" />
         <el-table :data="organizationId ? days : []" border>
@@ -46,10 +48,11 @@
         </el-table>
       </el-tab-pane>
       <el-tab-pane label="校区作息" name="bells">
-        <div class="toolbar"><TermSelect v-model="selectedTermId" :terms="terms" @change="loadDetails" /><el-button type="primary" :disabled="!selectedTermId" @click="openBell()">新增作息方案</el-button></div>
+        <div class="toolbar"><OrganizationSelect v-model="organizationId" context-key="education-academic-terms" school-or-campus-only style="width:260px" /><TermSelect v-model="selectedTermId" :terms="organizationId ? terms : []" @change="loadDetails" /><el-button type="primary" :disabled="!selectedTermId" @click="openBell()">新增作息方案</el-button></div>
         <el-empty v-if="!bells.length" description="当前学期暂无作息方案" />
         <el-card v-for="item in bells" :key="item.schedule.id" class="bell-card" shadow="never">
-          <template #header><div class="card-head"><div><strong>{{ item.schedule.scheduleName }}</strong><el-tag v-if="item.schedule.defaultSchedule" type="success" size="small">默认</el-tag><span class="muted">{{ campusName(item.schedule.campusId) }}</span></div><div><el-button link type="primary" @click="openPeriod(item.schedule)">新增节次</el-button><el-button link type="primary" @click="openBell(item.schedule)">编辑</el-button><el-button link type="danger" @click="removeBell(item.schedule)">删除</el-button></div></div></template>
+          <template #header><div class="card-head"><div><strong>{{ item.schedule.scheduleName }}</strong><el-tag v-if="item.schedule.defaultSchedule" type="success" size="small">默认</el-tag><span class="muted">{{ campusName(item.schedule.campusId) }}</span></div><div><SchedulingImport resource="bell-periods" label="作息节次" :organization-id="organizationId"
+            :term-id="selectedTermId" :target-id="item.schedule.id" @imported="loadDetails" /><el-button link type="primary" @click="openPeriod(item.schedule)">新增节次</el-button><el-button link type="primary" @click="openBell(item.schedule)">编辑</el-button><el-button link type="danger" @click="removeBell(item.schedule)">删除</el-button></div></div></template>
           <el-table :data="item.periods" size="small" border><el-table-column prop="periodNo" label="序号" width="70" /><el-table-column prop="periodName" label="节次名称" /><el-table-column prop="daySegment" label="时段" width="100" /><el-table-column prop="startTime" label="开始" width="100" /><el-table-column prop="endTime" label="结束" width="100" /><el-table-column label="可排课" width="90"><template #default="s">{{ s.row.schedulable ? '是' : '否' }}</template></el-table-column><AdaptiveActionColumn label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openPeriod(item.schedule, s.row)">编辑</el-button><el-button link type="danger" @click="removePeriod(s.row)">删除</el-button></template></AdaptiveActionColumn></el-table>
         </el-card>
       </el-tab-pane>
@@ -80,6 +83,7 @@
 <script setup>
 import { h, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import SchedulingImport from '../components/SchedulingImport.vue'
 import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { academicTermArchiveReadiness, archiveAcademicTerm, createAcademicCalendarDay, createAcademicTerm, createBellPeriod, createBellSchedule, deleteAcademicCalendarDay, deleteBellPeriod, deleteBellSchedule, importAcademicCalendarDays, listAcademicCalendarDays, listAcademicTerms, listBellSchedules, orgOptions, updateAcademicCalendarDay, updateAcademicTerm, updateBellPeriod, updateBellSchedule } from '../../../api/admin'

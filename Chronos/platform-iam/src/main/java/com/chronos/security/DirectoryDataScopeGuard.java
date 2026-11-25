@@ -9,11 +9,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 import com.chronos.Idao.IEmployeeAssignmentRepository;
+import com.chronos.service.iService.AuditOrganizationScope;
 import com.chronos.service.iService.IDataScopeService;
 
 /** Enforces organization scope on the server; UI filters are never trusted. */
 @Component
-public class DirectoryDataScopeGuard {
+public class DirectoryDataScopeGuard implements AuditOrganizationScope {
 	private final IDataScopeService dataScopes;
 	private final IEmployeeAssignmentRepository assignments;
 
@@ -33,6 +34,7 @@ public class DirectoryDataScopeGuard {
 	}
 
 	/** Null means unrestricted; otherwise the returned set is the complete allow-list. */
+	@Override
 	public Set<String> visibleOrganizationIds(Authentication authentication) {
 		if (authentication == null || !authentication.isAuthenticated())
 			throw new AccessDeniedException("用户未登录");

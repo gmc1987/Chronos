@@ -15,6 +15,9 @@
         <el-option v-for="item in offerings" :key="item.id" :label="`${item.teachingClassName} / ${item.courseName} / ${item.teacherName}`" :value="item.id" />
       </el-select>
       <el-button type="primary" :disabled="!offeringId || isCombined" @click="openEnroll">添加学生</el-button>
+      <SchedulingImport v-if="offeringId && !isCombined" resource="teaching-class-members" label="教学班成员"
+        :organization-id="organizationId" :term-id="terms.find(term => term.termCode === semesterCode)?.id"
+        :target-id="offeringId" @imported="loadMembers" />
     </div>
     <el-alert v-if="isCombined" type="info" :closable="false" title="此教学班是合班公共课，学生由走班排课中的“合班设置”同步，不能逐人增删。" />
     <el-descriptions v-if="currentOffering" :column="4" border class="summary">
@@ -47,6 +50,7 @@
 </template>
 
 <script setup>
+import SchedulingImport from '../components/SchedulingImport.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'

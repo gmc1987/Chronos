@@ -77,7 +77,7 @@ public class TermCoursePlanService {
 		assertActiveTerm(term);
 		term.setCurrentTerm(true);
 		academic.saveTerm(term.getId(), term);
-		audit.log(actor, "EDU_TEACHING_CURRENT_TERM_SET", "organizationId=" + organizationId + ",termCode=" + termCode);
+		audit.log(actor, "EDU_TEACHING_CURRENT_TERM_SET", "termCode=" + termCode, organizationId);
 	}
 
 	@Transactional(readOnly = true)

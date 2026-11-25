@@ -30,9 +30,11 @@ class AcademicCalendarImportTest {
 	@BeforeEach
 	void setUp() {
 		AcademicTerm term = new AcademicTerm();
+		term.setTermCode("SCHOOL:2026-2027-1");
 		term.setStartDate(LocalDate.of(2026, 9, 1));
 		term.setEndDate(LocalDate.of(2027, 1, 30));
 		when(terms.findById("term")).thenReturn(Optional.of(term));
+		when(terms.findForUpdateByTermCode(term.getTermCode())).thenReturn(Optional.of(term));
 	}
 
 	@Test

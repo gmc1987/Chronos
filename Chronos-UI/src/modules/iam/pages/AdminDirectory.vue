@@ -7,6 +7,9 @@
         <el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id" />
       </el-select>
       <el-tag v-if="organizationId" type="info">岗位、职级、员工和任职均按当前机构隔离</el-tag>
+      <el-button v-if="industryContext.code === 'EDUCATION' && importNames[selectedDirectoryImportType]"
+        v-permission="['iam:directory:import','iam:directory:manage']" :disabled="!organizationId"
+        @click="loadDirectoryHistory(selectedDirectoryImportType, 0)">导入历史</el-button>
     </div>
     <el-tabs v-model="tab" class="directory-tabs" @tab-change="onTabChange">
       <el-tab-pane label="部门架构" name="departments">
@@ -135,6 +138,22 @@
       <el-form label-width="100px" class="form-grid"><el-form-item label="编号类型"><el-select v-model="numberRuleForm.businessType"><el-option label="工号" value="EMPLOYEE"/><el-option label="学号" value="STUDENT"/></el-select></el-form-item><el-form-item label="学校范围"><el-select v-model="numberRuleForm.organizationId" filterable><el-option label="全局默认" value="GLOBAL"/><el-option v-for="o in organizations" :key="o.id" :label="o.organizationName" :value="o.id"/></el-select></el-form-item><el-form-item label="规则模板"><el-input v-model="numberRuleForm.pattern"/></el-form-item><el-form-item label="流水位数"><el-input-number v-model="numberRuleForm.sequenceLength" :min="3" :max="12"/></el-form-item><el-form-item label="重置周期"><el-select v-model="numberRuleForm.resetPeriod"><el-option label="按年重置" value="YEAR"/><el-option label="永不重置" value="NEVER"/></el-select></el-form-item><el-form-item label="启用"><el-switch v-model="numberRuleForm.enabled"/></el-form-item></el-form>
       <template #footer><el-button @click="numberRuleDialog=false">关闭</el-button><el-button type="primary" @click="submitNumberRule">保存规则</el-button></template>
     </el-dialog>
+    <el-dialog v-model="directoryHistoryOpen" :title="(importNames[directoryHistoryType] || '') + '导入历史'" width="720px">
+      <el-table :data="directoryHistory.content" empty-text="暂无当前机构及导入选项的批次">
+        <el-table-column prop="id" label="批次编号" min-width="235" />
+        <el-table-column prop="rowCount" label="行数" width="70" />
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">{{ row.committedAt ? '已导入' : row.errorCount ? '校验未通过' : '待提交' }}</template>
+        </el-table-column>
+        <el-table-column label="原文件" width="115">
+          <template #default="{ row }"><el-button link type="primary" @click="downloadDirectorySource(row.id)">下载原文件</el-button></template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button :disabled="!directoryHistoryPage" @click="loadDirectoryHistory(directoryHistoryType, directoryHistoryPage - 1)">上一页</el-button>
+        <el-button :disabled="!directoryHistory.hasMore" @click="loadDirectoryHistory(directoryHistoryType, directoryHistoryPage + 1)">下一页</el-button>
+      </template>
+    </el-dialog>
     <el-dialog v-model="employeeImportDialog" title="批量导入教职工与任职" width="620px">
       <el-alert title="新账号自动获得基础教职工角色。业务角色可在用户管理中人工分配，或通过学期运营智能体生成授权提案。" type="info" :closable="false" class="account-alert"/>
       <el-form label-width="160px">
@@ -167,10 +186,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { orgList, organizationUnits, saveOrganizationUnit, deleteOrganizationUnit, positions, savePosition, deletePosition, jobLevels, saveJobLevel, deleteJobLevel, employees, saveEmployee, deleteEmployee, employeeAssignments, saveEmployeeAssignment, deleteEmployeeAssignment, userByEmployee, createUser, updateUser, listRoles, unlockUser, forceLogoutUser, resetUserPassword, downloadDirectoryImportTemplate, importDirectoryData, dictionaryOptions, listBusinessNumberRules, saveBusinessNumberRule } from '../api'
-import { industryBranding } from '../../../industries/core'
+import { http } from '../../../api/http'
+import { industryBranding, industryContext } from '../../../industries/core'
 const branding=industryBranding
 const toOptions=response=>(response?.data||[]).map(item=>({label:item.dictName,value:item.dictValue}))
 const departmentTypes=ref([]),positionCategories=ref([]),levelCategories=ref([]),employeeTypes=ref([]),employmentStatuses=ref([]),genderOptions=ref([])
@@ -232,9 +252,85 @@ const submitAssignment=async()=>{await saveEmployeeAssignment(assignmentForm.val
 const removeAssignment=async id=>{await confirmDelete();await deleteEmployeeAssignment(id);await manageAssignments(activeEmployee.value)}
 const confirmDelete=()=>ElMessageBox.confirm('删除后不可恢复，确认继续？','操作确认',{type:'warning'})
 const importNames={departments:'组织架构',positions:'岗位', 'job-levels':'职级',employees:'员工与任职'}
+const selectedDirectoryImportType = computed(() => tab.value === 'levels' ? 'job-levels' : tab.value)
 const downloadTemplate=async type=>{const blob=await downloadDirectoryImportTemplate(type);const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`Chronos-${importNames[type]}批量导入模板.xlsx`;a.click();URL.revokeObjectURL(url)}
 const downloadImportErrors=(type,errors=[])=>{const rows=errors.map((e,i)=>`<tr><td>${i+1}</td><td>${String(e).replaceAll('&','&amp;').replaceAll('<','&lt;')}</td></tr>`).join('');const blob=new Blob([`<html><meta charset="UTF-8"><table><tr><th>序号</th><th>错误原因</th></tr>${rows}</table></html>`],{type:'application/vnd.ms-excel'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`Chronos-${importNames[type]}导入错误报告.xls`;a.click();URL.revokeObjectURL(url)}
-const uploadImport=async(type,file,options={})=>{try{const preview=await importDirectoryData(type,file,{...options,dryRun:true});if(preview?.data?.valid===false){downloadImportErrors(type,preview.data.errors);ElMessage.error('校验失败，已下载错误报告');return null}const details=preview?.data?.employees?`员工新增 ${preview.data.employees.created}、更新 ${preview.data.employees.updated}；账号新增 ${preview.data.accounts.created}、同步 ${preview.data.accounts.updated}`:`共处理 ${preview?.data?.successCount||0} 条`;await ElMessageBox.confirm(`校验通过：${details}。确认正式导入？`,'导入确认',{type:'warning'});const result=await importDirectoryData(type,file,{...options,dryRun:false});ElMessage.success(`${importNames[type]}导入成功，共处理 ${result?.data?.successCount||0} 条`);await loadAll();return result}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e instanceof Error?e.message:'批量导入已取消');throw e}}
+const directoryBatchPath = type => '/admin/iam/import/DIRECTORY_' + type.toUpperCase().replaceAll('-', '_') + '/archived'
+const directoryBatchScope = (organizationId, options) => ({
+  organizationId,
+  resourceId: [options.syncAccounts ? '1' : '0', options.disableInactiveAccounts === false ? '0' : '1',
+    options.sourceSystem?.trim().toUpperCase() || 'EXCEL'].join(':'),
+})
+const directoryHistoryOpen = ref(false)
+const directoryHistoryType = ref('')
+const directoryHistory = ref({ content: [], hasMore: false })
+const directoryHistoryPage = ref(0)
+const directoryHistoryScope = ref(null)
+async function loadDirectoryHistory(type, page) {
+  const scope = directoryBatchScope(organizationId.value, type === 'employees' ? employeeImportOptions.value : {})
+  const query = new URLSearchParams({ ...scope, page })
+  const response = await http.get(directoryBatchPath(type) + '/batches?' + query)
+  if (scope.organizationId !== organizationId.value) return
+  directoryHistoryType.value = type
+  directoryHistoryScope.value = scope
+  directoryHistoryPage.value = page
+  directoryHistory.value = response.data
+  directoryHistoryOpen.value = true
+}
+async function downloadDirectorySource(id) {
+  const query = new URLSearchParams(directoryHistoryScope.value)
+  const blob = await http.download(directoryBatchPath(directoryHistoryType.value) + '/batches/' + id + '/source?' + query)
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = '机构目录导入原件.xlsx'
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+watch(organizationId, () => { directoryHistoryOpen.value = false })
+const uploadImport = async (type, file, options = {}) => {
+  const useBatch = industryContext.code === 'EDUCATION'
+  const organization = options.organizationId
+  const scope = directoryBatchScope(organization, options)
+  try {
+    let preview
+    if (useBatch) {
+      const multipart = new FormData()
+      multipart.append('file', file)
+      const query = new URLSearchParams({ ...scope, templateVersion: '1.0' })
+      preview = await http.upload(directoryBatchPath(type) + '/preview?' + query, multipart)
+    } else {
+      preview = await importDirectoryData(type, file, { ...options, dryRun: true })
+    }
+    const validation = useBatch ? preview.data?.result : preview.data
+    if (validation?.valid === false || validation?.errors?.length) {
+      downloadImportErrors(type, validation.errors)
+      ElMessage.error('校验失败，已下载错误报告')
+      return null
+    }
+    const count = validation?.validCount ?? validation?.successCount ?? 0
+    const details = validation?.employees
+      ? `员工新增 ${validation.employees.created}、更新 ${validation.employees.updated}；账号新增 ${validation.accounts.created}、同步 ${validation.accounts.updated}`
+      : `共处理 ${count} 条`
+    await ElMessageBox.confirm(`校验通过：${details}。确认正式导入？`, '导入确认', { type: 'warning' })
+    if (organization !== organizationId.value) {
+      ElMessage.warning('机构已切换，请重新预检')
+      return null
+    }
+    const result = useBatch
+      ? await http.post(directoryBatchPath(type) + '/commit', {
+        ...scope, previewId: preview.data.id, templateVersion: preview.data.templateVersion,
+      })
+      : await importDirectoryData(type, file, { ...options, dryRun: false })
+    ElMessage.success(`${importNames[type]}导入成功，共处理 ${result.data?.result?.validCount ?? result.data?.successCount ?? 0} 条`)
+    await loadAll()
+    return result
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return null
+    ElMessage.error(error instanceof Error ? error.message : '批量导入失败')
+    return null
+  }
+}
 const prepareEmployeeImport=file=>{employeeImportFile.value=file;employeeImportDialog.value=true}
 const downloadAccountResults=results=>{if(!results?.length)return;const escape=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');const rows=results.map(row=>`<tr><td>${escape(row.employeeCode)}</td><td>${escape(row.employeeName)}</td><td>${escape(row.username)}</td><td>${row.created?'新建':'同步'}</td><td>${escape(row.temporaryPassword||'')}</td><td>${escape([...(row.roleCodes||[])].join(','))}</td><td>${escape((row.warnings||[]).join('；'))}</td></tr>`).join('');const blob=new Blob([`<html><meta charset="UTF-8"><table><tr><th>工号</th><th>姓名</th><th>登录账号</th><th>处理结果</th><th>临时密码（仅新账号）</th><th>基础角色</th><th>提示</th></tr>${rows}</table></html>`],{type:'application/vnd.ms-excel'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Chronos-教职工账号开通结果.xls';a.click();URL.revokeObjectURL(url)}
 const executeEmployeeImport=async()=>{const file=employeeImportFile.value;employeeImportDialog.value=false;const result=await uploadImport('employees',file,{...employeeImportOptions.value,organizationId:organizationId.value});if(result?.data?.accountResults?.some(row=>row.created)){downloadAccountResults(result.data.accountResults);ElMessage.warning('新账号临时密码已下载一次，请妥善保管并安全交付')}}

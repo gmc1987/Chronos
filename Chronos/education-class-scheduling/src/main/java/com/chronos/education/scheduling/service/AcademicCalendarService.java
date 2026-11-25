@@ -111,7 +111,9 @@ public class AcademicCalendarService {
 
 	@Transactional
 	public AcademicCalendarDay saveCalendarDay(String id, AcademicCalendarDay command) {
-		validateCalendarDay(requireTerm(command.getAcademicTermId()), id, command);
+		AcademicTerm term = requireTerm(command.getAcademicTermId());
+		lockTerm(term);
+		validateCalendarDay(term, id, command);
 		return persistCalendarDay(id, command);
 	}
 
@@ -121,6 +123,7 @@ public class AcademicCalendarService {
 			throw new IllegalArgumentException("每次请导入 1 至 366 条特殊日期");
 		}
 		AcademicTerm term = requireTerm(termId);
+		if (!preview) lockTerm(term);
 		var dates = new java.util.HashSet<LocalDate>();
 		var errors = new java.util.ArrayList<String>();
 		for (int index = 0; index < rows.size(); index++) {
@@ -271,7 +274,7 @@ public class AcademicCalendarService {
 	public BellSchedule saveBellSchedule(String id, BellSchedule command) {
 		AcademicTerm term = requireTerm(command.getAcademicTermId());
 		if (Boolean.TRUE.equals(command.getDefaultSchedule())) {
-			lockBellScheduleTerm(term);
+			lockTerm(term);
 		}
 		BellSchedule value = id == null
 				? new BellSchedule()
@@ -305,7 +308,7 @@ public class AcademicCalendarService {
 	@Transactional
 	public BellSchedule saveBellScheduleWithPeriods(
 			BellSchedule command, List<BellPeriod> periods, Boolean requestedDefault) {
-		lockBellScheduleTerm(requireTerm(command.getAcademicTermId()));
+		lockTerm(requireTerm(command.getAcademicTermId()));
 		command.setDefaultSchedule(requestedDefault != null ? requestedDefault
 				: !hasDefaultBellSchedule(command.getAcademicTermId(), command.getCampusId()));
 		BellSchedule schedule = saveBellSchedule(null, command);
@@ -316,21 +319,21 @@ public class AcademicCalendarService {
 		return schedule;
 	}
 
-	private void lockBellScheduleTerm(AcademicTerm term) {
+	private void lockTerm(AcademicTerm term) {
 		terms.findForUpdateByTermCode(term.getTermCode())
 				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
 	}
 
 	@Transactional
 	public void deleteBellSchedule(String id) {
+		lockTerm(requireTerm(bellScheduleTermId(id)));
 		bellPeriods.deleteByBellScheduleId(id);
 		bellSchedules.deleteById(id);
 	}
 
 	@Transactional
 	public BellPeriod saveBellPeriod(String id, BellPeriod command) {
-		bellSchedules.findById(command.getBellScheduleId())
-				.orElseThrow(() -> new IllegalArgumentException("作息方案不存在"));
+		lockTerm(requireTerm(bellScheduleTermId(command.getBellScheduleId())));
 		if (command.getPeriodNo() == null || command.getPeriodNo() < 1) {
 			throw new IllegalArgumentException("节次序号必须大于 0");
 		}
@@ -360,6 +363,7 @@ public class AcademicCalendarService {
 
 	@Transactional
 	public void deleteBellPeriod(String id) {
+		lockTerm(requireTerm(bellScheduleTermId(bellPeriodScheduleId(id))));
 		bellPeriods.deleteById(id);
 	}
 
@@ -374,9 +378,12 @@ public class AcademicCalendarService {
 	}
 
 	public String bellScheduleTermId(String id) {
+		return bellSchedule(id).getAcademicTermId();
+	}
+
+	public BellSchedule bellSchedule(String id) {
 		return bellSchedules.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("作息方案不存在"))
-				.getAcademicTermId();
+				.orElseThrow(() -> new IllegalArgumentException("作息方案不存在"));
 	}
 
 	public String bellPeriodScheduleId(String id) {

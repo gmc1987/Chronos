@@ -115,7 +115,8 @@ public class AcademicLifecycleService {
 		program.setSchoolId(command.schoolId());
 		applyProgramFields(program, command);
 		program = programs.save(program);
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_CREATE", "programId=" + program.getId());
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_CREATE", "programId=" + program.getId(),
+				program.getSchoolId());
 		return view(program);
 	}
 
@@ -142,7 +143,8 @@ public class AcademicLifecycleService {
 		}
 		applyProgramFields(program, command);
 		programs.saveAndFlush(program);
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_UPDATE", "programId=" + id);
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_UPDATE", "programId=" + id,
+				program.getSchoolId());
 		return view(program);
 	}
 
@@ -157,7 +159,8 @@ public class AcademicLifecycleService {
 		} catch (DataIntegrityViolationException exception) {
 			throw new IllegalStateException("培养方案或其课程已被业务记录引用，无法删除", exception);
 		}
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_DELETE", "programId=" + id);
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_DELETE", "programId=" + id,
+				program.getSchoolId());
 	}
 
 	private void assertProgramVersion(AcademicProgram program, Long rowVersion) {
@@ -302,7 +305,8 @@ public class AcademicLifecycleService {
 		item.setSortOrder(command.sortOrder() == null ? 0 : command.sortOrder());
 		programCourses.save(item);
 		recalculate(program);
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_COURSE_ADD", "programId=" + programId + ",courseId=" + course.getId());
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_COURSE_ADD", "programId=" + programId + ",courseId=" + course.getId(),
+				program.getSchoolId());
 		return view(programs.save(program));
 	}
 
@@ -354,7 +358,8 @@ public class AcademicLifecycleService {
 		program.setStatus("SUBMITTED");
 		program.setSubmittedBy(actor);
 		program.setSubmittedAt(submittedAt);
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_SUBMIT", "programId=" + program.getId());
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_SUBMIT", "programId=" + program.getId(),
+				program.getSchoolId());
 		return programs.save(program);
 	}
 
@@ -381,7 +386,8 @@ public class AcademicLifecycleService {
 		program.setStatus("PUBLISHED");
 		program.setPublishedBy(actor);
 		program.setPublishedAt(LocalDateTime.now());
-		audit.log(actor, "EDU_ACADEMIC_PROGRAM_PUBLISH", "programId=" + id + ",hash=" + program.getSnapshotHash());
+		audit.log(actor, "EDU_ACADEMIC_PROGRAM_PUBLISH", "programId=" + id + ",hash=" + program.getSnapshotHash(),
+				program.getSchoolId());
 		return view(programs.save(program));
 	}
 
@@ -421,7 +427,8 @@ public class AcademicLifecycleService {
 		registration.setEligibilitySnapshotJson(write(Map.of(
 				"studentNo", student.getStudentNo(), "enrollmentStatus", student.getEnrollmentStatus(),
 				"majorId", String.valueOf(student.getMajorId()), "programHash", program.getSnapshotHash())));
-		audit.log(actor, "EDU_TERM_REGISTRATION_SUBMIT", "studentId=" + student.getId() + ",term=" + command.termCode());
+		audit.log(actor, "EDU_TERM_REGISTRATION_SUBMIT", "studentId=" + student.getId() + ",term=" + command.termCode(),
+				registration.getSchoolId());
 		return registrations.save(registration);
 	}
 
@@ -447,7 +454,8 @@ public class AcademicLifecycleService {
 			registration.setStatus("REJECTED");
 			registration.setRejectedReason(command.reason().trim());
 		}
-		audit.log(actor, "EDU_TERM_REGISTRATION_DECIDE", "registrationId=" + id + ",status=" + registration.getStatus());
+		audit.log(actor, "EDU_TERM_REGISTRATION_DECIDE", "registrationId=" + id + ",status=" + registration.getStatus(),
+				registration.getSchoolId());
 		return registrations.save(registration);
 	}
 
@@ -506,7 +514,8 @@ public class AcademicLifecycleService {
 		enrollment.setWithdrawnAt(null);
 		enrollment.setWithdrawnReason(null);
 		syncMember(enrollment, true);
-		audit.log(actor, "EDU_COURSE_ENROLL", "studentId=" + command.studentId() + ",offeringId=" + command.offeringId());
+		audit.log(actor, "EDU_COURSE_ENROLL", "studentId=" + command.studentId() + ",offeringId=" + command.offeringId(),
+				enrollment.getSchoolId());
 		return enrollments.save(enrollment);
 	}
 
@@ -525,7 +534,8 @@ public class AcademicLifecycleService {
 		enrollment.setWithdrawnAt(LocalDateTime.now());
 		enrollment.setWithdrawnReason(command.reason().trim());
 		syncMember(enrollment, false);
-		audit.log(actor, "EDU_COURSE_WITHDRAW", "enrollmentId=" + id);
+		audit.log(actor, "EDU_COURSE_WITHDRAW", "enrollmentId=" + id,
+				enrollment.getSchoolId());
 		return enrollments.save(enrollment);
 	}
 
@@ -573,7 +583,8 @@ public class AcademicLifecycleService {
 		result.setStatus(readiness.ready() ? "READY" : "NOT_READY");
 		result.setReviewedBy(actor);
 		result.setReviewedAt(LocalDateTime.now());
-		audit.log(actor, "EDU_GRADUATION_AUDIT_EVALUATE", "studentId=" + student.getId() + ",status=" + result.getStatus());
+		audit.log(actor, "EDU_GRADUATION_AUDIT_EVALUATE", "studentId=" + student.getId() + ",status=" + result.getStatus(),
+				result.getSchoolId());
 		return graduationAudits.save(result);
 	}
 
@@ -597,7 +608,8 @@ public class AcademicLifecycleService {
 		result.setStatus(command.approved() ? "APPROVED" : "REJECTED");
 		result.setApprovedBy(actor);
 		result.setApprovedAt(LocalDateTime.now());
-		audit.log(actor, "EDU_GRADUATION_AUDIT_DECIDE", "auditId=" + id + ",status=" + result.getStatus());
+		audit.log(actor, "EDU_GRADUATION_AUDIT_DECIDE", "auditId=" + id + ",status=" + result.getStatus(),
+				result.getSchoolId());
 		return graduationAudits.save(result);
 	}
 

@@ -43,7 +43,7 @@ public class SchoolAnalyticsService {
 				    updated_by=excluded.updated_by,updated_at=current_timestamp
 				""", sorted.stream().map(row -> new Object[] {schoolId, row.date(), row.studentCount(),
 						row.teacherCount(), row.classCount(), actor.getName()}).toList());
-		audit.log(actor.getName(), "EDU_ANALYTICS_DAILY_IMPORT", "schoolId=" + schoolId + ", days=" + rows.size());
+		audit.log(actor.getName(), "EDU_ANALYTICS_DAILY_IMPORT", "days=" + rows.size(), schoolId);
 		return rows.size();
 	}
 

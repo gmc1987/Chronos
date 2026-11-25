@@ -130,7 +130,7 @@ public class ExamSetupService {
 			}
 			default -> throw new IllegalArgumentException("无效的考务资源");
 		};
-		audit.log(actor, "EXAM_SETUP_RESOURCE_CREATED", "schoolId=" + schoolId + ",kind=" + kind + ",id=" + result.id());
+		audit.log(actor, "EXAM_SETUP_RESOURCE_CREATED", "kind=" + kind + ",id=" + result.id(), schoolId);
 		return result;
 	}
 

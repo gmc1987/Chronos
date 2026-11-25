@@ -4,6 +4,11 @@ package com.chronos.file.service;
 public interface ManagedFileAccessPolicy {
 	boolean canRead(String username, String businessType, String businessId);
 
+	/** The owning module provides the upload and download routes for this business type. */
+	default boolean restricted(String businessType) {
+		return false;
+	}
+
 	default boolean canWrite(String username, String businessType, String businessId) {
 		return false;
 	}

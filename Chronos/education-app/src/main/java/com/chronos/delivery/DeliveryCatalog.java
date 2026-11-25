@@ -34,7 +34,7 @@ final class DeliveryCatalog {
 	static final List<Product> PRODUCTS = List.of(
 			new Product("TERM_CALENDAR", "学期与校历", List.of(),
 					List.of("/admin/education/terms", "/admin/education/calendar-days", "/admin/education/holidays",
-							"/admin/education/bell-schedules", "/admin/education/bell-periods"),
+							"/admin/education/bell-schedules", "/admin/education/bell-periods", "/admin/education/catalog-import/TERMS"),
 					List.of("/admin/education/terms", "/admin/education/holidays"),
 					Set.of("education:term:view"), Set.of("education:term:create", "education:term:update",
 							"education:term:delete", "education:term:manage")),
@@ -63,7 +63,10 @@ final class DeliveryCatalog {
 			new Product("EDU_TEACHING_OPERATIONS", "教学运行与排课", List.of(),
 					entries("""
 					/admin/education/academic-lifecycle/programs /admin/education/academic-lifecycle/program-import
+					/admin/education/catalog-import/PROGRAMS /admin/education/catalog-import/PROGRAM_COURSES
 					/admin/education/academic-lifecycle/term-options /admin/education/term-course-plans
+					/admin/education/catalog-import/TERM_COURSE_PLANS /admin/education/catalog-import/CLASSROOMS
+					/admin/education/catalog-import/GRADES /admin/education/catalog-import/CLASSES /admin/education/catalog-import/COURSES
 					POST:/admin/education/academic-lifecycle/student-setup/grade
 					POST:/admin/education/academic-lifecycle/student-setup/major
 					POST:/admin/education/academic-lifecycle/student-setup/administrative-class
@@ -99,7 +102,7 @@ final class DeliveryCatalog {
 					education:class:create education:course:create education:term-course-plan:setup
 					"""))),
 			new Product("CAMPUS_VENUE", "校园场地预约", List.of(),
-					List.of("/admin/education/classroom-management", "/admin/education/classroom-reservations/desk",
+					List.of("/admin/education/classroom-management", "/admin/education/catalog-import/CLASSROOMS", "/admin/education/classroom-reservations/desk",
 							"/portal/education/classroom-reservations", "/portal/education/classrooms/options"),
 					List.of("/admin/education/classroom-management", "/admin/education/classroom-reservations",
 							"/portal/education/classroom-reservations"),
@@ -107,9 +110,10 @@ final class DeliveryCatalog {
 					Set.of("education:resource:venue:manage")),
 			new Product("EDU_STUDENT_LIFECYCLE", "招生与学籍", List.of(),
 					entries("""
-					/admin/education/admissions GET:/admin/education/students
+					/admin/education/admissions /admin/education/catalog-import/ADMISSIONS GET:/admin/education/students
 					GET:/admin/education/administrative-classes GET:/admin/education/majors GET:/admin/education/grades
 					/admin/education/academic-lifecycle/programs /admin/education/academic-lifecycle/program-import
+					/admin/education/catalog-import/PROGRAMS /admin/education/catalog-import/PROGRAM_COURSES
 					/admin/education/academic-lifecycle/term-options /admin/education/academic-lifecycle/student-options
 					/admin/education/academic-lifecycle/student-setup /admin/education/academic-lifecycle/offering-options
 					/admin/education/academic-lifecycle/program-options /admin/education/academic-lifecycle/registrations
@@ -145,7 +149,7 @@ final class DeliveryCatalog {
 					education:teacher:business:manage
 					"""))),
 			new Product("EDU_ACCOMMODATION", "宿舍管理", List.of(),
-					List.of("/admin/education/accommodations", "GET:/admin/education/terms"),
+					List.of("/admin/education/accommodations", "/admin/education/catalog-import/ACCOMMODATION_RESOURCES", "GET:/admin/education/terms"),
 					List.of("/admin/education/accommodations"),
 					Set.of("education:accommodation:view", "education:term:view"),
 					Set.of("education:accommodation:manage")),
@@ -167,6 +171,7 @@ final class DeliveryCatalog {
 			new Product("EDU_GRADES", "成绩与补考", List.of(),
 					entries("""
 					/admin/education/grades/schemes /admin/education/grades/offerings /admin/education/grades/gradebooks
+					/admin/education/catalog-import/GRADEBOOKS
 					/admin/education/grades/roster-setup /admin/education/grade-production
 					/admin/education/grade-analysis /portal/education/grades
 					"""),
@@ -193,6 +198,7 @@ final class DeliveryCatalog {
 					/education/teaching-center/preparations /education/teaching-center/preparation-invitations
 					/education/teaching-center/preparation-members /education/teaching-center/coursewares /education/teaching-center/materials
 					/education/teaching-center/question-banks /education/teaching-center/questions /education/teaching-center/knowledge-points
+					/admin/education/catalog-import/QUESTIONS
 					/education/teaching-center/api/plans /education/teaching-center/api/lesson-plans
 					/education/teaching-center/api/preparations /education/teaching-center/api/coursewares
 					/education/teaching-center/api/materials /education/teaching-center/api/question-banks

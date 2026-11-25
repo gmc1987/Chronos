@@ -92,6 +92,9 @@ public class GradeExcelService {
 			throw new IllegalArgumentException("成绩文件不能超过 10MB");
 		}
 		GradebookDetailResponse detail = gradeCenter.getGradebook(gradebookId, actor);
+		if (!java.util.Set.of("EDITING", "REJECTED").contains(detail.status())) {
+			throw new IllegalStateException("当前状态不可录入");
+		}
 		try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(file.getBytes()))) {
 			Sheet sheet = workbook.getSheet("成绩录入");
 			if (sheet == null) {
@@ -107,6 +110,7 @@ public class GradeExcelService {
 			detail.items().forEach(item -> existingScores.put(
 					item.studentId() + ":" + item.componentId(), item.rawScore()));
 			List<GradeItemCommand> commands = new ArrayList<>();
+			var seenStudents = new java.util.HashSet<String>();
 			List<String> errors = new ArrayList<>();
 			DataFormatter formatter = new DataFormatter();
 			for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
@@ -117,6 +121,7 @@ public class GradeExcelService {
 				try {
 					rejectFormula(row);
 					String studentNo = formatter.formatCellValue(row.getCell(0)).trim();
+					if (!seenStudents.add(studentNo)) throw new IllegalArgumentException("学号在文件中重复");
 					StudentSnapshot student = studentByNo.get(studentNo);
 					if (student == null) {
 						throw new IllegalArgumentException("学号不在成绩册快照中");
@@ -134,6 +139,9 @@ public class GradeExcelService {
 								throw new IllegalArgumentException("考试来源成绩不可通过 Excel 修改，请在考试中心更正后同步");
 							}
 							continue;
+						}
+						if (score.signum() < 0 || score.compareTo(component.maxScore()) > 0) {
+							throw new IllegalArgumentException("成绩超出项目满分");
 						}
 						commands.add(new GradeItemCommand(
 							component.id(), student.studentId(), score, null, "Excel导入"));

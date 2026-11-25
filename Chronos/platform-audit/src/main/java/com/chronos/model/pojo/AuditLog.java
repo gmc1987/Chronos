@@ -6,7 +6,6 @@ import org.hibernate.annotations.DynamicUpdate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -14,7 +13,6 @@ import lombok.Setter;
 @Entity
 @DynamicUpdate
 @DynamicInsert
-@AllArgsConstructor
 @NoArgsConstructor
 @Getter
 @Setter
@@ -31,4 +29,12 @@ public class AuditLog extends BaseEntity {
 	@Column(name = "detail", length = 2000)
 	private String detail;
 
+	@Column(name = "organization_id", length = 64)
+	private String organizationId;
+
+	public AuditLog(String username, String action, String detail) {
+		this.username = username;
+		this.action = action;
+		this.detail = detail;
+	}
 }

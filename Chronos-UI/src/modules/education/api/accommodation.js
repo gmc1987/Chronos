@@ -50,3 +50,7 @@ export const commitAccommodationAssignments = payload => http.post(
 export const accommodationAssignmentImportBatch = batchId => http.get(
   `/admin/education/accommodations/assignment-import/batches/${batchId}`,
 )
+export const accommodationAssignmentImportHistory = (organizationId, termId, page) =>
+  http.get(query('/admin/education/accommodations/assignment-import/batches', { organizationId, termId, page }))
+export const downloadAccommodationAssignmentSource = batchId =>
+  http.download(`/admin/education/accommodations/assignment-import/batches/${batchId}/source`)

@@ -812,6 +812,7 @@ public class AcademicDataController {
 			@RequestParam(required = false) Integer size,
 			Authentication authentication) {
 		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertOfferingAccess(scope, offeringId);
 		if (page == null && size == null) {
 			return ok(dataScopes.visibleMembers(scope, service.members(offeringId)));
 		}
@@ -824,9 +825,9 @@ public class AcademicDataController {
 			@PathVariable String offeringId,
 			@RequestBody Map<String, String> command,
 			Authentication authentication) {
-		dataScopes.assertStudentAccess(
-				dataScopes.resolve(authentication.getName()),
-				command.get("studentId"));
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertOfferingAccess(scope, offeringId);
+		dataScopes.assertStudentAccess(scope, command.get("studentId"));
 		return ok(service.enroll(offeringId, command.get("studentId")));
 	}
 
@@ -836,9 +837,9 @@ public class AcademicDataController {
 			@PathVariable String offeringId,
 			@RequestBody Map<String, String> command,
 			Authentication authentication) {
-		dataScopes.assertStudentAccess(
-				dataScopes.resolve(authentication.getName()),
-				command.get("studentId"));
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertOfferingAccess(scope, offeringId);
+		dataScopes.assertStudentAccess(scope, command.get("studentId"));
 		return ok(service.withdraw(offeringId, command.get("studentId")));
 	}
 

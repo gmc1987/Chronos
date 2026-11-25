@@ -52,7 +52,7 @@ public class SchoolAssessmentIdentityService {
 		teacher.setTeacherName(name);
 		teacher.setEmployeeId(employee.getId());
 		teacher = teachers.save(teacher);
-		audit.log(actor, "EDUCATION_ASSESSMENT_TEACHER_REGISTERED", "schoolId=" + schoolId + ",teacherId=" + teacher.getId());
+		audit.log(actor, "EDUCATION_ASSESSMENT_TEACHER_REGISTERED", "teacherId=" + teacher.getId(), schoolId);
 		return teacher;
 	}
 
@@ -100,7 +100,7 @@ public class SchoolAssessmentIdentityService {
 		binding.setStatus("ACTIVE");
 		binding.setInvalidatedAt(null);
 		bindings.save(binding);
-		audit.log(actor, "EDUCATION_ASSESSMENT_ACCOUNT_LINKED", "schoolId=" + schoolId + ",profileId=" + profileId);
+		audit.log(actor, "EDUCATION_ASSESSMENT_ACCOUNT_LINKED", "profileId=" + profileId, schoolId);
 	}
 
 	private Set<String> campuses(String schoolId, String actor) {

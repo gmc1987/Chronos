@@ -54,7 +54,7 @@ public class StudentCourseEvidenceService {
 					    updated_by=excluded.updated_by, updated_at=current_timestamp
 					""", schoolId, student.getId(), course.getId(), row.reference().strip(), row.passed(), actor);
 		}
-		audit.log(actor, "EDU_STUDENT_COURSE_EVIDENCE_IMPORT", "schoolId=" + schoolId + ", rows=" + input.size());
+		audit.log(actor, "EDU_STUDENT_COURSE_EVIDENCE_IMPORT", "rows=" + input.size(), schoolId);
 		return input.size();
 	}
 

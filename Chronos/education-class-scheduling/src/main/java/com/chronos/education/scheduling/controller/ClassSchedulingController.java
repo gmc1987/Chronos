@@ -9,6 +9,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -560,6 +561,7 @@ public class ClassSchedulingController {
 	public ResultData<List<TeacherTimeConstraint>> teacherConstraints(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
+		requireCandidateTermAccess(authentication, semesterCode);
 		return ok(dataScopes.visibleTeacherConstraints(
 				dataScopes.resolve(authentication.getName()),
 				service.teacherConstraints(semesterCode)));
@@ -570,9 +572,7 @@ public class ClassSchedulingController {
 	public ResultData<TeacherTimeConstraint> createTeacherConstraint(
 			@RequestBody TeacherTimeConstraint command,
 			Authentication authentication) {
-		dataScopes.assertTeacherAccess(
-				dataScopes.resolve(authentication.getName()),
-				command.getTeacherId());
+		requireConstraintTeacher(authentication, command.getSemesterCode(), command.getTeacherId());
 		return ok(service.saveTeacherConstraint(null, command));
 	}
 
@@ -582,10 +582,13 @@ public class ClassSchedulingController {
 			@PathVariable String id,
 			@RequestBody TeacherTimeConstraint command,
 			Authentication authentication) {
-		var scope = dataScopes.resolve(authentication.getName());
 		TeacherTimeConstraint current = service.teacherConstraint(id);
-		dataScopes.assertTeacherAccess(scope, current.getTeacherId());
-		dataScopes.assertTeacherAccess(scope, command.getTeacherId());
+		requireCandidateTermAccess(authentication, current.getSemesterCode());
+		dataScopes.assertTeacherAccess(dataScopes.resolve(authentication.getName()), current.getTeacherId());
+		if (!current.getSemesterCode().equals(command.getSemesterCode())) {
+			throw new IllegalArgumentException("教师时间约束不能转移到其他学期");
+		}
+		requireConstraintTeacher(authentication, command.getSemesterCode(), command.getTeacherId());
 		return ok(service.saveTeacherConstraint(id, command));
 	}
 
@@ -595,6 +598,7 @@ public class ClassSchedulingController {
 			@PathVariable String id,
 			Authentication authentication) {
 		TeacherTimeConstraint current = service.teacherConstraint(id);
+		requireCandidateTermAccess(authentication, current.getSemesterCode());
 		dataScopes.assertTeacherAccess(
 				dataScopes.resolve(authentication.getName()),
 				current.getTeacherId());
@@ -605,8 +609,11 @@ public class ClassSchedulingController {
 	@GetMapping("/admin/education/classroom-unavailable-slots")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:view','education:scheduling:manage')")
 	public ResultData<List<ClassroomUnavailableSlot>> classroomUnavailableSlots(
-			@RequestParam String semesterCode) {
-		return ok(service.unavailableSlots(semesterCode));
+			@RequestParam String semesterCode, Authentication authentication) {
+		var campuses = constraintCampuses(authentication, semesterCode);
+		return ok(service.unavailableSlots(semesterCode).stream()
+				.filter(value -> dataScopes.classroomInCampuses(value.getClassroomId(), campuses))
+				.toList());
 	}
 
 	@PostMapping("/admin/education/classroom-unavailable-slots")
@@ -614,9 +621,7 @@ public class ClassSchedulingController {
 	public ResultData<ClassroomUnavailableSlot> createClassroomUnavailableSlot(
 			@RequestBody ClassroomUnavailableSlot command,
 			Authentication authentication) {
-		dataScopes.assertClassroomAccess(
-				dataScopes.resolve(authentication.getName()),
-				command.getClassroomId());
+		requireConstraintClassroom(authentication, command.getSemesterCode(), command.getClassroomId());
 		return ok(service.saveUnavailableSlot(null, command));
 	}
 
@@ -626,17 +631,44 @@ public class ClassSchedulingController {
 			@PathVariable String id,
 			@RequestBody ClassroomUnavailableSlot command,
 			Authentication authentication) {
-		dataScopes.assertClassroomAccess(
-				dataScopes.resolve(authentication.getName()),
-				command.getClassroomId());
+		ClassroomUnavailableSlot current = service.unavailableSlot(id);
+		requireConstraintClassroom(authentication, current.getSemesterCode(), current.getClassroomId());
+		if (!current.getSemesterCode().equals(command.getSemesterCode())) {
+			throw new IllegalArgumentException("教室不可用时段不能转移到其他学期");
+		}
+		requireConstraintClassroom(authentication, command.getSemesterCode(), command.getClassroomId());
 		return ok(service.saveUnavailableSlot(id, command));
 	}
 
 	@DeleteMapping("/admin/education/classroom-unavailable-slots/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:scheduling:delete','education:scheduling:manage')")
-	public ResultData<Void> deleteClassroomUnavailableSlot(@PathVariable String id) {
+	public ResultData<Void> deleteClassroomUnavailableSlot(@PathVariable String id, Authentication authentication) {
+		ClassroomUnavailableSlot current = service.unavailableSlot(id);
+		requireConstraintClassroom(authentication, current.getSemesterCode(), current.getClassroomId());
 		service.deleteUnavailableSlot(id);
 		return ok(null);
+	}
+
+	private void requireConstraintTeacher(Authentication authentication, String semesterCode, String teacherId) {
+		requireCandidateTermAccess(authentication, semesterCode);
+		var term = terms.findByTermCode(semesterCode)
+				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		var scope = dataScopes.resolve(authentication.getName());
+		dataScopes.assertTeacherForTerm(scope, teacherId, term.getId(),
+				dataScopes.scheduleOrganizationCampuses(scope, term.getOrganizationId()));
+	}
+
+	private Set<String> constraintCampuses(Authentication authentication, String semesterCode) {
+		requireCandidateTermAccess(authentication, semesterCode);
+		var term = terms.findByTermCode(semesterCode)
+				.orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		return dataScopes.scheduleOrganizationCampuses(dataScopes.resolve(authentication.getName()), term.getOrganizationId());
+	}
+
+	private void requireConstraintClassroom(Authentication authentication, String semesterCode, String classroomId) {
+		if (!dataScopes.classroomInCampuses(classroomId, constraintCampuses(authentication, semesterCode))) {
+			throw new AccessDeniedException("教室不属于所选机构学期");
+		}
 	}
 
 	private <T> ResultData<T> ok(T data) {

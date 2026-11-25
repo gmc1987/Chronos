@@ -2,7 +2,8 @@
   <section class="page">
     <header>
       <div><h2>住宿分配</h2><p>维护宿舍楼、房间、床位，并按学期人工分配学生；智能体只生成候选，不绕过本页确认。</p></div>
-      <div class="header-actions"><el-button @click="downloadTemplate">下载导入模板</el-button><el-upload :show-file-list="false" accept=".xlsx,.XLSX" :http-request="uploadResources"><el-button>批量导入</el-button></el-upload><el-button type="primary" @click="buildingDialog = true">新增宿舍楼</el-button></div>
+      <div class="header-actions"><AcademicCatalogImport v-if="canManage" kind="ACCOMMODATION_RESOURCES" label="宿舍资源"
+        :organization-id="organizationId" template-url="/admin/education/accommodations/import-template" @imported="loadResources" /><el-button type="primary" @click="buildingDialog = true">新增宿舍楼</el-button></div>
     </header>
     <el-alert type="info" :closable="false" title="住宿分配属于新生入学的独立阶段。先维护床位，再按学期逐人确认；同一学生或床位不能重复分配。" />
     <div class="toolbar">
@@ -30,6 +31,7 @@
       <el-tab-pane label="人工分配" name="assign">
         <div class="assignment-import-actions">
           <span class="muted">当前可用床位 {{ beds.length }} 个。批量导入使用当前机构和学期，切换后需重新预检。</span>
+          <el-button v-if="canManage" :disabled="!selectedTermId" @click="loadAssignmentImportHistory(0)">导入历史</el-button>
           <el-button :disabled="!organizationId || !selectedTermId" @click="downloadAssignmentTemplate">下载分配模板</el-button>
           <el-upload :show-file-list="false" accept=".xlsx,.XLSX" :http-request="previewAssignments">
             <el-button type="primary" :disabled="!organizationId || !selectedTermId">批量导入</el-button>
@@ -79,6 +81,24 @@
         <el-button type="primary" :loading="assignmentImportCommitting" :disabled="!assignmentPreview?.committable" @click="commitAssignmentImport">确认整批导入</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="assignmentHistoryOpen" title="住宿人工分配导入历史" width="720px">
+      <el-table :data="assignmentHistory.content" empty-text="暂无当前机构和学期的批次" max-height="380">
+        <el-table-column prop="id" label="批次编号" min-width="230" show-overflow-tooltip />
+        <el-table-column prop="rowCount" label="行数" width="70" />
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">{{ assignmentBatchStatus[row.status] || row.status }}</template>
+        </el-table-column>
+        <el-table-column label="原文件" width="120">
+          <template #default="{ row }">
+            <el-button v-if="row.sourceAvailable" link type="primary" @click="downloadAssignmentSource(row.id)">下载原文件</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button :disabled="!assignmentHistoryPage" @click="loadAssignmentImportHistory(assignmentHistoryPage - 1)">上一页</el-button>
+        <el-button :disabled="!assignmentHistory.hasMore" @click="loadAssignmentImportHistory(assignmentHistoryPage + 1)">下一页</el-button>
+      </template>
+    </el-dialog>
     <el-dialog :model-value="Boolean(setupDialog)" :title="setupDialog === 'term' ? '添加住宿学期' : '导入住宿学生'"
       width="700px" @update:model-value="visible => { if (!visible) setupDialog = '' }">
       <p>{{ organizationName(organizationId) }}</p>
@@ -100,10 +120,11 @@
 </template>
 
 <script setup>
+import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
-import { accommodationAssignments, accommodationBeds, accommodationBuildings, accommodationRooms, accommodationStudents, assignAccommodation, cancelAccommodation, commitAccommodationAssignments, createAccommodationBed, createAccommodationBuilding, createAccommodationRoom, deleteAccommodationRoom, downloadAccommodationAssignmentImportTemplate, downloadAccommodationImportTemplate, importAccommodationResources, previewAccommodationAssignments, updateAccommodationRoom } from '../api/accommodation'
+import { accommodationAssignmentImportHistory, downloadAccommodationAssignmentSource, accommodationAssignments, accommodationBeds, accommodationBuildings, accommodationRooms, accommodationStudents, assignAccommodation, cancelAccommodation, commitAccommodationAssignments, createAccommodationBed, createAccommodationBuilding, createAccommodationRoom, deleteAccommodationRoom, downloadAccommodationAssignmentImportTemplate, previewAccommodationAssignments, updateAccommodationRoom } from '../api/accommodation'
 import { createAccommodationTerm, importAccommodationRoster } from '../api/accommodation'
 import { listAcademicTerms, orgOptions } from '../../../api/admin'
 import { hasAdminPermission } from '../../../store/auth'
@@ -180,7 +201,6 @@ const loadResources = async () => { if (!organizationId.value) { buildings.value
 const loadBeds = async () => { if (!semesterCode.value || !organizationId.value) return; beds.value = unwrap(await accommodationBeds(semesterCode.value, true, organizationId.value)).map(normalizeBed) }
 const loadAssignments = async () => { if (!semesterCode.value) return ElMessage.warning('请先选择学期'); assignments.value = unwrap(await accommodationAssignments(semesterCode.value, organizationId.value)).map(normalizeAssignment); await loadBeds() }
 const loadStudents = async keyword => { if (!organizationId.value) return; students.value = unwrap(await accommodationStudents(keyword, organizationId.value)).map(normalizeStudent) }
-const downloadTemplate = async () => { const blob = await downloadAccommodationImportTemplate(); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Chronos-宿舍资源批量导入模板.xlsx'; anchor.click(); URL.revokeObjectURL(url) }
 const downloadAssignmentTemplate = async () => {
   if (!organizationId.value || !selectedTermId.value) return ElMessage.warning('请先选择机构和学期')
   const blob = await downloadAccommodationAssignmentImportTemplate(organizationId.value, selectedTermId.value)
@@ -203,6 +223,28 @@ const previewAssignments = async ({ file }) => {
   assignmentPreview.value = response.data
   assignmentImportDialog.value = true
 }
+const assignmentHistoryOpen = ref(false)
+const assignmentHistory = ref({ content: [], hasMore: false })
+const assignmentHistoryPage = ref(0)
+const assignmentBatchStatus = { PREVIEW_READY: '待提交', PREVIEW_FAILED: '校验未通过', COMMITTED: '已导入' }
+const loadAssignmentImportHistory = async page => {
+  const school = organizationId.value
+  const term = selectedTermId.value
+  const { data } = await accommodationAssignmentImportHistory(school, term, page)
+  if (school !== organizationId.value || term !== selectedTermId.value) return
+  assignmentHistoryPage.value = page
+  assignmentHistory.value = data
+  assignmentHistoryOpen.value = true
+}
+const downloadAssignmentSource = async batchId => {
+  const blob = await downloadAccommodationAssignmentSource(batchId)
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = '住宿人工分配-原文件.xlsx'
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
 const commitAssignmentImport = async () => {
   if (!assignmentPreview.value?.committable) return
   assignmentImportCommitting.value = true
@@ -222,20 +264,6 @@ const commitAssignmentImport = async () => {
     assignmentImportCommitting.value = false
   }
 }
-const uploadResources = async ({ file }) => {
-  try {
-    if (!organizationId.value) return ElMessage.warning('请先选择宿舍资源所属机构')
-    const preview = await importAccommodationResources(file, true, organizationId.value)
-    const result = preview?.data || {}
-    if (result.errors?.length) return ElMessage.error(`校验失败：${result.errors[0]}`)
-    await ElMessageBox.confirm(`校验通过，将处理 ${result.successCount || 0} 行宿舍资源并自动补齐床位，确认导入？`, '导入确认', { type: 'warning' })
-    const imported = await importAccommodationResources(file, false, organizationId.value)
-    ElMessage.success(`宿舍资源导入成功，共处理 ${imported?.data?.successCount || 0} 行`)
-    await loadResources(); await loadBeds()
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.response?.data?.msg || error?.message || '宿舍资源导入失败')
-  }
-}
 const saveBuilding = async () => { if (!organizationId.value) return ElMessage.warning('请先选择所属机构'); await createAccommodationBuilding({ ...buildingForm, organizationId: organizationId.value }); buildingDialog.value = false; Object.assign(buildingForm, { buildingCode: '', buildingName: '', genderPolicy: 'MIXED' }); await loadResources(); ElMessage.success('宿舍楼已保存') }
 const openRoom = building => { activeBuilding.value = building; editingRoom.value = null; Object.assign(roomForm, { roomNo: '', floorNo: 1, capacity: 6 }); roomDialog.value = true }
 const editRoom = (building, room) => { activeBuilding.value = building; activeRoom.value = room; editingRoom.value = room; Object.assign(roomForm, { roomNo: room.roomNo, floorNo: room.floorNo, capacity: room.capacity }); roomDialog.value = true }
@@ -247,7 +275,7 @@ const saveAssignment = async () => { await assignAccommodation({ semesterCode: s
 const cancelAssignment = async row => { await ElMessageBox.confirm(`确认撤销 ${row.studentName} 的住宿分配？`, '撤销确认', { type: 'warning' }); await cancelAccommodation(row.id); ElMessage.success('住宿分配已撤销'); await loadAssignments() }
 const orgName = item => item.organizationName || item.orgName || item.name || item.id
 const organizationName = id => orgName(organizations.value.find(item => item.id === id) || { id: id || '未选择' })
-const invalidateAssignmentPreview = () => { assignmentPreviewRequestVersion++; assignmentPreview.value = null; assignmentImportDialog.value = false }
+const invalidateAssignmentPreview = () => { assignmentPreviewRequestVersion++; assignmentPreview.value = null; assignmentImportDialog.value = false; assignmentHistoryOpen.value = false }
 const changeTerm = async () => { invalidateAssignmentPreview(); students.value = []; assignments.value = []; beds.value = []; await loadAssignments() }
 const changeOrganization = async () => { invalidateAssignmentPreview(); semesterCode.value = ''; students.value = []; assignments.value = []; beds.value = []; await Promise.all([loadTerms(), loadResources()]) }
 watch(organizationId, changeOrganization)

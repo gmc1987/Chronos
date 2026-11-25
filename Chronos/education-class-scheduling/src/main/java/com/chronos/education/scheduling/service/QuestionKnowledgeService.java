@@ -72,6 +72,11 @@ public class QuestionKnowledgeService {
 		bank.setName(request.name().trim()); bank.setOfferingId(blank(request.offeringId()));
 		bank.setCourseId(blank(request.courseId())); bank.setDescription(request.description());
 		bank.setVisibility(defaultValue(request.visibility(), "PRIVATE"));
+		if (text(request.schoolId()) != null) {
+			scopes.assertSchoolAccess(scope, request.schoolId());
+			requireBankOfferingSchool(bank.getOfferingId(), request.schoolId(), scope);
+			bank.setSchoolId(request.schoolId());
+		}
 		return banks.save(bank);
 	}
 
@@ -79,7 +84,9 @@ public class QuestionKnowledgeService {
 		QuestionBank bank = banks.findById(id).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
 		authorizeBank(bank, user);
 		require(request != null && text(request.name()) != null, "题库名称不能为空");
-		validateOffering(request.offeringId(), request.courseId(), scopes.resolve(user.getName()));
+		var scope = scopes.resolve(user.getName());
+		validateOffering(request.offeringId(), request.courseId(), scope);
+		requireBankOfferingSchool(text(request.offeringId()), bank.getSchoolId(), scope);
 		bank.setName(request.name().trim());
 		bank.setOfferingId(blank(request.offeringId()));
 		bank.setCourseId(blank(request.courseId()));
@@ -354,6 +361,57 @@ public class QuestionKnowledgeService {
 		return result;
 	}
 
+	public String importBankSchool(String bankId, Authentication actor) {
+		QuestionBank bank = banks.findById(bankId).orElseThrow(() -> new IllegalArgumentException("题库不存在"));
+		authorizeBank(bank, actor);
+		if (bank.getSchoolId() != null && !"LEGACY".equals(bank.getSchoolId())) return bank.getSchoolId();
+		if (bank.getOfferingId() != null) {
+			var offering = offerings.findById(bank.getOfferingId()).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+			if (offering.getCampusId() != null) {
+				return scopes.requireSchoolForCampus(scopes.resolve(actor.getName()), offering.getCampusId());
+			}
+		}
+		throw new IllegalArgumentException("题库尚未确定所属学校，请在有明确学校归属的题库中导入");
+	}
+
+	public AcademicCatalogImportService.Result importScopedCsv(String bankId, String csv, boolean dryRun, Authentication actor) {
+		importBankSchool(bankId, actor);
+		if (banks.findById(bankId).orElseThrow().isArchived()) throw new IllegalArgumentException("题库已归档");
+		String normalized = csv.startsWith("\uFEFF") ? csv.substring(1) : csv;
+		List<String> rows = normalized.lines().toList();
+		if (rows.isEmpty() || !parseCsv(rows.getFirst()).equals(List.of("id", "questionType", "difficulty",
+				"score", "stem", "answer", "bankId", "analysis", "knowledgePointIds"))) {
+			throw new IllegalArgumentException("题库导入表头不匹配，请重新下载模板");
+		}
+		if (rows.size() > 2001) throw new IllegalArgumentException("CSV 最多 2000 行");
+		List<QuestionRequest> accepted = new ArrayList<>();
+		List<String> errors = new ArrayList<>();
+		for (int index = 1; index < rows.size(); index++) {
+			if (rows.get(index).isBlank()) continue;
+			try {
+				List<String> cells = parseCsv(rows.get(index));
+				if (cells.size() != 9) throw new IllegalArgumentException("列数与模板不匹配");
+				if (cells.stream().anyMatch(this::formula)) throw new IllegalArgumentException("检测到公式");
+				if (!cells.get(6).isBlank() && !bankId.equals(cells.get(6).trim())) {
+					throw new IllegalArgumentException("题库编码与当前选中的题库不一致");
+				}
+				List<String> pointIds = Arrays.stream(cells.get(8).split("[;|]")).map(String::trim)
+						.filter(value -> !value.isBlank()).distinct().toList();
+				QuestionRequest request = new QuestionRequest(bankId, cells.get(1), cells.get(2), cells.get(4),
+						new java.math.BigDecimal(cells.get(3)), cells.get(5), cells.get(7), null, null, null,
+						List.of(), pointIds, List.of());
+				validateQuestion(request, actor);
+				accepted.add(request);
+			} catch (IllegalArgumentException | org.springframework.security.access.AccessDeniedException exception) {
+				errors.add("第 " + (index + 1) + " 行：" + exception.getMessage());
+			}
+		}
+		int count = accepted.size() + errors.size();
+		if (count == 0) errors.add("文件没有可导入的题目");
+		if (!dryRun && errors.isEmpty()) accepted.forEach(request -> createQuestion(request, actor));
+		return new AcademicCatalogImportService.Result(count, accepted.size(), errors);
+	}
+
 	private void validateQuestion(QuestionRequest r, Authentication user) {
 		require(r != null && r.bankId() != null, "题库不能为空");
 		require(text(r.stem()) != null, "题干不能为空"); if (r.stem().length() > 100000) throw new IllegalArgumentException("题干过长");
@@ -451,9 +509,22 @@ public class QuestionKnowledgeService {
 		} catch (JsonProcessingException ex) { throw new IllegalStateException("题目版本快照失败", ex); }
 	}
 	private void authorizeBank(QuestionBank b, Authentication u) {
-		if (b.getOfferingId() != null) scopes.assertOfferingAccess(scopes.resolve(u.getName()), b.getOfferingId());
-		else scopes.assertCourseAccess(scopes.resolve(u.getName()), b.getCourseId());
+		var scope = scopes.resolve(u.getName());
+		if (b.getSchoolId() != null && !"LEGACY".equals(b.getSchoolId())) {
+			scopes.assertSchoolAccess(scope, b.getSchoolId());
+		}
+		if (b.getOfferingId() != null) scopes.assertOfferingAccess(scope, b.getOfferingId());
+		else scopes.assertCourseAccess(scope, b.getCourseId());
 	}
+	private void requireBankOfferingSchool(String offeringId, String schoolId, EducationDataScope scope) {
+		if (offeringId == null || schoolId == null || "LEGACY".equals(schoolId)) return;
+		var offering = offerings.findById(offeringId).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+		String campus = offering.getCampusId();
+		if (campus == null || !scopes.scheduleOrganizationCampuses(scope, schoolId).contains(campus)) {
+			throw new org.springframework.security.access.AccessDeniedException("教学班不属于题库所在学校");
+		}
+	}
+
 	private void validateOffering(String offeringId, String courseId, EducationDataScope scope) {
 		// 前端的“课程公共题库”会提交空字符串；按未指定教学班处理。
 		String normalizedOfferingId = text(offeringId);

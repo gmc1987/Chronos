@@ -8,6 +8,7 @@ const props = defineProps({
   autoSelectSingle: { type: Boolean, default: true },
   schoolOrCampusOnly: Boolean,
   schoolOnly: Boolean,
+  clearable: Boolean,
   contextKey: { type: String, default: '' },
   placeholder: { type: String, default: '请选择所属机构' },
 })
@@ -52,6 +53,7 @@ defineExpose({ options, reloadOrganizations })
       :loading="loading"
       :disabled="selectionDisabled"
       filterable
+      :clearable="clearable"
       :placeholder="placeholder"
       style="width: 100%"
     >

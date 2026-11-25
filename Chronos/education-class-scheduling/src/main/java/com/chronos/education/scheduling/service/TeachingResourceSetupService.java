@@ -117,7 +117,7 @@ public class TeachingResourceSetupService {
 		offering.setTeacherName(teacher.getTeacherName());
 		offering.setStatus(CourseOffering.TEACHING_RESOURCE_ONLY);
 		offering = offerings.save(offering);
-		audit.log(actor, "EDU_TEACHING_RESOURCE_OFFERING_CREATED", "offeringId=" + offering.getId() + ",schoolId=" + schoolId);
+		audit.log(actor, "EDU_TEACHING_RESOURCE_OFFERING_CREATED", "offeringId=" + offering.getId(), schoolId);
 		return offering;
 	}
 

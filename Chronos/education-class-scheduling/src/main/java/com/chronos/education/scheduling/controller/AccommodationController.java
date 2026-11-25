@@ -28,6 +28,7 @@ import com.chronos.education.scheduling.service.AccommodationService.BedCommand;
 import com.chronos.education.scheduling.service.AccommodationService.BuildingCommand;
 import com.chronos.education.scheduling.service.AccommodationService.RoomCommand;
 import com.chronos.education.scheduling.service.AccommodationImportService;
+import com.chronos.education.scheduling.service.AcademicCatalogImportService;
 import com.chronos.education.scheduling.service.AccommodationAssignmentImportService;
 import com.chronos.education.scheduling.service.SchoolRosterSetupService;
 import com.chronos.education.scheduling.service.SchoolRosterSetupService.RosterRow;
@@ -105,7 +106,7 @@ public class AccommodationController {
 			@RequestParam String organizationId, @RequestParam String termId,
 			@RequestParam String templateVersion, Authentication authentication) {
 		String resolved = resolveOrganization(authentication, organizationId);
-		return ok(assignmentImports.preview(file, resolved, termId, templateVersion, authentication.getName()));
+		return ok(assignmentImports.preview(file, resolved, termId, templateVersion, authentication));
 	}
 
 	@PostMapping("/assignment-import/commit")
@@ -122,6 +123,22 @@ public class AccommodationController {
 	public ResultData<?> assignmentImportBatch(@PathVariable String batchId, Authentication authentication) {
 		requireOrganization(authentication, assignmentImports.batchOrganization(batchId));
 		return ok(assignmentImports.batch(batchId, authentication.getName()));
+	}
+
+	@GetMapping("/assignment-import/batches")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
+	public ResultData<?> assignmentImportHistory(@RequestParam String organizationId, @RequestParam String termId,
+			@RequestParam(defaultValue = "0") int page, Authentication authentication) {
+		String resolved = resolveOrganization(authentication, organizationId);
+		return ok(assignmentImports.history(resolved, termId, authentication.getName(), page));
+	}
+
+	@GetMapping("/assignment-import/batches/{batchId}/source")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:accommodation:manage')")
+	public ResponseEntity<byte[]> assignmentImportSource(@PathVariable String batchId, Authentication authentication) {
+		requireOrganization(authentication, assignmentImports.batchOrganization(batchId));
+		var source = assignmentImports.source(batchId, authentication);
+		return AcademicCatalogImportService.xlsx(source.content(), source.filename());
 	}
 
 	@GetMapping("/buildings")

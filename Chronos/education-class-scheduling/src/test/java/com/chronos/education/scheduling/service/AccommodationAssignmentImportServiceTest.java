@@ -38,7 +38,8 @@ class AccommodationAssignmentImportServiceTest {
 		jdbc = mock(JdbcTemplate.class);
 		accommodations = mock(AccommodationService.class);
 		json = new ObjectMapper().findAndRegisterModules();
-		service = new AccommodationAssignmentImportService(jdbc, accommodations, json);
+		service = new AccommodationAssignmentImportService(jdbc, accommodations, json,
+				mock(EducationImportArchive.class), mock(com.chronos.service.iService.IAuditLogService.class));
 	}
 
 	@Test
@@ -83,12 +84,18 @@ class AccommodationAssignmentImportServiceTest {
 		CommitResult original = new CommitResult("preview-1", "preview-1", "org-1", "term-1", "ORG:2026-1",
 				"COMMITTED", 2, LocalDateTime.now(), List.of());
 		when(jdbc.queryForList(contains("where operator_id = ? and idempotency_key = ?"), eq("operator"), eq("key-1")))
-				.thenReturn(List.of(Map.of("id", "preview-1", "commit_result", json.writeValueAsString(original))));
+				.thenReturn(List.of(Map.of("id", "preview-1", "organization_id", "org-1", "term_id", "term-1",
+						"template_version", AccommodationAssignmentImportService.TEMPLATE_VERSION,
+						"commit_result", json.writeValueAsString(original))));
 
 		CommitResult repeated = service.commit("preview-1", "org-1", "term-1",
 				AccommodationAssignmentImportService.TEMPLATE_VERSION, "key-1", "operator");
 
 		assertThat(repeated).isEqualTo(original);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.commit("preview-1", "org-2", "term-1",
+				AccommodationAssignmentImportService.TEMPLATE_VERSION, "key-1", "operator"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("机构");
 		verifyNoInteractions(accommodations);
 	}
 
@@ -134,7 +141,8 @@ class AccommodationAssignmentImportServiceTest {
 				"key-1", "operator"))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessageContaining("状态已变化");
-		verifyNoInteractions(accommodations);
+		org.mockito.Mockito.verify(accommodations).lockAssignmentTerm("ORG:2026-1", "org-1");
+		org.mockito.Mockito.verifyNoMoreInteractions(accommodations);
 	}
 
 	private byte[] workbook(String[]... rows) throws Exception {

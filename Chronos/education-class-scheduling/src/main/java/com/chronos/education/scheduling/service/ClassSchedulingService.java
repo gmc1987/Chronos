@@ -393,6 +393,7 @@ public class ClassSchedulingService {
 		if (!java.util.Set.of("FORBIDDEN", "PREFERRED").contains(command.getConstraintType())) {
 			throw new IllegalArgumentException("约束类型必须为 FORBIDDEN 或 PREFERRED");
 		}
+		command.setId(id);
 		TeacherTimeConstraint value = id == null
 				? command
 				: teacherConstraints.findById(id)
@@ -414,6 +415,12 @@ public class ClassSchedulingService {
 	public List<ClassroomUnavailableSlot> unavailableSlots(String semesterCode) {
 		return unavailableSlots.findBySemesterCodeOrderByClassroomIdAscDayOfWeekAscStartPeriodAsc(
 				required(semesterCode, "学期编码"));
+	}
+
+	@Transactional(readOnly = true)
+	public ClassroomUnavailableSlot unavailableSlot(String id) {
+		return unavailableSlots.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("不可用时段不存在"));
 	}
 
 	@Transactional

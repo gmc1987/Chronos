@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { http } from '../../../api/http'
+import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
 import GradeRosterSetupDialog from '../components/GradeRosterSetupDialog.vue'
 import { getAdminUsername, getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 import {
@@ -17,7 +18,6 @@ import {
   listAssessmentSchemes,
   listGradebookSnapshots,
   listGradebooks,
-  importGradebook,
   listPublishedGrades,
   listGradeChanges,
   listGradeChangeIncidents,
@@ -66,7 +66,6 @@ const snapshots = ref([])
 const activeTab = ref('gradebooks')
 const dirty = ref(false)
 const snapshotLoading = ref(false)
-const importInput = ref(null)
 const publishedGrades = ref([])
 const changeRequests = ref([])
 const makeupRecords = ref([])
@@ -529,24 +528,6 @@ async function downloadGradebook() {
   URL.revokeObjectURL(url)
 }
 
-function chooseImportFile() {
-  importInput.value?.click()
-}
-
-async function uploadGradebook(event) {
-  const file = event.target.files?.[0]
-  event.target.value = ''
-  if (!file || !selected.value) return
-  const validation = await importGradebook(selected.value.id, file, true)
-  if (!validation?.data?.valid) {
-    ElMessage.error((validation?.data?.errors || []).slice(0, 3).join('；') || '文件校验失败')
-    return
-  }
-  await importGradebook(selected.value.id, file, false)
-  ElMessage.success(`已导入 ${validation.data.imported} 条成绩`)
-  await selectGradebook(selected.value)
-}
-
 function beforeUnload(event) {
   if (!dirty.value) return
   event.preventDefault()
@@ -632,20 +613,17 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               <span>{{ gradebookName(selected) }} · {{ selectedStatus }}</span>
               <span class="editor-actions">
                 <el-tag v-if="dirty" type="warning">有未保存修改</el-tag>
-                <input ref="importInput" class="hidden-file" type="file" accept=".xlsx" @change="uploadGradebook">
                 <el-button
                   v-permission="['education:score:gradebook:export']"
                   @click="downloadGradebook"
                 >
                   导出/下载模板
                 </el-button>
-                <el-button
-                  v-permission="['education:score:gradebook:import']"
-                  :disabled="!canEdit"
-                  @click="chooseImportFile"
-                >
-                  Excel 导入
-                </el-button>
+                <AcademicCatalogImport v-permission="['education:score:gradebook:import']"
+                  kind="GRADEBOOKS" label="成绩册" :button-label="canEdit && !dirty ? 'Excel 导入' : '导入历史'"
+                  :template-url="`/admin/education/grades/gradebooks/${selected.id}/export`"
+                  :params="{ resourceId: selected.id }" :read-only="!canEdit || dirty"
+                  @imported="selectGradebook(selected)" />
                 <el-button
                   v-permission="['education:score:gradebook:update']"
                   :disabled="!canEdit"

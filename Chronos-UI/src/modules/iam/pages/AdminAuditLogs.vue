@@ -8,6 +8,8 @@
     </div>
 
     <div class="query-bar">
+      <OrganizationSelect v-model="filters.organizationId" context-key="audit-logs"
+        placeholder="筛选所属机构" clearable style="width: 220px" />
       <el-select v-model="filters.domain" style="width: 150px" @change="search">
         <el-option label="全部业务" value="ALL" />
         <el-option label="智慧校园" value="EDUCATION" />
@@ -61,8 +63,9 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { auditLogs, exportAuditLogs } from '../api'
 
 const loading = ref(false)
@@ -74,12 +77,15 @@ const total = ref(0)
 const timeRange = ref([])
 const filters = reactive({
   domain: 'EDUCATION',
+  organizationId: '',
   username: '',
   action: '',
   keyword: '',
 })
 
+let requestVersion = 0
 const load = async () => {
+  const version = ++requestVersion
   loading.value = true
   try {
     const response = await auditLogs({
@@ -89,12 +95,13 @@ const load = async () => {
       page: page.value - 1,
       size: size.value,
     })
+    if (version !== requestVersion) return
     rows.value = response?.data?.content || []
     total.value = response?.data?.totalElements || 0
   } catch (error) {
-    ElMessage.error(error?.message || '审计日志加载失败')
+    if (version === requestVersion) ElMessage.error(error?.message || '审计日志加载失败')
   } finally {
-    loading.value = false
+    if (version === requestVersion) loading.value = false
   }
 }
 
@@ -105,6 +112,7 @@ const search = () => {
 
 const reset = () => {
   filters.domain = 'EDUCATION'
+  filters.organizationId = ''
   filters.username = ''
   filters.action = ''
   filters.keyword = ''
@@ -142,6 +150,11 @@ const exportRows = async () => {
   }
 }
 
+watch(() => filters.organizationId, () => {
+  rows.value = []
+  total.value = 0
+  search()
+})
 load()
 </script>
 
