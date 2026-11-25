@@ -68,8 +68,8 @@ public class CollaborationOfficeController {
 	}
 
 	@GetMapping("/resources")
-	public ResultData<?> resources(@RequestParam String type) {
-		return ok(collaboration.resources(type));
+	public ResultData<?> resources(Principal principal, @RequestParam String type) {
+		return ok(collaboration.resources(type, principal.getName()));
 	}
 
 	@PostMapping("/requests")
@@ -88,7 +88,7 @@ public class CollaborationOfficeController {
 	}
 
 	@PostMapping("/requests/{id}/complete")
-	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage')")
+	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage','collaboration:office:manage')")
 	public ResultData<?> complete(Principal principal, @PathVariable String id) {
 		return ok(collaboration.completeExecution(principal.getName(), id));
 	}
@@ -99,8 +99,8 @@ public class CollaborationOfficeController {
 	}
 
 	@GetMapping("/documents/issued")
-	public ResultData<?> issuedDocuments() {
-		return ok(collaboration.issuedDocuments());
+	public ResultData<?> issuedDocuments(Principal principal) {
+		return ok(collaboration.issuedDocuments(principal.getName()));
 	}
 
 	@PostMapping("/documents")
@@ -191,33 +191,33 @@ public class CollaborationOfficeController {
 	}
 
 	@PostMapping("/admin/resources")
-	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage')")
-	public ResultData<?> createResource(@RequestBody ResourceCommand command) {
-		return ok(collaboration.saveResource(null, command));
+	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage','collaboration:office:manage')")
+	public ResultData<?> createResource(Principal principal, @RequestBody ResourceCommand command) {
+		return ok(collaboration.saveResource(null, command, principal.getName()));
 	}
 
 	@GetMapping("/admin/resources")
-	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage')")
-	public ResultData<?> managedResources(@RequestParam String type) {
-		return ok(collaboration.managedResources(type));
+	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage','collaboration:office:manage')")
+	public ResultData<?> managedResources(Principal principal, @RequestParam String type) {
+		return ok(collaboration.managedResources(type, principal.getName()));
 	}
 
 	@GetMapping("/admin/requests")
-	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage')")
-	public ResultData<?> managedRequests() {
-		return ok(collaboration.managedRequests());
+	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage','collaboration:office:manage')")
+	public ResultData<?> managedRequests(Principal principal) {
+		return ok(collaboration.managedRequests(principal.getName()));
 	}
 
 	@PutMapping("/admin/resources/{id}")
-	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage')")
-	public ResultData<?> updateResource(@PathVariable String id, @RequestBody ResourceCommand command) {
-		return ok(collaboration.saveResource(id, command));
+	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage','collaboration:office:manage')")
+	public ResultData<?> updateResource(Principal principal, @PathVariable String id, @RequestBody ResourceCommand command) {
+		return ok(collaboration.saveResource(id, command, principal.getName()));
 	}
 
 	@DeleteMapping("/admin/resources/{id}")
-	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage')")
-	public ResultData<?> disableResource(@PathVariable String id) {
-		return ok(collaboration.disableResource(id));
+	@PreAuthorize("@iamAuthorization.any(authentication,'iam:directory:manage','education:scheduling:manage','collaboration:office:manage')")
+	public ResultData<?> disableResource(Principal principal, @PathVariable String id) {
+		return ok(collaboration.disableResource(id, principal.getName()));
 	}
 
 	private ContactView toContact(Employee employee) {

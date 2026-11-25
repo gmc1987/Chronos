@@ -25,15 +25,15 @@ public class SupervisionController {
 
 	@GetMapping("/admin/education/supervision/plans")
 	@PreAuthorize("hasAuthority('education:supervision:plan:view')")
-	public ResultData<List<PlanResponse>> plans(Authentication auth) {
-		return ok(service.listPlans(auth.getName()).stream().map(this::plan).toList());
+	public ResultData<List<PlanResponse>> plans(@RequestParam(required = false) String schoolId, Authentication auth) {
+		return ok(service.listPlans(auth.getName(), schoolId).stream().map(this::plan).toList());
 	}
 
 	@PostMapping("/admin/education/supervision/plans")
 	@PreAuthorize("hasAuthority('education:supervision:plan:create')")
 	public ResultData<PlanResponse> createPlan(@Valid @RequestBody PlanCommand command, Authentication auth) {
 		return ok(plan(service.createPlan(auth.getName(), command.name(), command.startDate(),
-				command.endDate(), command.campusId())));
+				command.endDate(), command.campusId(), command.schoolId())));
 	}
 
 	@PostMapping("/admin/education/supervision/plans/{id}/publish")
@@ -65,6 +65,40 @@ public class SupervisionController {
 	public ResultData<AssignmentResponse> assign(@Valid @RequestBody AssignmentCommand command, Authentication auth) {
 		return ok(assignment(service.createAssignment(auth.getName(), command.planId(),
 				command.supervisorId(), command.teacherId(), command.scheduleEntryId(), command.campusId())));
+	}
+
+	@PostMapping("/admin/education/supervision/assignments/observation")
+	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
+	public ResultData<AssignmentResponse> observe(@Valid @RequestBody ObservationCommand command, Authentication actor) {
+		return ok(assignment(service.assignObservation(actor.getName(), command)));
+	}
+
+	@GetMapping("/admin/education/supervision/plans/{id}/observation-teachers")
+	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
+	public ResultData<List<SupervisionCenterService.TeacherOption>> observationTeachers(
+			@PathVariable String id, Authentication actor) {
+		return ok(service.observationTeachers(id, actor.getName()));
+	}
+
+	@GetMapping("/admin/education/supervision/plans/{id}/assignment-supervisors")
+	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
+	public ResultData<List<SupervisionCenterService.SupervisorOption>> assignmentSupervisors(
+			@PathVariable String id, Authentication actor) {
+		return ok(service.assignmentSupervisors(id, actor.getName()));
+	}
+
+	@GetMapping("/admin/education/supervision/plans/{id}/assignment-offerings")
+	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
+	public ResultData<List<com.chronos.education.scheduling.model.CourseOffering>> assignmentOfferings(
+			@PathVariable String id, Authentication actor) {
+		return ok(service.assignmentOfferings(id, actor.getName()));
+	}
+
+	@GetMapping("/admin/education/supervision/plans/{id}/assignment-offerings/{offeringId}/schedule-options")
+	@PreAuthorize("hasAuthority('education:supervision:assignment:create')")
+	public ResultData<List<com.chronos.education.scheduling.model.ScheduleEntry>> assignmentSchedules(
+			@PathVariable String id, @PathVariable String offeringId, Authentication actor) {
+		return ok(service.assignmentScheduleOptions(id, offeringId, actor.getName()));
 	}
 
 	@GetMapping("/portal/education/supervision/tasks")
@@ -148,14 +182,14 @@ public class SupervisionController {
 
 	@GetMapping("/admin/education/supervision/records")
 	@PreAuthorize("hasAuthority('education:supervision:issue:create')")
-	public ResultData<List<RecordResponse>> records(Authentication auth) {
-		return ok(service.listRecords(auth.getName()).stream().map(this::record).toList());
+	public ResultData<List<RecordResponse>> records(@RequestParam(required = false) String schoolId, Authentication auth) {
+		return ok(service.listRecords(auth.getName(), schoolId).stream().map(this::record).toList());
 	}
 
 	@GetMapping("/admin/education/supervision/issues")
 	@PreAuthorize("hasAuthority('education:supervision:review:create')")
-	public ResultData<List<IssueResponse>> issues(Authentication auth) {
-		return ok(service.listIssues(auth.getName()).stream().map(this::issue).toList());
+	public ResultData<List<IssueResponse>> issues(@RequestParam(required = false) String schoolId, Authentication auth) {
+		return ok(service.listIssues(auth.getName(), schoolId).stream().map(this::issue).toList());
 	}
 
 	@GetMapping("/portal/education/supervision/issues")
@@ -180,11 +214,12 @@ public class SupervisionController {
 	}
 
 	private PlanResponse plan(SupervisionPlan value) {
-		return new PlanResponse(value.getId(), value.getName(), value.getStatus(), value.getStartDate(), value.getEndDate());
+		return new PlanResponse(value.getId(), value.getName(), value.getStatus(), value.getStartDate(), value.getEndDate(), value.getSchoolId());
 	}
 	private AssignmentResponse assignment(SupervisionAssignment value) {
 		return new AssignmentResponse(value.getId(), value.getPlanId(), value.getTeacherId(), value.getScheduleEntryId(),
-				value.getStatus(), value.getCheckedInAt(), value.getSubmittedAt());
+				value.getStatus(), value.getCheckedInAt(), value.getSubmittedAt(), value.getObservedCourse(),
+				value.getObservedLocation(), value.getObservedStartsAt(), value.getObservedEndsAt());
 	}
 	private RecordResponse record(SupervisionRecord value) {
 		return new RecordResponse(value.getId(), value.getAssignmentId(), value.getSupervisorId(), value.getTeacherId(),

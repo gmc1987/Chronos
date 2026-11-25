@@ -82,6 +82,17 @@ public interface StudentProfileRepository extends JpaRepository<StudentProfile, 
 			@Param("classIds") List<String> classIds,
 			@Param("gradeIds") List<String> gradeIds,
 			Pageable pageable);
+
+	@Query("""
+			select student from StudentProfile student
+			where student.administrativeClassId in :classIds and student.enrollmentStatus = 'ACTIVE'
+			  and (lower(student.studentNo) like concat('%', :keyword, '%')
+			       or lower(student.studentName) like concat('%', :keyword, '%'))
+			order by student.studentNo
+			""")
+	Page<StudentProfile> findFamilyRoster(
+			@Param("classIds") List<String> classIds, @Param("keyword") String keyword, Pageable pageable);
+
 	List<StudentProfile> findByAdministrativeClassId(String administrativeClassId);
 	long countByMajorId(String majorId);
 

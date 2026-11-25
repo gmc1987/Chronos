@@ -1,6 +1,8 @@
 package com.chronos.education.parentmeeting.controller;
 
 import java.util.List;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -14,12 +16,26 @@ import com.chronos.education.parentmeeting.service.ParentMeetingService;
 @RestController
 public class ParentMeetingController {
 	private final ParentMeetingService service;
-	public ParentMeetingController(ParentMeetingService service) { this.service = service; }
+	private final RoomIntegrationPolicy rooms;
+
+	@FunctionalInterface
+	public interface RoomIntegrationPolicy {
+		boolean enabled();
+	}
+
+	public ParentMeetingController(ParentMeetingService service, ObjectProvider<RoomIntegrationPolicy> rooms) {
+		this.service = service;
+		this.rooms = rooms.getIfAvailable(() -> () -> true);
+	}
 
 	@PostMapping("/admin/education/parent-meetings")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:parent-meeting:create','education:parent-meeting:manage')")
 	public ResultData<MeetingView> create(@RequestBody @Valid ParentMeetingCommands.Create command,
 			Authentication authentication) {
+		if ((!"ONLINE".equalsIgnoreCase(command.meetingType()) || command.roomId() != null && !command.roomId().isBlank())
+				&& !rooms.enabled()) {
+			throw new AccessDeniedException("使用会议室的家长会需要同时开通校园会议");
+		}
 		return ok(service.create(command, authentication.getName()));
 	}
 

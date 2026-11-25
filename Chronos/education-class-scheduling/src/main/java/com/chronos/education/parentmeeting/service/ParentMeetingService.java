@@ -92,7 +92,7 @@ public class ParentMeetingService {
 	@Transactional(readOnly = true)
 	public List<MeetingView> all(String username, boolean manage) {
 		Set<String> ids = scopes.findAll().stream().map(ParentMeetingScope::getMeetingId).collect(Collectors.toSet());
-		return meetings.allMeetings().stream()
+		return meetings.allMeetings(username).stream()
 				.filter(view -> ids.contains(view.meeting().getId()))
 				.filter(view -> manage || username.equals(view.meeting().getOrganizerUsername()))
 				.toList();

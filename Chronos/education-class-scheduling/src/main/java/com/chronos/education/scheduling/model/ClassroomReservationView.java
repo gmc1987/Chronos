@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.model;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /** 门户与管理端共用的教室申请展示视图，避免前端直接显示内部资源 ID。 */
 public record ClassroomReservationView(
@@ -17,5 +18,8 @@ public record ClassroomReservationView(
 		String purpose,
 		String status,
 		String failureMessage,
-		String cancellationReason) {
+		String cancellationReason,
+		String reviewedBy,
+		LocalDateTime reviewedAt,
+		String reviewNote) {
 }

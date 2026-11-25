@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../app/layout/AdminLayout.vue'
-import { hasAdminPermission, isAdminAuthed, mustChangeAdminPassword } from '../store/auth'
+import { getAdminRoles, getDeliveryContext, hasAdminPermission, isAdminAuthed, mustChangeAdminPassword } from '../store/auth'
 import PortalLayout from '../app/layout/PortalLayout.vue'
 import { packagedIndustryRoutes } from '../industries/core'
 
@@ -66,7 +66,9 @@ const AdminClassGroups = () => import('../modules/education/pages/AdminClassGrou
 const AdminParentFeedback = () => import('../modules/education/pages/AdminParentFeedback.vue')
 const AdminCommunicationRecords = () => import('../modules/education/pages/AdminCommunicationRecords.vue')
 const AdminSupervision = () => import('../modules/education/pages/AdminSupervision.vue')
-const AdminDataCenter = () => import('../modules/education/pages/AdminDataCenter.vue')
+const AdminDataCenter = () => getDeliveryContext().mode === 'customer'
+  ? import('../modules/education/pages/SchoolAnalytics.vue')
+  : import('../modules/education/pages/AdminDataCenter.vue')
 const PortalSupervision = () => import('../modules/education/pages/PortalSupervision.vue')
 const PortalSupervisionTeaching = () => import('../modules/education/pages/PortalSupervisionTeaching.vue')
 const AdminTeachingPlan = () => import('../modules/education/pages/AdminTeachingPlan.vue')
@@ -167,6 +169,8 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/admin/overview' },
         { path: 'overview', name: 'admin-overview', component: AdminOverview },
+        { path: 'sales-delivery', name: 'admin-sales-delivery', component: () => import('../modules/delivery/pages/AdminSalesDelivery.vue') },
+        { path: 'delivery-access', name: 'admin-delivery-access', component: () => import('../modules/delivery/pages/AdminDeliveryAccess.vue') },
         { path: 'users', name: 'admin-users', component: AdminUsers },
         { path: 'menus', name: 'admin-menus', component: AdminMenus },
         { path: 'roles', name: 'admin-roles', component: AdminRoles },
@@ -268,6 +272,22 @@ const router = createRouter({
 router.beforeEach((to) => {
   if (to.path === '/account/change-password' && !isAdminAuthed()) return '/login'
   if (isAdminAuthed() && mustChangeAdminPassword() && to.path !== '/account/change-password') return '/account/change-password'
+  if (isAdminAuthed()) {
+    const delivery = getDeliveryContext()
+    if (delivery.mode === 'customer' && to.name === 'admin-ai-models'
+        && !getAdminRoles().some((role: { roleCode: string }) =>
+          ['SUPER_ADMIN', 'DELIVERY_GROUP_ADMIN'].includes(role.roleCode))) {
+      return '/admin/delivery-access'
+    }
+    const licensedPublicationDetail = to.name === 'portal-publication-detail'
+      && delivery.routes?.includes('/portal/publications')
+    const licensedWorkflowForm = to.name === 'portal-workflow-forms'
+      && delivery.modules?.includes('COLLABORATION_OFFICE')
+    if (delivery.mode === 'customer' && to.path !== '/account/change-password'
+        && to.path !== '/admin/delivery-access' && !delivery.routes?.includes(to.path) && !licensedPublicationDetail && !licensedWorkflowForm) {
+      return '/admin/delivery-access'
+    }
+  }
   if (to.path.startsWith('/portal') && !isAdminAuthed()) return '/login'
   if (to.path === '/login' && isAdminAuthed()) return '/portal'
   if (to.path.startsWith('/admin') && to.path !== '/admin/login') {

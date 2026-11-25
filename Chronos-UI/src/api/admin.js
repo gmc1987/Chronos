@@ -237,16 +237,29 @@ export const downloadMiniProgramSchoolEntryCode = (organizationId = '') => http.
   `/api/mini-program/admin/school-entry/code${organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : ''}`,
 )
 
-export const listSupervisionPlans = () => http.get('/admin/education/supervision/plans')
+export const listSupervisionPlans = schoolId => http.get(`/admin/education/supervision/plans?${qs({ schoolId })}`)
 export const createSupervisionPlan = (payload) => http.post('/admin/education/supervision/plans', payload)
 export const publishSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/publish`)
 export const startSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/start`)
 export const completeSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/complete`)
 export const archiveSupervisionPlan = (id) => http.post(`/admin/education/supervision/plans/${id}/archive`)
 export const createSupervisionAssignment = (payload) => http.post('/admin/education/supervision/assignments', payload)
+export const createSupervisionObservation = payload => http.post('/admin/education/supervision/assignments/observation', payload)
+export const supervisionObservationTeachers = planId =>
+  http.get(`/admin/education/supervision/plans/${encodeURIComponent(planId)}/observation-teachers`)
+export const supervisionAssignmentSupervisors = planId =>
+  http.get(`/admin/education/supervision/plans/${encodeURIComponent(planId)}/assignment-supervisors`)
+export const supervisionAssignmentOfferings = planId =>
+  http.get(`/admin/education/supervision/plans/${encodeURIComponent(planId)}/assignment-offerings`)
+export const supervisionAssignmentSchedules = (planId, offeringId) =>
+  http.get(`/admin/education/supervision/plans/${encodeURIComponent(planId)}/assignment-offerings/${encodeURIComponent(offeringId)}/schedule-options`)
+export const setupSupervisionTeacher = (schoolId, body) =>
+  http.post('/admin/education/supervision/setup/teachers?' + new URLSearchParams({ schoolId }), body)
+export const bindSupervisionTeacher = (schoolId, body) =>
+  http.post('/admin/education/supervision/setup/teacher-links?' + new URLSearchParams({ schoolId }), body)
 export const createSupervisionIssue = (recordId, payload) => http.post(`/admin/education/supervision/records/${recordId}/issues`, payload)
-export const listSupervisionRecords = () => http.get('/admin/education/supervision/records')
-export const listSupervisionIssues = () => http.get('/admin/education/supervision/issues')
+export const listSupervisionRecords = schoolId => http.get(`/admin/education/supervision/records?${qs({ schoolId })}`)
+export const listSupervisionIssues = schoolId => http.get(`/admin/education/supervision/issues?${qs({ schoolId })}`)
 export const reviewSupervisionIssue = (id, payload) => http.post(`/admin/education/supervision/issues/${id}/review`, payload)
 export const homeSchoolNoticeReceipts = (id) => http.get(`/admin/education/home-school/notices/${id}/receipts`)
 export const pageClassGroups = (params = {}) => http.get(`/admin/education/home-school/class-groups?${qs(params)}`)
@@ -524,6 +537,7 @@ export const createAdmissionCandidate = (payload) => http.post('/admin/education
 export const updateAdmissionCandidate = (id, payload) => http.put(`/admin/education/admissions/${id}`, payload)
 export const reviewAdmissionCandidate = (id, payload) => http.post(`/admin/education/admissions/${id}/review`, payload)
 export const enrollAdmissionCandidate = (id, payload) => http.post(`/admin/education/admissions/${id}/enroll`, payload)
+export const handoverAdmissionAccount = (id, password) => http.post(`/admin/education/admissions/${id}/handover`, { password })
 export const updateAdmissionRegistration = (id, payload) => http.post(`/admin/education/admissions/${id}/registration`, payload)
 export const downloadAdmissionImportTemplate = () => http.download('/admin/education/admissions/import-template')
 export const importAdmissionCandidates = (file, dryRun = true, organizationId) => { const data = new FormData(); data.append('file', file); return http.upload(`/admin/education/admissions/import?${qs({ dryRun, organizationId })}`, data) }

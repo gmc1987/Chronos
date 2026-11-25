@@ -83,6 +83,16 @@ minio:
   secretKey: ${CHRONOS_MINIO_SECRET_KEY:minioadmin}
 
 chronos:
+  delivery:
+    mode: ${CHRONOS_DELIVERY_MODE:auto}
+    deployment-id: ${CHRONOS_DELIVERY_DEPLOYMENT_ID:}
+    group-admin: ${CHRONOS_DELIVERY_GROUP_ADMIN:}
+    group-password: ${CHRONOS_DELIVERY_GROUP_PASSWORD:}
+    signing-key: ${CHRONOS_DELIVERY_SIGNING_KEY:}
+    signing-key-id: ${CHRONOS_DELIVERY_SIGNING_KEY_ID:chronos-release}
+    artifact-dir: ${CHRONOS_DELIVERY_ARTIFACT_DIR:./data/delivery}
+    source-dir: ${CHRONOS_DELIVERY_SOURCE:}
+    public-keys: ${CHRONOS_DELIVERY_PUBLIC_KEYS:}
   wechat:
     mini-program:
       app-id: ${CHRONOS_WECHAT_MINI_PROGRAM_APP_ID:}

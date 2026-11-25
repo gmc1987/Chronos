@@ -118,7 +118,12 @@ onMounted(load)
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="error" />
     <el-table v-loading="loading" :data="tasks" border>
       <el-table-column prop="teacherId" label="授课教师" />
-      <el-table-column prop="scheduleEntryId" label="课表项" />
+      <el-table-column label="督导课次" min-width="240">
+        <template #default="{ row }">
+          <template v-if="row.observedCourse">{{ row.observedCourse }} · {{ row.observedLocation }} · {{ row.observedStartsAt }}</template>
+          <template v-else>{{ row.scheduleEntryId }}</template>
+        </template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" />
       <el-table-column prop="checkedInAt" label="签到时间" />
       <AdaptiveActionColumn label="操作" width="220">

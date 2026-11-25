@@ -16,9 +16,9 @@ import { ref } from 'vue'
 import AdminSidebar from './AdminSidebar.vue'
 import AdminTopbar from './AdminTopbar.vue'
 import AgentWorkspaceDrawer from '../../modules/agent/components/AgentWorkspaceDrawer.vue'
-import { hasAdminPermission } from '../../store/auth'
+import { canUseOperationAgent } from '../../store/auth'
 
-const canUseAgent = hasAdminPermission('education:operation-agent:view', 'education:operation-agent:execute', 'education:operation-agent:manage', 'education:operation-agent:review')
+const canUseAgent = canUseOperationAgent()
 const agentOpen = ref(canUseAgent && localStorage.getItem('chronos.agent.view.open') === 'true')
 const setAgentOpen = value => { agentOpen.value = value; localStorage.setItem('chronos.agent.view.open', String(value)) }
 const toggleAgent = () => setAgentOpen(!agentOpen.value)

@@ -12,6 +12,10 @@
       </el-select>
       <el-button type="primary" @click="loadAssignments">查询住宿分配</el-button>
       <el-button @click="loadBeds">刷新可用床位</el-button>
+      <template v-if="canManage">
+        <el-button :disabled="!organizationId" @click="setupDialog = 'term'">添加学期</el-button>
+        <el-button :disabled="!organizationId" @click="setupDialog = 'roster'">导入住宿学生</el-button>
+      </template>
     </div>
     <el-tabs v-model="tab">
       <el-tab-pane label="宿舍资源" name="resources">
@@ -75,6 +79,23 @@
         <el-button type="primary" :loading="assignmentImportCommitting" :disabled="!assignmentPreview?.committable" @click="commitAssignmentImport">确认整批导入</el-button>
       </template>
     </el-dialog>
+    <el-dialog :model-value="Boolean(setupDialog)" :title="setupDialog === 'term' ? '添加住宿学期' : '导入住宿学生'"
+      width="700px" @update:model-value="visible => { if (!visible) setupDialog = '' }">
+      <p>{{ organizationName(organizationId) }}</p>
+      <el-form v-if="setupDialog === 'term'" :model="termForm" label-width="100px">
+        <el-form-item label="学年"><el-input v-model="termForm.academicYear" placeholder="例如 2026-2027" /></el-form-item>
+        <el-form-item label="学期序号"><el-input-number v-model="termForm.termNo" :min="1" :max="3" /></el-form-item>
+        <el-form-item label="学期名称"><el-input v-model="termForm.name" /></el-form-item>
+        <el-form-item label="开始日期"><el-date-picker v-model="termForm.startDate" value-format="YYYY-MM-DD" /></el-form-item>
+        <el-form-item label="结束日期"><el-date-picker v-model="termForm.endDate" value-format="YYYY-MM-DD" /></el-form-item>
+        <el-form-item label="教学周数"><el-input-number v-model="termForm.weeks" :min="1" :max="53" /></el-form-item>
+      </el-form>
+      <div v-else>
+        <p>从表格复制数据行。列顺序为班级编码、班级名称、入学年份、学号、学生姓名、性别。性别可留空，最多 500 行。</p>
+        <el-input v-model="rosterText" aria-label="住宿学生名册" type="textarea" :rows="8" />
+      </div>
+      <template #footer><el-button type="primary" :loading="setupSaving" @click="saveSetup">确认保存</el-button></template>
+    </el-dialog>
   </section>
 </template>
 
@@ -83,7 +104,50 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { accommodationAssignments, accommodationBeds, accommodationBuildings, accommodationRooms, accommodationStudents, assignAccommodation, cancelAccommodation, commitAccommodationAssignments, createAccommodationBed, createAccommodationBuilding, createAccommodationRoom, deleteAccommodationRoom, downloadAccommodationAssignmentImportTemplate, downloadAccommodationImportTemplate, importAccommodationResources, previewAccommodationAssignments, updateAccommodationRoom } from '../api/accommodation'
-import { listAcademicTerms, orgList } from '../../../api/admin'
+import { createAccommodationTerm, importAccommodationRoster } from '../api/accommodation'
+import { listAcademicTerms, orgOptions } from '../../../api/admin'
+import { hasAdminPermission } from '../../../store/auth'
+
+const canManage = hasAdminPermission('education:accommodation:manage')
+const setupDialog = ref('')
+const setupSaving = ref(false)
+const rosterText = ref('')
+const termForm = reactive({ academicYear: '', termNo: 1, name: '', startDate: '', endDate: '', weeks: 20 })
+
+async function saveSetup() {
+  const school = organizationId.value
+  if (!school) return
+  setupSaving.value = true
+  try {
+    if (setupDialog.value === 'term') {
+      const result = await createAccommodationTerm(school, termForm)
+      setupDialog.value = ''
+      if (school === organizationId.value) {
+        await loadTerms(result.data?.termCode)
+      }
+      ElMessage.success('学期已创建')
+      return
+    }
+    const lines = rosterText.value.split(/\r?\n/).filter(line => line.trim())
+    const rows = lines.map((line, index) => {
+      const columns = line.split('\t')
+      if (columns.length < 5 || columns.length > 6) {
+        throw new Error(`第 ${index + 1} 行应包含 5 至 6 列，请从电子表格复制数据行`)
+      }
+      const [classCode, className, enrollmentYear, studentNo, studentName, gender] = columns
+      return { classCode, className, enrollmentYear: Number(enrollmentYear), studentNo, studentName, gender }
+    })
+    const { data } = await importAccommodationRoster(school, rows)
+    ElMessage.success(`新增 ${data.added} 人，已存在 ${data.existing} 人`)
+    rosterText.value = ''
+    setupDialog.value = ''
+    if (school === organizationId.value) await loadStudents('')
+  } catch (error) {
+    ElMessage.error(error.message || '住宿基础数据保存失败')
+  } finally {
+    setupSaving.value = false
+  }
+}
 
 const tab = ref('resources'); const organizationId = ref(''); const organizations = ref([]); const semesterCode = ref(''); const terms = ref([]); const buildings = ref([]); const beds = ref([]); const assignments = ref([]); const students = ref([])
 const buildingDialog = ref(false); const roomDialog = ref(false); const bedDialog = ref(false); const activeBuilding = ref(null); const activeRoom = ref(null); const editingRoom = ref(null)
@@ -99,11 +163,14 @@ const normalizeRoom = item => ({ ...item, roomNo: item.roomNo ?? item.room_no, f
 const normalizeStudent = item => ({ ...item, studentNo: item.studentNo ?? item.student_no, studentName: item.studentName ?? item.student_name })
 const normalizeBed = item => ({ ...item, bedNo: item.bedNo ?? item.bed_no, roomNo: item.roomNo ?? item.room_no, buildingName: item.buildingName ?? item.building_name })
 const normalizeAssignment = item => ({ ...item, studentNo: item.studentNo ?? item.student_no, studentName: item.studentName ?? item.student_name, buildingName: item.buildingName ?? item.building_name, roomNo: item.roomNo ?? item.room_no, bedNo: item.bedNo ?? item.bed_no })
-const loadTerms = async () => {
-	if (!organizationId.value) { terms.value = []; semesterCode.value = ''; return }
-  const result = await listAcademicTerms({ page: 0, size: 100, organizationId: organizationId.value || undefined })
+const loadTerms = async (preferredCode) => {
+  const school = organizationId.value
+  if (!school) { terms.value = []; semesterCode.value = ''; return }
+  const result = await listAcademicTerms({ page: 0, size: 100, organizationId: school })
+  if (school !== organizationId.value) return
   terms.value = unwrap(result)
-  const current = terms.value.find(item => item.currentTerm) || terms.value[0]
+  const current = terms.value.find(item => item.termCode === preferredCode)
+    || terms.value.find(item => item.currentTerm) || terms.value[0]
   if (current) {
     semesterCode.value = current.termCode
     await loadAssignments()
@@ -184,7 +251,7 @@ const invalidateAssignmentPreview = () => { assignmentPreviewRequestVersion++; a
 const changeTerm = async () => { invalidateAssignmentPreview(); students.value = []; assignments.value = []; beds.value = []; await loadAssignments() }
 const changeOrganization = async () => { invalidateAssignmentPreview(); semesterCode.value = ''; students.value = []; assignments.value = []; beds.value = []; await Promise.all([loadTerms(), loadResources()]) }
 watch(organizationId, changeOrganization)
-onMounted(async () => { const response = await orgList({ page: 0, size: 500 }); organizations.value = unwrap(response) })
+onMounted(async () => { const response = await orgOptions(); organizations.value = unwrap(response) })
 </script>
 
 <style scoped>

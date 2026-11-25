@@ -1,6 +1,9 @@
 import { http } from '../../../api/http'
+import { getDeliveryContext } from '../../../store/auth'
 
 export const teachingCenterOfferings = () => http.get('/education/teaching-center/offerings')
+export const preparationTeacherOptions = (offeringId) =>
+  http.get(`/education/teaching-center/support/offerings/${encodeURIComponent(offeringId)}/preparation-teachers`)
 export const teachingDomainPageApi = (domain, params = {}) => {
   const query = queryString(params)
   return http.get(`/education/teaching-center/api/${domain}?${query}`)
@@ -20,7 +23,9 @@ export const teachingDomainChildrenApi = (domain, id, child, params = {}) => {
   return http.get(`/education/teaching-center/api/${domain}/${encodeURIComponent(id)}/${child}?${query}`)
 }
 export const publishedScheduleEntries = (offeringId, semesterCode) =>
-  http.get(`/admin/education/schedules?semesterCode=${encodeURIComponent(semesterCode)}&dimension=TEACHING_CLASS&targetId=${encodeURIComponent(offeringId)}`)
+  getDeliveryContext().mode === 'customer'
+    ? http.get(`/education/teaching/offerings/${encodeURIComponent(offeringId)}/schedule-options`)
+    : http.get(`/admin/education/schedules?semesterCode=${encodeURIComponent(semesterCode)}&dimension=TEACHING_CLASS&targetId=${encodeURIComponent(offeringId)}`)
 export const teachingProduction = (offeringId) =>
   http.get(`/education/teaching/offerings/${encodeURIComponent(offeringId)}/production`)
 export const offeringPlans = (offeringId) =>
@@ -92,8 +97,13 @@ export const deleteTeachingChild = (type, id) =>
   http.delete(`/education/teaching-center/children/${encodeURIComponent(type)}/${id}`)
 export const submitTeachingReview = (type, id, body) =>
   http.post(`/education/teaching-center/domain/${encodeURIComponent(type)}/${id}/submit-review`, body)
-export const teachingReviewStatus = (type, id) =>
-  http.get(`/education/teaching-center/domain/${encodeURIComponent(type)}/${id}/review-status`)
+export const teachingReviewStatus = (type, id) => {
+  const resourceType = encodeURIComponent(type)
+  const resourceId = encodeURIComponent(id)
+  return getDeliveryContext().mode === 'customer'
+    ? http.get(`/education/teaching-center/support/reviews/status/${resourceType}/${resourceId}`)
+    : http.get(`/education/teaching-center/domain/${resourceType}/${resourceId}/review-status`)
+}
 
 // Slice two uses explicit domain contracts; the generic compatibility CRUD above is
 // intentionally not used by the preparation and resource workbenches.
@@ -140,7 +150,7 @@ export const addResourceVersion = (domain, id, body) =>
 export const uploadTeachingFile = (file, onProgress) => {
   const data = new FormData()
   data.append('file', file)
-  return http.upload('/files?businessType=WORKFLOW_FORM_DRAFT', data, onProgress)
+  return http.upload('/education/teaching-center/support/attachments', data, onProgress)
 }
 export const setCurrentResourceVersion = (domain, id, versionId) =>
   http.post(`/education/teaching-center/${domain}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/current`)
@@ -228,6 +238,9 @@ export const submitResearchResult = (id, idempotencyKey) => http.post(
 )
 export const archiveResearchResult = (id) => http.post(`/education/teaching-center/research-results/${encodeURIComponent(id)}/archive`)
 export const researchReviewStatus = (id) => http.get(`/education/teaching-center/domain/RESEARCH_RESULT/${encodeURIComponent(id)}/review-status`)
+export const pendingTeachingProductReviews = () => http.get('/education/teaching-center/support/reviews')
+export const decideTeachingProductReview = (id, body) =>
+  http.put(`/education/teaching-center/support/reviews/${encodeURIComponent(id)}/decision`, body)
 export const researchChildren = (id, child, params = {}) =>
   teachingDomainChildrenApi('research', id, child, params)
 export const createResearchChild = (id, child, body) =>
@@ -272,3 +285,30 @@ export const gradeHomeworkSubmission = (submissionId, body) =>
   http.post(`/education/teaching-center/api/homework-submissions/${encodeURIComponent(submissionId)}/grade`, body)
 export const batchGradeHomework = (id, body) =>
   http.post(`/education/teaching-center/api/homeworks/${encodeURIComponent(id)}/batch-grade`, body)
+
+
+export const teachingDictionaryOptions = code =>
+  http.get('/education/teaching-center/support/dictionaries/' + encodeURIComponent(code))
+
+export const teachingCourseOptions = () => http.get('/education/teaching-center/support/courses')
+
+export const downloadTeachingAttachment = id =>
+  http.download('/education/teaching-center/support/attachments/' + encodeURIComponent(id))
+
+export const homeworkOfferingOptions = () => http.get('/education/teaching-center/homework-support/offerings')
+export const uploadHomeworkAttachment = file => {
+  const data = new FormData()
+  data.append('file', file)
+  return http.upload('/education/teaching-center/homework-support/attachments', data)
+}
+export const downloadHomeworkAttachment = id =>
+  http.download('/education/teaching-center/homework-support/attachments/' + encodeURIComponent(id))
+
+const homeworkMistakeUrl = offeringId =>
+  '/education/teaching-center/homework-support/offerings/' + encodeURIComponent(offeringId)
+export const personalHomeworkMistakes = offeringId => http.get(homeworkMistakeUrl(offeringId) + '/my-mistakes')
+export const addHomeworkMistake = (offeringId, note) =>
+  http.post(homeworkMistakeUrl(offeringId) + '/my-mistakes', { note })
+export const updateHomeworkMastery = (offeringId, id, mastered) =>
+  http.put(homeworkMistakeUrl(offeringId) + '/my-mistakes/' + encodeURIComponent(id), { mastered })
+export const homeworkMistakeSummary = offeringId => http.get(homeworkMistakeUrl(offeringId) + '/mistake-summary')

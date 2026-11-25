@@ -92,6 +92,8 @@ public class TeachingPlanLessonService {
 	public Map<String, Object> context(String semesterId, Authentication auth) {
 		var scope = scopes.resolve(auth.getName());
 		var values = scopes.visibleOfferings(scope, offerings.findAll()).stream()
+				.filter(o -> !CourseOffering.GRADE_ONLY.equals(o.getStatus())
+						&& !CourseOffering.HOMEWORK_ONLY.equals(o.getStatus()))
 				.filter(o -> semesterId == null || semesterId.isBlank() || semesterId.equals(o.getSemesterCode()))
 				.toList();
 		var schedule = values.stream().flatMap(o -> schedules.findByOfferingId(o.getId()).stream())
@@ -139,6 +141,14 @@ public class TeachingPlanLessonService {
 	public List<LessonPlan> lessonsForOffering(String offeringId, Authentication auth) {
 		offering(offeringId, auth);
 		return lessons.findByOfferingIdAndArchivedFalseOrderByCreateTimeDesc(offeringId);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ScheduleEntry> publishedScheduleOptions(String offeringId, Authentication auth) {
+		offering(offeringId, auth);
+		return schedules.findByOfferingId(offeringId).stream()
+				.filter(entry -> "PUBLISHED".equals(entry.getStatus()))
+				.toList();
 	}
 	@Transactional(readOnly = true)
 	public List<Preparation> preparationsForOffering(String offeringId, Authentication auth) {

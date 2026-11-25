@@ -75,6 +75,19 @@ class EducationDataScopeServiceTest {
 	}
 
 	@Test
+	void importedClassWithoutGradeUsesCampusScope() {
+		var imported = new AdministrativeClass();
+		imported.setCampusId("school-campus");
+		when(classes.findById("imported-class")).thenReturn(Optional.of(imported));
+		var schoolScope = new EducationDataScope(false, Set.of("school-campus"), Set.of(), Set.of(), Set.of());
+		var foreignScope = new EducationDataScope(false, Set.of("other-campus"), Set.of(), Set.of(), Set.of());
+
+		assertThatCode(() -> service.assertClassAccess(schoolScope, "imported-class")).doesNotThrowAnyException();
+		assertThatThrownBy(() -> service.assertClassAccess(foreignScope, "imported-class"))
+				.isInstanceOf(AccessDeniedException.class);
+	}
+
+	@Test
 	void revokedTeacherBindingDoesNotInheritEmployeeTeachingScope() {
 		TeacherAcademicProfileRepository teacherRepository = mock(TeacherAcademicProfileRepository.class);
 		EducationUserBindingRepository bindingRepository = mock(EducationUserBindingRepository.class);

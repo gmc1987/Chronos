@@ -53,6 +53,7 @@ public class IntegrationExtensionService {
 	private final SyncItemErrorRepository errors;
 	private final DeadLetterRepository deadLetters;
 	private final TrustedSimulationProvider simulation;
+	private final IntegrationBatchStore batchStore;
 
 	@Autowired
 	public IntegrationExtensionService(ConnectorRepository connectors, SyncJobRepository jobs,
@@ -60,7 +61,7 @@ public class IntegrationExtensionService {
 			SyncReconciliationRepository reconciliations, CredentialRepository credentials,
 			PlatformSecretCipher cipher, HttpJsonProvider provider, ObjectMapper objectMapper,
 			IAuditLogService audit, SyncItemErrorRepository errors,
-			DeadLetterRepository deadLetters, TrustedSimulationProvider simulation) {
+			DeadLetterRepository deadLetters, TrustedSimulationProvider simulation, IntegrationBatchStore batchStore) {
 		this.connectors = connectors;
 		this.jobs = jobs;
 		this.runs = runs;
@@ -75,6 +76,7 @@ public class IntegrationExtensionService {
 		this.errors = errors;
 		this.deadLetters = deadLetters;
 		this.simulation = simulation;
+		this.batchStore = batchStore;
 	}
 
 	/** Compatibility constructor for focused unit tests. */
@@ -84,7 +86,7 @@ public class IntegrationExtensionService {
 			PlatformSecretCipher cipher, HttpJsonProvider provider, ObjectMapper objectMapper,
 			IAuditLogService audit) {
 		this(connectors, jobs, runs, mappings, cursors, reconciliations, credentials,
-				cipher, provider, objectMapper, audit, null, null, null);
+				cipher, provider, objectMapper, audit, null, null, null, null);
 	}
 
 	@Transactional
@@ -132,7 +134,21 @@ public class IntegrationExtensionService {
 	 * item maps successfully and the run has been marked successful.
 	 */
 	public SyncRun executeBatch(String jobId, String actor) {
-		return executeBatch(jobId, actor, true);
+		if (batchStore == null) return executeBatch(jobId, actor, true);
+		return leasedBatch(jobId, actor, true);
+	}
+
+	private SyncRun leasedBatch(String jobId, String actor, boolean createFailureRecords) {
+		var now = LocalDateTime.now();
+		String owner = java.util.UUID.randomUUID().toString();
+		if (jobs.claimLease(jobId, owner, now, now.plusMinutes(5)) != 1) {
+			throw new IntegrationBoundaryException("JOB_BUSY", "同步任务正在运行，请稍后重试");
+		}
+		try {
+			return executeBatch(jobId, actor, createFailureRecords);
+		} finally {
+			jobs.releaseLease(jobId, owner);
+		}
 	}
 
 	private SyncRun executeBatch(String jobId, String actor, boolean createFailureRecords) {
@@ -151,13 +167,16 @@ public class IntegrationExtensionService {
 			run.setAttemptCount(1);
 			run.setSuccessCount(mapped.mapped().size());
 			run.setFailureCount(mapped.requiredFailures().size());
-			if (createFailureRecords && !mapped.requiredFailures().isEmpty()) {
+			if (!mapped.requiredFailures().isEmpty()) {
 				run.setStatus("FAILED");
 				run.setErrorMessage("required mapping validation failed");
 			} else {
 				run.setStatus("SUCCEEDED");
 			}
 			run.setFinishedAt(LocalDateTime.now());
+			if (batchStore != null && "SUCCEEDED".equals(run.getStatus())) {
+				return batchStore.commit(run, mapped.mapped(), page.nextCursor(), actor);
+			}
 			SyncRun saved = runs.save(run);
 			if (saved == null) {
 				saved = run;
@@ -165,7 +184,7 @@ public class IntegrationExtensionService {
 			if ("SUCCEEDED".equals(saved.getStatus()) && !blank(page.nextCursor())) {
 				advanceCursor(jobId, page.nextCursor(), actor);
 			}
-			if (!mapped.requiredFailures().isEmpty()) {
+			if (createFailureRecords && !mapped.requiredFailures().isEmpty()) {
 				for (RequiredFailure failure : mapped.requiredFailures()) {
 					createDeadLetter(saved, failure.sourceKey(), failure.message());
 				}
@@ -229,7 +248,8 @@ public class IntegrationExtensionService {
 		deadLetter.setLastResult("manual replay started");
 		deadLetters.save(deadLetter);
 		audit.log(actor, "INTEGRATION_DEAD_LETTER_REPLAY_STARTED", id);
-		SyncRun replay = executeBatch(original.getJobId(), actor, false);
+		SyncRun replay = batchStore == null ? executeBatch(original.getJobId(), actor, false)
+				: leasedBatch(original.getJobId(), actor, false);
 		if ("SUCCEEDED".equals(replay.getStatus())) {
 			deadLetter.setStatus("REPLAYED");
 			deadLetter.setReplayedAt(LocalDateTime.now());

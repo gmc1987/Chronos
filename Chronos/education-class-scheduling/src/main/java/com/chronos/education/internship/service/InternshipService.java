@@ -7,6 +7,7 @@ import com.chronos.education.internship.model.*;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
+import com.chronos.file.service.ManagedFileService;
 import com.chronos.service.iService.IAuditLogService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -20,12 +21,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 高职实习实训的正式业务状态机，所有批准动作均与提交人分离。 */
 @Service
 public class InternshipService {
+	public static final String ATTACHMENT_TYPE = "EDUCATION_INTERNSHIP_PLACEMENT";
 	private final InternshipCompanyRepository companies;
 	private final InternshipPositionRepository positions;
 	private final InternshipPlacementRepository placements;
@@ -37,6 +40,7 @@ public class InternshipService {
 	private final EducationDataScopeService dataScopes;
 	private final IAuditLogService audit;
 	private final ObjectMapper json;
+	private final ManagedFileService files;
 
 	public InternshipService(
 			InternshipCompanyRepository companies,
@@ -49,7 +53,7 @@ public class InternshipService {
 			AcademicTermRepository terms,
 			EducationDataScopeService dataScopes,
 			IAuditLogService audit,
-			ObjectMapper json) {
+			ObjectMapper json, ManagedFileService files) {
 		this.companies = companies;
 		this.positions = positions;
 		this.placements = placements;
@@ -61,6 +65,7 @@ public class InternshipService {
 		this.dataScopes = dataScopes;
 		this.audit = audit;
 		this.json = json;
+		this.files = files;
 	}
 
 	@Transactional(readOnly = true)
@@ -154,6 +159,47 @@ public class InternshipService {
 		return positions.save(value);
 	}
 
+	@Transactional
+	public InternshipPosition submitPosition(String id, String actor) {
+		var position = positionForUpdate(id, actor);
+		if (!Set.of("DRAFT", "REJECTED").contains(position.getStatus())) {
+			throw new IllegalStateException("当前岗位不可提交审核");
+		}
+		position.setSubmittedBy(actor);
+		position.setSubmittedAt(LocalDateTime.now());
+		position.setApprovedBy(null);
+		position.setApprovedAt(null);
+		position.setDecisionComment(null);
+		position.setStatus("SUBMITTED");
+		audit.log(actor, "INTERNSHIP_POSITION_SUBMIT", "positionId=" + id);
+		return positions.save(position);
+	}
+
+	@Transactional
+	public InternshipPosition decidePosition(String id, DecisionCommand command, String actor) {
+		var position = positionForUpdate(id, actor);
+		if (!"SUBMITTED".equals(position.getStatus())) {
+			throw new IllegalStateException("当前岗位不可审核");
+		}
+		assertDifferent(actor, position.getSubmittedBy(), "岗位提交人不能审核自己的岗位");
+		if (!command.approved()) {
+			require(command.comment(), "驳回原因不能为空");
+		}
+		position.setStatus(command.approved() ? "ACTIVE" : "REJECTED");
+		position.setApprovedBy(actor);
+		position.setApprovedAt(LocalDateTime.now());
+		position.setDecisionComment(trim(command.comment()));
+		audit.log(actor, "INTERNSHIP_POSITION_DECIDE", "positionId=" + id + ",status=" + position.getStatus());
+		return positions.save(position);
+	}
+
+	private InternshipPosition positionForUpdate(String id, String actor) {
+		var position = positions.findForUpdate(id)
+				.orElseThrow(() -> new IllegalArgumentException("实习岗位不存在"));
+		assertSchool(actor, position.getSchoolId());
+		return position;
+	}
+
 	@Transactional(readOnly = true)
 	public List<InternshipPlacement> placements(String schoolId, String termCode, String actor) {
 		assertSchool(actor, schoolId);
@@ -163,10 +209,14 @@ public class InternshipService {
 	@Transactional
 	public InternshipPlacement createPlacement(PlacementCommand command, String actor) {
 		assertSchool(actor, command.schoolId());
-		dataScopes.assertStudentAccess(dataScopes.resolve(actor), command.studentId());
-		terms.findByTermCode(command.termCode()).orElseThrow(() -> new IllegalArgumentException("学期不存在"));
+		var scope = dataScopes.resolve(actor);
+		dataScopes.assertStudentAccess(scope, command.studentId());
+		terms.findByTermCode(command.termCode())
+				.filter(term -> command.schoolId().equals(term.getOrganizationId()) && "ACTIVE".equals(term.getStatus()))
+				.orElseThrow(() -> new IllegalArgumentException("请选择本校的启用学期"));
 		var student = students.findById(command.studentId())
 				.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+		dataScopes.assertStudentInSchool(scope, command.schoolId(), student);
 		if (!"ACTIVE".equals(student.getEnrollmentStatus())) {
 			throw new IllegalStateException("学生当前学籍状态不可参加实习");
 		}
@@ -181,9 +231,13 @@ public class InternshipService {
 		if (command.startDate() == null || command.endDate() == null || command.endDate().isBefore(command.startDate())) {
 			throw new IllegalArgumentException("实习起止日期无效");
 		}
-		require(command.agreementFileId(), "必须绑定实习协议");
-		require(command.consentFileId(), "必须绑定知情同意材料");
-		require(command.insuranceFileId(), "必须绑定实习保险凭证");
+		var fileIds = List.of(
+				require(command.agreementFileId(), "必须绑定实习协议"),
+				require(command.consentFileId(), "必须绑定知情同意材料"),
+				require(command.insuranceFileId(), "必须绑定实习保险凭证"));
+		if (fileIds.stream().distinct().count() != fileIds.size()) {
+			throw new IllegalArgumentException("协议、知情同意和保险凭证请分别上传");
+		}
 		long occupied = placements.countByPositionIdAndStatusIn(position.getId(),
 				List.of("SUBMITTED", "APPROVED", "ACTIVE"));
 		if (occupied >= position.getCapacity()) {
@@ -200,7 +254,19 @@ public class InternshipService {
 		value.setAgreementFileId(command.agreementFileId().trim());
 		value.setConsentFileId(command.consentFileId().trim());
 		value.setInsuranceFileId(command.insuranceFileId().trim());
-		return placements.save(value);
+		value = placements.save(value);
+		files.bind(fileIds, ATTACHMENT_TYPE, value.getId(), actor);
+		return value;
+	}
+
+	@Transactional(readOnly = true)
+	public ManagedFileService.FileContent downloadAttachment(String id, String fileId, Authentication authentication) {
+		var value = placement(id, authentication.getName());
+		if (!List.of(value.getAgreementFileId(), value.getConsentFileId(), value.getInsuranceFileId()).contains(fileId)) {
+			throw new AccessDeniedException("附件不属于该实习安排");
+		}
+		files.requireBound(List.of(fileId), ATTACHMENT_TYPE, id);
+		return files.read(fileId, authentication);
 	}
 
 	@Transactional
@@ -208,6 +274,14 @@ public class InternshipService {
 		InternshipPlacement value = placementForUpdate(id, actor);
 		if (!Set.of("DRAFT", "REJECTED").contains(value.getStatus())) {
 			throw new IllegalStateException("当前实习安排不可提交");
+		}
+		// 岗位容量在占用名额时复核，两个草稿同时提交也不会超出容量。
+		var position = positions.findForUpdate(value.getPositionId())
+				.filter(item -> "ACTIVE".equals(item.getStatus()))
+				.orElseThrow(() -> new IllegalStateException("实习岗位当前不可用"));
+		if (placements.countByPositionIdAndStatusIn(position.getId(),
+				List.of("SUBMITTED", "APPROVED", "ACTIVE")) >= position.getCapacity()) {
+			throw new IllegalStateException("实习岗位容量已满");
 		}
 		String snapshot = write(Map.of(
 				"studentId", value.getStudentId(), "companyId", value.getCompanyId(),
@@ -278,18 +352,21 @@ public class InternshipService {
 
 	@Transactional
 	public InternshipAssessment submitAssessment(String placementId, AssessmentCommand command, String actor) {
-		InternshipPlacement placement = placement(placementId, actor);
+		InternshipPlacement placement = placementForUpdate(placementId, actor);
 		if (!Set.of("APPROVED", "ACTIVE").contains(placement.getStatus())) {
 			throw new IllegalStateException("当前实习安排不可提交考核");
 		}
-		if (assessments.findByPlacementId(placementId).isPresent()) {
-			throw new IllegalStateException("该实习安排已有考核记录");
+		var value = assessments.findByPlacementId(placementId).orElseGet(InternshipAssessment::new);
+		if (value.getId() != null && !"REJECTED".equals(value.getStatus())) {
+			throw new IllegalStateException("该实习安排已有待审或已批准的考核记录");
 		}
 		validateScore(command.companyScore());
 		validateScore(command.schoolScore());
 		validateScore(command.finalScore());
-		InternshipAssessment value = new InternshipAssessment();
 		value.setPlacementId(placementId);
+		value.setStatus("SUBMITTED");
+		value.setApprovedBy(null);
+		value.setApprovedAt(null);
 		value.setCompanyScore(command.companyScore());
 		value.setSchoolScore(command.schoolScore());
 		value.setFinalScore(command.finalScore());
@@ -313,6 +390,11 @@ public class InternshipService {
 			throw new IllegalStateException("当前实习考核不可审批");
 		}
 		assertDifferent(actor, value.getSubmittedBy(), "实习考核提交人不能审批自己的考核");
+		if (!command.approved()) {
+			require(command.comment(), "驳回原因不能为空");
+		}
+		audit.log(actor, "INTERNSHIP_ASSESSMENT_DECISION",
+				"assessmentId=" + id + ", approved=" + command.approved() + ", comment=" + trim(command.comment()));
 		value.setStatus(command.approved() ? "APPROVED" : "REJECTED");
 		value.setApprovedBy(actor);
 		value.setApprovedAt(LocalDateTime.now());
@@ -386,8 +468,11 @@ public class InternshipService {
 		return value;
 	}
 
-	private void assertSchool(String actor, String schoolId) {
-		dataScopes.assertSchoolAccess(dataScopes.resolve(actor), schoolId);
+	public void assertSchool(String actor, String schoolId) {
+		var scope = dataScopes.resolve(actor);
+		if (!scope.fullAccess() && !scope.campusIds().contains(schoolId)) {
+			throw new AccessDeniedException("无权访问该学校的实习实训数据");
+		}
 	}
 
 	private void assertDifferent(String actor, String submitter, String message) {

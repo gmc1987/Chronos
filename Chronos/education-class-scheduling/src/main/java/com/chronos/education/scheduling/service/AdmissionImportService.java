@@ -82,9 +82,7 @@ public class AdmissionImportService {
 				try {
 					AdmissionCandidate value = parse(row, formatter);
 					value.setOrganizationId(organizationId);
-					if (value.getPlannedClassId() != null && !organizationId.equals(classes.findById(value.getPlannedClassId())
-							.map(item -> item.getCampusId()).orElse(null)))
-						throw new IllegalArgumentException("行政班不属于所选机构");
+					admissions.validate(value);
 					String key = value.getAdmissionYear() + "|" + value.getCandidateNo();
 					if (!fileKeys.add(key)) throw new IllegalArgumentException("文件中考生号重复");
 					if (candidates.findByAdmissionYearAndCandidateNo(value.getAdmissionYear(), value.getCandidateNo()).isPresent())

@@ -101,11 +101,13 @@ public class ManagedFileService {
 			String actor) {
 		String type = required(businessType, "业务类型");
 		String targetId = required(businessId, "业务编号");
-		List<ManagedFileView> bound = fileIds.stream()
-				.filter(id -> id != null && !id.isBlank())
-				.distinct()
-				.map(id -> {
-			ManagedFile file = active(id);
+		var ids = fileIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+		// 锁定草稿后才检查归属，避免并发提交时同一个文件被绑定到两张单据。
+		var locked = new java.util.HashMap<String, ManagedFile>();
+		ids.stream().sorted().forEach(id -> locked.put(id, assertActive(files.findForBinding(id)
+				.orElseThrow(() -> new IllegalArgumentException("文件不存在")))));
+		List<ManagedFileView> bound = ids.stream().map(id -> {
+			ManagedFile file = locked.get(id);
 			if (!actor.equals(file.getOwnerUsername())) {
 				throw new AccessDeniedException("只能绑定本人上传的文件");
 			}
@@ -299,8 +301,11 @@ public class ManagedFileService {
 	}
 
 	private ManagedFile active(String id) {
-		ManagedFile file = files.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("文件不存在"));
+		return assertActive(files.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("文件不存在")));
+	}
+
+	private ManagedFile assertActive(ManagedFile file) {
 		if (!"ACTIVE".equals(file.getStatus())) {
 			throw new IllegalArgumentException("文件已删除");
 		}

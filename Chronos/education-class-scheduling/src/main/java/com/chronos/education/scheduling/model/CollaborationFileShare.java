@@ -16,6 +16,8 @@ import lombok.Setter;
 public class CollaborationFileShare extends BaseEntity {
 	@Column(name = "owner_username", length = 128, nullable = false)
 	private String ownerUsername;
+	@Column(name = "owner_organization_id", length = 64)
+	private String ownerOrganizationId;
 	@Column(name = "title", length = 255, nullable = false)
 	private String title;
 	@Column(name = "description", length = 1000)

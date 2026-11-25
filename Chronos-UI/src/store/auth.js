@@ -9,6 +9,7 @@ const ADMIN_ROLES = 'admin_roles'
 const ADMIN_PERMS = 'admin_permissions'
 const ADMIN_MENUS = 'admin_menus'
 const ADMIN_MUST_CHANGE_PASSWORD = 'admin_must_change_password'
+const ADMIN_DELIVERY = 'admin_delivery'
 
 const getStore = (remember) => (remember ? localStorage : sessionStorage)
 
@@ -68,17 +69,20 @@ export const saveAdminMeta = (payload, remember = true) => {
   if (payload.roles) store.setItem(ADMIN_ROLES, JSON.stringify(payload.roles))
   if (payload.permissions) store.setItem(ADMIN_PERMS, JSON.stringify(payload.permissions))
   if (payload.menus) store.setItem(ADMIN_MENUS, JSON.stringify(payload.menus))
+  if (payload.delivery) store.setItem(ADMIN_DELIVERY, JSON.stringify(payload.delivery))
   if (payload.mustChangePassword !== undefined) store.setItem(ADMIN_MUST_CHANGE_PASSWORD, String(!!payload.mustChangePassword))
 
   if (remember) {
     sessionStorage.removeItem(ADMIN_ROLES)
     sessionStorage.removeItem(ADMIN_PERMS)
     sessionStorage.removeItem(ADMIN_MENUS)
+    sessionStorage.removeItem(ADMIN_DELIVERY)
     sessionStorage.removeItem(ADMIN_MUST_CHANGE_PASSWORD)
   } else {
     localStorage.removeItem(ADMIN_ROLES)
     localStorage.removeItem(ADMIN_PERMS)
     localStorage.removeItem(ADMIN_MENUS)
+    localStorage.removeItem(ADMIN_DELIVERY)
     localStorage.removeItem(ADMIN_MUST_CHANGE_PASSWORD)
   }
 }
@@ -90,6 +94,7 @@ export const clearAdminTokens = () => {
   localStorage.removeItem(ADMIN_ROLES)
   localStorage.removeItem(ADMIN_PERMS)
   localStorage.removeItem(ADMIN_MENUS)
+  localStorage.removeItem(ADMIN_DELIVERY)
   localStorage.removeItem(ADMIN_MUST_CHANGE_PASSWORD)
   sessionStorage.removeItem(ADMIN_ACCESS)
   sessionStorage.removeItem(ADMIN_REFRESH)
@@ -97,12 +102,20 @@ export const clearAdminTokens = () => {
   sessionStorage.removeItem(ADMIN_ROLES)
   sessionStorage.removeItem(ADMIN_PERMS)
   sessionStorage.removeItem(ADMIN_MENUS)
+  sessionStorage.removeItem(ADMIN_DELIVERY)
   sessionStorage.removeItem(ADMIN_MUST_CHANGE_PASSWORD)
 }
 
 export const getAdminToken = () =>
   localStorage.getItem(ADMIN_ACCESS) || sessionStorage.getItem(ADMIN_ACCESS)
 
+export const getDeliveryContext = () =>
+  JSON.parse(localStorage.getItem(ADMIN_DELIVERY) || sessionStorage.getItem(ADMIN_DELIVERY) || '{}')
+
+export const saveDeliveryContext = value => {
+  const store = localStorage.getItem(ADMIN_ACCESS) ? localStorage : sessionStorage
+  store.setItem(ADMIN_DELIVERY, JSON.stringify(value))
+}
 export const getAdminRefresh = () =>
   localStorage.getItem(ADMIN_REFRESH) || sessionStorage.getItem(ADMIN_REFRESH)
 
@@ -142,6 +155,13 @@ export const hasAdminPermission = (...codes) => {
     (typeof role === 'string' ? role : role?.roleCode)?.toUpperCase() === 'SUPER_ADMIN'
   )
   return superAdmin || permissions.includes('*:*') || permissions.includes('iam:*') || codes.some(code => permissions.includes(code))
+}
+
+export const canUseOperationAgent = () => {
+  const delivery = getDeliveryContext()
+  return (delivery.mode !== 'customer' || delivery.modules?.includes('EDU_OPERATIONS_AGENT'))
+    && hasAdminPermission('education:operation-agent:view', 'education:operation-agent:execute',
+      'education:operation-agent:manage', 'education:operation-agent:review')
 }
 
 export const isAdminAuthed = () => !!getAdminToken()

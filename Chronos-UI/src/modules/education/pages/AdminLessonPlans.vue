@@ -11,9 +11,9 @@
   </section>
 </template>
 <script setup>
+import { teachingDictionaryOptions } from '../api/teachingCenter'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { dictionaryOptions } from '../../../api/admin'
 import { archiveTeachingDomainApi, createLessonPlan, lessonPlanDetail, lessonPlanVersions, offeringLessons, offeringPlans, publishedScheduleEntries, submitLessonPlan, teachingCenterOfferings, teachingPlanDetail, updateLessonPlan } from '../api/teachingCenter'
 const offerings=ref([]);const rows=ref([]);const total=ref(0);const page=ref(1);const size=ref(20);const loading=ref(false);const filters=reactive({offeringId:'',teachingWeek:''});const lessonTypes=ref([]);const planItems=ref([]);const scheduleEntries=ref([])
 const editor=ref(false);const editing=ref('');const workspace=ref(false);const selected=ref(null);const versions=ref([]);const reviewStatus=ref(null);const tab=ref('content')
@@ -30,6 +30,6 @@ const openWorkspace=async row=>{try{const r=await lessonPlanDetail(row.id);selec
 const submitLesson=async()=>{try{await submitLessonPlan(selected.value.id,`lesson-${selected.value.id}-${Date.now()}`);ElMessage.success('已提交审核');workspace.value=false;await load()}catch(e){ElMessage.error(e.message)}}
 const reviewText=computed(()=>reviewStatus.value?.status||'待提交')
 const archive=async row=>{await ElMessageBox.confirm('归档后将从默认列表隐藏，是否继续？','确认');try{await archiveTeachingDomainApi('lesson-plans',row.id);ElMessage.success('已归档');await load()}catch(e){ElMessage.error(e.message)}}
-onMounted(async()=>{try{const [o,d]=await Promise.all([teachingCenterOfferings(),dictionaryOptions('EDU_LESSON_TYPE')]);offerings.value=o.data||[];lessonTypes.value=(d.data||[]).map(x=>({label:x.dictName||x.itemName||x.name||x.label,value:x.dictValue||x.itemValue||x.value||x.code}));if(!filters.offeringId&&offerings.value[0])filters.offeringId=offerings.value[0].id;await load()}catch(e){ElMessage.error(e.message)}})
+onMounted(async()=>{try{const [o,d]=await Promise.all([teachingCenterOfferings(),teachingDictionaryOptions('EDU_LESSON_TYPE')]);offerings.value=o.data||[];lessonTypes.value=(d.data||[]).map(x=>({label:x.dictName||x.itemName||x.name||x.label,value:x.dictValue||x.itemValue||x.value||x.code}));if(!filters.offeringId&&offerings.value[0])filters.offeringId=offerings.value[0].id;await load()}catch(e){ElMessage.error(e.message)}})
 </script>
 <style scoped>.lesson-page{padding:24px}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.page-head h1{margin:0 0 6px}.page-head p{margin:0;color:#7b8794}.el-pagination{margin-top:20px;justify-content:flex-end}.tabs{margin-top:22px}.preview{padding:24px;line-height:1.8;background:#f8fafc;border-radius:8px}.preview h2{margin-top:0}.drawer-actions{display:flex;justify-content:flex-end;border-top:1px solid #ebeef5;padding-top:16px;margin-top:20px}.lesson-form{padding:12px 10px}.lesson-form .el-divider{margin:8px 0 18px}</style>

@@ -3,9 +3,12 @@
     <header class="head">
       <div>
         <h1>作业管理</h1>
-        <p>从教务中心选择本人负责的教学班，完成作业布置、提交查看、批改和评分。</p>
+        <p>按教学班布置作业、查看提交和批改。</p>
       </div>
-      <el-button type="primary" :disabled="!filters.offeringId" @click="openCreate">新建作业</el-button>
+      <div>
+        <GradeRosterSetupDialog v-if="customer && canManage" homework @saved="loadOfferings" />
+        <el-button v-if="canManage" type="primary" :disabled="!filters.offeringId" @click="openCreate">新建作业</el-button>
+      </div>
     </header>
 
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="loadError" />
@@ -26,12 +29,12 @@
       <el-table-column label="状态" width="120"><template #default="{row}">{{ assignmentStatusLabel(row.status) }}</template></el-table-column>
       <AdaptiveActionColumn label="操作" width="410" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="edit(row)">编辑</el-button>
-          <el-button link @click="showSubmissions(row)">提交情况</el-button>
-          <el-button v-if="row.status === 'DRAFT'" link type="success" @click="publish(row)">发布</el-button>
-          <el-button v-if="row.status === 'PUBLISHED'" link type="warning" @click="close(row)">关闭</el-button>
-          <el-button v-if="['PUBLISHED','CLOSED'].includes(row.status)" link type="success" @click="publishGrades(row)">发布成绩</el-button>
-          <el-button v-if="row.status === 'CLOSED'" link type="info" @click="archive(row)">归档</el-button>
+          <el-button v-if="canManage" link type="primary" @click="edit(row)">编辑</el-button>
+          <el-button v-if="canManage" link @click="showSubmissions(row)">提交情况</el-button>
+          <el-button v-if="canManage && row.status === 'DRAFT'" link type="success" @click="publish(row)">发布</el-button>
+          <el-button v-if="canManage && row.status === 'PUBLISHED'" link type="warning" @click="close(row)">关闭</el-button>
+          <el-button v-if="canManage && ['PUBLISHED','CLOSED'].includes(row.status)" link type="success" @click="publishGrades(row)">发布成绩</el-button>
+          <el-button v-if="canManage && row.status === 'CLOSED'" link type="info" @click="archive(row)">归档</el-button>
         </template>
       </AdaptiveActionColumn>
     </el-table>
@@ -47,11 +50,11 @@
         <el-form-item label="开始时间"><el-date-picker v-model="form.startAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" /></el-form-item>
         <el-form-item label="总分" prop="maxScore"><el-input-number v-model="form.maxScore" :min="1" :precision="0" /></el-form-item>
         <el-form-item label="提交次数"><el-input-number v-model="form.attemptLimit" :min="1" :max="100" :precision="0" /></el-form-item>
-        <el-form-item label="教学计划项"><el-select v-model="form.teachingPlanItemId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班章节"><el-option v-for="item in planItems" :key="item.id" :value="item.id" :label="`${item.chapterNo || ''} · ${item.chapterName}`" /></el-select></el-form-item>
-        <el-form-item label="备课记录"><el-select v-model="form.preparationId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班备课"><el-option v-for="item in preparations" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
-        <el-form-item label="教案"><el-select v-model="form.lessonPlanId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班教案"><el-option v-for="item in lessonPlans" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
-        <el-form-item label="题目/附件快照"><el-input v-model="form.questionSnapshotJson" type="textarea" :rows="6" placeholder="可填写题目、要求或附件引用 JSON；发布后形成快照" /></el-form-item>
-        <el-form-item label="已发布题目版本"><el-input v-model="form.questionVersionRefsJson" type="textarea" :rows="3" placeholder='必须填写 [{"questionId":"...","versionId":"...","maxScore":10}]' /></el-form-item>
+        <el-form-item v-if="withTeachingReferences" label="教学计划项"><el-select v-model="form.teachingPlanItemId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班章节"><el-option v-for="item in planItems" :key="item.id" :value="item.id" :label="`${item.chapterNo || ''} · ${item.chapterName}`" /></el-select></el-form-item>
+        <el-form-item v-if="withTeachingReferences" label="备课记录"><el-select v-model="form.preparationId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班备课"><el-option v-for="item in preparations" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
+        <el-form-item v-if="withTeachingReferences" label="教案"><el-select v-model="form.lessonPlanId" clearable filterable style="width:100%" placeholder="可选：选择当前教学班教案"><el-option v-for="item in lessonPlans" :key="item.id" :value="item.id" :label="item.title" /></el-select></el-form-item>
+        <el-form-item v-if="withTeachingReferences" label="题目/附件快照"><el-input v-model="form.questionSnapshotJson" type="textarea" :rows="6" placeholder="可填写题目、要求或附件引用 JSON；发布后形成快照" /></el-form-item>
+        <el-form-item v-if="withTeachingReferences" label="已发布题目版本"><el-input v-model="form.questionVersionRefsJson" type="textarea" :rows="3" placeholder='必须填写 [{"questionId":"...","versionId":"...","maxScore":10}]' /></el-form-item>
         <el-form-item label="允许迟交"><el-switch v-model="form.allowLate" /></el-form-item>
         <el-form-item label="发布对象"><el-select v-model="form.publishAudience" style="width:100%"><el-option label="有效选课学生" value="ENROLLED_STUDENTS" /><el-option label="全体学生" value="ALL_STUDENTS" /></el-select></el-form-item>
         <el-form-item label="作业附件">
@@ -90,7 +93,7 @@
         <el-form-item label="学生"><el-input :model-value="grading?.studentName || grading?.studentId || '-'" disabled /></el-form-item>
         <el-form-item label="答案"><el-input :model-value="grading?.answerSnapshotJson || '-'" type="textarea" :rows="6" disabled /></el-form-item>
         <el-form-item label="得分"><el-input-number v-model="gradeForm.score" :min="0" :max="selectedHomework?.maxScore || 100" :precision="2" /></el-form-item>
-        <el-form-item label="逐题得分"><el-input v-model="gradeForm.questionScoresJson" type="textarea" :rows="3" placeholder='按题目 ID 填写，例如 {"question-id":8}' /></el-form-item>
+        <el-form-item v-if="withTeachingReferences" label="逐题得分"><el-input v-model="gradeForm.questionScoresJson" type="textarea" :rows="3" placeholder='按题目 ID 填写，例如 {"question-id":8}' /></el-form-item>
         <el-form-item label="评语"><el-input v-model="gradeForm.feedback" type="textarea" :rows="4" /></el-form-item>
         <el-form-item label="处理"><el-radio-group v-model="gradeForm.result"><el-radio value="GRADED">完成评分</el-radio><el-radio value="RETURNED_FOR_REVISION">退回重做</el-radio></el-radio-group></el-form-item>
       </el-form>
@@ -103,8 +106,14 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createHomework, gradeHomeworkSubmission, homeworkPage, homeworkSubmissions, publishHomework, publishHomeworkGrades, closeHomework, archiveHomework, teachingCenterOfferings, teachingProduction, teachingPlanDetail, updateHomework } from '../api/teachingCenter'
+import GradeRosterSetupDialog from '../components/GradeRosterSetupDialog.vue'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
+import { homeworkOfferingOptions, downloadHomeworkAttachment, uploadHomeworkAttachment } from '../api/teachingCenter'
 import { uploadManagedFile, downloadManagedFile } from '../../../api/admin'
 
+const delivery = getDeliveryContext()
+const customer = delivery.mode === 'customer'
+const canManage = !customer || hasAdminPermission('education:homework:manage')
 const offerings = ref([])
 const rows = ref([])
 const submissions = ref([])
@@ -131,10 +140,12 @@ const assignmentStatusLabel = value => ({DRAFT:'草稿',PUBLISHED:'已发布',CL
 const submissionStatusLabel = value => ({NOT_STARTED:'未开始',DRAFT:'草稿',SUBMITTED:'待批改',GRADED:'已评分',RETURNED_FOR_REVISION:'退回重做'})[value] || value
 const offeringLabel = item => item ? [item.semesterCode, item.courseName, item.teachingClassName].filter(Boolean).join(' · ') : '-'
 const selectedOffering = computed(() => offerings.value.find(item => item.id === filters.offeringId))
+const withTeachingReferences = computed(() => (!customer || delivery.modules?.includes('EDU_TEACHING_RESOURCES'))
+  && selectedOffering.value?.status !== 'HOMEWORK_ONLY')
 const attachmentRefs = raw => { try { const refs = JSON.parse(raw || '[]'); return Array.isArray(refs) ? refs.filter(ref => ref?.fileId) : [] } catch { return [] } }
 const downloadAttachment = async attachment => {
   try {
-    const blob = await downloadManagedFile(attachment.fileId)
+    const blob = await (customer ? downloadHomeworkAttachment : downloadManagedFile)(attachment.fileId)
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url; link.download = attachment.name || '作业附件'; link.click()
@@ -147,7 +158,7 @@ const uploadAssignmentAttachment = async event => {
   if (!file || !editing.value) return
   uploadingAttachment.value = true
   try {
-    const uploaded = await uploadManagedFile(file)
+    const uploaded = await (customer ? uploadHomeworkAttachment : uploadManagedFile)(file)
     const fileId = uploaded?.data?.id
     if (!fileId) throw new Error('文件上传未返回文件编号')
     const refs = [...attachmentRefs(form.attachmentSnapshotJson), { fileId, name: file.name }]
@@ -171,7 +182,7 @@ const load = async () => {
 const resetForm = value => Object.assign(form, { type: 'HOMEWORK', title: '', instructionsJson: '', dueAt: '', startAt: '', maxScore: 100, attemptLimit: 1, questionSnapshotJson: '[]', questionVersionRefsJson: '[]', attachmentSnapshotJson: '[]', teachingPlanItemId: '', preparationId: '', lessonPlanId: '', allowLate: false, lateRule: 'REJECT', publishAudience: 'ENROLLED_STUDENTS' }, value || {})
 const openCreate = async () => { editing.value = ''; resetForm(); await loadReferences(); dialog.value = true }
 const loadReferences = async () => {
-  if (!filters.offeringId) { planItems.value = []; preparations.value = []; lessonPlans.value = []; return }
+  if (!filters.offeringId || !withTeachingReferences.value) { planItems.value = []; preparations.value = []; lessonPlans.value = []; return }
   try {
     const response = await teachingProduction(filters.offeringId)
     const data = response.data || {}
@@ -225,10 +236,18 @@ const grade = async () => {
   try { await gradeHomeworkSubmission(grading.value.id, { score: gradeForm.score, teacherFeedback: gradeForm.feedback, questionScoresJson: gradeForm.questionScoresJson, returnForRevision: gradeForm.result === 'RETURNED_FOR_REVISION' }); gradeDialog.value = false; ElMessage.success('批改结果已保存'); await showSubmissions(selectedHomework.value) }
   catch (error) { ElMessage.error(error.message || '保存批改失败') }
 }
-onMounted(async () => {
-  try { offerings.value = unwrap(await teachingCenterOfferings()); if (!filters.offeringId && offerings.value[0]) filters.offeringId = offerings.value[0].id; await loadReferences(); await load() }
-  catch (error) { loadError.value = error.message || '教学班加载失败' }
-})
+async function loadOfferings(created) {
+  try {
+    const list = customer ? homeworkOfferingOptions : teachingCenterOfferings
+    offerings.value = unwrap(await list())
+    filters.offeringId = created?.offeringId || filters.offeringId || offerings.value[0]?.id || ''
+    await loadReferences()
+    await load()
+  } catch (error) {
+    loadError.value = error.message || '教学班加载失败'
+  }
+}
+onMounted(loadOfferings)
 </script>
 
 <style scoped>

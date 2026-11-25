@@ -7,10 +7,15 @@
   <el-dialog v-model="dialog" title="知识点" width="560px"><el-form :model="form" label-width="100px"><el-form-item label="父级"><el-tree-select v-model="form.parentId" :data="tree" node-key="id" check-strictly clearable :render-after-expand="false" placeholder="根节点" /></el-form-item><el-form-item label="名称" required><el-input v-model="form.name" /></el-form-item><el-form-item label="编码"><el-input v-model="form.code" /></el-form-item><el-form-item label="描述"><el-input v-model="form.description" type="textarea" /></el-form-item><el-form-item label="学习目标"><el-input v-model="form.learningObjective" type="textarea" /></el-form-item></el-form><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template></el-dialog>
 </template>
 <script setup>
+import { listCourseCatalog } from '../../../api/admin'
+import { getDeliveryContext } from '../../../store/auth'
+import { teachingDictionaryOptions, teachingCourseOptions } from '../api/teachingCenter'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { dictionaryOptions, listCourseCatalog } from '../../../api/admin'
 import { knowledgePointTree, createKnowledgePoint, updateKnowledgePoint, moveKnowledgePoint, disableKnowledgePoint, enableKnowledgePoint } from '../api/teachingCenter'
+const courseOptions = () => getDeliveryContext().mode === 'customer'
+  ? teachingCourseOptions() : listCourseCatalog({ page: 0, size: 500 })
+
 const courses=ref([]);const courseId=ref('');const tree=ref([]);const selected=ref(null);const dialog=ref(false);const form=reactive({})
 const reset=(v={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{courseId:courseId.value,name:'',code:'',description:'',learningObjective:'',parentId:null,...v})}
 const loadTree=async()=>{selected.value=null;tree.value=[];if(!courseId.value)return;try{const r=await knowledgePointTree(courseId.value);tree.value=toTree(r.data?.content||r.data||[])}catch(e){ElMessage.error(e.message)}}
@@ -21,6 +26,6 @@ const save=async()=>{if(!form.name)return ElMessage.warning('请输入知识点�
 const dropPoint=async(node, _old, _parent)=>{try{await moveKnowledgePoint(node.data.id,{parentId:node.parent?.data?.id||null,sortOrder:node.data.sortOrder}) ;await loadTree()}catch(e){ElMessage.error(e.message);await loadTree()}}
 const disable=async(point)=>{try{await ElMessageBox.confirm(`停用后将影响 ${point.referenceCount||0} 个引用，是否继续？`,'确认停用');await disableKnowledgePoint(point.id);await loadTree();ElMessage.success('已停用')}catch(e){if(e!=='cancel')ElMessage.error(e.message)}}
 const enable=async(point)=>{try{await enableKnowledgePoint(point.id);await loadTree();ElMessage.success('已启用')}catch(e){ElMessage.error(e.message)}}
-onMounted(async()=>{try{const r=await listCourseCatalog({page:0,size:500});courses.value=(r.data?.content||r.data||[]).filter(course=>course.id||course.courseCode);await dictionaryOptions('COMMON_STATUS')}catch(e){ElMessage.error(e.message)}})
+onMounted(async()=>{try{const r=await courseOptions();courses.value=(r.data?.content||r.data||[]).filter(course=>course.id||course.courseCode);await teachingDictionaryOptions('COMMON_STATUS')}catch(e){ElMessage.error(e.message)}})
 </script>
 <style scoped>.slice-page{padding:24px}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.page-head h1{margin:0 0 6px}.page-head p{margin:0;color:#7b8794}.workspace{display:grid;grid-template-columns: minmax(320px,1fr) minmax(360px,1fr);gap:20px;margin-top:20px}.tree-panel,.detail{min-height:440px}.tree-node{display:flex;justify-content:space-between;width:100%;padding-right:12px}.tree-node small{color:#98a2b3}.detail-head{display:flex;justify-content:space-between}.actions{margin-top:24px;display:flex;gap:10px}</style>

@@ -91,6 +91,7 @@ public class PublicationServiceImpl implements IPublicationService {
 	private final List<PublicationFileScanner> fileScanners;
 	private final PublicationHtmlSanitizer htmlSanitizer;
 	private final int archiveAfterDays;
+	private final boolean customerPublication;
 
 	public PublicationServiceImpl(
 			IPublicationRepository publications,
@@ -111,7 +112,8 @@ public class PublicationServiceImpl implements IPublicationService {
 			PublicationFileStorage fileStorage,
 			List<PublicationFileScanner> fileScanners,
 			PublicationHtmlSanitizer htmlSanitizer,
-			@Value("${chronos.message.archive-after-days:365}") int archiveAfterDays) {
+			@Value("${chronos.message.archive-after-days:365}") int archiveAfterDays,
+			@Value("${chronos.delivery.mode:standard}") String deliveryMode) {
 		this.publications = publications;
 		this.audiences = audiences;
 		this.attachments = attachments;
@@ -130,6 +132,7 @@ public class PublicationServiceImpl implements IPublicationService {
 		this.fileStorage = fileStorage;
 		this.fileScanners = fileScanners;
 		this.htmlSanitizer = htmlSanitizer;
+		this.customerPublication = "customer".equals(deliveryMode);
 		this.archiveAfterDays = Math.max(archiveAfterDays, 1);
 	}
 
@@ -196,7 +199,7 @@ public class PublicationServiceImpl implements IPublicationService {
 		value.setOwnerOrganizationId(organizationId);
 		value.setStatus("DRAFT");
 		value = publications.save(value);
-		replaceAudiences(value.getId(), command.audiences());
+		replaceAudiences(value, command.audiences());
 		snapshot(value, "CREATE");
 		audit(username, "MESSAGE_PUBLICATION_CREATE", value.getId());
 		return view(value, null, true);
@@ -211,7 +214,7 @@ public class PublicationServiceImpl implements IPublicationService {
 		}
 		apply(value, command);
 		value.setVersionNo(value.getVersionNo() + 1);
-		replaceAudiences(id, command.audiences());
+		replaceAudiences(value, command.audiences());
 		value = publications.save(value);
 		snapshot(value, "UPDATE");
 		audit(username, "MESSAGE_PUBLICATION_UPDATE", id);
@@ -229,7 +232,12 @@ public class PublicationServiceImpl implements IPublicationService {
 		if (!List.of("DRAFT", "SCHEDULED").contains(value.getStatus())) {
 			throw new IllegalStateException("当前状态不允许发布");
 		}
-		if (audiences.findByPublicationId(id).stream().noneMatch(item -> !Boolean.TRUE.equals(item.getExcluded()))) {
+		var targets = audiences.findByPublicationId(id);
+		if (customerPublication && (targets.size() != 1 || !localAudience(value, targets.getFirst().getSubjectType(),
+				targets.getFirst().getSubjectId(), targets.getFirst().getIncludeChildren(), targets.getFirst().getExcluded()))) {
+			throw new IllegalArgumentException("请将公告可见范围更新为公告所属机构后再发布");
+		}
+		if (targets.stream().noneMatch(item -> !Boolean.TRUE.equals(item.getExcluded()))) {
 			throw new IllegalStateException("发布前至少配置一个正向受众范围");
 		}
 		LocalDateTime now = LocalDateTime.now();
@@ -263,6 +271,9 @@ public class PublicationServiceImpl implements IPublicationService {
 		value.setSubmittedAt(LocalDateTime.now());
 		value.setSubmittedBy(username);
 		if (hasText(value.getApprovalWorkflowDefinitionId())) {
+			if (customerPublication) {
+				throw new IllegalArgumentException("请改用内置审核后重新提交");
+			}
 			try {
 				String variables = objectMapper.writeValueAsString(java.util.Map.of(
 						"publicationId", value.getId(),
@@ -288,6 +299,7 @@ public class PublicationServiceImpl implements IPublicationService {
 	@Transactional
 	public PublicationView approve(String id, String comment, String username) {
 		Publication value = required(id);
+		assertManage(username, value);
 		if (!"PENDING_REVIEW".equals(value.getStatus())) {
 			throw new IllegalStateException("当前内容不在待审核状态");
 		}
@@ -308,6 +320,7 @@ public class PublicationServiceImpl implements IPublicationService {
 	@Transactional
 	public PublicationView reject(String id, String comment, String username) {
 		Publication value = required(id);
+		assertManage(username, value);
 		if (!"PENDING_REVIEW".equals(value.getStatus())) {
 			throw new IllegalStateException("当前内容不在待审核状态");
 		}
@@ -592,7 +605,7 @@ public class PublicationServiceImpl implements IPublicationService {
 					item.path("subjectId").asText(),
 					item.path("includeChildren").asBoolean(false),
 					item.path("excluded").asBoolean(false))));
-			replaceAudiences(id, restoredAudiences);
+			replaceAudiences(value, restoredAudiences);
 
 			// 恢复操作产生一个新的可审计草稿，不回退历史主键、审计字段和流程实例。
 			value.setStatus("DRAFT");
@@ -823,6 +836,9 @@ public class PublicationServiceImpl implements IPublicationService {
 	}
 
 	private void apply(Publication value, PublicationCommand command) {
+		if (customerPublication && hasText(command.approvalWorkflowDefinitionId())) {
+			throw new IllegalArgumentException("客户部署的通知公告使用内置审核");
+		}
 		String type = normalize(command.publicationType());
 		String contentType = normalize(command.contentType());
 		if (!TYPES.contains(type)) {
@@ -863,7 +879,19 @@ public class PublicationServiceImpl implements IPublicationService {
 		value.setExpireAt(command.expireAt());
 	}
 
-	private void replaceAudiences(String publicationId, List<AudienceCommand> commands) {
+	// Customer publishers can reach their own organization without inheriting global directory permissions.
+	private boolean localAudience(Publication publication, String type, String id, Boolean children, Boolean excluded) {
+		return "ORGANIZATION".equals(type) && hasText(id) && id.equals(publication.getOwnerOrganizationId())
+				&& !Boolean.TRUE.equals(children) && !Boolean.TRUE.equals(excluded);
+	}
+
+	private void replaceAudiences(Publication publication, List<AudienceCommand> commands) {
+		if (customerPublication && (commands == null || commands.size() != 1
+				|| !localAudience(publication, normalize(commands.getFirst().subjectType()),
+						commands.getFirst().subjectId(), commands.getFirst().includeChildren(), commands.getFirst().excluded()))) {
+			throw new IllegalArgumentException("客户部署的公告可见范围必须为公告所属机构");
+		}
+		String publicationId = publication.getId();
 		audiences.deleteByPublicationId(publicationId);
 		if (commands == null) {
 			return;

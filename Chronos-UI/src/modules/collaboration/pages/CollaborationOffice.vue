@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
+import { getAdminUsername, getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 import {
   completeOfficeRequest,
   createCollaborationResource,
@@ -24,7 +24,10 @@ const activeTab = ref(route.query.tab || 'overview')
 const resources = reactive({ VEHICLE: [], SEAL: [] })
 const requests = ref([])
 const contacts = ref([])
-const canManageResources = hasAdminPermission('iam:directory:manage', 'education:scheduling:manage')
+const delivery = getDeliveryContext()
+const customer = delivery.mode === 'customer'
+const canApply = !customer || hasAdminPermission('collaboration:office:apply')
+const canManageResources = hasAdminPermission('iam:directory:manage', 'education:scheduling:manage', 'collaboration:office:manage')
 const contactKeyword = ref('')
 const loading = ref(false)
 const requestDialog = ref(false)
@@ -84,7 +87,8 @@ const entries = [
   { title: '日程', description: '个人日程与提醒', tab: 'schedule', icon: 'Clock' },
   { title: '通讯录', description: '教职工工作联系方式', tab: 'contacts', icon: 'User' },
   { title: '共享文件', description: '统一文件中心共享视图', path: '/portal/collaboration/files', icon: 'FolderOpened' },
-]
+  { title: '流程任务', description: '查看和办理待办', path: '/portal/tasks', icon: 'Document' },
+].filter(entry => !customer || !entry.path || delivery.routes?.includes(entry.path))
 
 const unwrap = response => response?.data?.content || response?.data || []
 const statusLabel = status => ({
@@ -103,7 +107,7 @@ function go(entry) {
     return
   }
   activeTab.value = entry.tab
-  if (entry.type) openRequest(entry.type)
+  if (entry.type && canApply) openRequest(entry.type)
 }
 
 async function load() {
@@ -112,7 +116,7 @@ async function load() {
     const [vehicleResponse, sealResponse, requestResponse] = await Promise.all([
       fetchCollaborationResources('VEHICLE'),
       fetchCollaborationResources('SEAL'),
-      fetchMyOfficeRequests(),
+      canApply ? fetchMyOfficeRequests() : Promise.resolve({ data: [] }),
     ])
     resources.VEHICLE = unwrap(vehicleResponse)
     resources.SEAL = unwrap(sealResponse)
@@ -320,7 +324,7 @@ onMounted(async () => {
       </el-tab-pane>
 
       <el-tab-pane label="用车与用印" name="requests">
-        <div class="section-actions">
+        <div v-if="canApply" class="section-actions">
           <el-button type="primary" @click="openRequest('VEHICLE')">发起用车</el-button>
           <el-button @click="openRequest('SEAL')">发起用印</el-button>
         </div>

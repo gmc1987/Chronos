@@ -279,10 +279,12 @@ public class GradeAnalysisService {
 			AdministrativeClass administrativeClass = classById.get(student.getAdministrativeClassId());
 			String currentGradeId = administrativeClass == null ? null : administrativeClass.getGradeId();
 			EducationGrade currentGrade = gradeById.get(currentGradeId);
+			Integer year = administrativeClass == null ? null : administrativeClass.getGradeYear();
+			String gradeKey = currentGradeId == null && year != null ? "YEAR:" + year : currentGradeId;
 			if (!scope.fullAccess()
 					&& !scope.teacherIds().contains(gradebook.getTeacherId())
 					&& !scope.administrativeClassIds().contains(student.getAdministrativeClassId())
-					&& !scope.gradeIds().contains(currentGradeId)
+					&& (currentGradeId == null || !scope.gradeIds().contains(currentGradeId))
 					&& !scope.campusIds().contains(offering.getCampusId())) {
 				continue;
 			}
@@ -292,8 +294,8 @@ public class GradeAnalysisService {
 				offering.getCourseName(),
 				student.getAdministrativeClassId(),
 				administrativeClass == null ? "未分班" : administrativeClass.getClassName(),
-				currentGradeId,
-				currentGrade == null ? "未分年级" : currentGrade.getGradeName(),
+				gradeKey,
+				currentGrade == null ? (year == null ? "未分年级" : year + "级") : currentGrade.getGradeName(),
 				score.getTotalScore(),
 				Boolean.TRUE.equals(score.getPassed()));
 			if (matches(fact, semesterCode, classId, gradeId, courseCode)) {

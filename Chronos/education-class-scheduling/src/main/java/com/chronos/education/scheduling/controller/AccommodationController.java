@@ -29,6 +29,9 @@ import com.chronos.education.scheduling.service.AccommodationService.BuildingCom
 import com.chronos.education.scheduling.service.AccommodationService.RoomCommand;
 import com.chronos.education.scheduling.service.AccommodationImportService;
 import com.chronos.education.scheduling.service.AccommodationAssignmentImportService;
+import com.chronos.education.scheduling.service.SchoolRosterSetupService;
+import com.chronos.education.scheduling.service.SchoolRosterSetupService.RosterRow;
+import com.chronos.education.scheduling.service.SchoolRosterSetupService.TermCommand;
 import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
@@ -38,13 +41,30 @@ public class AccommodationController {
 	private final AccommodationImportService imports;
 	private final AccommodationAssignmentImportService assignmentImports;
 	private final DirectoryDataScopeGuard dataScopes;
+	private final SchoolRosterSetupService setup;
 
 	public AccommodationController(AccommodationService service, AccommodationImportService imports,
-			AccommodationAssignmentImportService assignmentImports, DirectoryDataScopeGuard dataScopes) {
+			AccommodationAssignmentImportService assignmentImports, DirectoryDataScopeGuard dataScopes,
+			SchoolRosterSetupService setup) {
 		this.service = service;
 		this.imports = imports;
 		this.assignmentImports = assignmentImports;
 		this.dataScopes = dataScopes;
+		this.setup = setup;
+	}
+
+	@PostMapping("/setup/terms")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:accommodation:manage')")
+	public ResultData<?> createAccommodationTerm(@RequestParam String organizationId, @RequestBody TermCommand term,
+			Authentication authentication) {
+		return ok(setup.createTerm(resolveOrganization(authentication, organizationId), term));
+	}
+
+	@PostMapping("/setup/roster")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:accommodation:manage')")
+	public ResultData<?> importAccommodationRoster(@RequestParam String organizationId, @RequestBody List<RosterRow> rows,
+			Authentication authentication) {
+		return ok(setup.importRoster(resolveOrganization(authentication, organizationId), rows));
 	}
 
 	@GetMapping(value = "/import-template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

@@ -58,7 +58,7 @@ public class HomeSchoolService {
 		EducationDataScope scope = scopeService.resolve(username);
 		return bindingResponses(bindings.findAllByProfileTypeOrderByCreateTimeDesc("PARENT")).stream()
 				.filter(value -> scope.fullAccess() || value.organizationId() != null
-						&& scope.campusIds().contains(value.organizationId()))
+						&& (scope.schoolIds().contains(value.organizationId()) || scope.campusIds().contains(value.organizationId())))
 				.toList();
 	}
 
@@ -83,6 +83,12 @@ public class HomeSchoolService {
 				|| Boolean.TRUE.equals(account.getAccountLocked())) {
 			throw new IllegalArgumentException("门户登录账号不存在或不可用");
 		}
+		if (parent.getSchoolId() != null && !parent.getSchoolId().equals(account.getOrganizationId())
+				&& (account.getOrganizationId() == null || !scopeService
+						.scheduleOrganizationCampuses(scopeService.resolve(operator), parent.getSchoolId())
+						.contains(account.getOrganizationId()))) {
+			throw new AccessDeniedException("只能绑定本校家长的登录账号");
+		}
 		EducationUserBinding accountBinding = bindings.findByUsername(account.getUsername()).orElse(null);
 		if (accountBinding != null && !"PARENT".equals(accountBinding.getProfileType()))
 			throw new IllegalStateException("登录账号已绑定其他教务档案");
@@ -105,7 +111,7 @@ public class HomeSchoolService {
 		value.setVerifiedAt(LocalDateTime.now()); value.setInvalidatedAt(null); value.setStatus("ACTIVE");
 		value = bindings.save(value);
 		ParentBindingResponse response = binding(value);
-		if (audit != null) audit.log(command.username(), "EDU_HOME_PARENT_BINDING_CREATE",
+		if (audit != null) audit.log(operator, "EDU_HOME_PARENT_BINDING_CREATE",
 				"bindingId=" + value.getId() + ",parentId=" + value.getProfileId());
 		return response;
 	}
@@ -118,7 +124,7 @@ public class HomeSchoolService {
 		assertParentAccess(operator, value.getProfileId());
 		value.setStatus("INVALIDATED"); value.setInvalidatedAt(LocalDateTime.now());
 		ParentBindingResponse response = binding(bindings.save(value));
-		if (audit != null) audit.log(value.getUsername(), "EDU_HOME_PARENT_BINDING_INVALIDATE",
+		if (audit != null) audit.log(operator, "EDU_HOME_PARENT_BINDING_INVALIDATE",
 				"bindingId=" + value.getId() + ",parentId=" + value.getProfileId());
 		return response;
 	}
@@ -335,6 +341,8 @@ public class HomeSchoolService {
 		}).toList();
 	}
 	private String parentOrganization(String parentId) {
+		var school = parents.findById(parentId).map(ParentProfile::getSchoolId);
+		if (school.isPresent()) return school.get();
 		return guardians.findByParentIdOrderByCreateTime(parentId).stream()
 				.map(StudentGuardianRelation::getStudentId).map(students::findById)
 				.flatMap(Optional::stream).map(StudentProfile::getAdministrativeClassId)
@@ -345,7 +353,7 @@ public class HomeSchoolService {
 		EducationDataScope scope = scopeService.resolve(username);
 		if (scope.fullAccess()) return;
 		String organizationId = parentOrganization(parentId);
-		if (organizationId == null || !scope.campusIds().contains(organizationId))
+		if (organizationId == null || !(scope.schoolIds().contains(organizationId) || scope.campusIds().contains(organizationId)))
 			throw new AccessDeniedException("无权访问该家长档案");
 	}
 	private NoticeResponse notice(HomeNotice v) {

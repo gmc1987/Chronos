@@ -30,7 +30,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { MagicStick } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { clearAdminTokens, getAdminUsername, hasAdminPermission } from '../../store/auth'
+import { clearAdminTokens, getAdminUsername, canUseOperationAgent } from '../../store/auth'
 import { industryBranding } from '../../industries/core'
 import { portalBootstrap } from '../../api/portal'
 import AgentWorkspaceDrawer from '../../modules/agent/components/AgentWorkspaceDrawer.vue'
@@ -40,7 +40,7 @@ const route = useRoute()
 const branding = industryBranding
 const username = getAdminUsername()
 const user = reactive({})
-const canUseAgent = hasAdminPermission('education:operation-agent:view', 'education:operation-agent:execute', 'education:operation-agent:manage', 'education:operation-agent:review')
+const canUseAgent = canUseOperationAgent()
 const agentOpen = ref(canUseAgent && localStorage.getItem('chronos.agent.view.open') === 'true')
 const setAgentOpen = value => { agentOpen.value = value; localStorage.setItem('chronos.agent.view.open', String(value)) }
 const toggleAgent = () => setAgentOpen(!agentOpen.value)

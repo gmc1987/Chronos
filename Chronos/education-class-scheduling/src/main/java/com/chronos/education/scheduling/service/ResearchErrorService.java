@@ -5,6 +5,7 @@ import com.chronos.education.scheduling.model.*;
 import com.chronos.education.scheduling.model.dto.ResearchErrorDtos.*;
 import com.chronos.file.dao.ManagedFileRepository;
 import com.chronos.file.service.ManagedFileService;
+import com.chronos.security.IamAuthorization;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.LocalDateTime;
@@ -39,6 +40,7 @@ public class ResearchErrorService {
 	private ErrorReviewRepository errorReviews;
 	private EducationIdentityService identities;
 	private TeachingCollaborationNotificationService notifications;
+	private IamAuthorization authorization;
 	@PersistenceContext private EntityManager em;
 
 	public ResearchErrorService(ResearchGroupRepository groups, ResearchGroupMemberRepository groupMembers,
@@ -65,7 +67,7 @@ public class ResearchErrorService {
 			QuestionKnowledgePointRepository questionPoints, QuestionBankRepository questionBanks,
 			ErrorReviewRepository errorReviews, QuestionVersionRepository questionVersions,
 			ManagedFileService managedFiles, EducationIdentityService identities,
-			TeachingCollaborationNotificationService notifications) {
+			TeachingCollaborationNotificationService notifications, IamAuthorization authorization) {
 		this(groups, groupMembers, activities, activityMembers, materials, results, books, items, scopes, files,
 				reviews, questions, points, questionPoints, questionBanks);
 		this.errorReviews = errorReviews;
@@ -73,6 +75,11 @@ public class ResearchErrorService {
 		this.managedFiles = managedFiles;
 		this.identities = identities;
 		this.notifications = notifications;
+		this.authorization = authorization;
+	}
+
+	private boolean productResearch() {
+		return reviews != null && reviews.directReviewEnabled();
 	}
 
 	private void validateQuestionVersion(String questionId, String questionVersionId) {
@@ -132,6 +139,19 @@ public class ResearchErrorService {
 	}
 	@Transactional(readOnly = true)
 	public List<ResearchTeacherOption> teacherOptions(Authentication a) {
+		if (productResearch() && authorization.any(a, "education:teaching:manage",
+				"education:teaching:research:create", "education:teaching:research:update")) {
+			var schools = scope(a).schoolIds();
+			if (!schools.isEmpty()) {
+				return em.createQuery("""
+						select teacher from TeacherAcademicProfile teacher
+						where teacher.departmentId in :schools and teacher.enabled = true
+						order by teacher.teacherName, teacher.id
+						""", TeacherAcademicProfile.class).setParameter("schools", schools).getResultStream()
+						.map(teacher -> new ResearchTeacherOption(teacher.getId(), teacher.getTeacherName()))
+						.toList();
+			}
+		}
 		Set<String> teacherIds = new LinkedHashSet<>();
 		for (ResearchGroup group : groups(a)) {
 			teacherIds.add(group.getLeaderTeacherId());
@@ -227,10 +247,19 @@ public class ResearchErrorService {
 		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
 		ResearchActivity x = activities.findById(z.getActivityId()).orElseThrow(() -> new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(), a);
-		if (!"DRAFT".equals(z.getStatus())) throw new IllegalStateException("只有草稿成果可以编辑");
-		if (r.fileId() != null) file(r.fileId(), a);
-		z.setTitle(r.title()); z.setResultType(r.resultType()); z.setContent(r.content()); z.setFileId(r.fileId());
-		return results.save(z);
+		boolean direct = productResearch();
+		if (direct) assertActivityOrganizer(x, a);
+		if (!"DRAFT".equals(z.getStatus()) && !(direct && "REJECTED".equals(z.getStatus()))) {
+			throw new IllegalStateException("只有草稿或被退回的成果可以编辑");
+		}
+		String previousFileId = z.getFileId();
+		String nextFileId = direct && r.fileId() == null ? previousFileId : r.fileId();
+		boolean replacement = nextFileId != null && !nextFileId.equals(previousFileId);
+		if (replacement) file(nextFileId, a);
+		z.setTitle(r.title()); z.setResultType(r.resultType()); z.setContent(r.content()); z.setFileId(nextFileId);
+		var saved = results.save(z);
+		if (replacement) bindFile(nextFileId, "EDUCATION_RESEARCH_RESULT", id, a);
+		return saved;
 	}
 	private void file(String id, Authentication a) {
 		if (id == null || id.isBlank() || id.contains("/") || id.contains("\\")) {
@@ -247,16 +276,33 @@ public class ResearchErrorService {
 		}
 	}
 	public ResearchGroup createGroup(GroupRequest r, Authentication a) {
+		if (productResearch() && !scope(a).fullAccess() && !currentTeacherIds(a).contains(r.leaderTeacherId())) {
+			throw new AccessDeniedException("请使用已绑定教师档案的账号发起本人负责的教研组");
+		}
 		teacher(a,r.leaderTeacherId()); ResearchGroup g=new ResearchGroup();
 		g.setName(r.name()); g.setSubjectId(r.subjectId()); g.setCampusId(r.campusId());
 		g.setLeaderTeacherId(r.leaderTeacherId()); g.setCourseScopeJson(r.courseScopeJson()); g.setDescription(r.description());
 		g.setSchoolId(researchSchool(a, r.campusId(), r.leaderTeacherId())); g.setCreateBy(a.getName()); return groups.save(g);
 	}
 	public ResearchGroupMember addMember(String id, MemberRequest r, Authentication a) {
-		ResearchGroup current = group(id,a);assertGroupLeader(current,a);teacher(a,r.teacherId());
+		ResearchGroup current = group(id, a);
+		assertGroupLeader(current, a);
+		assertResearchInviteTeacher(current, r.teacherId(), a);
 		if (groupMembers.existsByGroupIdAndTeacherId(id,r.teacherId())) throw new IllegalStateException("教师已在教研组");
 		ResearchGroupMember m=new ResearchGroupMember(); m.setId(UUID.randomUUID().toString()); m.setGroupId(id);
 		m.setTeacherId(r.teacherId()); m.setRole(r.role()); return groupMembers.save(m);
+	}
+
+	private void assertResearchInviteTeacher(ResearchGroup group, String teacherId, Authentication actor) {
+		if (!productResearch()) {
+			teacher(actor, teacherId);
+			return;
+		}
+		var profile = em.find(TeacherAcademicProfile.class, teacherId);
+		if (profile == null || !Boolean.TRUE.equals(profile.getEnabled())
+				|| !group.getSchoolId().equals(profile.getDepartmentId())) {
+			throw new AccessDeniedException("只能邀请教研组所属学校的启用教师");
+		}
 	}
 	public void removeMember(String id, String teacherId, Authentication a) {
 		ResearchGroup current = group(id, a);assertGroupLeader(current,a);
@@ -283,7 +329,9 @@ public class ResearchErrorService {
 	}
 	public ResearchActivityMember inviteActivityMember(String activityId, MemberRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(()->new NoSuchElementException("活动不存在"));
-		group(x.getGroupId(),a);assertActivityOrganizer(x,a);teacher(a,r.teacherId());
+		var current = group(x.getGroupId(), a);
+		assertActivityOrganizer(x, a);
+		assertResearchInviteTeacher(current, r.teacherId(), a);
 		if (activityMembers.findByActivityIdAndTeacherId(activityId,r.teacherId()).isPresent())
 			throw new IllegalStateException("教师已在活动成员中");
 		ResearchActivityMember m=new ResearchActivityMember(); m.setId(UUID.randomUUID().toString());
@@ -346,7 +394,9 @@ public class ResearchErrorService {
 		return activities.save(x);
 	}
 	public ResearchMaterial addMaterial(String activityId, MaterialRequest r, Authentication a) {
-		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a); file(r.fileId(),a);
+		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a);
+		if (productResearch()) assertActivityOrganizer(x, a);
+		file(r.fileId(),a);
 		ResearchMaterial m=new ResearchMaterial(); m.setId(UUID.randomUUID().toString()); m.setActivityId(activityId);
 		m.setTitle(r.title()); m.setFileId(r.fileId());
 		ResearchMaterial saved = materials.save(m);
@@ -355,6 +405,7 @@ public class ResearchErrorService {
 	}
 	public ResearchResult addResult(String activityId, ResultRequest r, Authentication a) {
 		ResearchActivity x=activities.findById(activityId).orElseThrow(); group(x.getGroupId(),a);
+		if (productResearch()) assertActivityOrganizer(x, a);
 		if (r.fileId()!=null) file(r.fileId(),a); ResearchResult z=new ResearchResult(); z.setId(UUID.randomUUID().toString());
 		z.setActivityId(activityId); z.setTitle(r.title()); z.setResultType(r.resultType()); z.setContent(r.content()); z.setFileId(r.fileId());
 		ResearchResult saved = results.save(z);
@@ -437,9 +488,11 @@ public class ResearchErrorService {
 				idempotencyKey,
 				authentication);
 		if (existing != null) {
-			result.setReviewRecordId(existing.getId());
-			result.setStatus("SUBMITTED");
-			return results.save(result);
+			if (result.getReviewRecordId() == null) {
+				result.setReviewRecordId(existing.getId());
+				return results.save(result);
+			}
+			return result;
 		}
 		if (!Set.of("DRAFT", "REJECTED").contains(result.getStatus())) {
 			throw new IllegalStateException("只有草稿或驳回成果可以提交审核");
@@ -463,6 +516,7 @@ public class ResearchErrorService {
 		ResearchResult z = results.findById(id).orElseThrow(() -> new NoSuchElementException("成果不存在"));
 		ResearchActivity x = activities.findById(z.getActivityId()).orElseThrow(() -> new NoSuchElementException("活动不存在"));
 		group(x.getGroupId(), a);
+		if (productResearch()) assertActivityOrganizer(x, a);
 		if ("ARCHIVED".equals(status)) {
 			if (!"PUBLISHED".equals(z.getStatus())) throw new IllegalStateException("只有已发布成果可以归档");
 			z.setStatus("ARCHIVED");

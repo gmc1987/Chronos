@@ -29,24 +29,28 @@ import org.springframework.stereotype.Service;
 @Service
 public class OfficialHolidayImportService {
 	private static final Logger log = LoggerFactory.getLogger(OfficialHolidayImportService.class);
-	private static final String DATA_URL =
-			"https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/%d.json";
+	private static final int MAX_DATA_SIZE = 200000;
+	private static final String DEFAULT_DATA_URL_TEMPLATE =
+			"https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json";
 	private final HttpClient client = HttpClient.newBuilder()
 			.connectTimeout(Duration.ofSeconds(5)).build();
 	private final ObjectMapper mapper;
 	private final AcademicTermRepository terms;
 	private final AcademicCalendarService calendar;
 	private final Path localDataDirectory;
+	private final String dataUrlTemplate;
 
 	public OfficialHolidayImportService(
 			ObjectMapper mapper,
 			AcademicTermRepository terms,
 			AcademicCalendarService calendar,
-			@Value("${chronos.holiday.data-dir:}") String localDataDirectory) {
+			@Value("${chronos.holiday.data-dir:}") String localDataDirectory,
+			@Value("${chronos.holiday.data-url-template:}") String dataUrlTemplate) {
 		this.mapper = mapper;
 		this.terms = terms;
 		this.calendar = calendar;
 		this.localDataDirectory = localDataDirectory.isBlank() ? null : Path.of(localDataDirectory);
+		this.dataUrlTemplate = dataUrlTemplate.isBlank() ? DEFAULT_DATA_URL_TEMPLATE : dataUrlTemplate.trim();
 	}
 
 	public record HolidayDate(LocalDate date, String name, boolean offDay) { }
@@ -55,9 +59,17 @@ public class OfficialHolidayImportService {
 
 	public ImportResult importOfficial(String termId, int year) {
 		assertYear(year);
+		return importOfficial(termId, year, officialData(year));
+	}
+
+	private Parsed officialData(int year) {
 		String body = readLocalData(year);
+		if (body == null) body = readBundledData(year);
 		if (body == null) body = downloadYear(year);
-		Parsed parsed = parse(body, year, true);
+		return parse(body, year, true);
+	}
+
+	private ImportResult importOfficial(String termId, int year, Parsed parsed) {
 		return new ImportResult(year, parsed.sourceUrl(),
 				calendar.importHolidays(termId, parsed.days(), "AUTO", parsed.sourceUrl()));
 	}
@@ -66,9 +78,7 @@ public class OfficialHolidayImportService {
 		if (localDataDirectory == null) return null;
 		Path file = localDataDirectory.resolve(year + ".json");
 		try (var input = Files.newInputStream(file)) {
-			byte[] content = input.readNBytes(200001);
-			if (content.length > 200000) throw new IllegalArgumentException("本地节假日 JSON 超过大小限制");
-			return new String(content, StandardCharsets.UTF_8);
+			return readData(input);
 		} catch (java.nio.file.NoSuchFileException exception) {
 			return null;
 		} catch (IOException exception) {
@@ -76,10 +86,28 @@ public class OfficialHolidayImportService {
 		}
 	}
 
+	private String readBundledData(int year) {
+		try (var input = OfficialHolidayImportService.class.getResourceAsStream("/holidays/" + year + ".json")) {
+			return input == null ? null : readData(input);
+		} catch (IOException exception) {
+			throw new IllegalStateException("无法读取内置节假日数据 " + year, exception);
+		}
+	}
+
+	private String readData(java.io.InputStream input) throws IOException {
+		byte[] content = input.readNBytes(MAX_DATA_SIZE + 1);
+		if (content.length > MAX_DATA_SIZE) throw new IllegalArgumentException("节假日 JSON 超过大小限制");
+		return new String(content, StandardCharsets.UTF_8);
+	}
+
 	private String downloadYear(int year) {
-		String url = DATA_URL.formatted(year);
+		URI source = URI.create(dataUrlTemplate.replace("{year}", Integer.toString(year)));
+		if (!dataUrlTemplate.contains("{year}") || !"https".equalsIgnoreCase(source.getScheme())
+				|| source.getHost() == null || source.getUserInfo() != null) {
+			throw new IllegalStateException("节假日数据地址须为包含 {year} 的 HTTPS URL");
+		}
 		try {
-			HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+			HttpRequest request = HttpRequest.newBuilder(source)
 					.timeout(Duration.ofSeconds(10)).GET().build();
 			HttpResponse<String> response = client.send(request,
 					HttpResponse.BodyHandlers.ofString());
@@ -91,8 +119,9 @@ public class OfficialHolidayImportService {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("年度节假日下载已中断", exception);
 		} catch (IOException exception) {
-			throw new IllegalStateException("无法从 raw.githubusercontent.com 下载年度节假日数据（"
-					+ exception.getClass().getSimpleName() + "）", exception);
+			throw new IllegalStateException("无法从 " + source.getHost() + " 下载 " + year
+					+ " 年度节假日数据（" + exception.getClass().getSimpleName()
+					+ "），可将年度 JSON 放入本地数据目录或手动导入", exception);
 		}
 	}
 
@@ -107,12 +136,23 @@ public class OfficialHolidayImportService {
 	@Scheduled(initialDelay = 30000, fixedDelay = 86400000)
 	public void automaticSync() {
 		int currentYear = LocalDate.now().getYear();
-		for (AcademicTerm term : terms.findAll()) {
-			for (int year = currentYear; year <= currentYear + 1; year++) {
-				if (term.getStartDate().getYear() > year
-						|| term.getEndDate().getYear() < year) continue;
+		List<AcademicTerm> allTerms = terms.findAll();
+		for (int year = currentYear; year <= currentYear + 1; year++) {
+			int targetYear = year;
+			List<AcademicTerm> matching = allTerms.stream()
+					.filter(term -> term.getStartDate().getYear() <= targetYear
+							&& term.getEndDate().getYear() >= targetYear).toList();
+			if (matching.isEmpty()) continue;
+			Parsed data;
+			try {
+				data = officialData(year);
+			} catch (RuntimeException exception) {
+				log.warn("节假日自动同步跳过 year={}: {}", year, exception.getMessage());
+				continue;
+			}
+			for (AcademicTerm term : matching) {
 				try {
-					importOfficial(term.getId(), year);
+					importOfficial(term.getId(), year, data);
 				} catch (RuntimeException exception) {
 					log.warn("节假日自动同步跳过 term={}, year={}: {}",
 							term.getTermCode(), year, exception.getMessage());
@@ -124,7 +164,7 @@ public class OfficialHolidayImportService {
 	private record Parsed(List<HolidayDate> days, String sourceUrl) { }
 
 	private Parsed parse(String content, int expectedYear, boolean official) {
-		if (content == null || content.isBlank() || content.length() > 200000) {
+		if (content == null || content.isBlank() || content.length() > MAX_DATA_SIZE) {
 			throw new IllegalArgumentException("节假日 JSON 为空或超过大小限制");
 		}
 		try {

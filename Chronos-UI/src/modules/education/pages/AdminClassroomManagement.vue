@@ -3,7 +3,6 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { http } from '../../../api/http'
-import { deleteClassroom, dictionaryOptions } from '../../../api/admin'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
 
@@ -83,7 +82,7 @@ watch(organizationId, () => {
   loading.value = false
   selectLocation({ kind: 'all' })
 }, { immediate: true })
-dictionaryOptions('EDU_ROOM_TYPE').then(response => { roomTypes.value = response.data || [] })
+http.get(endpoint + '/room-types').then(response => { roomTypes.value = response.data || [] }).catch(() => {})
 
 function open(entity, row = null) {
   for (const key of Object.keys(form)) delete form[key]
@@ -126,8 +125,7 @@ async function remove(entity, id) {
     return
   }
   if (campus !== organizationId.value) return
-  if (entity === 'rooms') await deleteClassroom(id)
-  else await http.delete(url('/' + entity + '/' + encodeURIComponent(id), campus))
+  await http.delete(url('/' + entity + '/' + encodeURIComponent(id), campus))
   ElMessage.success('删除成功')
   await reload()
 }

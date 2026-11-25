@@ -56,7 +56,7 @@ const submit = async () => {
     const res = await adminLogin({ username: username.value, password: password.value })
     if (res?.code === '200' || res?.code === '201') {
       saveAdminTokens(res.data, remember.value, username.value)
-      saveAdminMeta({ roles: res.data.roles, permissions: res.data.permissions, menus: res.data.menus, mustChangePassword: res.data.mustChangePassword }, remember.value)
+      saveAdminMeta(res.data, remember.value)
       router.replace(res.data.mustChangePassword ? '/account/change-password' : '/admin/overview')
     } else {
       error.value = res?.msg || '登录失败'

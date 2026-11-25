@@ -8,6 +8,8 @@
       <el-select v-if="usesTerm" v-model="termCode" :disabled="!schoolId || !terms.length" placeholder="选择学期" filterable style="width:280px" @change="reloadTerm"><el-option v-for="item in terms" :key="item.id" :label="`${item.termName}（${item.termCode}）`" :value="item.termCode" /></el-select>
       <el-input v-model="keyword" clearable placeholder="输入关键词查询" style="width:220px" />
       <el-button :disabled="!schoolId" @click="reload">刷新</el-button>
+      <StudentLifecycleSetup :section="section" :school-id="schoolId" :term-code="termCode"
+        @saved="mode => mode === 'term' ? loadContext(schoolId) : reload()" />
     </div>
 
       <div v-if="section === 'programs'">
@@ -123,6 +125,14 @@
           <el-table-column prop="reason" label="原因" min-width="180" />
           <el-table-column label="缺少学分"><template #default="{ row }">{{ row.missingCredits ?? '-' }}</template></el-table-column>
         </el-table>
+        <el-table v-if="importedGraduationEvidence.length" :data="importedGraduationEvidence" border
+          aria-label="外部课程通过证明" class="graduation-requirements">
+          <el-table-column prop="courseCode" label="课程编码" />
+          <el-table-column label="外部修读结果">
+            <template #default="{ row }">{{ row.passed ? '通过' : '未通过' }}</template>
+          </el-table-column>
+          <el-table-column prop="reference" label="证明来源" />
+        </el-table>
       </template>
     </el-dialog>
   </section>
@@ -133,6 +143,7 @@ import { computed, defineComponent, h, reactive, ref, watch, resolveComponent } 
 import { useRoute } from 'vue-router'
 import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
 import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
+import StudentLifecycleSetup from '../components/StudentLifecycleSetup.vue'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listEducationMajors } from '../../../api/admin'
@@ -177,6 +188,14 @@ const programForm = reactive(emptyProgram())
 const courseForm = reactive({ courseId: '', suggestedTermNo: 1, courseNature: 'REQUIRED', credits: 0, prerequisiteCourseIds: [] })
 const registrationForm = reactive({ studentId: '', programId: '' }); const enrollmentForm = reactive({ studentId: '', offeringId: '' }); const graduationForm = reactive({ studentId: '', programId: '' })
 const selectedGraduation = ref(null)
+const importedGraduationEvidence = computed(() => {
+  try {
+    const snapshot = JSON.parse(selectedGraduation.value?.evidenceSnapshotJson || '{}')
+    return Array.isArray(snapshot?.importedCourseEvidence) ? snapshot.importedCourseEvidence : []
+  } catch {
+    return []
+  }
+})
 const currentUsername = getAdminUsername()
 const graduationStatus = status => ({
   DRAFT: '草稿', READY: '达标 · 待审批', NOT_READY: '未达标 · 待处理', APPROVED: '已批准', REJECTED: '已驳回',

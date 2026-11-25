@@ -6,6 +6,7 @@ import com.chronos.education.grade.dto.GradeProductionDtos.*;
 import com.chronos.education.grade.event.GradeChangeApplyFailedEvent;
 import com.chronos.education.grade.model.*;
 import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
 import com.chronos.workflow.WorkflowService;
@@ -146,12 +147,12 @@ public class GradeProductionService {
 		request.setReason(command.reason().trim());
 		request.setStatus("REVIEWING");
 		request = changes.save(request);
-		var instance = workflows.startByCode(
-			"EDU_GRADE_CHANGE_REVIEW",
-			request.getId(),
-			Map.of("changeRequestId", request.getId(), "gradebookId", gradebookId, "submitter", actor),
-			actor);
-		request.setWorkflowInstanceId(instance.getId());
+		if (!isStandalone(gradebook)) {
+			var instance = workflows.startByCode(
+					"EDU_GRADE_CHANGE_REVIEW", request.getId(),
+					Map.of("changeRequestId", request.getId(), "gradebookId", gradebookId, "submitter", actor), actor);
+			request.setWorkflowInstanceId(instance.getId());
+		}
 		audit.log(actor, "EDU_GRADE_CHANGE_REQUEST", "changeRequestId=" + request.getId());
 		return changes.save(request);
 	}
@@ -162,6 +163,33 @@ public class GradeProductionService {
 			.orElseThrow(() -> new IllegalArgumentException("成绩更正单不存在"));
 		if (!"REVIEWING".equals(request.getStatus())) {
 			throw new IllegalStateException("当前更正单不可审核");
+		}
+		if (request.getWorkflowInstanceId() == null) {
+			var book = authorizedGradebook(request.getGradebookId(), actor);
+			if (!isStandalone(book)) {
+				throw new IllegalArgumentException("请选择成绩更正审核任务");
+			}
+			if (actor.equals(request.getCreateBy()) || dataScopes.resolve(actor).teacherIds().contains(book.getTeacherId())) {
+				throw new AccessDeniedException("申请人或任课教师不得审批本人的成绩更正");
+			}
+			if (command.approved()) {
+				// 与补考和其他更正共用同一成绩册锁，防止审批覆盖已发布的新版本。
+				gradebooks.findByIdForUpdate(book.getId()).orElseThrow();
+				assertLatestGrade(courseGrades.findById(request.getCourseGradeId()).orElseThrow());
+				applyApprovedChange(request, actor, "EDU_GRADE_CHANGE_APPROVE");
+			} else {
+				if (command.comment() == null || command.comment().isBlank() || command.comment().length() > 500) {
+					throw new IllegalArgumentException("请填写 1 至 500 字的驳回原因");
+				}
+				request.setStatus("REJECTED");
+				request.setApprovedBy(actor);
+				request.setApprovedAt(LocalDateTime.now());
+				audit.log(actor, "EDU_GRADE_CHANGE_REJECT", "changeRequestId=" + requestId + ",comment=" + command.comment().strip());
+			}
+			return changes.save(request);
+		}
+		if (command.taskId() == null || command.taskId().isBlank()) {
+			throw new IllegalArgumentException("请选择成绩更正审核任务");
 		}
 		var task = workflowTasks.findById(command.taskId())
 			.orElseThrow(() -> new IllegalArgumentException("审核任务不存在"));
@@ -388,10 +416,16 @@ public class GradeProductionService {
 		Gradebook gradebook = gradebooks.findById(id)
 			.orElseThrow(() -> new IllegalArgumentException("成绩册不存在"));
 		var scope = dataScopes.resolve(actor);
-		if (!scope.fullAccess() && !scope.teacherIds().contains(gradebook.getTeacherId())) {
+		if (!scope.fullAccess() && !scope.teacherIds().contains(gradebook.getTeacherId())
+				&& !(scope.campusIds().contains(gradebook.getSchoolId()) && isStandalone(gradebook))) {
 			throw new AccessDeniedException("无权访问该成绩册");
 		}
 		return gradebook;
+	}
+
+	private boolean isStandalone(Gradebook book) {
+		return offerings.findById(book.getOfferingId())
+				.map(offering -> CourseOffering.GRADE_ONLY.equals(offering.getStatus())).orElse(false);
 	}
 
 	private Map<String, GradebookStudent> students(String gradebookId) {

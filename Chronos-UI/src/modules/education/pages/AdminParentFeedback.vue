@@ -1,7 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { listEducationParents, listEducationStudents, listParentFeedback, replyParentFeedback, transitionParentFeedback } from '../../../api/admin'
+import { listParentFeedback, replyParentFeedback, transitionParentFeedback } from '../../../api/admin'
+import { listEducationStudents, listFamilyParentOptions } from '../api/familySetup'
 
 const records = ref([])
 const loading = ref(false)
@@ -16,7 +17,7 @@ async function load() {
   loading.value = true
   try {
     const [feedbackResponse, parentResponse, studentResponse] = await Promise.all([
-      listParentFeedback(), listEducationParents({ page: 0, size: 200 }), listEducationStudents({ page: 0, size: 200 }),
+      listParentFeedback(), listFamilyParentOptions({ page: 0, size: 200 }), listEducationStudents({ page: 0, size: 200 }),
     ])
     records.value = unwrap(feedbackResponse)
     parentNames.value = Object.fromEntries(unwrap(parentResponse).map(item => [item.id, item.parentName]))

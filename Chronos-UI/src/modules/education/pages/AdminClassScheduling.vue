@@ -86,8 +86,8 @@
             <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:create', 'education:scheduling:manage']" @click="downloadImportTemplate">下载导入模板</el-button>
             <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:create', 'education:scheduling:manage']" type="warning" @click="chooseImportFile">导入课表</el-button>
             <el-button v-permission="['education:scheduling:view', 'education:scheduling:manage']" @click="exportSchedule">导出当前课表</el-button>
-            <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
-            <el-button v-if="scheduleScopeFullAccess" type="success" @click="publishVersion">发布当前课表</el-button>
+            <el-button v-if="termManagement" v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
+            <el-button v-if="termManagement" v-permission="['education:scheduling:manage']" type="success" @click="publishVersion">发布当前课表</el-button>
             <el-button type="primary" @click="openEntry()">新增排课</el-button>
             <input ref="scheduleFileInput" type="file" accept=".xlsx" hidden @change="importSchedule" />
           </div>
@@ -141,7 +141,7 @@
           <el-button :disabled="!visibleOccurrences.length"
             v-permission="['education:scheduling:view', 'education:scheduling:manage']"
             @click="exportDateSchedule">导出日期课表</el-button>
-          <el-button @click="openIncidents">回写异常</el-button>
+          <el-button v-if="collaborationEnabled" @click="openIncidents">回写异常</el-button>
           <el-button @click="router.push({ name: 'admin-education-teaching-hours', query: { organizationId, semesterCode } })">教师课时台账</el-button>
           <el-button v-if="hasAdminPermission('education:exam:plan:view', 'education:exam:plan:manage')"
             @click="router.push({ path: '/admin/education/exam/plans', query: { organizationId } })">考试占课</el-button>
@@ -157,8 +157,8 @@
           <el-table-column label="原节次" width="90"><template #default="s">第 {{ s.row.entry.periodNo }} 节</template></el-table-column>
           <AdaptiveActionColumn label="操作" width="170"><template #default="s"><el-button v-if="canChangeDates" link type="primary" @click="openMakeup(s.row)">安排补课</el-button><el-button v-if="canChangeDates" link @click="openWaiveMakeup(s.row)">确认不补</el-button></template></AdaptiveActionColumn>
         </el-table>
-        <h3>教师请假待代课（{{ pendingSubstitutions.length }}）</h3>
-        <el-table :data="pendingSubstitutions" border empty-text="当前没有待安排代课的课次">
+        <h3 v-if="collaborationEnabled">教师请假待代课（{{ pendingSubstitutions.length }}）</h3>
+        <el-table v-if="collaborationEnabled" :data="pendingSubstitutions" border empty-text="当前没有待安排代课的课次">
           <el-table-column prop="date" label="上课日期" width="130" />
           <el-table-column label="课程" min-width="150"><template #default="s">{{ s.row.occurrence.entry.courseName }}</template></el-table-column>
           <el-table-column label="教学班" min-width="180"><template #default="s">{{ s.row.occurrence.entry.teachingClassName }}</template></el-table-column>
@@ -185,7 +185,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="发布版本" name="versions">
+      <el-tab-pane v-if="!reviewOnly && termManagement" label="发布版本" name="versions">
         <div class="toolbar"><el-button @click="loadVersions">刷新</el-button></div>
         <el-table :data="versions">
           <el-table-column prop="versionNo" label="版本" width="90">
@@ -200,12 +200,14 @@
             <template #default="scope">{{ scope.row.sourceVersionNo ? `回滚自 V${scope.row.sourceVersionNo}` : '当前草稿' }}</template>
           </el-table-column>
           <AdaptiveActionColumn label="操作" width="100">
-            <template #default="scope"><el-button link type="warning" @click="rollbackVersion(scope.row)">回滚</el-button></template>
+            <template #default="scope">
+              <el-button v-permission="['education:scheduling:manage']" link type="warning" @click="rollbackVersion(scope.row)">回滚</el-button>
+            </template>
           </AdaptiveActionColumn>
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="质量分析" name="quality">
+      <el-tab-pane v-if="!reviewOnly && termManagement" label="质量分析" name="quality">
         <div class="toolbar"><el-button @click="loadQualityAnalysis">重新分析</el-button></div>
         <div class="quality-summary">
           <el-statistic title="排课项" :value="quality.summary?.entryCount || 0" />
@@ -240,7 +242,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane v-if="!reviewOnly && scheduleScopeFullAccess" label="规则配置" name="policy">
+      <el-tab-pane v-if="!reviewOnly && termManagement" label="规则配置" name="policy">
         <el-alert
           title="规则按学期生效。教师档案设置了个人上限时优先使用个人值，未设置时使用本页默认值。"
           type="info"
@@ -274,12 +276,12 @@
         </el-form>
       </el-tab-pane>
 
-      <el-tab-pane v-if="canReviewCandidates || scheduleScopeFullAccess" label="自动排课候选" name="candidates">
+      <el-tab-pane v-if="canReviewCandidates || termManagement" label="自动排课候选" name="candidates">
         <div class="toolbar">
           <el-button @click="loadCandidates">刷新</el-button>
-          <el-button v-if="scheduleScopeFullAccess" v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
+          <el-button v-if="termManagement" v-permission="['education:scheduling:manage']" type="primary" :loading="candidateGenerating" @click="generateFullSchedule">按规则全量自动排课</el-button>
           <el-button
-            v-if="scheduleScopeFullAccess"
+            v-if="termManagement"
             v-permission="['education:scheduling:manage']"
             @click="openCandidateDialog">
             自定义生成 / 局部重排
@@ -294,8 +296,8 @@
           :closable="false"
           show-icon
         />
-        <h3 v-if="scheduleScopeFullAccess">后台生成任务</h3>
-        <el-table v-if="scheduleScopeFullAccess" :data="generationJobs" size="small" border>
+        <h3 v-if="termManagement">后台生成任务</h3>
+        <el-table v-if="termManagement" :data="generationJobs" size="small" border>
           <el-table-column prop="requestedBy" label="提交人" width="130" />
           <el-table-column label="状态" width="110"><template #default="s"><el-tag :type="jobStatusType(s.row.status)">{{ jobStatusName(s.row.status) }}</el-tag></template></el-table-column>
           <el-table-column label="进度" min-width="180"><template #default="s"><el-progress :percentage="s.row.progress || 0" /></template></el-table-column>
@@ -351,13 +353,13 @@
             <template #default="scope">
               <el-button link @click="showCandidateDiff(scope.row)">预览差异</el-button>
               <template v-if="scope.row.status === 'CANDIDATE'">
-                <el-button v-if="scheduleScopeFullAccess && ['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link @click="editCandidateGovernance(scope.row)">协作信息</el-button>
-                <el-button v-if="scheduleScopeFullAccess && ['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link type="warning" @click="submitCandidateReview(scope.row)">提交审核</el-button>
+                <el-button v-if="termManagement && ['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link @click="editCandidateGovernance(scope.row)">协作信息</el-button>
+                <el-button v-if="termManagement && ['DRAFT', 'REJECTED'].includes(scope.row.reviewStatus)" v-permission="['education:scheduling:manage']" link type="warning" @click="submitCandidateReview(scope.row)">提交审核</el-button>
                 <el-button v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername !== getAdminUsername()" v-permission="['education:scheduling:review', 'education:scheduling:manage']" link type="success" @click="reviewCandidate(scope.row, true)">通过</el-button>
                 <el-button v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername !== getAdminUsername()" v-permission="['education:scheduling:review', 'education:scheduling:manage']" link type="danger" @click="reviewCandidate(scope.row, false)">驳回</el-button>
                 <span v-if="scope.row.reviewStatus === 'SUBMITTED' && scope.row.ownerUsername === getAdminUsername()">请其他审核员处理</span>
                 <el-button
-                  v-if="scheduleScopeFullAccess"
+                  v-if="termManagement"
                   v-permission="['education:scheduling:manage']"
                   link
                   type="primary"
@@ -366,7 +368,7 @@
                   应用
                 </el-button>
                 <el-button
-                  v-if="scheduleScopeFullAccess"
+                  v-if="termManagement"
                   v-permission="['education:scheduling:manage']"
                   link
                   type="danger"
@@ -452,7 +454,7 @@
         <el-table :data="roomConstraints" border><el-table-column label="教室"><template #default="s">{{ classroomName(s.row.classroomId) }}</template></el-table-column><el-table-column label="星期" width="90"><template #default="s">星期{{ dayName(s.row.dayOfWeek) }}</template></el-table-column><el-table-column label="节次" width="120"><template #default="s">第 {{ s.row.startPeriod }}–{{ s.row.endPeriod }} 节</template></el-table-column><el-table-column prop="reason" label="原因" /><AdaptiveActionColumn label="操作" width="130"><template #default="s"><el-button link type="primary" @click="openRoomConstraint(s.row)">编辑</el-button><el-button link type="danger" @click="removeRoomConstraint(s.row)">删除</el-button></template></AdaptiveActionColumn></el-table>
       </el-tab-pane>
 
-	  <el-tab-pane v-if="!reviewOnly" label="调课回写异常" name="incidents">
+	  <el-tab-pane v-if="!reviewOnly && collaborationEnabled" label="调课回写异常" name="incidents">
 		<div class="incident-toolbar">
 		  <div class="incident-filters">
 			<el-select v-model="incidentStatus" class="incident-status" @change="searchIncidents">
@@ -729,7 +731,8 @@ import TeachingSuspensionPanel from '../components/TeachingSuspensionPanel.vue'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import SchedulingModeSwitch from '../components/SchedulingModeSwitch.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminUsername, hasAdminPermission } from '../../../store/auth'
+import { getAdminUsername, getDeliveryContext, hasAdminPermission } from '../../../store/auth'
+import { http } from '../../../api/http'
 import { todayLocalDate } from '../../../utils/localDate'
 import {
   applyScheduleCandidate,
@@ -789,12 +792,14 @@ import {
   listScheduleDateExceptionHistory,
   cancelScheduleDateException,
   restoreScheduleDateException,
-  orgList,
+  orgOptions,
   updateTeacherTimeConstraint,
   updateClassroomUnavailableSlot,
 } from '../../../api/admin'
 
 const route = useRoute()
+const delivery = getDeliveryContext()
+const collaborationEnabled = delivery.mode !== 'customer' || delivery.modules?.includes('COLLABORATION_OFFICE')
 const reviewOnly = hasAdminPermission('education:scheduling:review') && !hasAdminPermission('education:scheduling:manage')
 const canReplayIncidents = hasAdminPermission('education:scheduling:manage')
 const canChangeDates = hasAdminPermission('education:scheduling:update', 'education:scheduling:manage')
@@ -853,6 +858,7 @@ const scheduleTargetId = ref('')
 const dimensionOptionsLoading = ref(false)
 const dimensionOptionsError = ref(false)
 const scheduleScopeFullAccess = ref(false)
+const termManagement = ref(false)
 const incidents = ref([])
 const incidentSelection = ref([])
 const incidentStatus = ref('FAILED')
@@ -1077,6 +1083,7 @@ const loadDimensionOptions = async () => {
     offeringOptions.value = dimensions.teachingClasses || []
     classroomOptions.value = dimensions.classrooms || []
     scheduleScopeFullAccess.value = dimensions.fullAccess !== false
+    termManagement.value = dimensions.termManagement === true
     if (!scheduleScopeFullAccess.value && scheduleDimension.value === 'ALL') {
       scheduleDimension.value = 'TEACHER'
       scheduleTargetId.value = ''
@@ -1105,6 +1112,7 @@ const loadAll = async () => {
   dimensionOptionsLoading.value = false
   dimensionOptionsError.value = false
   scheduleScopeFullAccess.value = false
+  termManagement.value = false
   let termResponse
   try {
     if (!organizationId.value) return
@@ -1139,10 +1147,11 @@ const loadAll = async () => {
     ? loadStudentOptions() : Promise.resolve()
   const results = await Promise.allSettled([
     listCourseCatalog({ organizationId: organizationId.value }),
-    dictionaryOptions('EDU_ROOM_TYPE'),
-    scheduleScopeFullAccess.value ? listScheduleVersions(semesterCode.value) : Promise.resolve({ data: [] }),
-    (canReviewCandidates || scheduleScopeFullAccess.value) ? listScheduleCandidates(semesterCode.value) : Promise.resolve({ data: [] }),
-    orgList({ page: 0, size: 200 }),
+    delivery.mode === 'customer' ? http.get('/admin/education/classroom-management/room-types')
+      : dictionaryOptions('EDU_ROOM_TYPE'),
+    termManagement.value ? listScheduleVersions(semesterCode.value) : Promise.resolve({ data: [] }),
+    (canReviewCandidates || termManagement.value) ? listScheduleCandidates(semesterCode.value) : Promise.resolve({ data: [] }),
+    orgOptions(),
     currentTerm ? listBellSchedules(currentTerm.id) : Promise.resolve({ data: [] }),
     listTeacherTimeConstraints(semesterCode.value),
     listClassroomUnavailableSlots(semesterCode.value),
@@ -1173,8 +1182,8 @@ const loadAll = async () => {
     loadClassroomsPage(),
     loadSchedule(),
     !reviewOnly ? loadDateSchedule() : Promise.resolve(),
-    scheduleScopeFullAccess.value ? loadQualityAnalysis() : Promise.resolve(),
-    scheduleScopeFullAccess.value ? loadPolicy() : Promise.resolve(),
+    termManagement.value ? loadQualityAnalysis() : Promise.resolve(),
+    termManagement.value ? loadPolicy() : Promise.resolve(),
   ])
 }
 const loadOfferingsPage = async () => {
@@ -1255,7 +1264,8 @@ watch([dateCampus, dateMajor, dateClass], () => {
 })
 const loadDateExceptionHistory = () => loadDateRows(dateExceptionHistory, listScheduleDateExceptionHistory)
 const loadPendingMakeups = () => loadDateRows(pendingMakeups, listSchedulePendingMakeups)
-const loadPendingSubstitutions = () => loadDateRows(pendingSubstitutions, listSchedulePendingSubstitutions)
+const loadPendingSubstitutions = () => collaborationEnabled
+  ? loadDateRows(pendingSubstitutions, listSchedulePendingSubstitutions) : Promise.resolve()
 const loadDateSchedule = async () => Promise.all([loadOccurrences(), loadDateExceptionHistory(), loadPendingMakeups(), loadPendingSubstitutions()])
 const changeDimension = async () => {
   scheduleTargetId.value = ''
@@ -1561,7 +1571,7 @@ const loadCandidates = async () => {
   try {
     const [candidateResponse, jobResponse] = await Promise.all([
       listScheduleCandidates(semester),
-      scheduleScopeFullAccess.value ? listScheduleGenerationJobs(semester) : Promise.resolve({ data: [] }),
+      termManagement.value ? listScheduleGenerationJobs(semester) : Promise.resolve({ data: [] }),
     ])
     if (semester !== semesterCode.value) return
     candidates.value = candidateResponse.data || []
@@ -1758,7 +1768,7 @@ watch(organizationId, async (id, previousId) => {
   clearSemesterData()
   await loadAll()
   if (id !== organizationId.value) return
-  if (semesterCode.value && !reviewOnly && activeTab.value === 'incidents') await loadIncidents()
+  if (semesterCode.value && !reviewOnly && collaborationEnabled && activeTab.value === 'incidents') await loadIncidents()
   const { dateAction, sourceEntryId, sourceDate } = route.query
   if (activeTab.value === 'date-schedule' && typeof sourceEntryId === 'string'
     && typeof sourceDate === 'string') {

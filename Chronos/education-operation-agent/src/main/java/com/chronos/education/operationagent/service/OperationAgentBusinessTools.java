@@ -145,8 +145,16 @@ public class OperationAgentBusinessTools {
 		this.userDetails = userDetails;
 	}
 
+	private OperationAgentToolLicense licenses = code -> true;
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setToolLicense(OperationAgentToolLicense licenses) {
+		this.licenses = licenses;
+	}
+
 	public Map<String, Object> execute(String toolCode, Map<String, Object> config, String knowledgeBaseId,
 			String objective, String actor) {
+		licenses.require(toolCode);
 		Map<String, Object> scopedConfig = config == null ? new LinkedHashMap<>() : new LinkedHashMap<>(config);
 		if (requiresOrganizationScope(toolCode)) {
 			scopedConfig.put("organizationId", resolveOrganization(scopedConfig, actor));

@@ -48,3 +48,9 @@ export const startRepairOrder = id => http.post(`/portal/facility/assigned-repai
 export const completeRepairOrder = (id, note) => http.post(`/portal/facility/assigned-repair-orders/${id}/complete`, { note })
 export const availableMaterials = params => http.get(`/portal/facility/materials?${qs(params)}`)
 export const requestRepairMaterials = payload => http.post('/portal/facility/material-requests', payload)
+
+const assetLifecycle = '/admin/facility/asset-lifecycle'
+export const assetLifecycleRequests = params => http.get(`${assetLifecycle}?${qs(params)}`)
+export const assetLifecycleDetail = id => http.get(`${assetLifecycle}/${id}`)
+export const submitAssetLifecycleRequest = payload => http.post(assetLifecycle, payload)
+export const decideAssetLifecycleRequest = (id, payload) => http.post(`${assetLifecycle}/${id}/decisions`, payload)

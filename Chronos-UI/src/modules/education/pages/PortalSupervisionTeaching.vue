@@ -60,7 +60,12 @@ onMounted(load)
     <header><div><h1>授课督导签到凭证</h1><p>只有该课授课教师可以为已接受的督导任务签发短时凭证。</p></div><el-button @click="load">刷新</el-button></header>
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="error" />
     <el-table v-loading="loading" :data="tasks" border>
-      <el-table-column prop="scheduleEntryId" label="课表项" min-width="260" />
+      <el-table-column label="督导课次" min-width="240">
+        <template #default="{ row }">
+          <template v-if="row.observedCourse">{{ row.observedCourse }} · {{ row.observedLocation }} · {{ row.observedStartsAt }}</template>
+          <template v-else>{{ row.scheduleEntryId }}</template>
+        </template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" width="150" />
       <AdaptiveActionColumn label="操作" width="140"><template #default="{ row }"><el-button v-if="row.status === 'ACCEPTED'" link type="primary" @click="issue(row)">签发现场凭证</el-button></template></AdaptiveActionColumn>
     </el-table>

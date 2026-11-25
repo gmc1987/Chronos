@@ -1,7 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { addClassGroupMember, removeClassGroupMember, listEducationParents, listEducationStudents, listAdministrativeClasses, pageClassGroups, createClassGroup, changeClassGroupStatus, syncClassGroup, pageClassGroupMembers, pageClassGroupAudit } from '../../../api/admin'
+import { addClassGroupMember, removeClassGroupMember, pageClassGroups, createClassGroup, changeClassGroupStatus, syncClassGroup, pageClassGroupMembers, pageClassGroupAudit } from '../../../api/admin'
+import { listFamilyParentOptions, listEducationStudents, listAdministrativeClasses } from '../api/familySetup'
 
 const groups = ref([]), classes = ref([]), members = ref([]), audits = ref([])
 const selected = ref(null), loading = ref(false), dialog = ref(false)
@@ -25,7 +26,7 @@ async function select(row) {
 async function openMemberDialog() {
   if (!selected.value) return
   const [studentResponse, parentResponse] = await Promise.all([
-    listEducationStudents({ classId: selected.value.classId }), listEducationParents({ page: 0, size: 200 }),
+    listEducationStudents({ classId: selected.value.classId }), listFamilyParentOptions({ page: 0, size: 200 }),
   ])
   students.value = unwrap(studentResponse)
   parents.value = unwrap(parentResponse)

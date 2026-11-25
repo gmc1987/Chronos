@@ -18,6 +18,10 @@ export const createAccommodationBed = (roomId, payload) => http.post(`/admin/edu
 export const accommodationBeds = (semesterCode, availableOnly = false, organizationId) => http.get(query('/admin/education/accommodations/beds', { semesterCode, availableOnly, organizationId }))
 export const accommodationAssignments = (semesterCode, organizationId) => http.get(query('/admin/education/accommodations/assignments', { semesterCode, organizationId }))
 export const accommodationStudents = (keyword, organizationId) => http.get(query('/admin/education/accommodations/student-options', { keyword, organizationId }))
+export const createAccommodationTerm = (organizationId, term) =>
+  http.post(query('/admin/education/accommodations/setup/terms', { organizationId }), term)
+export const importAccommodationRoster = (organizationId, rows) =>
+  http.post(query('/admin/education/accommodations/setup/roster', { organizationId }), rows)
 export const assignAccommodation = payload => http.post('/admin/education/accommodations/assign', payload)
 export const cancelAccommodation = id => http.delete(`/admin/education/accommodations/assignments/${id}`)
 export const downloadAccommodationImportTemplate = () => http.download('/admin/education/accommodations/import-template')

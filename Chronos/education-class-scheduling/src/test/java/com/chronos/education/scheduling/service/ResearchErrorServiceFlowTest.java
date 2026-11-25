@@ -54,7 +54,8 @@ class ResearchErrorServiceFlowTest {
 				mock(QuestionKnowledgePointRepository.class), mock(QuestionBankRepository.class),
 				mock(ErrorReviewRepository.class), mock(QuestionVersionRepository.class),
 				mock(com.chronos.file.service.ManagedFileService.class), identities,
-				mock(TeachingCollaborationNotificationService.class));
+				mock(TeachingCollaborationNotificationService.class),
+				mock(com.chronos.security.IamAuthorization.class));
 		jakarta.persistence.EntityManager entityManager = mock(jakarta.persistence.EntityManager.class);
 		when(entityManager.find(TeacherAcademicProfile.class, "teacher-2"))
 				.thenReturn(new TeacherAcademicProfile());

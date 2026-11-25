@@ -5,6 +5,9 @@ import com.chronos.education.academic.service.TermCoursePlanService;
 import com.chronos.education.academic.service.TermCoursePlanService.Command;
 import com.chronos.education.scheduling.service.AcademicCatalogImportService;
 import com.chronos.education.scheduling.service.AcademicCatalogImportService.Kind;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.io.IOException;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +70,14 @@ public class TermCoursePlanController {
 		return ok(null);
 	}
 
+	@PutMapping("/{id}/teacher")
+	@PreAuthorize(MANAGE + " and hasAuthority('education:term-course-plan:setup')")
+	public ResultData<Void> assignTeacher(@RequestParam String organizationId, @RequestParam String termCode,
+			@PathVariable String id, @RequestBody @Valid TeacherCommand command, Authentication actor) {
+		plans.assignTeacher(organizationId, termCode, id, command.teacherId(), actor.getName());
+		return ok(null);
+	}
+
 	@PostMapping("/generation")
 	@PreAuthorize(MANAGE)
 	public ResultData<?> generate(@RequestParam String organizationId, @RequestParam String termCode,
@@ -95,6 +106,7 @@ public class TermCoursePlanController {
 
 	public record GenerationCommand(boolean dryRun, Map<String, String> revisions) {}
 	public record HoursCommand(Integer weeklyLessons) {}
+	public record TeacherCommand(@NotBlank @Size(max = 64) String teacherId) {}
 
 	private <T> ResultData<T> ok(T data) {
 		return ResultData.<T>builder().code("200").msg("success").data(data).build();

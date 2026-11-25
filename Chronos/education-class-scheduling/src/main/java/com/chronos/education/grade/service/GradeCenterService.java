@@ -23,6 +23,19 @@ import java.math.BigDecimal; import java.nio.charset.StandardCharsets; import ja
 public class GradeCenterService {
 	private final AssessmentSchemeRepository schemes; private final AssessmentComponentRepository components; private final GradebookRepository gradebooks; private final GradebookStudentRepository students; private final GradeItemRepository items; private final CourseGradeRepository courseGrades; private final GradePublishSnapshotRepository snapshots; private final CourseOfferingRepository offerings; private final TeachingClassMemberRepository members; private final StudentProfileRepository profiles; private final WorkflowService workflows; private final IWorkflowTaskRepository workflowTasks; private final IWorkflowInstanceRepository workflowInstances; private final EducationDataScopeService dataScopes; private final GradeNotificationService notifications; private final IAuditLogService audit; private final ObjectMapper json; private final DomainEventOutboxService domainEvents; private final GradeRuleEvaluationService gradeRules; private final ExamGradebookSourceService examSources;
 	public GradeCenterService(AssessmentSchemeRepository schemes,AssessmentComponentRepository components,GradebookRepository gradebooks,GradebookStudentRepository students,GradeItemRepository items,CourseGradeRepository courseGrades,GradePublishSnapshotRepository snapshots,CourseOfferingRepository offerings,TeachingClassMemberRepository members,StudentProfileRepository profiles,WorkflowService workflows,IWorkflowTaskRepository workflowTasks,IWorkflowInstanceRepository workflowInstances,EducationDataScopeService dataScopes,GradeNotificationService notifications,IAuditLogService audit,ObjectMapper json,DomainEventOutboxService domainEvents,GradeRuleEvaluationService gradeRules,ExamGradebookSourceService examSources){this.schemes=schemes;this.components=components;this.gradebooks=gradebooks;this.students=students;this.items=items;this.courseGrades=courseGrades;this.snapshots=snapshots;this.offerings=offerings;this.members=members;this.profiles=profiles;this.workflows=workflows;this.workflowTasks=workflowTasks;this.workflowInstances=workflowInstances;this.dataScopes=dataScopes;this.notifications=notifications;this.audit=audit;this.json=json;this.domainEvents=domainEvents;this.gradeRules=gradeRules;this.examSources=examSources;}
+	@FunctionalInterface
+	public interface ExamSourcePolicy {
+		boolean enabled();
+	}
+
+	private ExamSourcePolicy examSourcePolicy = () -> true;
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	public void setExamSourcePolicy(ExamSourcePolicy examSourcePolicy) {
+		this.examSourcePolicy = examSourcePolicy;
+	}
+
+
 	@Transactional(readOnly = true)
 	public List<AssessmentScheme> listSchemes(String offeringId, String actor) {
 		var scope = dataScopes.resolve(actor);
@@ -33,7 +46,8 @@ public class GradeCenterService {
 			.filter(value -> scope.fullAccess()
 						|| (canAccessSchoolGradebooks() && scope.schoolIds().contains(value.getSchoolId()))
 						|| offerings.findById(value.getOfferingId())
-								.map(offering -> scope.teacherIds().contains(offering.getTeacherId()))
+								.map(offering -> scope.teacherIds().contains(offering.getTeacherId())
+										|| canAccessStandaloneOffering(offering, scope))
 								.orElse(false))
 				.toList();
 	}
@@ -76,9 +90,10 @@ public class GradeCenterService {
 						.collect(Collectors.toSet())
 				: Set.of();
 		return offerings.findAll().stream()
-				.filter(offering -> "ACTIVE".equals(offering.getStatus()))
+				.filter(offering -> Set.of("ACTIVE", CourseOffering.GRADE_ONLY).contains(offering.getStatus()))
 				.filter(offering -> scope.fullAccess()
 						|| reviewOfferingIds.contains(offering.getId())
+						|| canAccessStandaloneOffering(offering, scope)
 						|| scope.teacherIds().contains(offering.getTeacherId()))
 				.map(offering -> new OfferingOption(
 						offering.getId(),
@@ -105,9 +120,9 @@ public class GradeCenterService {
 					.filter(book -> scope.schoolIds().contains(book.getSchoolId()))
 					.toList();
 		}
-		return scope.teacherIds().stream()
-				.flatMap(id -> gradebooks.findByTeacherIdOrderByCreateTimeDesc(id).stream())
-				.distinct()
+		return gradebooks.findAll().stream()
+				.filter(book -> scope.teacherIds().contains(book.getTeacherId())
+						|| (scope.campusIds().contains(book.getSchoolId()) && isStandaloneGradebook(book)))
 				.toList();
 	}
 	@Transactional
@@ -261,7 +276,8 @@ public class GradeCenterService {
 						snapshot.getPublishedAt()))
 				.toList();
 		return new GradebookDetailResponse(gradebook.getId(), gradebook.getOfferingId(),
-				gradebook.getSchemeId(), gradebook.getStatus(), gradebook.getSubmissionNo(),
+				gradebook.getSchemeId(), gradebook.getStatus(), isStandaloneGradebook(gradebook), gradebook.getSubmittedBy(),
+				gradebook.getSubmissionNo(),
 				gradebook.getRowVersion(), gradebook.getSubmittedAt(),
 				gradebook.getPublishedAt(), studentSnapshots, componentDetails, itemDetails,
 				snapshotMetadata);
@@ -289,11 +305,58 @@ public class GradeCenterService {
 	}
  @Transactional(readOnly=true) public List<GradePublishSnapshot> snapshots(String id,String actor){authorizedGradebook(id,actor);return snapshots.findByGradebookIdOrderByVersionNoDesc(id);}
  @Transactional public Gradebook saveItems(String id,ItemsCommand command,String actor){Gradebook g=authorizedGradebook(id,actor);if(!Set.of("EDITING","REJECTED").contains(g.getStatus()))throw new IllegalStateException("当前状态不可录入");if(command.rowVersion()!=null&&!command.rowVersion().equals(g.getRowVersion()))throw new org.springframework.orm.ObjectOptimisticLockingFailureException(Gradebook.class,id);List<AssessmentComponent> allowed=components.findBySchemeIdOrderBySortOrder(g.getSchemeId());Map<String,AssessmentComponent> byId=allowed.stream().collect(Collectors.toMap(AssessmentComponent::getId,x->x));List<GradebookStudent> roster=students.findByGradebookId(id);for(GradeItemCommand c:command.items()){AssessmentComponent component=byId.get(c.componentId());if(component==null)throw new IllegalArgumentException("成绩项目不属于当前成绩册方案");if(!"MANUAL".equals(component.getSourceType()))throw new IllegalStateException("考试来源成绩只能通过同步操作更新");if(c.rawScore()!=null&&(c.rawScore().signum()<0||c.rawScore().compareTo(component.getMaxScore())>0))throw new IllegalArgumentException("成绩超出项目满分");if(roster.stream().noneMatch(x->x.getStudentId().equals(c.studentId())))throw new IllegalArgumentException("学生不在成绩册快照");GradeItem item=items.findByGradebookId(id).stream().filter(x->x.getComponentId().equals(c.componentId())&&x.getStudentId().equals(c.studentId())).findFirst().orElseGet(GradeItem::new);item.setGradebookId(id);item.setComponentId(c.componentId());item.setStudentId(c.studentId());item.setRawScore(c.rawScore());item.setConvertedScore(c.rawScore());item.setSpecialStatus(c.specialStatus());item.setRemark(c.remark());items.save(item);}return gradebooks.saveAndFlush(g);}
- @Transactional public Gradebook submit(String id,String actor){Gradebook g=authorizedGradebook(id,actor);if(!Set.of("EDITING","REJECTED").contains(g.getStatus()))throw new IllegalStateException("成绩册不可提交");validateCompleteGradebook(g);g.setSubmissionNo(g.getSubmissionNo()+1);g.setSubmittedAt(LocalDateTime.now());g.setStatus("REVIEWING");var instance=workflows.startByCode("EDU_GRADEBOOK_REVIEW",id,Map.<String,Object>of("gradebookId",id,"submitter",actor),actor);g.setWorkflowInstanceId(instance.getId());audit.log(actor,"EDU_GRADEBOOK_SUBMIT","gradebookId="+id);return gradebooks.save(g);}
+	@Transactional
+	public Gradebook submit(String id, String actor) {
+		authorizedGradebook(id, actor);
+		var book = gradebooks.findByIdForUpdate(id).orElseThrow();
+		if (!Set.of("EDITING", "REJECTED").contains(book.getStatus())) {
+			throw new IllegalStateException("成绩册不可提交");
+		}
+		validateCompleteGradebook(book);
+		book.setSubmissionNo(book.getSubmissionNo() + 1);
+		book.setSubmittedAt(LocalDateTime.now());
+		book.setSubmittedBy(actor);
+		book.setStatus("REVIEWING");
+		if (!isStandaloneGradebook(book)) {
+			var instance = workflows.startByCode("EDU_GRADEBOOK_REVIEW", id,
+					Map.<String, Object>of("gradebookId", id, "submitter", actor), actor);
+			book.setWorkflowInstanceId(instance.getId());
+		}
+		audit.log(actor, "EDU_GRADEBOOK_SUBMIT", "gradebookId=" + id);
+		return gradebooks.save(book);
+	}
+
+	private boolean isStandaloneGradebook(Gradebook book) {
+		return offerings.findById(book.getOfferingId())
+				.map(offering -> CourseOffering.GRADE_ONLY.equals(offering.getStatus())).orElse(false);
+	}
  @Transactional
  public Gradebook review(String id, String taskId, boolean approved, String comment, String actor) {
-     Gradebook gradebook = gradebooks.findById(id)
+     Gradebook gradebook = gradebooks.findByIdForUpdate(id)
              .orElseThrow(() -> new IllegalArgumentException("成绩册不存在"));
+     if (isStandaloneGradebook(gradebook) && gradebook.getWorkflowInstanceId() == null) {
+         authorizedGradebook(id, actor);
+         if (!"REVIEWING".equals(gradebook.getStatus()) || gradebook.getSubmittedBy() == null) {
+             throw new IllegalStateException("仅已提交的成绩册可以审核");
+         }
+         if (actor.equals(gradebook.getSubmittedBy())
+                 || dataScopes.resolve(actor).teacherIds().contains(gradebook.getTeacherId())) {
+             throw new AccessDeniedException("提交人或任课教师不得审核本人成绩册");
+         }
+         if (!approved && (comment == null || comment.isBlank())) {
+             throw new IllegalArgumentException("请填写驳回原因");
+         }
+         if (comment != null && comment.length() > 500) {
+             throw new IllegalArgumentException("审核意见不能超过 500 个字符");
+         }
+         gradebook.setStatus(approved ? "APPROVED" : "REJECTED");
+         audit.log(actor, approved ? "EDU_GRADEBOOK_APPROVE" : "EDU_GRADEBOOK_REJECT",
+                 "gradebookId=" + id + ",comment=" + (comment == null ? "" : comment.strip()));
+         return gradebooks.save(gradebook);
+     }
+     if (taskId == null || taskId.isBlank()) {
+         throw new IllegalArgumentException("请选择成绩册审核任务");
+     }
      WorkflowTask task = requireIndependentReview(gradebook, taskId, actor);
      var instance = approved
              ? workflows.completeTask(taskId, true, comment, actor)
@@ -368,7 +431,8 @@ public class GradeCenterService {
 		CourseOffering offering = offerings.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("课程开设不存在"));
 		var scope = dataScopes.resolve(actor);
-		if (!scope.fullAccess() && !scope.teacherIds().contains(offering.getTeacherId())) {
+		if (!scope.fullAccess() && !scope.teacherIds().contains(offering.getTeacherId())
+				&& !canAccessStandaloneOffering(offering, scope)) {
 			throw new AccessDeniedException("无权访问该课程开设");
 		}
 		return offering;
@@ -380,10 +444,16 @@ public class GradeCenterService {
 		var scope = dataScopes.resolve(actor);
 		if (!scope.fullAccess()
 				&& !scope.teacherIds().contains(gradebook.getTeacherId())
-				&& !(canAccessSchoolGradebooks() && scope.schoolIds().contains(gradebook.getSchoolId()))) {
+				&& !(canAccessSchoolGradebooks() && scope.schoolIds().contains(gradebook.getSchoolId()))
+				&& !offerings.findById(gradebook.getOfferingId())
+						.map(offering -> canAccessStandaloneOffering(offering, scope)).orElse(false)) {
 			throw new AccessDeniedException("无权访问该成绩册");
 		}
 		return gradebook;
+	}
+
+	private boolean canAccessStandaloneOffering(CourseOffering offering, EducationDataScope scope) {
+		return CourseOffering.GRADE_ONLY.equals(offering.getStatus()) && scope.campusIds().contains(offering.getCampusId());
 	}
 
 	private boolean canAccessSchoolGradebooks() {
@@ -450,6 +520,9 @@ public class GradeCenterService {
 					throw new IllegalArgumentException("人工成绩项目不能绑定考试场次");
 				}
 			} else if ("EXAM".equals(value.sourceType())) {
+				if (!examSourcePolicy.enabled()) {
+					throw new AccessDeniedException("当前部署未开通考试成绩来源");
+				}
 				examSources.validateBinding(command.offeringId(), value.sourceRefId());
 			} else {
 				throw new IllegalArgumentException("不支持的成绩来源类型");

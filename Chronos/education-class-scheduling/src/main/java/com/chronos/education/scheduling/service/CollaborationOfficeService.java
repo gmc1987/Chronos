@@ -14,9 +14,12 @@ import com.chronos.file.service.ManagedFileService;
 import com.chronos.workflow.WorkflowService;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +37,23 @@ public class CollaborationOfficeService {
 	private final IEmployeeRepository employees;
 	private final WorkflowService workflow;
 	private final ManagedFileService files;
+	@Value("${chronos.delivery.mode:standard}")
+	private String deliveryMode;
+
+	private boolean customerDeployment() {
+		return "customer".equals(deliveryMode);
+	}
+
+	private String officeSchool(String actor) {
+		var account = accounts.findByUsername(actor);
+		return account == null ? null : account.getOrganizationId();
+	}
+
+	private boolean ownsSchoolResource(String actor, OfficeResource resource) {
+		if (!customerDeployment()) return true;
+		String school = officeSchool(actor);
+		return school != null && school.equals(resource.getOrganizationId());
+	}
 
 	public CollaborationOfficeService(
 			OfficeResourceRepository resources,
@@ -55,21 +75,27 @@ public class CollaborationOfficeService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<OfficeResource> resources(String type) {
+	public List<OfficeResource> resources(String type, String actor) {
 		String normalized = normalizeResourceType(type);
-		return resources.findByResourceTypeAndEnabledTrueOrderByResourceNameAsc(normalized);
+		return resources.findByResourceTypeAndEnabledTrueOrderByResourceNameAsc(normalized).stream()
+				.filter(resource -> ownsSchoolResource(actor, resource)).toList();
 	}
 
 	@Transactional(readOnly = true)
-	public List<OfficeResource> managedResources(String type) {
-		return resources.findByResourceTypeOrderByResourceNameAsc(normalizeResourceType(type));
+	public List<OfficeResource> managedResources(String type, String actor) {
+		return resources.findByResourceTypeOrderByResourceNameAsc(normalizeResourceType(type)).stream()
+				.filter(resource -> ownsSchoolResource(actor, resource)).toList();
 	}
 
 	@Transactional
-	public OfficeResource saveResource(String id, ResourceCommand command) {
+	public OfficeResource saveResource(String id, ResourceCommand command, String actor) {
 		OfficeResource value = id == null ? new OfficeResource()
 				: resources.findById(id)
 						.orElseThrow(() -> new ServiceException("COLLAB_RESOURCE_NOT_FOUND", "资源不存在"));
+		if (customerDeployment() && id == null) {
+			value.setOrganizationId(required(officeSchool(actor), "管理办公资源前请绑定所属学校"));
+		}
+		if (!ownsSchoolResource(actor, value)) throw new org.springframework.security.access.AccessDeniedException("无权管理外校办公资源");
 		value.setResourceType(normalizeResourceType(command.resourceType()));
 		value.setResourceCode(required(command.resourceCode(), "资源编码不能为空"));
 		value.setResourceName(required(command.resourceName(), "资源名称不能为空"));
@@ -85,9 +111,10 @@ public class CollaborationOfficeService {
 	}
 
 	@Transactional
-	public OfficeResource disableResource(String id) {
+	public OfficeResource disableResource(String id, String actor) {
 		OfficeResource value = resources.findById(id)
 				.orElseThrow(() -> new ServiceException("COLLAB_RESOURCE_NOT_FOUND", "资源不存在"));
+		if (!ownsSchoolResource(actor, value)) throw new org.springframework.security.access.AccessDeniedException("无权管理外校办公资源");
 		value.setEnabled(false);
 		return resources.save(value);
 	}
@@ -98,8 +125,14 @@ public class CollaborationOfficeService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<OfficeApprovalRequest> managedRequests() {
-		return requests.findAllByOrderByCreateTimeDesc();
+	public List<OfficeApprovalRequest> managedRequests(String actor) {
+		return requests.findAllByOrderByCreateTimeDesc().stream()
+				.filter(request -> managedRequestVisible(actor, request)).toList();
+	}
+
+	private boolean managedRequestVisible(String actor, OfficeApprovalRequest request) {
+		return !customerDeployment() || resources.findById(request.getResourceId())
+				.map(resource -> ownsSchoolResource(actor, resource)).orElse(false);
 	}
 
 	@Transactional
@@ -107,7 +140,7 @@ public class CollaborationOfficeService {
 		String type = normalizeResourceType(command.requestType());
 		String employeeId = requireEmployeeId(username);
 		OfficeResource resource = resources.findLockedById(command.resourceId())
-				.filter(value -> Boolean.TRUE.equals(value.getEnabled()) && type.equals(value.getResourceType()))
+				.filter(value -> Boolean.TRUE.equals(value.getEnabled()) && type.equals(value.getResourceType()) && ownsSchoolResource(username, value))
 				.orElseThrow(() -> new ServiceException("COLLAB_RESOURCE_NOT_FOUND", "所选资源不存在或已停用"));
 		if (command.startAt() == null || command.endAt() == null || !command.endAt().isAfter(command.startAt())) {
 			throw new ServiceException("COLLAB_TIME_INVALID", "结束时间必须晚于开始时间");
@@ -194,6 +227,7 @@ public class CollaborationOfficeService {
 	public OfficeApprovalRequest completeExecution(String username, String id) {
 		OfficeApprovalRequest value = requests.findById(id)
 				.orElseThrow(() -> new ServiceException("COLLAB_REQUEST_NOT_FOUND", "申请不存在"));
+		if (!managedRequestVisible(username, value)) throw new org.springframework.security.access.AccessDeniedException("无权操作外校办公申请");
 		if (!"APPROVED".equals(value.getStatus()) && !"IN_USE".equals(value.getStatus())) {
 			throw new ServiceException("COLLAB_REQUEST_NOT_APPROVED", "申请尚未审批通过或已完成");
 		}
@@ -222,8 +256,11 @@ public class CollaborationOfficeService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<OfficialDocument> issuedDocuments() {
-		return documents.findByStatusOrderByCreateTimeDesc("ISSUED");
+	public List<OfficialDocument> issuedDocuments(String actor) {
+		String school = customerDeployment() ? officeSchool(actor) : null;
+		return documents.findByStatusOrderByCreateTimeDesc("ISSUED").stream()
+				.filter(document -> !customerDeployment() || school != null && school.equals(officeSchool(document.getDrafterUsername())))
+				.toList();
 	}
 
 	@Transactional
@@ -232,7 +269,9 @@ public class CollaborationOfficeService {
 		if (!List.of("DRAFT", "RECEIVED").contains(value.getStatus())) {
 			throw new ServiceException("COLLAB_DOCUMENT_LOCKED", "当前公文状态不可修改附件");
 		}
-		value.setPrimaryFileId(required(fileId, "文件编号不能为空"));
+		String attachment = required(fileId, "文件编号不能为空");
+		files.bind(List.of(attachment), CollaborationManagedFileAccessPolicy.DOCUMENT_TYPE, value.getId(), username);
+		value.setPrimaryFileId(attachment);
 		return documents.save(value);
 	}
 
@@ -244,7 +283,6 @@ public class CollaborationOfficeService {
 		}
 		String businessKey = "document:" + value.getId();
 		var started = workflow.startByCode(DOCUMENT_FLOW, businessKey, Map.of(
-				"documentId", value.getId(),
 				"title", value.getTitle(),
 				"urgency", value.getUrgency(),
 				"summary", value.getSummary() == null ? "" : value.getSummary()), username);
@@ -268,7 +306,8 @@ public class CollaborationOfficeService {
 	@Transactional
 	public CollaborationFileShare createShare(String username, ShareCommand command) {
 		String type = command.audienceType() == null ? "PRIVATE" : command.audienceType().trim().toUpperCase();
-		if (!List.of("PRIVATE", "USER", "DEPARTMENT", "ALL").contains(type)) {
+		boolean customer = "customer".equals(deliveryMode);
+		if (!(customer ? List.of("PRIVATE", "USER", "SCHOOL") : List.of("PRIVATE", "USER", "DEPARTMENT", "ALL")).contains(type)) {
 			throw new ServiceException("COLLAB_SHARE_AUDIENCE_INVALID", "共享范围不合法");
 		}
 		if (List.of("USER", "DEPARTMENT").contains(type)
@@ -277,6 +316,17 @@ public class CollaborationOfficeService {
 		}
 		CollaborationFileShare value = new CollaborationFileShare();
 		value.setOwnerUsername(username);
+		String schoolId = accountOrganization(username);
+		if (customer) {
+			if (schoolId == null) {
+				throw new AccessDeniedException("共享文档需要使用所属学校的账号");
+			}
+			if ("USER".equals(type) && Arrays.stream(command.audienceValue().split(",", -1))
+					.map(String::trim).anyMatch(target -> !schoolId.equals(accountOrganization(target)))) {
+				throw new AccessDeniedException("共享对象必须属于本校");
+			}
+		}
+		value.setOwnerOrganizationId(schoolId);
 		value.setTitle(required(command.title(), "文件标题不能为空"));
 		value.setDescription(blankToNull(command.description()));
 		value.setAudienceType(type);
@@ -287,15 +337,33 @@ public class CollaborationOfficeService {
 	@Transactional
 	public CollaborationFileShare attachShare(String username, String id, String fileId) {
 		CollaborationFileShare value = ownedShare(username, id);
-		value.setFileId(required(fileId, "文件编号不能为空"));
+		if ("customer".equals(deliveryMode) && !CollaborationShareAudience.canReadInCustomerDeployment(
+				value, username, accountOrganization(username))) {
+			throw new AccessDeniedException("无权维护该学校的共享文件");
+		}
+		String selected = required(fileId, "文件编号不能为空");
+		files.bind(List.of(selected), CollaborationManagedFileAccessPolicy.SHARE_TYPE, id, username);
+		value.setFileId(selected);
 		return shares.save(value);
 	}
 
 	@Transactional(readOnly = true)
 	public List<CollaborationFileShare> visibleShares(String username, String organizationId) {
+		if ("customer".equals(deliveryMode)) {
+			String schoolId = accountOrganization(username);
+			return schoolId == null ? List.of() : shares.findByOwnerOrganizationIdAndStatusOrderByCreateTimeDesc(schoolId, "ACTIVE").stream()
+					.filter(value -> value.getFileId() != null)
+					.filter(value -> CollaborationShareAudience.canReadInCustomerDeployment(value, username, schoolId))
+					.toList();
+		}
 		return shares.findByStatusOrderByCreateTimeDesc("ACTIVE").stream()
 				.filter(value -> CollaborationShareAudience.canRead(value, username, organizationId))
 				.toList();
+	}
+
+	private String accountOrganization(String username) {
+		var account = accounts.findByUsername(username);
+		return account == null ? null : blankToNull(account.getOrganizationId());
 	}
 
 	@Transactional

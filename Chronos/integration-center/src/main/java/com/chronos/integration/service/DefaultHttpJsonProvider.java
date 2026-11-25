@@ -12,6 +12,7 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -72,11 +73,17 @@ public class DefaultHttpJsonProvider implements HttpJsonProvider {
 				target.set("Idempotency-Key", idempotencyKey);
 			}
 		});
-		JsonNode root = request.retrieve().bodyToMono(JsonNode.class)
+		String response = request.retrieve().bodyToMono(String.class)
 				.timeout(Duration.ofSeconds(30)).block();
 		List<Map<String, Object>> result = new ArrayList<>();
-		if (root == null) {
+		if (response == null || response.isBlank()) {
 			return new ProviderPage(result, null);
+		}
+		JsonNode root;
+		try {
+			root = objectMapper.readTree(response);
+		} catch (JsonProcessingException exception) {
+			throw new IntegrationBoundaryException("INVALID_PROVIDER_RESPONSE", "HTTP JSON 上游响应不是有效 JSON");
 		}
 		JsonNode values = root.isArray() ? root : root.path("data");
 		if (!values.isArray()) {

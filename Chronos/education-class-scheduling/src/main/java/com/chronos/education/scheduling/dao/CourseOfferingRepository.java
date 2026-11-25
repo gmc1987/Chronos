@@ -19,14 +19,21 @@ public interface CourseOfferingRepository extends JpaRepository<CourseOffering, 
 	@Query("select offering from CourseOffering offering where offering.id = :id")
 	Optional<CourseOffering> findForCombinedUpdate(@Param("id") String id);
 
+	@Query("select co from CourseOffering co where co.semesterCode = :semesterCode and co.status not in ('GRADE_ONLY', 'TEACHING_RESOURCE_ONLY', 'HOMEWORK_ONLY', 'ENROLLMENT_ONLY') order by co.offeringCode")
+	List<CourseOffering> findByCampusIdInOrderBySemesterCodeDescOfferingCodeAsc(java.util.Collection<String> campusIds);
+
 	List<CourseOffering> findBySemesterCodeOrderByOfferingCode(String semesterCode);
+	List<CourseOffering> findBySemesterCodeAndStatusInOrderByOfferingCode(String semesterCode, java.util.Set<String> statuses);
+
 	List<CourseOffering> findByTeacherIdOrderByOfferingCode(String teacherId);
 	List<CourseOffering> findByAdministrativeClassIdAndSemesterCodeAndStatus(
 			String administrativeClassId, String semesterCode, String status);
+	@Query("select co from CourseOffering co where co.semesterCode = :semesterCode and co.status not in ('GRADE_ONLY', 'TEACHING_RESOURCE_ONLY', 'HOMEWORK_ONLY', 'ENROLLMENT_ONLY') order by co.offeringCode")
 	Page<CourseOffering> findBySemesterCodeOrderByOfferingCode(String semesterCode, Pageable pageable);
 	boolean existsByTeacherIdAndCampusIdIn(String teacherId, List<String> campusIds);
 	@Query("select distinct offering.teacherId from CourseOffering offering where offering.campusId in :campusIds and offering.teacherId is not null")
 	List<String> findDistinctTeacherIdsByCampusIdIn(@Param("campusIds") List<String> campusIds);
+	boolean existsBySemesterCodeAndOfferingCode(String semesterCode, String offeringCode);
 	boolean existsByTeacherId(String teacherId);
 	List<CourseOffering> findByCourseCode(String courseCode);
 }

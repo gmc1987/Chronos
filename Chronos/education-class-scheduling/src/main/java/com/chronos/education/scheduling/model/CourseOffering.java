@@ -21,6 +21,20 @@ import lombok.Setter;
 				name = "uk_edu_course_offering_code",
 				columnNames = { "semester_code", "offering_code" }))
 public class CourseOffering extends BaseEntity {
+	public static final String GRADE_ONLY = "GRADE_ONLY";
+	public static final String TEACHING_RESOURCE_ONLY = "TEACHING_RESOURCE_ONLY";
+	public static final String HOMEWORK_ONLY = "HOMEWORK_ONLY";
+	public static final String ENROLLMENT_ONLY = "ENROLLMENT_ONLY";
+
+	public static boolean isEnrollmentOffering(String status) {
+		return "ACTIVE".equals(status) || ENROLLMENT_ONLY.equals(status);
+	}
+
+	public static boolean isSchedulingOffering(String status) {
+		return !GRADE_ONLY.equals(status) && !TEACHING_RESOURCE_ONLY.equals(status)
+				&& !HOMEWORK_ONLY.equals(status) && !ENROLLMENT_ONLY.equals(status);
+	}
+
 	@Column(name = "semester_code", length = 128, nullable = false)
 	private String semesterCode;
 
@@ -36,7 +50,7 @@ public class CourseOffering extends BaseEntity {
 	@Column(name = "teaching_class_name", length = 128, nullable = false)
 	private String teachingClassName;
 
-	@Column(name = "teacher_id", length = 64, nullable = false)
+	@Column(name = "teacher_id", length = 64)
 	private String teacherId;
 
 	@Column(name = "teacher_name", length = 128, nullable = false)

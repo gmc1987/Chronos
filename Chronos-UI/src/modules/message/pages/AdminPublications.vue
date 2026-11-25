@@ -6,7 +6,7 @@
         <p>统一维护通知、公告、受众范围和发布周期</p>
       </div>
       <div>
-        <el-button @click="$router.push('/admin/message-settings')">渠道与模板</el-button>
+        <el-button v-if="!customerPublication" @click="$router.push('/admin/message-settings')">渠道与模板</el-button>
         <el-button type="primary" @click="openCreate">新增内容</el-button>
       </div>
     </div>
@@ -174,7 +174,7 @@
           <el-form-item label="发布审批">
             <el-switch v-model="form.approvalRequired" :disabled="readonly" />
           </el-form-item>
-          <el-form-item v-if="form.approvalRequired" label="审批流程">
+          <el-form-item v-if="form.approvalRequired && !customerPublication" label="审批流程">
             <el-select
               v-model="form.approvalWorkflowDefinitionId"
               :disabled="readonly"
@@ -195,6 +195,8 @@
         </div>
 
         <el-divider content-position="left">可见范围</el-divider>
+        <p v-if="customerPublication">通知仅发送给所属机构的用户。</p>
+        <template v-else>
         <div v-for="(audience, index) in form.audiences" :key="index" class="audience-row" :class="{ scoped: isScopedAudience(audience) }">
           <el-select v-model="audience.subjectType" :disabled="readonly" @change="changeAudienceType(audience)">
             <el-option label="全部用户" value="ALL" />
@@ -239,6 +241,7 @@
           <el-button v-if="!readonly" link type="danger" @click="form.audiences.splice(index, 1)">移除</el-button>
         </div>
         <el-button v-if="!readonly" plain @click="addAudience">添加范围</el-button>
+        </template>
 
         <template v-if="form.id">
           <el-divider content-position="left">Word / PDF</el-divider>
@@ -344,6 +347,9 @@ import {
   withdrawPublication,
   listAvailableWorkflows,
 } from '../../../api/admin'
+import { getDeliveryContext } from '../../../store/auth'
+
+const customerPublication = getDeliveryContext().mode === 'customer'
 
 const statuses = [
   { label: '草稿', value: 'DRAFT' },
@@ -420,6 +426,11 @@ const loadDirectory = async () => {
   }
   const data = response => response.data
   const page = response => response.data?.content
+  if (customerPublication) {
+    directory.organizations = await loadOptions('机构', orgOptions, data)
+    if (failed.size) ElMessage.warning('机构选项加载失败，请刷新后重试')
+    return
+  }
   await Promise.all([
     loadOptions('机构', orgOptions, data).then(items => {
       directory.organizations = items
@@ -512,7 +523,7 @@ const openEdit = async row => {
   const response = await publicationDetail(row.id)
   const record = { ...emptyForm(), ...response.data }
   // 已保存的受众仅保存对象 ID，编辑时从有权访问的机构反查其归属。
-  await Promise.all(record.audiences.filter(isScopedAudience).map(async audience => {
+  await Promise.all((customerPublication ? [] : record.audiences.filter(isScopedAudience)).map(async audience => {
     const matches = await Promise.all(directory.organizations.map(async organization => {
       const options = await loadScopedAudience({ ...audience, organizationId: organization.id }, true)
       return options.some(item => item.value === audience.subjectId) ? organization.id : ''
@@ -545,19 +556,21 @@ const payload = () => ({
   audienceMode: form.value.audienceMode,
   readDeadline: form.value.readDeadline || null,
   approvalRequired: form.value.approvalRequired,
-  approvalWorkflowDefinitionId: form.value.approvalWorkflowDefinitionId || null,
+  approvalWorkflowDefinitionId: customerPublication ? null : form.value.approvalWorkflowDefinitionId || null,
   sortOrder: form.value.sortOrder,
   publishAt: form.value.publishAt || null,
   expireAt: form.value.expireAt || null,
-  audiences: form.value.audiences.map(({ subjectType, subjectId, includeChildren, excluded }) => ({
-    subjectType, subjectId, includeChildren, excluded,
-  })),
+  audiences: customerPublication
+    ? [{ subjectType: 'ORGANIZATION', subjectId: form.value.ownerOrganizationId, includeChildren: false, excluded: false }]
+    : form.value.audiences.map(({ subjectType, subjectId, includeChildren, excluded }) => ({
+      subjectType, subjectId, includeChildren, excluded,
+    })),
 })
 const save = async () => {
   if (!form.value.id && !form.value.ownerOrganizationId) return ElMessage.warning('请选择通知公告所属机构')
   if (!form.value.title.trim()) return ElMessage.warning('请输入标题')
-  if (!form.value.audiences.some(item => !item.excluded)) return ElMessage.warning('至少配置一个正向可见范围')
-  if (form.value.audiences.some(item => item.subjectType !== 'ALL' && !item.subjectId)) {
+  if (!customerPublication && !form.value.audiences.some(item => !item.excluded)) return ElMessage.warning('至少配置一个正向可见范围')
+  if (!customerPublication && form.value.audiences.some(item => item.subjectType !== 'ALL' && !item.subjectId)) {
     return ElMessage.warning('请为每条可见范围选择对象')
   }
   saving.value = true

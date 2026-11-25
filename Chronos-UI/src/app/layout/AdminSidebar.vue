@@ -27,7 +27,7 @@ const menuItems = ref([])
 
 const mapAdminPath = (path) => {
   if (!path) return ''
-  if (path.startsWith('/admin')) return path
+  if (path.startsWith('/admin') || path.startsWith('/portal/')) return path
   if (path.startsWith('/system')) return path.replace('/system', '/admin')
   if (path.startsWith('/organization')) return path.replace('/organization', '/admin/organizations')
   if (path.startsWith('/customer')) return path.replace('/customer', '/admin/customers')

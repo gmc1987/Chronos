@@ -291,6 +291,7 @@ public class WorkflowService {
 			// 门户只能展示已经部署到 Flowable、可以真正发起的版本。
 			if (definition.getFlowableProcessKey() == null
 					|| definition.getFlowableProcessKey().isBlank()
+					|| security.startsThroughBusinessEntry(definition)
 					|| !security.canStart(actor, definition.getId())) {
 				continue;
 			}
@@ -1002,6 +1003,7 @@ public class WorkflowService {
 	public Map<String, Object> portalSupervision(String actor) {
 		LocalDateTime now = LocalDateTime.now();
 		List<WorkflowInstance> running = instances.findByInitiatorOrderByCreateTimeDesc(actor).stream()
+				.filter(instance -> security.productAllows(instance.getDefinitionId()))
 				.filter(instance -> "RUNNING".equals(instance.getStatus()))
 				.toList();
 		long overdue = 0;
@@ -1144,6 +1146,7 @@ public class WorkflowService {
 		// 锁定实例后重新读取任务。多人同时审批时，后到事务会看到前一事务的最新状态，节点只会推进一次。
 		WorkflowInstance i = instances.findLockedById(snapshot.getInstanceId()).orElseThrow();
 		WorkflowTask task = requirePendingTask(taskId, actor);
+		security.requireDecisionAccess(i, actor);
 		WorkflowNode node = nodes.findByFlowIdAndNodeKey(i.getDefinitionId(), task.getNodeKey()).orElseThrow();
 		requireOperation(node, "approve");
 		validateCurrentNodeRequiredForms(i, node);
@@ -1233,6 +1236,7 @@ public class WorkflowService {
 		WorkflowTask snapshot = tasks.findById(taskId).orElseThrow(() -> new IllegalArgumentException("任务不存在"));
 		WorkflowInstance instance = instances.findLockedById(snapshot.getInstanceId()).orElseThrow();
 		WorkflowTask task = requirePendingTask(taskId, actor);
+		security.requireDecisionAccess(instance, actor);
 		requireOperation(task, "reject");
 		String policy = nodeProperty(task, "rejectPolicy", "TERMINATE");
 		if (flowableRuntime.isFlowable(instance)) {
@@ -1320,7 +1324,7 @@ public class WorkflowService {
 
 	@Transactional(readOnly = true)
 	public List<Map<String, Object>> handled(String actor) {
-		return tasks.findByAssigneeOrderByCreateTimeDesc(actor).stream().filter(t -> !"PENDING".equals(t.getStatus()))
+		return tasks.findByAssigneeOrderByCreateTimeDesc(actor).stream().filter(t -> !"PENDING".equals(t.getStatus()) && canAccessTask(t, actor))
 				.map(this::taskView).toList();
 	}
 
@@ -1332,6 +1336,7 @@ public class WorkflowService {
 	@Transactional(readOnly = true)
 	public List<Map<String, Object>> initiated(String actor) {
 		return instances.findByInitiatorOrderByCreateTimeDesc(actor).stream()
+				.filter(instance -> security.productAllows(instance.getDefinitionId()))
 				.map(i -> instanceView(i, requireDefinition(i.getDefinitionId()))).toList();
 	}
 
@@ -1572,6 +1577,7 @@ public class WorkflowService {
 		try {
 			WorkflowInstance instance = requireInstance(task.getInstanceId());
 			WorkflowDefinition definition = requireDefinition(instance.getDefinitionId());
+			if (!security.productAllowsTask(definition.getFlowCode(), instance.getInitiator(), actor)) return false;
 			for (WorkflowTaskAccessGuard guard : taskAccessGuards) {
 				if (guard.supports(definition.getFlowCode())
 						&& !guard.canAccess(instance.getBusinessKey(), actor)) {
@@ -1585,6 +1591,9 @@ public class WorkflowService {
 	}
 
 	private void requireTaskAccess(WorkflowInstance instance, WorkflowDefinition definition, String actor) {
+		if (!security.productAllowsTask(definition.getFlowCode(), instance.getInitiator(), actor)) {
+			throw new AccessDeniedException("当前部署未开通该流程业务");
+		}
 		for (WorkflowTaskAccessGuard guard : taskAccessGuards) {
 			if (guard.supports(definition.getFlowCode())) {
 				guard.requireAccess(instance.getBusinessKey(), actor);

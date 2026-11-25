@@ -77,7 +77,8 @@ public class HomeworkManagedFileAccessPolicy implements ManagedFileAccessPolicy 
 
 	private boolean teacherCan(String username, HomeworkAssignment assignment) {
 		EducationDataScope scope = scopes.resolve(username);
-		if (!scope.fullAccess() && scope.teacherIds().isEmpty()) return false;
+		if (scope.fullAccess()) return true;
+		if (scope.teacherIds().isEmpty()) return false;
 		return offerings.findById(assignment.getOfferingId())
 				.map(offering -> scopes.canAccessOffering(scope, offering)).orElse(false);
 	}

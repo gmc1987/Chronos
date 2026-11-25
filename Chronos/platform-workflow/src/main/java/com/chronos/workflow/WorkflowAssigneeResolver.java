@@ -14,6 +14,12 @@ public class WorkflowAssigneeResolver {
 	private final IRoleRepository roles;
 	private final IEmployeeAssignmentRepository assignments;
 	private final ObjectMapper json = new ObjectMapper();
+	private WorkflowProductAccess productAccess = code -> true;
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setProductAccess(WorkflowProductAccess productAccess) {
+		this.productAccess = productAccess;
+	}
 
 	public WorkflowAssigneeResolver(IAdminUserRepository users, IRoleRepository roles,
 			IEmployeeAssignmentRepository assignments) {
@@ -28,15 +34,24 @@ public class WorkflowAssigneeResolver {
 			String mode = p.path("assigneeMode").asText("USER"),
 					value = p.path("assigneeValue").asText(p.path("assignee").asText());
 			List<String> result = switch (mode) {
-			case "ROLE" -> byRole(value);
+			case "ROLE" -> {
+				var reviewers = productAccess.defaultReviewers(instance.getDefinitionId(), instance.getInitiator(), value);
+				yield reviewers == null ? byRole(value) : reviewers;
+			}
 			case "INITIATOR_MANAGER" -> manager(instance.getInitiator());
 			case "FORM_FIELD" -> byVariable(instance.getVariablesJson(), value);
 			default -> value.isBlank() ? List.of() : List.of(value);
 			};
-			return result.stream().filter(x -> x != null && !x.isBlank()).distinct().sorted().toList();
+			return result.stream().filter(x -> x != null && !x.isBlank())
+					.filter(candidate -> eligibleReviewer(node, instance, candidate)).distinct().sorted().toList();
 		} catch (Exception e) {
-			return List.of(fallback);
+			return eligibleReviewer(node, instance, fallback) ? List.of(fallback) : List.of();
 		}
+	}
+
+	boolean eligibleReviewer(WorkflowNode node, WorkflowInstance instance, String candidate) {
+		if (!"APPROVAL".equals(node.getNodeType())) return true;
+		return productAccess.canAssignApproval(instance.getDefinitionId(), instance.getInitiator(), candidate);
 	}
 
 	private List<String> byRole(String code) {

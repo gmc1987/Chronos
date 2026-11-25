@@ -4,6 +4,9 @@ import com.chronos.education.scheduling.model.ClassroomReservation;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -20,6 +23,17 @@ public interface ClassroomReservationRepository
 	List<ClassroomReservation> findByUsageDateBetweenOrderByUsageDateAscStartPeriodAsc(
 			LocalDate startDate,
 			LocalDate endDate);
+
+	@Query("""
+			select reservation from ClassroomReservation reservation
+			where reservation.usageDate between :from and :through
+			  and (:status is null or reservation.status = :status)
+			  and exists (select room.id from Classroom room
+			              where room.id = reservation.classroomId and room.campusId in :campuses)
+			order by reservation.usageDate, reservation.startPeriod, reservation.id
+			""")
+	Page<ClassroomReservation> findForCampuses(Set<String> campuses, LocalDate from,
+			LocalDate through, String status, Pageable page);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select reservation from ClassroomReservation reservation where reservation.id = :id")

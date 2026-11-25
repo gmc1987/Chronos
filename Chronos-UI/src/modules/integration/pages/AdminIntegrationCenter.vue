@@ -8,6 +8,8 @@
       <el-button @click="loadAll">刷新</el-button>
     </div>
 
+    <IntegrationSetup v-if="standalone" :connectors="connectors" @saved="loadAll" />
+
     <el-alert
       v-if="blocked"
       title="凭证加密服务尚未配置"
@@ -107,6 +109,15 @@
 
     <el-dialog v-model="runVisible" title="运行详情与对账" width="820px">
       <el-alert v-if="selectedRun?.errorMessage" :title="selectedRun.errorMessage" type="error" :closable="false" />
+      <template v-if="standalone">
+        <h4>已接收记录</h4>
+        <el-table :data="received" border>
+          <el-table-column prop="sourceKey" label="来源标识" width="170" />
+          <el-table-column prop="mappedJson" label="已映射数据" min-width="300" show-overflow-tooltip />
+        </el-table>
+        <el-button :disabled="recordPage === 0" @click="loadRecords(recordPage - 1)">上一页</el-button>
+        <el-button :disabled="received.length < 50" @click="loadRecords(recordPage + 1)">下一页</el-button>
+      </template>
       <h4>条目错误</h4>
       <el-table :data="runErrors" border>
         <el-table-column prop="itemKey" label="项目" min-width="170" />
@@ -136,6 +147,9 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { http } from '../../../api/http'
+import { getDeliveryContext } from '../../../store/auth'
+import IntegrationSetup from './IntegrationSetup.vue'
 import {
   dryRunIntegrationSyncJob,
   listIntegrationConnectors,
@@ -150,6 +164,9 @@ import {
   triggerIntegrationSyncJob,
 } from '../../../api/admin'
 
+const standalone = getDeliveryContext().mode === 'customer'
+const received = ref([])
+const recordPage = ref(0)
 const activeTab = ref('connectors')
 const loading = ref(false)
 const blocked = ref(false)
@@ -209,11 +226,22 @@ const triggerJob = async row => {
   await loadAll()
 }
 
+async function loadRecords(page) {
+  const id = selectedRun.value?.id
+  if (!id) return
+  const response = await http.get(`/admin/integrations/runs/${id}/records?page=${page}`)
+  if (selectedRun.value?.id === id) {
+    received.value = rows(response)
+    recordPage.value = page
+  }
+}
+
 const openRun = async row => {
   selectedRun.value = row
   const [errorResponse, reconciliationResponse] = await Promise.all([
     listIntegrationRunErrors(row.id),
     listIntegrationReconciliations(row.id),
+    standalone ? loadRecords(0) : Promise.resolve(),
   ])
   runErrors.value = rows(errorResponse)
   reconciliations.value = rows(reconciliationResponse)

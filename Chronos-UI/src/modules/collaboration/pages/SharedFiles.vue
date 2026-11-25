@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 import {
   attachSharedFile,
   createFileShare,
@@ -15,6 +16,8 @@ const departments = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const selectedFile = ref(null)
+const licensedDeployment = getDeliveryContext().mode === 'customer'
+const canShare = !licensedDeployment || hasAdminPermission('education:shared-document:write')
 const form = reactive({
   title: '',
   description: '',
@@ -27,6 +30,7 @@ const audienceLabel = row => ({
   USER: `指定用户：${row.audienceValue || '-'}`,
   DEPARTMENT: `指定部门：${departments.value.find(item => item.id === row.audienceValue)?.name || row.audienceValue || '-'}`,
   ALL: '全体用户',
+  SCHOOL: '本校用户',
 })[row.audienceType] || row.audienceType
 
 async function load() {
@@ -34,7 +38,7 @@ async function load() {
   try {
     const [fileResponse, departmentResponse] = await Promise.all([
       fetchSharedFiles(),
-      fetchCollaborationDepartments(),
+      licensedDeployment ? Promise.resolve(null) : fetchCollaborationDepartments(),
     ])
     files.value = unwrap(fileResponse)
     departments.value = unwrap(departmentResponse)
@@ -93,7 +97,7 @@ onMounted(load)
         <h1>文件中心 · 共享文件</h1>
         <p>基于统一文件服务管理上传、下载和共享授权，不建立第二套文件存储。</p>
       </div>
-      <el-button type="primary" @click="openCreate">上传并共享</el-button>
+      <el-button v-if="canShare" type="primary" @click="openCreate">上传并共享</el-button>
     </header>
     <el-empty v-if="!files.length" description="暂无可访问的共享文件" />
     <el-table v-else :data="files" stripe>
@@ -113,8 +117,9 @@ onMounted(load)
           <el-select v-model="form.audienceType">
             <el-option label="仅自己" value="PRIVATE" />
             <el-option label="指定用户" value="USER" />
-            <el-option label="指定部门" value="DEPARTMENT" />
-            <el-option label="全体用户" value="ALL" />
+            <el-option v-if="licensedDeployment" label="本校用户" value="SCHOOL" />
+            <el-option v-if="!licensedDeployment" label="指定部门" value="DEPARTMENT" />
+            <el-option v-if="!licensedDeployment" label="全体用户" value="ALL" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.audienceType === 'USER'" label="用户名" required>

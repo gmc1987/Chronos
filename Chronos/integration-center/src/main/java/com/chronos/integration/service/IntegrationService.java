@@ -97,7 +97,9 @@ public class IntegrationService {
  }
  @Transactional public SyncJob saveJob(SyncJob job, String actor) {
   if (!connectors.existsById(job.getConnectorId())) throw new IntegrationBoundaryException("CONNECTOR_NOT_FOUND","connector not found");
-  if (job.getCronExpression()==null || job.getCronExpression().isBlank()) throw new IntegrationBoundaryException("INVALID_JOB_CRON","cron expression is required");
+  if (!org.springframework.scheduling.support.CronExpression.isValidExpression(job.getCronExpression())) {
+   throw new IntegrationBoundaryException("INVALID_JOB_CRON","请选择有效的六段 Cron 表达式");
+  }
   if (!validRequestPath(job.getRequestPath())) {
    throw new IntegrationBoundaryException("INVALID_REQUEST_PATH","request path must be a relative HTTP path");
   }

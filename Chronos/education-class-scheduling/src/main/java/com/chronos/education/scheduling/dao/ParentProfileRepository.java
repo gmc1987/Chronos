@@ -15,4 +15,5 @@ public interface ParentProfileRepository extends JpaRepository<ParentProfile, St
 
 	List<ParentProfile> findAllByOrderByParentNo();
 	Page<ParentProfile> findAllByOrderByParentNo(Pageable pageable);
+	List<ParentProfile> findBySchoolIdInOrderByParentNo(java.util.Collection<String> schoolIds);
 }

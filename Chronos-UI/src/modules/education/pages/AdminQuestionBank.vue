@@ -58,17 +58,21 @@
   </section>
 </template>
 <script setup>
+import { listCourseCatalog } from '../../../api/admin'
+import { getDeliveryContext } from '../../../store/auth'
+import { teachingDictionaryOptions, teachingCourseOptions } from '../api/teachingCenter'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { dictionaryOptions } from '../../../api/admin'
-import { listCourseCatalog } from '../../../api/admin'
 import { teachingCenterOfferings, questionBanks, createQuestionBank, updateQuestionBank, questions, createQuestion, updateQuestion, submitQuestion, questionVersions, questionImportTemplate, validateQuestionImport, commitQuestionImport, knowledgePointTree } from '../api/teachingCenter'
+const courseOptions = () => getDeliveryContext().mode === 'customer'
+  ? teachingCourseOptions() : listCourseCatalog({ page: 0, size: 500 })
+
 const courses = ref([]); const banks = ref([]); const rows = ref([]); const points = ref([]); const loading = ref(false)
 const courseId = ref(''); const bankId = ref(''); const offerings = ref([])
 const typeOptions = ref([]); const difficultyOptions = ref([]); const statusOptions = ref([]); const visibilityOptions = ref([])
 const bankDialog = ref(false); const questionDialog = ref(false); const importDialog = ref(false); const versionsDialog = ref(false)
 const bankForm = reactive({}); const questionForm = reactive({ options: [], knowledgePointIds: [] }); const versions = ref([]); const importErrors = ref([]); const importBody = ref(''); const importSummary = ref('')
-const dict = async (code) => (await dictionaryOptions(code))?.data?.map(item => ({ label: item.dictName || item.itemName, value: item.dictValue || item.itemValue })) || []
+const dict = async (code) => (await teachingDictionaryOptions(code))?.data?.map(item => ({ label: item.dictName || item.itemName, value: item.dictValue || item.itemValue })) || []
 const dictLabel = (list, value) => list.find(x => x.value === value)?.label || value || '-'
 const isChoice = computed(() => ['SINGLE_CHOICE', 'MULTIPLE_CHOICE'].includes(questionForm.questionType))
 const offeringLabel = item => [item.semesterCode, item.courseName, item.teachingClassName].filter(Boolean).join(' · ')
@@ -88,7 +92,7 @@ const downloadTemplate = async () => { const blob = await questionImportTemplate
 const importHash = ref('')
 const previewImport = async file => { importBody.value = await file.text(); try { const res = await validateQuestionImport(importBody.value); const data = res.data || {}; importErrors.value = data.errors || []; importHash.value = data.precheckHash || ''; importSummary.value = `预检 ${data.totalRows || 0} 行，${data.acceptedRows || 0} 行可导入`; importDialog.value = true } catch (e) { ElMessage.error(e.message) } return false }
 const commitImport = async () => { try { await commitQuestionImport({ csv: importBody.value, precheckHash: importHash.value }); importDialog.value = false; await loadQuestions(); ElMessage.success('导入成功') } catch (e) { ElMessage.error(e.message) } }
-onMounted(async () => { try { const [catalog, offering, types, difficulty, status, visibility] = await Promise.all([listCourseCatalog({ page: 0, size: 500 }), teachingCenterOfferings(), dict('EDU_QUESTION_TYPE'), dict('EDU_QUESTION_DIFFICULTY'), dict('COMMON_STATUS'), dict('EDU_RESOURCE_VISIBILITY')]); courses.value = (catalog.data?.content || catalog.data || []).filter(course => course.id || course.courseCode); offerings.value = offering.data || []; typeOptions.value = types; difficultyOptions.value = difficulty; statusOptions.value = status; visibilityOptions.value = visibility } catch (e) { ElMessage.error(e.message) } })
+onMounted(async () => { try { const [catalog, offering, types, difficulty, status, visibility] = await Promise.all([courseOptions(), teachingCenterOfferings(), dict('EDU_QUESTION_TYPE'), dict('EDU_QUESTION_DIFFICULTY'), dict('COMMON_STATUS'), dict('EDU_RESOURCE_VISIBILITY')]); courses.value = (catalog.data?.content || catalog.data || []).filter(course => course.id || course.courseCode); offerings.value = offering.data || []; typeOptions.value = types; difficultyOptions.value = difficulty; statusOptions.value = status; visibilityOptions.value = visibility } catch (e) { ElMessage.error(e.message) } })
 </script>
 <style scoped>
 .slice-page{padding:24px}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.page-head h1{margin:0 0 6px}.page-head p{margin:0;color:#7b8794}.crumbs{display:flex;gap:12px;margin-bottom:18px}.crumbs .el-select{width:250px}.options{width:100%}.option-row{display:flex;gap:10px;align-items:center;margin-bottom:8px}.option-row .el-input{max-width:480px}

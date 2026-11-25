@@ -3,12 +3,15 @@ package com.chronos.education.academic.service;
 import com.chronos.commons.model.PageView;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.dao.StudentProfileRepository;
+import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.CourseOffering;
+import com.chronos.education.scheduling.model.TeacherTeachingAssignment;
 import com.chronos.education.scheduling.service.AcademicDataService;
 import com.chronos.education.scheduling.service.ClassSchedulingService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.education.scheduling.service.EducationResourceTransactionLock;
+import com.chronos.service.iService.IAuditLogService;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -45,8 +48,10 @@ public class TermCoursePlanService {
 	private final EducationDataScopeService scopes;
 	private final EducationResourceTransactionLock locks;
 	private final StudentProfileRepository students;
+	private final TeacherAcademicProfileRepository teachers;
 	private final ClassSchedulingService scheduling;
 	private final AcademicDataService academic;
+	private final IAuditLogService audit;
 
 	public record Command(String classId, String programId, String courseId, Integer weeklyLessons) {}
 	public record PlanRow(String id, String classId, String className, String programName, String courseId,
@@ -63,6 +68,18 @@ public class TermCoursePlanService {
 		return terms.findByOrganizationIdOrderByStartDateDesc(organizationId);
 	}
 
+	@Transactional
+	public void setCurrentTerm(String organizationId, String termCode, String actor) {
+		scopes.scheduleReviewCampuses(actor, organizationId);
+		// Current-term selection is shared by all terms of this school.
+		jdbc.queryForObject("SELECT id FROM t_organization WHERE id=? FOR UPDATE", String.class, organizationId);
+		var term = term(organizationId, termCode, actor);
+		assertActiveTerm(term);
+		term.setCurrentTerm(true);
+		academic.saveTerm(term.getId(), term);
+		audit.log(actor, "EDU_TEACHING_CURRENT_TERM_SET", "organizationId=" + organizationId + ",termCode=" + termCode);
+	}
+
 	@Transactional(readOnly = true)
 	public PageView<PlanRow> list(String organizationId, String termCode, String keyword, int page, int size, String actor) {
 		var term = term(organizationId, termCode, actor);
@@ -75,6 +92,39 @@ public class TermCoursePlanService {
 		lockActiveTerm(term);
 		validate(term, command);
 		insert(term, command);
+	}
+
+	@Transactional
+	public void assignTeacher(String organizationId, String termCode, String planId, String teacherId, String actor) {
+		scopes.scheduleReviewCampuses(actor, organizationId);
+		var term = term(organizationId, termCode, actor);
+		lockActiveTerm(term);
+		assertMutable(term, planId);
+		var plan = rows(term, null).stream().filter(item -> planId.equals(item.id())
+				&& organizationId.equals(item.campusId()) && item.ready() && item.subjectId() != null)
+				.findFirst().orElseThrow(() -> new IllegalArgumentException("当前学期没有可指定教师的本校开课计划"));
+		var teacher = teachers.findById(teacherId)
+				.filter(item -> organizationId.equals(item.getDepartmentId()) && Boolean.TRUE.equals(item.getEnabled())
+						&& "ACTIVE".equals(item.getEmploymentStatus()))
+				.orElseThrow(() -> new IllegalArgumentException("请选择本校在岗教师"));
+		var existing = jdbc.queryForList("""
+				SELECT id FROM edu_teacher_teaching_assignment
+				WHERE academic_term_id=? AND administrative_class_id=? AND course_id=?
+				  AND assignment_role='TEACHER' AND enabled
+				""", String.class, term.getId(), plan.classId(), plan.courseId());
+		if (existing.size() > 1) {
+			throw new IllegalStateException("该班课程有多个在用任教关系，请先核对原有记录");
+		}
+		var assignment = new TeacherTeachingAssignment();
+		assignment.setAcademicTermId(term.getId());
+		assignment.setTeacherId(teacher.getId());
+		assignment.setAdministrativeClassId(plan.classId());
+		assignment.setGradeId(jdbc.queryForObject("SELECT grade_id FROM edu_administrative_class WHERE id=?",
+				String.class, plan.classId()));
+		assignment.setSubjectId(plan.subjectId());
+		assignment.setCourseId(plan.courseId());
+		assignment.setWeeklyLessons(plan.weeklyLessons());
+		academic.saveTeachingAssignment(existing.isEmpty() ? null : existing.getFirst(), assignment);
 	}
 
 	public record CourseOption(String classId, String className, String programId, String programName,

@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.controller;
 
 import com.chronos.commons.model.ResultData;
+import com.chronos.education.scheduling.model.AcademicTerm;
 import com.chronos.education.scheduling.model.ClassroomReservation;
 import com.chronos.education.scheduling.model.ClassroomReservationView;
 import com.chronos.education.scheduling.service.ClassroomReservationService;
@@ -85,6 +86,63 @@ public class ClassroomReservationController {
 		dataScopes.assertFullAccess(dataScopes.resolve(principal.getName()));
 		return ok(service.retry(principal.getName(), id));
 	}
+
+
+	@GetMapping("/portal/education/classroom-reservations/term-options")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:venue-reservation:apply','education:resource:venue:manage')")
+	public ResultData<List<AcademicTerm>> requestTerms(@RequestParam String classroomId, Principal principal) {
+		return ok(service.reservationTerms(principal.getName(), classroomId));
+	}
+
+	@PostMapping("/portal/education/classroom-reservations/check")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:venue-reservation:apply','education:resource:venue:manage')")
+	public ResultData<Boolean> check(@RequestBody ClassroomReservationService.Application command, Principal principal) {
+		service.check(principal.getName(), command);
+		return ok(true);
+	}
+
+	@PostMapping("/portal/education/classroom-reservations")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:venue-reservation:apply','education:resource:venue:manage')")
+	public ResultData<ClassroomReservationView> submit(@RequestBody ClassroomReservationService.Application command,
+			Principal principal) {
+		return ok(service.submit(principal.getName(), command));
+	}
+
+	@GetMapping("/admin/education/classroom-reservations/desk")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:resource:venue:view','education:resource:venue:manage')")
+	public ResultData<ClassroomReservationService.DeskPage> desk(@RequestParam String organizationId,
+			@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+			@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+			@RequestParam(required = false) String status, @RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "10") int size, Principal principal) {
+		return ok(service.scopedCalendar(principal.getName(), organizationId, startDate, endDate, status, page, size));
+	}
+
+	@PostMapping("/admin/education/classroom-reservations/desk/terms")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:resource:venue:manage')")
+	public ResultData<AcademicTerm> createTerm(@RequestParam String organizationId,
+			@RequestBody ClassroomReservationService.TermSetup term, Principal principal) {
+		return ok(service.createTerm(principal.getName(), organizationId, term));
+	}
+
+	@PostMapping("/admin/education/classroom-reservations/desk/{id}/review")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:resource:venue:manage')")
+	public ResultData<ClassroomReservationView> review(@PathVariable String id, @RequestBody Review command,
+			Principal principal) {
+		if (command.approve() == null) {
+			throw new IllegalArgumentException("请选择通过或驳回");
+		}
+		return ok(service.review(principal.getName(), id, command.approve(), command.note()));
+	}
+
+	@PostMapping("/admin/education/classroom-reservations/desk/{id}/cancel")
+	@PreAuthorize("@iamAuthorization.has(authentication,'education:resource:venue:manage')")
+	public ResultData<ClassroomReservation> cancelFromDesk(@PathVariable String id,
+			@RequestBody Map<String, String> command, Principal principal) {
+		return ok(service.cancelWithinScope(principal.getName(), id, command.get("reason")));
+	}
+
+	public record Review(Boolean approve, String note) {}
 
 	private <T> ResultData<T> ok(T data) {
 		return ResultData.<T>builder()

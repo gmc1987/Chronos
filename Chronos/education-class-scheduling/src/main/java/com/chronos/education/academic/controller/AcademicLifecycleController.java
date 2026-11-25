@@ -10,7 +10,7 @@ import com.chronos.education.academic.service.AcademicLifecycleService;
 import com.chronos.education.scheduling.service.AcademicCatalogImportService;
 import com.chronos.education.scheduling.service.AcademicDataService;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
-import com.chronos.education.scheduling.service.ClassSchedulingService;
+import com.chronos.education.scheduling.dao.CourseOfferingRepository;
 import com.chronos.education.scheduling.dao.AcademicTermRepository;
 import com.chronos.education.scheduling.model.CourseOffering;
 import com.chronos.education.scheduling.model.StudentProfile;
@@ -33,17 +33,17 @@ public class AcademicLifecycleController {
 	private final AcademicCatalogImportService imports;
 	private final AcademicDataService academic;
 	private final EducationDataScopeService scopes;
-	private final ClassSchedulingService scheduling;
+	private final CourseOfferingRepository offerings;
 	private final AcademicTermRepository terms;
 
 	public AcademicLifecycleController(AcademicLifecycleService service, AcademicCatalogImportService imports,
-			AcademicDataService academic, EducationDataScopeService scopes, ClassSchedulingService scheduling,
+			AcademicDataService academic, EducationDataScopeService scopes, CourseOfferingRepository offerings,
 			AcademicTermRepository terms) {
 		this.service = service;
 		this.imports = imports;
 		this.academic = academic;
 		this.scopes = scopes;
-		this.scheduling = scheduling;
+		this.offerings = offerings;
 		this.terms = terms;
 	}
 
@@ -91,14 +91,14 @@ public class AcademicLifecycleController {
 		var campuses = scopes.scheduleOrganizationCampuses(scope, schoolId);
 		terms.findByTermCode(termCode).filter(term -> schoolId.equals(term.getOrganizationId()))
 				.orElseThrow(() -> new IllegalArgumentException("所选学校下没有该学期"));
-		var visible = scopes.visibleOfferings(scope, scheduling.offerings(termCode)).stream()
+		var visible = scopes.visibleOfferings(scope, offerings.findBySemesterCodeAndStatusInOrderByOfferingCode(termCode, Set.of("ACTIVE", CourseOffering.ENROLLMENT_ONLY))).stream()
 				.filter(offering -> campuses.contains(offering.getCampusId()));
 		if (ids != null && !ids.isEmpty()) {
 			if (ids.size() > 100) throw new IllegalArgumentException("每次最多查询 100 条教学任务");
 			return ok(visible.filter(offering -> ids.contains(offering.getId())).map(OfferingOption::from).toList());
 		}
 		String text = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
-		return ok(visible.filter(offering -> "ACTIVE".equals(offering.getStatus()))
+		return ok(visible
 				.filter(offering -> (offering.getCourseCode() + " " + offering.getCourseName() + " " + offering.getTeachingClassName())
 						.toLowerCase(Locale.ROOT).contains(text))
 				.limit(20).map(OfferingOption::from).toList());

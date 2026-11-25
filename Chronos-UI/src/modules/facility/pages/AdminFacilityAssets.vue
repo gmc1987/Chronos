@@ -3,6 +3,9 @@
     <header><div><h2>资产与预防性保养</h2><p>维护资产二维码、保养计划、库存变动流水和后勤安全事件。</p></div></header>
     <OrganizationSelect v-model="organizationId" style="width:260px;margin-bottom:12px" />
     <el-tabs v-model="tab">
+      <el-tab-pane v-if="showLifecycle" label="资产申请与审批" name="lifecycle" lazy>
+        <AssetLifecycleRequests :organization-id="organizationId" :assets="assets" @asset-changed="reload" />
+      </el-tab-pane>
       <el-tab-pane label="资产台账" name="assets">
         <div class="actions"><el-input v-model="qrToken" placeholder="输入二维码令牌定位资产" clearable style="width:300px" /><el-button :disabled="!organizationId" @click="scanQr">查询二维码</el-button><el-button type="primary" :disabled="!organizationId" @click="assetDialog=true">新增资产</el-button></div>
         <el-table :data="assets" border><el-table-column prop="assetCode" label="资产编码" width="150" /><el-table-column prop="assetName" label="资产名称" min-width="180" /><el-table-column prop="category" label="分类" width="130" /><el-table-column prop="serialNumber" label="序列号" width="160" /><el-table-column prop="location" label="位置" min-width="180" /><el-table-column prop="qrToken" label="二维码令牌" min-width="260" /><el-table-column prop="status" label="状态" width="120" /><el-table-column prop="nextMaintenanceDate" label="下次保养" width="120" /></el-table>
@@ -31,10 +34,14 @@
 
 <script setup>
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { getDeliveryContext } from '../../../store/auth'
+import AssetLifecycleRequests from '../components/AssetLifecycleRequests.vue'
 import { reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adjustInventory, closeFacilitySafetyIncident, completePreventivePlan, createFacilityAsset, createPreventivePlan, facilityAssetByQr, facilityAssets, facilitySafetyIncidents, inventoryTransactions, materials as loadMaterials, preventivePlans, reportFacilitySafetyIncident } from '../api'
 
+const delivery = getDeliveryContext()
+const showLifecycle = delivery.mode !== 'customer' || delivery.modules?.includes('ASSET_MANAGEMENT')
 const unwrap = result => result?.data?.content || result?.data || []
 const message = error => error?.response?.data?.msg || error?.message || '操作失败'
 const tab = ref('assets'); const qrToken = ref(''); const assets = ref([]); const plans = ref([]); const transactions = ref([]); const incidents = ref([]); const materials = ref([])

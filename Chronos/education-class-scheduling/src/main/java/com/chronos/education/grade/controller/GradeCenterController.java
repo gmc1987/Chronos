@@ -133,7 +133,7 @@ public class GradeCenterController {
 	@PreAuthorize("hasAuthority('education:score:review')")
 	public ResultData<Gradebook> review(
 			@PathVariable String id,
-			@RequestParam String taskId,
+			@RequestParam(required = false) String taskId,
 			@RequestParam boolean approved,
 			@RequestParam(required = false) String comment,
 			Authentication authentication) {

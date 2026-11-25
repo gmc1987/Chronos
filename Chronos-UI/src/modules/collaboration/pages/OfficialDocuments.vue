@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 import {
   archiveOfficialDocument,
   attachOfficialDocumentFile,
@@ -12,6 +13,7 @@ import {
   uploadCollaborationFile,
 } from '../../../api/portal'
 
+const canApply = getDeliveryContext().mode !== 'customer' || hasAdminPermission('collaboration:office:apply')
 const myDocuments = ref([])
 const issuedDocuments = ref([])
 const activeTab = ref('mine')
@@ -131,7 +133,7 @@ onMounted(load)
         <h1>公文中心</h1>
         <p>公文台账负责拟稿、收文、签发和归档；审批任务统一进入流程中心。</p>
       </div>
-      <el-button type="primary" @click="openCreate">登记公文</el-button>
+      <el-button v-if="canApply" type="primary" @click="openCreate">登记公文</el-button>
     </header>
     <el-alert title="正文与附件统一存放在文件服务中，公文台账只保存安全文件引用，不重复存储文件。" type="info" :closable="false" />
     <el-tabs v-model="activeTab">

@@ -20,7 +20,9 @@
       <el-descriptions :column="1" border>
         <el-descriptions-item label="截止时间">{{ current?.dueAt || '未设置' }}</el-descriptions-item>
         <el-descriptions-item label="作业说明">{{ current?.instructionsJson || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="题目/要求">{{ current?.questionSnapshotJson || '—' }}</el-descriptions-item>
+        <el-descriptions-item v-if="current?.questionSnapshotJson && current.questionSnapshotJson !== '[]'" label="题目/要求">
+          {{ current.questionSnapshotJson }}
+        </el-descriptions-item>
         <el-descriptions-item label="作业附件">
           <el-button v-for="attachment in attachmentRefs(current?.attachmentSnapshotJson)" :key="attachment.fileId"
             link type="primary" @click="downloadAttachment(attachment)">{{ attachment.name || attachment.fileId }}</el-button>
@@ -48,8 +50,11 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { homeworkPage, myHomeworkSubmission, saveHomeworkSubmission, submitHomework } from '../api/teachingCenter'
+import { homeworkPage, myHomeworkSubmission, saveHomeworkSubmission, submitHomework, downloadHomeworkAttachment, uploadHomeworkAttachment } from '../api/teachingCenter'
 import { uploadManagedFile, downloadManagedFile } from '../../../api/admin'
+import { getDeliveryContext } from '../../../store/auth'
+const customer = getDeliveryContext().mode === 'customer'
+
 
 const rows = ref([])
 const current = ref(null)
@@ -63,7 +68,7 @@ const uploadingAttachment = ref(false)
 const attachmentRefs = raw => { try { const refs = JSON.parse(raw || '[]'); return Array.isArray(refs) ? refs.filter(ref => ref?.fileId) : [] } catch { return [] } }
 const downloadAttachment = async attachment => {
   try {
-    const blob = await downloadManagedFile(attachment.fileId)
+    const blob = await (customer ? downloadHomeworkAttachment : downloadManagedFile)(attachment.fileId)
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url; link.download = attachment.name || '作业附件'; link.click()
@@ -78,7 +83,7 @@ const uploadSubmissionAttachment = async event => {
   try {
     if (!submissionId.value) await saveDraft()
     if (!submissionId.value) return
-    const uploaded = await uploadManagedFile(file)
+    const uploaded = await (customer ? uploadHomeworkAttachment : uploadManagedFile)(file)
     const fileId = uploaded?.data?.id
     if (!fileId) throw new Error('文件上传未返回文件编号')
     const next = JSON.stringify([...attachmentRefs(attachmentSnapshotJson.value), { fileId, name: file.name }])
@@ -94,7 +99,8 @@ const uploadSubmissionAttachment = async event => {
 const unwrap = response => response?.data?.content || response?.data || []
 const statusLabels = { NOT_STARTED: '未开始', DRAFT: '草稿', SUBMITTED: '待批改', GRADED: '已评分', RETURNED_FOR_REVISION: '退回重做' }
 const statusLabel = status => statusLabels[status] || '未提交'
-const canEdit = row => row && (!row.submission || ['DRAFT', 'RETURNED_FOR_REVISION'].includes(row.submission.status))
+const canEdit = row => row && row.status === 'PUBLISHED'
+  && (!row.submission || ['NOT_STARTED', 'DRAFT', 'RETURNED_FOR_REVISION'].includes(row.submission.status))
 
 const load = async () => {
   loading.value = true
@@ -124,13 +130,16 @@ const saveDraft = async () => {
     submissionId.value = response?.data?.id || submissionId.value
     current.value.submission = response?.data || current.value.submission
     ElMessage.success('答案草稿已保存')
-  } catch (error) { ElMessage.error(error.message || '保存失败') }
+    return Boolean(submissionId.value)
+  } catch (error) {
+    ElMessage.error(error.message || '保存失败')
+    return false
+  }
 }
 const submit = async () => {
   await ElMessageBox.confirm('提交后将进入教师批改，确认提交？', '确认提交')
   try {
-    if (!submissionId.value) await saveDraft()
-    if (!submissionId.value) return
+    if (!await saveDraft()) return
     await submitHomework(submissionId.value)
     dialog.value = false
     ElMessage.success('作业已提交')

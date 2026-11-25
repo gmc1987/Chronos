@@ -1,5 +1,7 @@
 package com.chronos.education.scheduling.service;
 
+import java.time.LocalDate;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +26,19 @@ public class EducationResourceTransactionLock {
 				    hashtext(:semesterCode))
 				""")
 				.setParameter("semesterCode", semesterCode)
+				.getSingleResult();
+	}
+
+	/** 同一个场地日期可能落在两个学期内，场地锁让最终占用校验跨学期串行。 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void lockClassroomDate(String classroomId, LocalDate date) {
+		entityManager.createNativeQuery("""
+				SELECT 1 FROM pg_advisory_xact_lock(
+				    hashtext(:classroomId),
+				    hashtext(:date))
+				""")
+				.setParameter("classroomId", "chronos_classroom_reservation:" + classroomId)
+				.setParameter("date", date.toString())
 				.getSingleResult();
 	}
 }

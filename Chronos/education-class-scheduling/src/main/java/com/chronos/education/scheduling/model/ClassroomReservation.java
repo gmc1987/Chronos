@@ -21,7 +21,7 @@ import lombok.Setter;
 				name = "uk_edu_classroom_reservation_workflow",
 				columnNames = "workflow_instance_id"))
 public class ClassroomReservation extends BaseEntity {
-	@Column(name = "workflow_instance_id", length = 64, nullable = false)
+	@Column(name = "workflow_instance_id", length = 64)
 	private String workflowInstanceId;
 
 	@Column(name = "business_key", length = 128)
@@ -59,6 +59,12 @@ public class ClassroomReservation extends BaseEntity {
 
 	@Column(name = "approved_by", length = 128)
 	private String approvedBy;
+
+	@Column(name = "reviewed_at")
+	private LocalDateTime reviewedAt;
+
+	@Column(name = "review_note", length = 1000)
+	private String reviewNote;
 
 	@Column(name = "failure_message", length = 1000)
 	private String failureMessage;

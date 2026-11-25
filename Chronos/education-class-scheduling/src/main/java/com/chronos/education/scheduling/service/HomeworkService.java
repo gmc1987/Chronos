@@ -49,6 +49,16 @@ import com.chronos.file.service.ManagedFileService;
 @Transactional
 public class HomeworkService {
 	private static final ObjectMapper JSON = new ObjectMapper();
+	private TeachingReferencePolicy teachingReferences = () -> true;
+
+	public interface TeachingReferencePolicy {
+		boolean enabled();
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setTeachingReferencePolicy(TeachingReferencePolicy teachingReferences) {
+		this.teachingReferences = teachingReferences;
+	}
 	private final HomeworkAssignmentRepository assignments;
 	private final HomeworkSubmissionRepository submissions;
 	private final TeachingClassMemberRepository members;
@@ -97,7 +107,38 @@ public class HomeworkService {
 	}
 
 	private void teacherCan(EducationDataScope scope, HomeworkAssignment assignment) {
+		if (!scope.fullAccess() && !scope.studentIds().isEmpty() && scope.teacherIds().isEmpty()) {
+			throw new AccessDeniedException("学生只能访问自己的作业提交");
+		}
 		scopes.assertOfferingAccess(scope, assignment.getOfferingId());
+	}
+
+	@Transactional(readOnly = true)
+	public List<CourseOffering> offeringOptions(Authentication auth) {
+		return scopes.visibleOfferings(scope(auth), offerings.findAll()).stream()
+				.filter(this::supportsHomework)
+				.sorted(java.util.Comparator.comparing(CourseOffering::getOfferingCode))
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public CourseOffering requireHomeworkOffering(String id, Authentication actor) {
+		var value = offering(id);
+		scopes.assertOfferingAccess(scope(actor), value);
+		if (!supportsHomework(value)) throw new AccessDeniedException("该教学班未用于作业");
+		return value;
+	}
+
+	private boolean supportsHomework(CourseOffering value) {
+		return !CourseOffering.GRADE_ONLY.equals(value.getStatus())
+				&& !CourseOffering.TEACHING_RESOURCE_ONLY.equals(value.getStatus());
+	}
+
+	public void assertAttachmentUploader(Authentication actor, boolean canSetAssignments) {
+		var scope = scope(actor);
+		if (scope.studentIds().size() == 1) return;
+		if (canSetAssignments && (scope.fullAccess() || !scope.teacherIds().isEmpty())) return;
+		throw new AccessDeniedException("请使用绑定教师或学生档案的作业账号上传附件");
 	}
 
 	private String studentId(Authentication auth) {
@@ -165,10 +206,13 @@ public class HomeworkService {
 
 	public HomeworkAssignment create(AssignmentRequest request, Authentication auth) {
 		EducationDataScope value = scope(auth);
-		scopes.assertOfferingAccess(value, request.offeringId());
-		offering(request.offeringId());
-		validateReferences(request, request.offeringId());
 		HomeworkAssignment result = new HomeworkAssignment();
+		result.setOfferingId(request.offeringId());
+		teacherCan(value, result);
+		if (!supportsHomework(offering(request.offeringId()))) {
+			throw new IllegalArgumentException("该教学班未用于作业");
+		}
+		validateReferences(request, request.offeringId());
 		apply(result, request);
 		if (!fileIds(result.getAttachmentSnapshotJson()).isEmpty()) {
 			throw new IllegalArgumentException("请先保存作业草稿，再上传附件");
@@ -303,6 +347,14 @@ public class HomeworkService {
 	}
 
 	private void validateReferences(AssignmentRequest request, String offeringId) {
+		if (!teachingReferences.enabled() || CourseOffering.HOMEWORK_ONLY.equals(offering(offeringId).getStatus())) {
+			if (hasContent(request.teachingPlanItemId()) || hasContent(request.preparationId())
+					|| hasContent(request.lessonPlanId())
+					|| (hasContent(request.questionVersionRefsJson()) && !"[]".equals(request.questionVersionRefsJson().strip()))) {
+				throw new IllegalArgumentException("当前教学班请使用作业说明或附件布置作业");
+			}
+			return;
+		}
 		if (request.teachingPlanItemId() != null && !request.teachingPlanItemId().isBlank()) {
 			TeachingPlanItem item = planItems.findById(request.teachingPlanItemId())
 					.orElseThrow(() -> new IllegalArgumentException("教学计划项不存在"));
@@ -323,9 +375,17 @@ public class HomeworkService {
 		HomeworkAssignment result = assignment(id);
 		teacherCan(scope(auth), result);
 		if (!"DRAFT".equals(result.getStatus())) throw new IllegalStateException("只有草稿可以发布");
-		validatePublishedQuestionRefs(result.getQuestionVersionRefsJson());
+		if (teachingReferences.enabled() && !CourseOffering.HOMEWORK_ONLY.equals(offering(result.getOfferingId()).getStatus())) {
+			validatePublishedQuestionRefs(result.getQuestionVersionRefsJson());
+		} else if (!hasContent(result.getInstructionsJson()) && fileIds(result.getAttachmentSnapshotJson()).isEmpty()) {
+			throw new IllegalArgumentException("请填写作业说明或上传作业附件");
+		}
 		result.setStatus("PUBLISHED");
 		return result;
+	}
+
+	private boolean hasContent(String value) {
+		return value != null && !value.isBlank();
 	}
 
 	public HomeworkAssignment close(String id, Authentication auth) {

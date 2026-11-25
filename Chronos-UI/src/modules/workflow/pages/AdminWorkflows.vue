@@ -11,8 +11,8 @@
           <el-button v-if="canMonitor" @click="$router.push('/admin/workflow/outbox')">消息死信</el-button>
           <el-button v-if="canIncidentView" @click="$router.push('/admin/workflow/incidents')">流程事故</el-button>
           <el-button v-if="canFormManage" @click="$router.push('/admin/workflow/forms')">表单设计器</el-button>
-          <span class="ai-switch-label">AI辅助</span>
-          <el-switch v-model="aiSetting.enabled" :disabled="!canUpdate" @change="saveAiSetting" />
+          <span v-if="!officeDelivery" class="ai-switch-label">AI辅助</span>
+          <el-switch v-if="!officeDelivery" v-model="aiSetting.enabled" :disabled="!canUpdate" @change="saveAiSetting" />
           <el-button v-if="canCreate" type="primary" @click="openCreateFlow">新增工作流</el-button>
         </div>
       </div>
@@ -248,7 +248,7 @@
     </el-dialog>
 
     <el-dialog v-model="showAclDialog" :title="`流程权限 - ${aclFlow?.flowName || ''}`" width="760px">
-      <el-form inline><el-form-item label="主体类型"><el-select v-model="aclForm.subjectType" style="width:150px"><el-option v-for="item in aclSubjectTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="主体"><el-select v-if="aclForm.subjectType==='USER'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="u in assigneeUsers" :key="u.username" :label="u.displayName || u.username" :value="u.username" /></el-select><el-select v-else-if="aclForm.subjectType==='ROLE'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="r in assigneeRoles" :key="r.roleCode" :label="r.roleName || r.roleCode" :value="r.roleCode" /></el-select><el-input v-else v-model="aclForm.subjectId" placeholder="输入组织/部门/岗位ID" style="width:220px" /></el-form-item><el-form-item label="权限"><el-select v-model="aclForm.action" style="width:130px"><el-option v-for="item in aclActions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-button type="primary" @click="addAcl">添加</el-button></el-form>
+      <el-form inline><el-form-item label="主体类型"><el-select v-model="aclForm.subjectType" style="width:150px"><el-option v-for="item in aclSubjectTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="主体"><el-select v-if="aclForm.subjectType==='USER'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="u in assigneeUsers" :key="u.username" :label="u.displayName || u.username" :value="u.username" /></el-select><el-select v-else-if="aclForm.subjectType==='ROLE'" v-model="aclForm.subjectId" filterable style="width:180px"><el-option v-for="r in (officeDelivery ? officeAclRoles : assigneeRoles)" :key="r.roleCode" :label="r.roleName || r.roleCode" :value="r.roleCode" /></el-select><el-input v-else v-model="aclForm.subjectId" placeholder="输入组织/部门/岗位ID" style="width:220px" /></el-form-item><el-form-item label="权限"><el-select v-model="aclForm.action" style="width:130px"><el-option v-for="item in aclActions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-button type="primary" @click="addAcl">添加</el-button></el-form>
       <el-table :data="aclRows" border><el-table-column prop="subjectType" label="主体类型" width="120" /><el-table-column prop="subjectId" label="主体" /><el-table-column prop="action" label="权限" width="120" /><el-table-column prop="enabled" label="启用" width="80"><template #default="{row}">{{ row.enabled ? '是' : '否' }}</template></el-table-column><AdaptiveActionColumn label="操作" width="90"><template #default="{row}"><el-button link type="danger" @click="removeAcl(row)">删除</el-button></template></AdaptiveActionColumn></el-table>
     </el-dialog>
 
@@ -492,7 +492,11 @@ import {
   listWorkflowFormRevisions,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { hasAdminPermission } from '../../../store/auth'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
+import { delegatedAccounts } from '../../delivery/api'
+
+const delivery = getDeliveryContext()
+const officeDelivery = delivery.mode === 'customer' && delivery.modules?.includes('COLLABORATION_OFFICE')
 
 const { fitView } = useVueFlow()
 const canCreate = hasAdminPermission('workflow:definition:create','workflow:manage')
@@ -595,6 +599,7 @@ const formOptions = ref([])
 const permissionFields = ref([])
 const assigneeUsers = ref([])
 const assigneeRoles = ref([])
+const officeAclRoles = ref([])
 const nodeForm = ref({
   id: '',
   flowId: '',
@@ -662,6 +667,15 @@ const loadForms = async () => {
 }
 const loadExecutors = async () => { const res = await listWorkflowExecutors(); executorOptions.value = res?.data || [] }
 const loadAssigneeOptions = async () => {
+  if (officeDelivery) {
+    const { data } = await delegatedAccounts()
+    assigneeUsers.value = data.map(row => ({ username: row.username, displayName: row.display_name }))
+    assigneeRoles.value = [{ roleCode: 'EDU_ACADEMIC_APPROVER', roleName: '申请人所在学校的办公审批员' }]
+    const scoped = data.flatMap(row => (row.roles || '').split(','))
+      .filter(code => code.startsWith('DELIVERY_SCHOOL_COLLABORATION_OFFICE_MANAGE_'))
+    officeAclRoles.value = [...new Set(scoped)].map(roleCode => ({ roleCode }))
+    return
+  }
   const [usersRes, rolesRes] = await Promise.all([listUsers({ page: 0, size: 500 }), listRoles({ page: 0, size: 500 })])
   assigneeUsers.value = usersRes?.data?.content || []
   assigneeRoles.value = rolesRes?.data?.content || rolesRes?.data || []
@@ -750,6 +764,7 @@ const downloadArchive = async () => {
 }
 
 const loadAiSetting = async () => {
+  if (officeDelivery) return
   const res = await getWorkflowAiSetting()
   if (res?.data) aiSetting.value = res.data
 }
@@ -762,11 +777,23 @@ const saveAiSetting = async () => {
 }
 
 const loadFlowStatusOptions = async () => {
+  if (officeDelivery) {
+    flowStatusOptions.value = [
+      { dictName: '草稿', dictValue: 'DRAFT' },
+      { dictName: '已发布', dictValue: 'PUBLISHED' },
+      { dictName: '已停用', dictValue: 'DISABLED' },
+    ]
+    return
+  }
   const res = await dictListByCode('DICT_WORKFLOW_STATUS')
   flowStatusOptions.value = res?.data || []
 }
 
 const loadFlowCategoryOptions = async () => {
+  if (officeDelivery) {
+    flowCategoryOptions.value = [{ label: '协同办公', value: 'COLLABORATION' }]
+    return
+  }
   const fallback = [
     { label: '人事管理', value: 'HR' }, { label: '行政办公', value: 'ADMIN' },
     { label: '财务管理', value: 'FINANCE' }, { label: '采购管理', value: 'PURCHASE' },

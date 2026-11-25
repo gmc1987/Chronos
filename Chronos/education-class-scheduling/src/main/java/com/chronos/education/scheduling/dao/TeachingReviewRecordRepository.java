@@ -4,6 +4,10 @@ import com.chronos.education.scheduling.model.TeachingReviewRecord;
 import java.util.Optional;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 public interface TeachingReviewRecordRepository extends JpaRepository<TeachingReviewRecord, String> {
 	Optional<TeachingReviewRecord> findTopByResourceTypeAndResourceIdOrderBySubmissionNoDesc(String resourceType, String resourceId);
@@ -17,4 +21,10 @@ public interface TeachingReviewRecordRepository extends JpaRepository<TeachingRe
 	Optional<TeachingReviewRecord> findTopByResourceTypeAndResourceIdAndVersionIdOrderBySubmissionNoDesc(
 			String resourceType, String resourceId, String versionId);
 	List<TeachingReviewRecord> findByStatusInOrderBySubmittedAtAsc(java.util.Collection<String> statuses);
+
+	List<TeachingReviewRecord> findByWorkflowInstanceIdIsNullAndStatusOrderBySubmittedAtAscIdAsc(String status);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select review from TeachingReviewRecord review where review.id = :id")
+	Optional<TeachingReviewRecord> findForDecision(@Param("id") String id);
 }

@@ -1,8 +1,16 @@
 package com.chronos.education.supervision.service;
 
+import com.chronos.Idao.IAdminUserRepository;
+import com.chronos.Idao.IOrganizationRepository;
 import com.chronos.education.grade.service.DomainEventOutboxService;
+import com.chronos.education.scheduling.dao.CourseOfferingRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
+import com.chronos.education.scheduling.model.CourseOffering;
+import com.chronos.model.pojo.Organization;
 import com.chronos.education.supervision.dao.*;
+import com.chronos.education.supervision.dto.SupervisionDtos.ObservationCommand;
 import com.chronos.education.supervision.model.*;
+import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.ScheduleEntry;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
@@ -47,8 +55,30 @@ public class SupervisionCenterService {
 	private final FormService forms;
 	private final SchedulePlanVersionService scheduleVersions;
 	private final SupervisionCheckInProofProvider checkInProofs;
+	private TeacherAcademicProfileRepository teacherProfiles;
+	private IOrganizationRepository organizations;
+	private IAdminUserRepository accounts;
+	private EducationUserBindingRepository bindings;
+	private CourseOfferingRepository offerings;
+	private com.chronos.security.AdminUserDetailsService userDetails;
 	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 	private final Map<String, Instant> consumedProofs = new ConcurrentHashMap<>();
+
+	@Autowired
+	void configureObservation(TeacherAcademicProfileRepository teacherProfiles,
+			com.chronos.security.AdminUserDetailsService userDetails) {
+		this.teacherProfiles = teacherProfiles;
+		this.userDetails = userDetails;
+	}
+
+	@Autowired
+	void configureAssignmentDirectory(IOrganizationRepository organizations, IAdminUserRepository accounts,
+			EducationUserBindingRepository bindings, CourseOfferingRepository offerings) {
+		this.organizations = organizations;
+		this.accounts = accounts;
+		this.bindings = bindings;
+		this.offerings = offerings;
+	}
 
 	@Autowired
 	public SupervisionCenterService(
@@ -135,22 +165,33 @@ public class SupervisionCenterService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<SupervisionPlan> listPlans(String actor) {
-		return plans.findBySchoolIdOrderByCreateTimeDesc(scopeSchool(dataScopes.resolve(actor)));
+	public List<SupervisionPlan> listPlans(String actor, String schoolId) {
+		var scope = dataScopes.resolve(actor);
+		if (schoolId != null && !schoolId.isBlank()) {
+			return plans.findBySchoolIdOrderByCreateTimeDesc(resolveSchool(scope, schoolId));
+		}
+		if (scope.fullAccess()) {
+			return plans.findAll(org.springframework.data.domain.Sort.by("createTime").descending());
+		}
+		return plans.findBySchoolIdInOrderByCreateTimeDesc(scope.schoolIds());
 	}
 
 	@Transactional
 	public SupervisionPlan createPlan(String actor, String name,
-			java.time.LocalDate startDate, java.time.LocalDate endDate, String campusId) {
+			java.time.LocalDate startDate, java.time.LocalDate endDate, String campusId, String schoolId) {
 		if (endDate.isBefore(startDate)) {
 			throw new IllegalArgumentException("督导计划结束日期不能早于开始日期");
 		}
 		EducationDataScope scope = dataScopes.resolve(actor);
-		if (campusId != null && !scope.fullAccess() && !scope.campusIds().contains(campusId)) {
-			throw new AccessDeniedException("无权创建该校区计划");
+		String selectedSchool = resolveSchool(scope, schoolId);
+		if (campusId != null && !campusId.isBlank()) {
+			dataScopes.assertCampusAccess(scope, campusId);
+			if (!schoolOrganizations(selectedSchool).contains(campusId)) {
+				throw new IllegalArgumentException("校区不属于所选学校");
+			}
 		}
 		SupervisionPlan plan = new SupervisionPlan();
-		plan.setSchoolId(scopeSchool(scope));
+		plan.setSchoolId(selectedSchool);
 		plan.setName(name);
 		plan.setStartDate(startDate);
 		plan.setEndDate(endDate);
@@ -172,39 +213,156 @@ public class SupervisionCenterService {
 		if (!"PUBLISHED".equals(plan.getStatus())) {
 			throw new IllegalStateException("仅可向本校已发布计划分配任务");
 		}
-		// 任务执行人以登录账号存储；先通过有效教育绑定解析教师档案，再校验本校范围。
-		if (identities != null) {
-			Set<String> supervisorTeacherIds = identities.teacherIds(supervisorId);
-			if (supervisorTeacherIds.isEmpty()) {
-				throw new IllegalArgumentException("督导账号没有有效教师档案绑定");
-			}
-			if (supervisorTeacherIds.stream().noneMatch(id -> dataScopes.canAccessTeacher(scope, id))) {
-				throw new AccessDeniedException("无权向该教师分配督导任务");
-			}
-		} else {
-			dataScopes.assertTeacherAccess(scope, supervisorId);
-		}
-		dataScopes.assertTeacherAccess(scope, teacherId);
+		requireAssignmentSchool(plan);
 		dataScopes.assertScheduleEntryAccess(scope, scheduleEntryId);
-		if (campusId != null) {
-			dataScopes.assertCampusAccess(scope, campusId);
-		}
-		ScheduleEntry publishedEntry = scheduleVersions == null
-				? null
-				: scheduleVersions.requirePublishedEntry(scheduleEntryId);
+		if (campusId != null) dataScopes.assertCampusAccess(scope, campusId);
+		ScheduleEntry publishedEntry = scheduleVersions == null ? null : scheduleVersions.requirePublishedEntry(scheduleEntryId);
 		if (publishedEntry == null) {
 			throw new IllegalStateException("SUPERVISION_PUBLISHED_SCHEDULE_PROVIDER_UNAVAILABLE");
 		}
+		var offering = offerings.findById(publishedEntry.getOfferingId())
+				.orElseThrow(() -> new IllegalArgumentException("已发布课次的教学班不存在"));
+		if (!schoolOrganizations(plan.getSchoolId()).contains(offering.getCampusId())
+				|| (plan.getCampusId() != null && !plan.getCampusId().equals(offering.getCampusId()))
+				|| (campusId != null && !campusId.equals(offering.getCampusId()))) {
+			throw new AccessDeniedException("已发布课次不属于督导计划的学校或校区");
+		}
+		if (!teacherId.equals(offering.getTeacherId())) {
+			throw new IllegalArgumentException("授课教师与已发布课次不一致");
+		}
+		dataScopes.assertTeacherAccess(scope, teacherId);
+		assertSchoolTeacher(plan.getSchoolId(), teacherId);
+		assertAssignableSupervisor(plan, supervisorId, teacherId);
 		SupervisionAssignment assignment = new SupervisionAssignment();
 		assignment.setPlanId(planId);
 		assignment.setSchoolId(plan.getSchoolId());
-		assignment.setCampusId(campusId);
+		assignment.setCampusId(offering.getCampusId());
 		assignment.setSupervisorId(supervisorId);
 		assignment.setTeacherId(teacherId);
 		assignment.setScheduleEntryId(publishedEntry.getId());
 		audit.log(actor, "EDU_SUPERVISION_ASSIGNMENT_CREATE", "planId=" + planId);
 		return assignments.save(assignment);
 	}
+
+	@Transactional
+	public SupervisionAssignment assignObservation(String actor, ObservationCommand command) {
+		var plan = plans.findById(command.planId())
+				.orElseThrow(() -> new IllegalArgumentException("督导计划不存在"));
+		var scope = dataScopes.resolve(actor);
+		assertPlanAccess(plan, scope);
+		requireState(plan.getStatus(), "PUBLISHED");
+		if ("ALL".equals(plan.getSchoolId()) || plan.getCampusId() != null) {
+			throw new IllegalArgumentException("独立督导课次须使用本校计划");
+		}
+		if (!command.endsAt().isAfter(command.startsAt())
+				|| command.startsAt().toLocalDate().isBefore(plan.getStartDate())
+				|| command.endsAt().toLocalDate().isAfter(plan.getEndDate())) {
+			throw new IllegalArgumentException("课次起止时间须在督导计划期间内");
+		}
+		assertSchoolTeacher(plan.getSchoolId(), command.teacherId());
+		assertAssignableSupervisor(plan, command.supervisorId(), command.teacherId());
+		var assignment = new SupervisionAssignment();
+		assignment.setPlanId(plan.getId());
+		assignment.setSchoolId(plan.getSchoolId());
+		assignment.setSupervisorId(command.supervisorId());
+		assignment.setTeacherId(command.teacherId());
+		assignment.setObservedCourse(command.course().strip());
+		assignment.setObservedLocation(command.location().strip());
+		assignment.setObservedStartsAt(command.startsAt());
+		assignment.setObservedEndsAt(command.endsAt());
+		var saved = assignments.save(assignment);
+		audit.log(actor, "EDU_SUPERVISION_OBSERVATION_CREATE", "assignmentId=" + saved.getId());
+		return saved;
+	}
+
+	private void assertSchoolTeacher(String schoolId, String teacherId) {
+		if (teacherProfiles.findById(teacherId).filter(profile ->
+				schoolOrganizations(schoolId).contains(profile.getDepartmentId()) && Boolean.TRUE.equals(profile.getEnabled())).isEmpty()) {
+			throw new AccessDeniedException("请选择本校启用的教师档案");
+		}
+	}
+
+	@Transactional(readOnly = true)
+	public List<TeacherOption> observationTeachers(String planId, String actor) {
+		var plan = plans.findById(planId).orElseThrow(() -> new IllegalArgumentException("督导计划不存在"));
+		assertPlanAccess(plan, actor);
+		requireAssignmentSchool(plan);
+		return schoolOrganizations(plan.getSchoolId()).stream()
+				.flatMap(id -> teacherProfiles.findByDepartmentIdAndEnabledTrueOrderByTeacherNo(id).stream())
+				.map(profile -> new TeacherOption(profile.getId(), profile.getTeacherName(), profile.getTeacherNo()))
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<SupervisorOption> assignmentSupervisors(String planId, String actor) {
+		var plan = planForAssignmentOptions(planId, actor);
+		var schoolIds = schoolOrganizations(plan.getSchoolId());
+		var teacherIds = schoolIds.stream().flatMap(id -> teacherProfiles
+				.findByDepartmentIdAndEnabledTrueOrderByTeacherNo(id).stream())
+				.map(profile -> profile.getId()).toList();
+		if (teacherIds.isEmpty()) return List.of();
+		var usernames = bindings.findByProfileTypeAndProfileIdInAndStatus("TEACHER", teacherIds, "ACTIVE").stream()
+				.map(binding -> binding.getUsername()).distinct().toList();
+		if (usernames.isEmpty()) return List.of();
+		return accounts.findByUsernameIn(usernames).stream()
+				.filter(account -> account.getOrganizationId() != null && schoolIds.contains(account.getOrganizationId()))
+				.filter(account -> hasDuty(account.getUsername(), "education:supervision:assignment:accept"))
+				.map(account -> new SupervisorOption(account.getUsername(),
+						account.getDisplayName() == null ? account.getUsername() : account.getDisplayName()))
+				.sorted(java.util.Comparator.comparing(SupervisorOption::name).thenComparing(SupervisorOption::username))
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<CourseOffering> assignmentOfferings(String planId, String actor) {
+		var plan = planForAssignmentOptions(planId, actor);
+		Set<String> campusIds = plan.getCampusId() == null
+				? schoolOrganizations(plan.getSchoolId()) : Set.of(plan.getCampusId());
+		return dataScopes.visibleOfferings(dataScopes.resolve(actor),
+				offerings.findByCampusIdInOrderBySemesterCodeDescOfferingCodeAsc(campusIds)).stream()
+				.filter(offering -> offering.getTeacherId() != null && CourseOffering.isSchedulingOffering(offering.getStatus()))
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<ScheduleEntry> assignmentScheduleOptions(String planId, String offeringId, String actor) {
+		var plan = planForAssignmentOptions(planId, actor);
+		var offering = offerings.findById(offeringId)
+				.orElseThrow(() -> new IllegalArgumentException("教学班不存在"));
+		var scope = dataScopes.resolve(actor);
+		dataScopes.assertOfferingAccess(scope, offeringId);
+		if (offering.getCampusId() == null || !schoolOrganizations(plan.getSchoolId()).contains(offering.getCampusId())
+				|| (plan.getCampusId() != null && !plan.getCampusId().equals(offering.getCampusId()))) {
+			throw new AccessDeniedException("教学班不属于督导计划的学校或校区");
+		}
+		return scheduleVersions.latestPublishedEntries(offering.getSemesterCode()).stream()
+				.filter(entry -> offeringId.equals(entry.getOfferingId()))
+				.toList();
+	}
+
+	private SupervisionPlan planForAssignmentOptions(String id, String actor) {
+		var plan = plans.findById(id).orElseThrow(() -> new IllegalArgumentException("督导计划不存在"));
+		assertPlanAccess(plan, actor);
+		requireAssignmentSchool(plan);
+		return plan;
+	}
+
+	private void assertAssignableSupervisor(SupervisionPlan plan, String username, String teacherId) {
+		var account = accounts.findByUsername(username);
+		if (account == null || account.getOrganizationId() == null
+				|| !schoolOrganizations(plan.getSchoolId()).contains(account.getOrganizationId())) {
+			throw new AccessDeniedException("请选择督导计划所属学校的账号");
+		}
+		var supervisor = identities.teacherIds(username);
+		if (supervisor.size() != 1) throw new IllegalArgumentException("督导账号未绑定唯一教师档案");
+		if (supervisor.contains(teacherId)) throw new IllegalArgumentException("授课教师和督导员须为不同人员");
+		assertSchoolTeacher(plan.getSchoolId(), supervisor.iterator().next());
+		requireDuty(username, "education:supervision:assignment:accept", "该账号未获督导员权限或已停用");
+	}
+
+	public record SupervisorOption(String username, String name) {}
+
+	public record TeacherOption(String id, String name, String code) {}
 
 	@Transactional(readOnly = true)
 	public List<SupervisionAssignment> myAssignments(String supervisorId) {
@@ -378,7 +536,7 @@ public class SupervisionCenterService {
 			throw new IllegalArgumentException("SUPERVISION_FORM_INSTANCE_NOT_SUBMITTED");
 		}
 		String formSnapshot = snapshot(instance);
-		String scheduleSnapshot = scheduleSnapshot(assignment.getScheduleEntryId());
+		String scheduleSnapshot = scheduleSnapshot(assignment);
 		SupervisionRecord record = new SupervisionRecord();
 		record.setAssignmentId(assignmentId);
 		record.setSchoolId(assignment.getSchoolId());
@@ -408,11 +566,18 @@ public class SupervisionCenterService {
 		SupervisionRecord record = records.findById(recordId).orElseThrow();
 		EducationDataScope scope = dataScopes.resolve(actor);
 		assertSchoolAccess(scope, record.getSchoolId());
-		dataScopes.assertTeacherAccess(scope, record.getTeacherId());
 		Set<String> ownerTeacherIds = identities == null ? Set.of(ownerId) : identities.teacherIds(ownerId);
 		if (ownerTeacherIds.isEmpty()) throw new IllegalArgumentException("整改负责人没有有效教师档案绑定");
-		if (ownerTeacherIds.stream().noneMatch(id -> dataScopes.canAccessTeacher(scope, id))) {
-			throw new AccessDeniedException("无权指定该整改负责人");
+		var task = assignments.findById(record.getAssignmentId());
+		if (task.filter(value -> value.getObservedStartsAt() != null).isPresent()) {
+			if (ownerTeacherIds.size() != 1) throw new IllegalArgumentException("整改负责人未绑定唯一教师档案");
+			assertSchoolTeacher(record.getSchoolId(), ownerTeacherIds.iterator().next());
+			requireDuty(ownerId, "education:supervision:rectification:create", "该账号未获整改权限");
+		} else {
+			dataScopes.assertTeacherAccess(scope, record.getTeacherId());
+			if (ownerTeacherIds.stream().noneMatch(id -> dataScopes.canAccessTeacher(scope, id))) {
+				throw new AccessDeniedException("无权指定该整改负责人");
+			}
 		}
 		SupervisionIssue issue = new SupervisionIssue();
 		issue.setRecordId(recordId);
@@ -476,13 +641,15 @@ public class SupervisionCenterService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<SupervisionRecord> listRecords(String actor) {
-		return records.findBySchoolIdOrderBySubmittedAtDesc(scopeSchool(dataScopes.resolve(actor)));
+	public List<SupervisionRecord> listRecords(String actor, String schoolId) {
+		var scope = dataScopes.resolve(actor);
+		return records.findBySchoolIdOrderBySubmittedAtDesc(schoolId == null ? scopeSchool(scope) : resolveSchool(scope, schoolId));
 	}
 
 	@Transactional(readOnly = true)
-	public List<SupervisionIssue> listIssues(String actor) {
-		return issues.findBySchoolIdOrderByCreateTimeDesc(scopeSchool(dataScopes.resolve(actor)));
+	public List<SupervisionIssue> listIssues(String actor, String schoolId) {
+		var scope = dataScopes.resolve(actor);
+		return issues.findBySchoolIdOrderByCreateTimeDesc(schoolId == null ? scopeSchool(scope) : resolveSchool(scope, schoolId));
 	}
 
 	@Transactional(readOnly = true)
@@ -511,6 +678,49 @@ public class SupervisionCenterService {
 	private void assertActiveSupervisor(String supervisorId) {
 		if (identities != null && identities.teacherIds(supervisorId).isEmpty()) {
 			throw new AccessDeniedException("督导账号没有有效教师档案绑定");
+		}
+	}
+
+	private void requireDuty(String username, String permission, String error) {
+		if (!hasDuty(username, permission)) throw new IllegalArgumentException(error);
+	}
+
+	private boolean hasDuty(String username, String permission) {
+		try {
+			var user = userDetails.loadUserByUsername(username);
+			return user.isEnabled() && user.isAccountNonLocked() && user.getAuthorities().stream()
+					.anyMatch(authority -> permission.equals(authority.getAuthority()));
+		} catch (org.springframework.security.core.userdetails.UsernameNotFoundException ignored) {
+			return false;
+		}
+	}
+
+	private String resolveSchool(EducationDataScope scope, String requestedSchool) {
+		if ((requestedSchool == null || requestedSchool.isBlank()) && scope.fullAccess()) {
+			throw new IllegalArgumentException("请选择督导计划所属学校");
+		}
+		String schoolId = requestedSchool == null || requestedSchool.isBlank()
+				? dataScopes.requireSingleSchool(scope) : requestedSchool;
+		if (organizations.findById(schoolId).filter(school -> "SCHOOL".equals(school.getOrganizationType())
+				&& Integer.valueOf(1).equals(school.getStatus())).isEmpty()) {
+			throw new IllegalArgumentException("请选择启用的学校");
+		}
+		dataScopes.assertSchoolAccess(scope, schoolId);
+		return schoolId;
+	}
+
+	private Set<String> schoolOrganizations(String schoolId) {
+		var allowed = new java.util.HashSet<String>();
+		allowed.add(schoolId);
+		organizations.findByParentOrgId_Id(schoolId).stream()
+				.filter(campus -> "CAMPUS".equals(campus.getOrganizationType()) && Integer.valueOf(1).equals(campus.getStatus()))
+				.map(Organization::getId).forEach(allowed::add);
+		return allowed;
+	}
+
+	private void requireAssignmentSchool(SupervisionPlan plan) {
+		if ("ALL".equals(plan.getSchoolId())) {
+			throw new IllegalArgumentException("历史未指定学校的计划不能分配任务，请在所属学校新建计划");
 		}
 	}
 
@@ -575,12 +785,18 @@ public class SupervisionCenterService {
 		}
 	}
 
-	private String scheduleSnapshot(String entryId) {
-		if (scheduleVersions == null) {
+	private String scheduleSnapshot(SupervisionAssignment assignment) {
+		if (assignment.getObservedStartsAt() == null && scheduleVersions == null) {
 			throw new IllegalStateException("SUPERVISION_PUBLISHED_SCHEDULE_PROVIDER_UNAVAILABLE");
 		}
 		try {
-			return json.writeValueAsString(scheduleVersions.requirePublishedEntry(entryId));
+			if (assignment.getObservedStartsAt() != null) {
+				return json.writeValueAsString(Map.of("source", "OBSERVATION",
+						"course", assignment.getObservedCourse(), "location", assignment.getObservedLocation(),
+						"startsAt", assignment.getObservedStartsAt().toString(), "endsAt", assignment.getObservedEndsAt().toString(),
+						"teacherId", assignment.getTeacherId()));
+			}
+			return json.writeValueAsString(scheduleVersions.requirePublishedEntry(assignment.getScheduleEntryId()));
 		} catch (JsonProcessingException exception) {
 			throw new IllegalStateException("SUPERVISION_SCHEDULE_SNAPSHOT_INVALID", exception);
 		}

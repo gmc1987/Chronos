@@ -228,6 +228,7 @@ class GradeCenterValidationTest {
 		resubmission.setBusinessKey("gradebook-1");
 		resubmission.setStatus("RUNNING");
 		when(gradebooks.findById("gradebook-1")).thenReturn(Optional.of(gradebook));
+		when(gradebooks.findByIdForUpdate("gradebook-1")).thenReturn(Optional.of(gradebook));
 		when(dataScopes.resolve("teacher")).thenReturn(new EducationDataScope(
 				false, Set.of(), Set.of(), Set.of(), Set.of("teacher-1"), Set.of()));
 		when(dataScopes.resolve("reviewer")).thenReturn(new EducationDataScope(

@@ -55,6 +55,7 @@ public final class GradeDtos {
 	}
 
 	public record GradebookDetailResponse(String id, String offeringId, String schemeId, String status,
+			boolean standaloneReview, String submittedBy,
 			Integer submissionNo, Long rowVersion, LocalDateTime submittedAt, LocalDateTime publishedAt,
 			List<StudentSnapshot> students, List<ComponentDetail> components, List<GradeItemDetail> items,
 			List<SnapshotMetadata> snapshots) {

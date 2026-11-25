@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import com.chronos.education.scheduling.model.EducationDataScope;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,11 +59,14 @@ class ExamOperationsServiceTest {
 	@Mock private ExamCandidateRepository candidates;
 	@Mock private ClassroomRepository classrooms;
 	@Mock private StudentProfileRepository students;
+	@Mock private EducationDataScopeService dataScopes;
 	@Spy private ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 	@InjectMocks private ExamOperationsService service;
 
 	@Test
 	void registrationIsIdempotentAndLocksTheSession() {
+		when(dataScopes.resolve("student-1")).thenReturn(new EducationDataScope(
+				false, Set.of(), Set.of(), Set.of(), Set.of(), Set.of("student-1")));
 		ExamSession session = session("DRAFT");
 		ExamPlan plan = plan("DRAFT", 0);
 		ExamRegistration existing = new ExamRegistration();
@@ -81,6 +86,8 @@ class ExamOperationsServiceTest {
 
 	@Test
 	void registrationRejectsInactiveStudentAndCapacityOverflow() {
+		when(dataScopes.resolve("admin")).thenReturn(new EducationDataScope(
+				false, Set.of(), Set.of(), Set.of(), Set.of(), Set.of("student-1")));
 		ExamSession session = session("DRAFT");
 		when(sessions.findLockedById("session-1")).thenReturn(Optional.of(session));
 		when(plans.findById("plan-1")).thenReturn(Optional.of(plan("DRAFT", 0)));
@@ -118,6 +125,8 @@ class ExamOperationsServiceTest {
 	void handoverRequiresTwoPeopleAndRecordsDiscrepancy() {
 		ExamMaterialLedger ledger = new ExamMaterialLedger();
 		ledger.setId("ledger-1");
+		ledger.setSessionId("session-1");
+		stubSession();
 		ledger.setPlannedQuantity(5);
 		ledger.setReceivedQuantity(0);
 		ledger.setStatus("OPEN");
@@ -140,6 +149,8 @@ class ExamOperationsServiceTest {
 	void incidentMustFollowWorkflowAndCloseWithConclusion() {
 		ExamIncident incident = new ExamIncident();
 		incident.setId("incident-1");
+		incident.setSessionId("session-1");
+		stubSession();
 		incident.setStatus("REPORTED");
 		when(incidents.findById("incident-1")).thenReturn(Optional.of(incident));
 		when(incidentActions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -203,6 +214,11 @@ class ExamOperationsServiceTest {
 		assertThat(first).hasSizeLessThanOrEqualTo(64);
 		assertThat(first).isEqualTo(ExamOperationsService.ticketNo(planId, 1, candidateId));
 		assertThat(first).isNotEqualTo(ExamOperationsService.ticketNo(planId, 2, candidateId));
+	}
+
+	private void stubSession() {
+		when(sessions.findById("session-1")).thenReturn(Optional.of(session("PUBLISHED")));
+		when(plans.findById("plan-1")).thenReturn(Optional.of(plan("PUBLISHED", 1)));
 	}
 
 	private ExamSession session(String status) {

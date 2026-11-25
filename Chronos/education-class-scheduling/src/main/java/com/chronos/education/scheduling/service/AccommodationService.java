@@ -118,7 +118,17 @@ public class AccommodationService {
 	}
 	public List<Map<String, Object>> studentOptions(String keyword, java.util.Collection<String> organizationIds) {
 		if (organizationIds == null) return studentOptions(keyword);
-		return studentOptions(keyword).stream().filter(row -> organizationIds.contains(studentOrganization(String.valueOf(row.get("id"))))).toList();
+		if (organizationIds.isEmpty()) return List.of();
+		String value = keyword == null ? "" : keyword.trim();
+		var scoped = new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(jdbc);
+		return scoped.queryForList("""
+				SELECT s.id, s.student_no AS "studentNo", s.student_name AS "studentName",
+				       s.grade_year AS "gradeYear", s.enrollment_status AS "enrollmentStatus"
+				FROM edu_student_profile s JOIN edu_administrative_class c ON c.id=s.administrative_class_id
+				WHERE c.campus_id IN (:schools) AND s.enrollment_status='ACTIVE'
+				  AND (:keyword='' OR s.student_no ILIKE :pattern OR s.student_name ILIKE :pattern)
+				ORDER BY s.student_no LIMIT 50
+				""", Map.of("schools", organizationIds, "keyword", value, "pattern", "%" + value + "%"));
 	}
 
 	@Transactional

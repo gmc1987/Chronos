@@ -17,8 +17,10 @@ import lombok.Setter;
 		name = "collab_office_resource",
 		uniqueConstraints = @UniqueConstraint(
 				name = "uk_office_resource_code",
-				columnNames = {"resource_type", "resource_code"}))
+				columnNames = {"organization_id", "resource_type", "resource_code"}))
 public class OfficeResource extends BaseEntity {
+	@Column(name = "organization_id", length = 64)
+	private String organizationId;
 	@Column(name = "resource_type", length = 24, nullable = false)
 	private String resourceType;
 	@Column(name = "resource_code", length = 64, nullable = false)

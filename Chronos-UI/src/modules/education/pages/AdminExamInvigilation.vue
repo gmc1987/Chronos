@@ -1,4 +1,5 @@
 <script setup>
+import { examLookups, isExamCustomer } from '../api/examSetup'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { watch, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -27,6 +28,7 @@ import {
 } from '../../../api/admin'
 
 const terms = ref([])
+const customer = isExamCustomer()
 const organizationId = ref('')
 const semesterCode = ref('')
 const plans = ref([])
@@ -259,7 +261,12 @@ watch(organizationId, id => {
   qualificationTeacherId.value = ''
   if (!id) return
   return run(async () => {
-    const [termResult, teacherResult, classroomResult, subjectResult] = await Promise.all([
+    const [termResult, teacherResult, classroomResult, subjectResult] = customer
+      ? await examLookups(id).then(data => [
+        { data: data.terms }, { data: data.teachers.map(item => ({ id: item.id, teacherName: item.name, teacherNo: item.code })) },
+        { data: data.classrooms }, { data: data.subjects },
+      ])
+      : await Promise.all([
       listAcademicTerms({ organizationId: id }),
       listEducationTeachers({ organizationId: id }),
       listClassrooms({ organizationId: id }),
@@ -284,7 +291,7 @@ watch(organizationId, id => {
         <h2>监考排班与调换</h2>
         <p>按考试计划、场次和考场安排监考；处理教师调换和应急替补。</p>
       </div>
-      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
+      <OrganizationSelect v-model="organizationId" :school-only="customer" school-or-campus-only style="width:240px" />
       <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="loadPlans">
         <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
       </el-select>

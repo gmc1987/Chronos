@@ -89,6 +89,13 @@ public class AcademicLifecycleService {
 		this.json = json;
 	}
 
+	private StudentCourseEvidenceService importedEvidence;
+
+	@org.springframework.beans.factory.annotation.Autowired
+	void setImportedEvidence(StudentCourseEvidenceService importedEvidence) {
+		this.importedEvidence = importedEvidence;
+	}
+
 	@Transactional(readOnly = true)
 	public List<ProgramView> programs(String schoolId, String actor) {
 		assertSchool(actor, schoolId);
@@ -456,29 +463,37 @@ public class AcademicLifecycleService {
 		var scope = dataScopes.resolve(actor);
 		dataScopes.assertStudentAccess(scope, command.studentId());
 		dataScopes.assertOfferingAccess(scope, command.offeringId());
+		var student = students.findById(command.studentId()).orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+		dataScopes.assertStudentInSchool(scope, command.schoolId(), student);
+		terms.findByTermCode(command.termCode()).filter(term -> command.schoolId().equals(term.getOrganizationId()))
+				.orElseThrow(() -> new IllegalArgumentException("所选学校下没有该学期"));
 		CourseOffering offering = offerings.findById(command.offeringId())
 				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
-		if (!command.termCode().equals(offering.getSemesterCode()) || !"ACTIVE".equals(offering.getStatus())) {
+		if (!dataScopes.scheduleOrganizationCampuses(scope, command.schoolId()).contains(offering.getCampusId())
+				|| !command.termCode().equals(offering.getSemesterCode()) || !CourseOffering.isEnrollmentOffering(offering.getStatus())) {
 			throw new IllegalStateException("教学任务不属于当前有效学期");
 		}
-		if (!registrations.existsByTermCodeAndStudentIdAndStatus(command.termCode(), command.studentId(), "REGISTERED")) {
-			throw new IllegalStateException("学生尚未完成本学期注册");
-		}
+		var registration = registrations.findBySchoolIdAndTermCodeAndStudentId(
+				command.schoolId(), command.termCode(), command.studentId())
+				.filter(value -> "REGISTERED".equals(value.getStatus()))
+				.orElseThrow(() -> new IllegalStateException("学生尚未完成本学期注册"));
 		CourseEnrollment enrollment = enrollments
 				.findByTermCodeAndStudentIdAndOfferingId(command.termCode(), command.studentId(), command.offeringId())
 				.orElseGet(CourseEnrollment::new);
 		if (enrollment.getId() != null && "ENROLLED".equals(enrollment.getStatus())) {
 			return enrollment;
 		}
+		enrollment.setProgramCourseId(null);
 		if (command.programCourseId() != null && !command.programCourseId().isBlank()) {
 			AcademicProgramCourse requirement = programCourses.findById(command.programCourseId())
-					.orElseThrow(() -> new IllegalArgumentException("培养方案课程不存在"));
+					.filter(value -> registration.getProgramId().equals(value.getProgramId()))
+					.orElseThrow(() -> new IllegalArgumentException("该课程不属于学生注册时的培养方案"));
 			CourseCatalog course = courses.findById(requirement.getCourseId())
 					.orElseThrow(() -> new IllegalArgumentException("培养方案课程已失效"));
 			if (!course.getCourseCode().equals(offering.getCourseCode())) {
 				throw new IllegalArgumentException("教学任务与培养方案课程不一致");
 			}
-			assertPrerequisites(command.studentId(), requirement);
+			assertPrerequisites(command.schoolId(), command.studentId(), requirement);
 			enrollment.setProgramCourseId(requirement.getId());
 		}
 		enrollment.setSchoolId(command.schoolId());
@@ -523,9 +538,11 @@ public class AcademicLifecycleService {
 	@Transactional
 	public GraduationAudit evaluateGraduation(GraduationAuditCommand command, String actor) {
 		assertSchool(actor, command.schoolId());
-		dataScopes.assertStudentAccess(dataScopes.resolve(actor), command.studentId());
+		var scope = dataScopes.resolve(actor);
+		dataScopes.assertStudentAccess(scope, command.studentId());
 		StudentProfile student = students.findById(command.studentId())
 				.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+		dataScopes.assertStudentInSchool(scope, command.schoolId(), student);
 		AcademicProgram program = programs.findById(command.programId())
 				.orElseThrow(() -> new IllegalArgumentException("培养方案不存在"));
 		if (!"PUBLISHED".equals(program.getStatus()) || !program.getSchoolId().equals(command.schoolId())) {
@@ -535,14 +552,16 @@ public class AcademicLifecycleService {
 				|| !Objects.equals(student.getGradeYear(), program.getCohortYear())) {
 			throw new IllegalStateException("培养方案不适用于学生的专业或入学年份");
 		}
-		ReadinessView readiness = readiness(student, program);
+		var officialEvidence = importedEvidence == null ? List.<StudentCourseEvidenceService.Evidence>of()
+				: importedEvidence.results(command.schoolId(), student.getId());
+		ReadinessView readiness = readiness(student, program, officialEvidence);
 		GraduationAudit result = graduationAudits
 				.findFirstByStudentIdAndProgramIdAndStatusInOrderByCreateTimeDesc(
 						student.getId(), program.getId(), List.of("DRAFT", "READY", "NOT_READY"))
 				.orElseGet(GraduationAudit::new);
 		String evidence = write(Map.of(
 				"student", Map.of("id", student.getId(), "studentNo", student.getStudentNo(), "name", student.getStudentName()),
-				"programHash", program.getSnapshotHash(), "readiness", readiness));
+				"programHash", program.getSnapshotHash(), "readiness", readiness, "importedCourseEvidence", officialEvidence));
 		result.setSchoolId(command.schoolId());
 		result.setStudentId(student.getId());
 		result.setProgramId(program.getId());
@@ -588,13 +607,14 @@ public class AcademicLifecycleService {
 		return graduationAudits.findBySchoolIdOrderByCreateTimeDesc(schoolId);
 	}
 
-	private ReadinessView readiness(StudentProfile student, AcademicProgram program) {
+	private ReadinessView readiness(StudentProfile student, AcademicProgram program,
+			List<StudentCourseEvidenceService.Evidence> originalEvidence) {
 		List<AcademicProgramCourse> requirements = programCourses
 				.findByProgramIdOrderBySuggestedTermNoAscSortOrderAsc(program.getId());
 		Map<String, CourseCatalog> catalogs = courses.findAllById(requirements.stream()
 				.map(AcademicProgramCourse::getCourseId).toList()).stream()
 				.collect(Collectors.toMap(CourseCatalog::getId, Function.identity()));
-		Set<String> passedCourseCodes = passedCourseCodes(student.getId());
+		Set<String> passedCourseCodes = passedCourseCodes(student.getId(), originalEvidence);
 		BigDecimal earned = BigDecimal.ZERO;
 		List<Map<String, Object>> unmet = new ArrayList<>();
 		for (AcademicProgramCourse requirement : requirements) {
@@ -618,31 +638,40 @@ public class AcademicLifecycleService {
 				program.getMinimumCredits(), earned, unmet, unmet.isEmpty());
 	}
 
-	private Set<String> passedCourseCodes(String studentId) {
+	private Set<String> passedCourseCodes(String studentId, List<StudentCourseEvidenceService.Evidence> evidence) {
+		Map<String, Boolean> published = publishedCourseOutcomes(studentId);
+		Set<String> passed = published.entrySet().stream().filter(Map.Entry::getValue)
+				.map(Map.Entry::getKey).collect(Collectors.toSet());
+		// A published outcome takes precedence over externally supplied evidence.
+		evidence.stream().filter(item -> item.passed() && !published.containsKey(item.courseCode()))
+				.map(StudentCourseEvidenceService.Evidence::courseCode).forEach(passed::add);
+		return passed;
+	}
+
+	private Map<String, Boolean> publishedCourseOutcomes(String studentId) {
 		Map<String, CourseGrade> latestByGradebook = new HashMap<>();
 		for (CourseGrade grade : courseGrades.findByStudentIdOrderByVersionNoDesc(studentId)) {
 			latestByGradebook.putIfAbsent(grade.getGradebookId(), grade);
 		}
-		Set<String> result = new HashSet<>();
+		Map<String, Boolean> result = new HashMap<>();
 		for (CourseGrade grade : latestByGradebook.values()) {
-			if (!Boolean.TRUE.equals(grade.getPassed())) {
-				continue;
-			}
 			gradebooks.findById(grade.getGradebookId())
 					.filter(book -> "PUBLISHED".equals(book.getStatus()))
 					.flatMap(book -> offerings.findById(book.getOfferingId()))
 					.map(CourseOffering::getCourseCode)
-					.ifPresent(result::add);
+					.ifPresent(code -> result.merge(code, Boolean.TRUE.equals(grade.getPassed()), Boolean::logicalOr));
 		}
 		return result;
 	}
 
-	private void assertPrerequisites(String studentId, AcademicProgramCourse requirement) {
+	private void assertPrerequisites(String schoolId, String studentId, AcademicProgramCourse requirement) {
 		List<String> prerequisiteIds = readIds(requirement.getPrerequisiteCourseIdsJson());
 		if (prerequisiteIds.isEmpty()) {
 			return;
 		}
-		Set<String> passed = passedCourseCodes(studentId);
+		var evidence = importedEvidence == null ? List.<StudentCourseEvidenceService.Evidence>of()
+				: importedEvidence.results(schoolId, studentId);
+		Set<String> passed = passedCourseCodes(studentId, evidence);
 		List<CourseCatalog> missing = courses.findAllById(prerequisiteIds).stream()
 				.filter(course -> !passed.contains(course.getCourseCode())).toList();
 		if (!missing.isEmpty()) {

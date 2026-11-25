@@ -1,10 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  createHomeSchoolNotice, homeSchoolNoticeReceipts, listAdministrativeClasses,
-  listHomeSchoolNotices, publishHomeSchoolNotice,
-} from '../../../api/admin'
+import { createHomeSchoolNotice, homeSchoolNoticeReceipts, listHomeSchoolNotices, publishHomeSchoolNotice } from '../../../api/admin'
+import { listAdministrativeClasses } from '../api/familySetup'
 
 const notices = ref([])
 const classes = ref([])

@@ -158,7 +158,8 @@ public class KnowledgeController {
 
 	@PostMapping("/admin/knowledge-index-tasks/{id}/retry")
 	@PreAuthorize("@iamAuthorization.has(authentication,'education:ai:knowledge:manage')")
-	public ResultData<com.chronos.knowledge.model.KnowledgeIndexTask> retryIndexTask(@PathVariable String id) {
+	public ResultData<com.chronos.knowledge.model.KnowledgeIndexTask> retryIndexTask(@PathVariable String id, Authentication authentication) {
+		requireBase(authentication, indexes.knowledgeBaseIdForTask(id));
 		return ok(indexes.retry(id));
 	}
 

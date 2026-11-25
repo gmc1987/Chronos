@@ -24,6 +24,14 @@ public class ClassroomManagementService {
 	public record Floor(String id, String buildingId, Integer floorNo) {}
 	public record Catalog(List<Building> buildings, List<Floor> floors, List<Classroom> rooms, long total) {}
 
+	@Transactional
+	public void deleteRoom(String campusId, String id) {
+		lockCatalog();
+		rooms.findById(id).filter(room -> campusId.equals(room.getCampusId()))
+				.orElseThrow(() -> new IllegalArgumentException("所选校区没有该教室"));
+		scheduling.deleteClassroom(id);
+	}
+
 	@Transactional(readOnly = true)
 	public Catalog catalog(String campusId) {
 		return catalog(campusId, "", "", false, null, 10);

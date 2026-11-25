@@ -1,11 +1,14 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { hasAdminPermission } from '../../../store/auth'
+import { http } from '../../../api/http'
+import GradeRosterSetupDialog from '../components/GradeRosterSetupDialog.vue'
+import { getAdminUsername, getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 import {
   createAssessmentScheme,
   createGradebook,
   dictionaryOptions,
+  decideGradeChange,
   exportGradebook,
   getAssessmentScheme,
   getGradebook,
@@ -21,6 +24,7 @@ import {
   listGradeMakeups,
   requestGradeChange,
   registerGradeMakeup,
+  reviewGradebook,
   saveGradeMakeupResult,
   publishGradeMakeup,
   retryGradeChangeIncident,
@@ -33,6 +37,10 @@ import {
   updateAssessmentScheme,
 } from '../../../api/admin'
 
+const delivery = getDeliveryContext()
+const customer = delivery.mode === 'customer'
+const canUseExamSource = !customer || ['EDU_EXAM', 'EDU_TEACHING_OPERATIONS', 'EDU_TEACHING_RESOURCES']
+  .every(code => delivery.modules?.includes(code))
 const schemes = ref([])
 const offerings = ref([])
 const examSessions = ref([])
@@ -208,7 +216,8 @@ async function loadProductionData() {
   }
   const [grades, changes, makeups] = await Promise.all([
     listPublishedGrades(selected.value.id),
-    listGradeChanges(selected.value.id),
+    hasAdminPermission('education:score:change:request', 'education:score:change:approve')
+      ? listGradeChanges(selected.value.id) : Promise.resolve({ data: [] }),
     listGradeMakeups(selected.value.id),
   ])
   publishedGrades.value = grades?.data || []
@@ -226,6 +235,18 @@ async function submitChange() {
   ElMessage.success('成绩更正申请已提交审核')
   changeDialog.value = false
   await loadProductionData()
+}
+
+async function reviewStandaloneChange(row, approved) {
+  const result = approved
+    ? await ElMessageBox.confirm('批准后将发布新版本，确认继续？', '成绩更正审核').then(() => ({ value: '' })).catch(() => null)
+    : await ElMessageBox.prompt('请填写驳回原因', '成绩更正审核', {
+      inputValidator: value => Boolean(value?.trim()) || '请填写驳回原因',
+    }).catch(() => null)
+  if (!result) return
+  await decideGradeChange(row.id, { approved, comment: result.value })
+  await loadProductionData()
+  await loadSnapshots()
 }
 
 function openMakeup(row) {
@@ -258,7 +279,7 @@ async function publishMakeupResult(row) {
 }
 
 async function loadIncidents() {
-  if (!hasAdminPermission('education:score:incident:manage')) return
+  if (customer || !hasAdminPermission('education:score:incident:manage')) return
   incidentLoading.value = true
   try {
     const response = await listGradeChangeIncidents({
@@ -333,6 +354,7 @@ function addSchemeComponent() {
 }
 
 async function loadExamSessions() {
+  if (!canUseExamSource) return
   examSessions.value = []
   componentDraft.value.sourceRefId = null
   if (!schemeForm.value.offeringId) return
@@ -388,7 +410,7 @@ async function editScheme(row) {
       sortOrder: item.sortOrder,
     })),
   }
-  const responseSessions = await listGradeExamSessions(detail.offeringId)
+  const responseSessions = canUseExamSource ? await listGradeExamSessions(detail.offeringId) : { data: [] }
   examSessions.value = responseSessions?.data || []
 }
 
@@ -474,6 +496,20 @@ async function submit() {
   await selectGradebook(selected.value)
 }
 
+async function reviewStandalone(approved) {
+  const book = selected.value
+  if (!book) return
+  const response = approved
+    ? await ElMessageBox.confirm('确认通过该成绩册？', '成绩册审核').then(() => ({ value: '' })).catch(() => null)
+    : await ElMessageBox.prompt('请填写驳回原因', '成绩册审核', {
+      inputValidator: value => Boolean(value?.trim()) || '请填写驳回原因',
+    }).catch(() => null)
+  if (!response) return
+  await reviewGradebook(book.id, { approved, comment: response.value })
+  await refresh()
+  await selectGradebook(book)
+}
+
 async function publish() {
   if (!selected.value) return
   await publishGradebook(selected.value.id, { rowVersion: selected.value.rowVersion })
@@ -528,12 +564,14 @@ function snapshotContent(snapshot) {
 onMounted(async () => {
   // 特殊成绩状态由字典统一管理，避免各页面各自维护枚举导致口径不一致。
   try {
-    const response = await dictionaryOptions('EDU_GRADE_SPECIAL_STATUS')
+    const response = customer
+      ? await http.get('/admin/education/grades/roster-setup/special-statuses')
+      : await dictionaryOptions('EDU_GRADE_SPECIAL_STATUS')
     specialStatusOptions.value = [
       { value: '', label: '正常' },
       ...(response?.data || []).map((item) => ({
-        value: item.dictValue,
-        label: item.dictName,
+        value: item.value ?? item.dictValue,
+        label: item.label ?? item.dictName,
       })),
     ]
     if (specialStatusOptions.value.length === 1) {
@@ -564,6 +602,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
     <el-tabs v-model="activeTab">
       <el-tab-pane label="成绩册" name="gradebooks">
         <div class="toolbar">
+          <GradeRosterSetupDialog v-if="hasAdminPermission('education:score:gradebook:create')" @saved="refresh" />
           <el-button
             v-permission="['education:score:gradebook:create']"
             type="primary"
@@ -615,7 +654,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                   批量保存
                 </el-button>
                 <el-button
-                  v-if="components.some(component => component.sourceType === 'EXAM')"
+                  v-if="canUseExamSource && components.some(component => component.sourceType === 'EXAM')"
                   v-permission="['education:score:gradebook:update']"
                   :disabled="dirty || !['EDITING', 'REJECTED'].includes(selected.status)"
                   @click="syncExamScores"
@@ -628,6 +667,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                 >
                   提交审核
                 </el-button>
+                <template v-if="selected.status === 'REVIEWING' && selected.standaloneReview
+                  && selected.submittedBy && selected.submittedBy !== getAdminUsername()
+                  && hasAdminPermission('education:score:review')">
+                  <el-button type="success" @click="reviewStandalone(true)">通过审核</el-button>
+                  <el-button type="danger" @click="reviewStandalone(false)">驳回审核</el-button>
+                </template>
                 <el-button
                   v-permission="['education:score:gradebook:publish']"
                   type="success"
@@ -734,6 +779,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               <el-table-column prop="afterScore" label="拟更正" width="100" />
               <el-table-column prop="reason" label="原因" min-width="200" />
               <el-table-column prop="status" label="状态" width="110" />
+              <AdaptiveActionColumn v-if="selected.standaloneReview && hasAdminPermission('education:score:change:approve')" label="审核">
+                <template #default="{ row }">
+                  <template v-if="row.status === 'REVIEWING' && !row.workflowInstanceId && row.createBy !== getAdminUsername()">
+                    <el-button link type="success" @click="reviewStandaloneChange(row, true)">批准更正</el-button>
+                    <el-button link type="danger" @click="reviewStandaloneChange(row, false)">驳回更正</el-button>
+                  </template>
+                </template>
+              </AdaptiveActionColumn>
             </el-table>
             <el-divider />
             <strong>补考与重修</strong>
@@ -781,7 +834,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
           <el-input v-model="componentDraft.name" placeholder="项目名称" />
           <el-select v-model="componentDraft.sourceType" style="width: 120px" @change="componentDraft.sourceRefId = null">
             <el-option label="人工录入" value="MANUAL" />
-            <el-option label="考试成绩" value="EXAM" />
+            <el-option v-if="canUseExamSource" label="考试成绩" value="EXAM" />
           </el-select>
           <el-select v-if="componentDraft.sourceType === 'EXAM'" v-model="componentDraft.sourceRefId"
             placeholder="选择考试场次" style="width: 230px" filterable>
@@ -854,7 +907,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
       </el-tab-pane>
 
       <el-tab-pane
-        v-if="hasAdminPermission('education:score:incident:manage')"
+        v-if="!customer && hasAdminPermission('education:score:incident:manage')"
         label="回写事故"
         name="incidents"
       >

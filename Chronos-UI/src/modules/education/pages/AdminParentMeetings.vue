@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminUsername } from '../../../store/auth'
-import {
-  createParentMeeting, listAdminParentMeetings, listAdministrativeClasses,
-  listEducationGradeOptions, listEducationStudents, listMeetingRooms, publishParentMeeting,
-} from '../../../api/admin'
+import { getAdminUsername, getDeliveryContext } from '../../../store/auth'
+import { createParentMeeting, listAdminParentMeetings, listEducationGradeOptions, listMeetingRooms, publishParentMeeting } from '../../../api/admin'
+import { usesFamilySetup, listAdministrativeClasses, listEducationStudents } from '../api/familySetup'
 
+const customer = usesFamilySetup()
+const modules = getDeliveryContext().modules || []
+const allowRooms = !customer || modules.includes('CAMPUS_MEETINGS')
 const meetings = ref([])
 const classes = ref([])
 const grades = ref([])
@@ -23,8 +24,8 @@ const scopeOptions = computed(() => form.value.scopeType === 'CLASS' ? classes.v
 async function load() {
   const [meetingResponse, classResponse, gradeResponse, studentResponse, roomResponse] = await Promise.all([
     listAdminParentMeetings(), listAdministrativeClasses(),
-    listEducationGradeOptions(), listEducationStudents({ page: 0, size: 200 }),
-    listMeetingRooms(),
+    customer ? null : listEducationGradeOptions(), listEducationStudents({ page: 0, size: 200 }),
+    allowRooms ? listMeetingRooms() : null,
   ])
   meetings.value = unwrap(meetingResponse)
   classes.value = unwrap(classResponse)
@@ -76,10 +77,10 @@ onMounted(load)
       <el-form label-width="110px">
         <el-form-item label="会议主题"><el-input v-model="form.title" maxlength="200" /></el-form-item>
         <el-form-item label="会议范围">
-          <div class="scope-row"><el-select v-model="form.scopeType" @change="form.scopeId = ''"><el-option label="班级" value="CLASS" /><el-option label="年级" value="GRADE" /><el-option label="学生" value="STUDENT" /></el-select>
+          <div class="scope-row"><el-select v-model="form.scopeType" @change="form.scopeId = ''"><el-option label="班级" value="CLASS" /><el-option v-if="!customer" label="年级" value="GRADE" /><el-option label="学生" value="STUDENT" /></el-select>
           <el-select v-model="form.scopeId" filterable placeholder="选择范围"><el-option v-for="item in scopeOptions" :key="item.id" :label="item.label" :value="item.id" /></el-select></div>
         </el-form-item>
-        <el-form-item label="会议类型"><el-select v-model="form.meetingType"><el-option label="线上" value="ONLINE" /><el-option label="线下" value="ONSITE" /><el-option label="混合" value="HYBRID" /></el-select></el-form-item>
+        <el-form-item label="会议类型"><el-select v-model="form.meetingType"><el-option label="线上" value="ONLINE" /><el-option v-if="allowRooms" label="线下" value="ONSITE" /><el-option v-if="allowRooms" label="混合" value="HYBRID" /></el-select></el-form-item>
         <el-form-item label="开始时间"><el-date-picker v-model="form.startTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <el-form-item label="结束时间"><el-date-picker v-model="form.endTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <el-form-item v-if="form.meetingType !== 'ONSITE'" label="线上链接"><el-input v-model="form.joinUrl" /></el-form-item>

@@ -1,6 +1,6 @@
 <script setup>
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   askEducationAssistant,
@@ -8,7 +8,6 @@ import {
   createKnowledgeTextDocument,
   deleteKnowledgeBase,
   deleteKnowledgeDocument,
-  getAiModelStatus,
   getKnowledgeIndexConsistency,
   importKnowledgeDocument,
   listKnowledgeBases,
@@ -20,7 +19,8 @@ import {
   searchKnowledge,
   updateKnowledgeBase,
 } from '../../../api/admin'
-import { aiModels } from '../../ai/api'
+import { http } from '../../../api/http'
+import { hasAdminPermission } from '../../../store/auth'
 
 const bases = ref([])
 const documents = ref([])
@@ -37,7 +37,7 @@ const importTitle = ref('')
 const assistantQuestion = ref('')
 const assistantLoading = ref(false)
 const assistantAnswer = ref(null)
-const modelStatus = ref({ available: false, message: '正在检查 AI 模型配置' })
+const canAskAssistant = hasAdminPermission('education:ai:assistant:use')
 const answerModels = ref([])
 const embeddingModels = ref([])
 const basePage = ref(1)
@@ -53,9 +53,16 @@ const indexTaskPageSize = ref(10)
 const indexTaskTotal = ref(0)
 const activeBase = computed(() => bases.value.find(item => item.id === activeBaseId.value))
 const modelConfigured = computed(() => Boolean(
-  activeBase.value?.answerModelId
-  || answerModels.value.some(item => item.isDefault === true),
+  answerModels.value.some(item => activeBase.value?.answerModelId
+    ? item.id === activeBase.value.answerModelId : item.isDefault === true),
 ))
+const embeddingConfigured = computed(() => embeddingModels.value.some(item => baseForm.embeddingModelId
+  ? item.id === baseForm.embeddingModelId : item.embeddingDefault === true))
+
+watch(activeBaseId, () => {
+  searchResults.value = []
+  assistantAnswer.value = null
+})
 
 const resetObject = (target, value) => {
   Object.keys(target).forEach(key => delete target[key])
@@ -64,9 +71,9 @@ const resetObject = (target, value) => {
 
 const loadAnswerModels = async () => {
   try {
-    const response = await aiModels({ status: 1, page: 0, size: 100 })
+    const response = await http.get('/ai-model/models/options?page=0&size=100')
     const models = (response.data?.content || response.data || [])
-      .filter(item => Number(item.status) === 1 && item.hasApiKey)
+      .filter(item => item.hasApiKey)
     answerModels.value = models.filter(item => String(item.modelType).toUpperCase() !== 'EMBEDDING')
     embeddingModels.value = models.filter(item => String(item.modelType).toUpperCase() === 'EMBEDDING')
   } catch {
@@ -89,34 +96,38 @@ const loadBases = async () => {
 
 const loadDocuments = async () => {
   searchResults.value = []
-  if (!activeBaseId.value) {
+  const baseId = activeBaseId.value
+  if (!baseId) {
     documents.value = []
     return
   }
-  const response = await listKnowledgeDocuments(activeBaseId.value, {
+  const response = await listKnowledgeDocuments(baseId, {
     page: documentPage.value - 1,
     size: documentPageSize.value,
   })
+  if (baseId !== activeBaseId.value) return
   documents.value = response.data?.content || response.data || []
   documentTotal.value = response.data?.totalElements ?? documents.value.length
 }
 const changeDocumentPageSize = () => { documentPage.value = 1; loadDocuments() }
 
 const loadIndexState = async () => {
-  if (!activeBaseId.value) {
+  const baseId = activeBaseId.value
+  if (!baseId) {
     indexConsistency.value = null
     indexTasks.value = []
     indexTaskTotal.value = 0
     return
   }
   const [consistencyResponse, taskResponse] = await Promise.all([
-    getKnowledgeIndexConsistency(activeBaseId.value),
+    getKnowledgeIndexConsistency(baseId),
     listKnowledgeIndexTasks({
-      knowledgeBaseId: activeBaseId.value,
+      knowledgeBaseId: baseId,
       page: indexTaskPage.value - 1,
       size: indexTaskPageSize.value,
     }),
   ])
+  if (baseId !== activeBaseId.value) return
   indexConsistency.value = consistencyResponse.data
   indexTasks.value = taskResponse.data?.content || []
   indexTaskTotal.value = taskResponse.data?.totalElements || 0
@@ -138,7 +149,11 @@ const saveBase = async () => {
   if (baseForm.id) {
     await updateKnowledgeBase(baseForm.id, baseForm)
   } else {
-    await createKnowledgeBase(baseForm)
+    const response = await createKnowledgeBase(baseForm)
+    activeBaseId.value = response.data.id
+    basePage.value = 1
+    documentPage.value = 1
+    indexTaskPage.value = 1
   }
   baseDialog.value = false
   ElMessage.success('知识库保存成功')
@@ -219,35 +234,33 @@ const search = async () => {
     ElMessage.warning('请输入检索关键词')
     return
   }
-  const response = await searchKnowledge(activeBaseId.value, keyword.value.trim())
-  searchResults.value = response.data || []
+  const baseId = activeBaseId.value
+  const query = keyword.value.trim()
+  const response = await searchKnowledge(baseId, query)
+  if (baseId === activeBaseId.value && query === keyword.value.trim()) searchResults.value = response.data || []
 }
 
 const askAssistant = async () => {
+  if (!canAskAssistant || !modelConfigured.value || assistantLoading.value) return
   if (!assistantQuestion.value.trim()) {
     ElMessage.warning('请输入需要咨询的问题')
     return
   }
   assistantLoading.value = true
+  const baseId = activeBaseId.value
   try {
     const response = await askEducationAssistant({
-      knowledgeBaseId: activeBaseId.value,
+      knowledgeBaseId: baseId,
       question: assistantQuestion.value.trim(),
     })
-    assistantAnswer.value = response.data
+    if (baseId === activeBaseId.value) assistantAnswer.value = response.data
   } finally {
     assistantLoading.value = false
   }
 }
 
 onMounted(async () => {
-  await Promise.all([
-    loadBases(),
-    loadAnswerModels(),
-    getAiModelStatus().then(response => {
-      modelStatus.value = response.data || modelStatus.value
-    }),
-  ])
+  await Promise.all([loadBases(), loadAnswerModels()])
 })
 </script>
 
@@ -258,7 +271,7 @@ onMounted(async () => {
         <h2>AI 知识库</h2>
         <p>管理校园制度与教务知识，检索结果保留文档及分段来源。</p>
       </div>
-      <el-button type="primary" @click="openCreateBase">新建知识库</el-button>
+      <el-button v-permission="['education:ai:knowledge:manage']" type="primary" @click="openCreateBase">新建知识库</el-button>
     </header>
 
     <el-row :gutter="18">
@@ -296,9 +309,9 @@ onMounted(async () => {
                 <el-tag :type="indexConsistency?.consistent ? 'success' : 'warning'">
                   {{ indexConsistency?.indexStatus || activeBase.indexStatus || 'NOT_INDEXED' }}
                 </el-tag>
-                <el-button @click="rebuildAll">重建全部索引</el-button>
-                <el-button @click="openEditBase">编辑</el-button>
-                <el-button type="danger" plain @click="removeBase">删除</el-button>
+                <el-button v-permission="['education:ai:knowledge:manage']" @click="rebuildAll">重建全部索引</el-button>
+                <el-button v-permission="['education:ai:knowledge:manage']" @click="openEditBase">编辑</el-button>
+                <el-button v-permission="['education:ai:knowledge:manage']" type="danger" plain @click="removeBase">删除</el-button>
               </div>
             </div>
           </template>
@@ -306,8 +319,8 @@ onMounted(async () => {
           <el-tabs>
             <el-tab-pane label="知识文档">
               <div class="toolbar">
-                <el-button type="primary" @click="openTextDocument">录入文本</el-button>
-                <el-button @click="importDialog = true">导入文档</el-button>
+                <el-button v-permission="['education:ai:knowledge:manage']" type="primary" @click="openTextDocument">录入文本</el-button>
+                <el-button v-permission="['education:ai:knowledge:import']" @click="importDialog = true">导入文档</el-button>
                 <span>支持 TXT、Markdown、DOC、DOCX、文本型 PDF，单文件最大 10MB</span>
               </div>
               <el-table :data="documents" border>
@@ -318,8 +331,8 @@ onMounted(async () => {
                 <el-table-column prop="status" label="状态" width="90" />
                 <AdaptiveActionColumn label="操作" width="150">
                   <template #default="scope">
-                    <el-button link type="primary" @click="rebuildDocument(scope.row)">重建索引</el-button>
-                    <el-button link type="danger" @click="removeDocument(scope.row)">删除</el-button>
+                    <el-button v-permission="['education:ai:knowledge:manage']" link type="primary" @click="rebuildDocument(scope.row)">重建索引</el-button>
+                    <el-button v-permission="['education:ai:knowledge:delete']" link type="danger" @click="removeDocument(scope.row)">删除</el-button>
                   </template>
                 </AdaptiveActionColumn>
               </el-table>
@@ -354,6 +367,7 @@ onMounted(async () => {
                   <template #default="scope">
                     <el-button
                       v-if="['DEAD', 'RETRY'].includes(scope.row.status)"
+                      v-permission="['education:ai:knowledge:manage']"
                       link
                       type="primary"
                       @click="retryIndexTask(scope.row)"
@@ -385,7 +399,7 @@ onMounted(async () => {
               </el-card>
             </el-tab-pane>
 
-            <el-tab-pane label="教务助手">
+            <el-tab-pane v-if="canAskAssistant" label="教务助手">
               <el-alert
                 title="助手只依据当前知识库回答，所有结论应附带下方来源；业务操作仍需人工确认。"
                 type="info"
@@ -393,8 +407,8 @@ onMounted(async () => {
                 show-icon
               />
               <el-alert
-                v-if="!modelStatus.available && !modelConfigured"
-                :title="modelStatus.message"
+                v-if="!modelConfigured"
+                title="当前知识库没有已启用的回答模型，请配置模型后再提问。"
                 type="warning"
                 :closable="false"
                 show-icon
@@ -409,7 +423,7 @@ onMounted(async () => {
                 <el-button
                   type="primary"
                   :loading="assistantLoading"
-                  :disabled="assistantLoading"
+                  :disabled="assistantLoading || !modelConfigured"
                   @click="askAssistant"
                 >提问</el-button>
               </div>
@@ -447,7 +461,7 @@ onMounted(async () => {
             <el-option
               v-for="model in answerModels"
               :key="model.id"
-              :label="`${model.modelName}（${model.provider}）`"
+              :label="model.modelName"
               :value="model.id"
             />
           </el-select>
@@ -465,10 +479,13 @@ onMounted(async () => {
             <el-option
               v-for="model in embeddingModels"
               :key="model.id"
-              :label="`${model.modelName}（${model.provider}）`"
+              :label="model.modelName"
               :value="model.id"
             />
           </el-select>
+          <div v-if="baseForm.retrievalMode === 'VECTOR' && !embeddingConfigured" class="model-tip">
+            当前没有可用的 Embedding 模型。请先配置模型，再建立向量索引。
+          </div>
         </el-form-item>
         <el-form-item label="关键词降级">
           <el-switch v-model="baseForm.allowKeywordFallback" />

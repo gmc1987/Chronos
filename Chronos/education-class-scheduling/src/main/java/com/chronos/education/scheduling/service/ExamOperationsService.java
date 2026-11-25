@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.chronos.education.scheduling.dao.ClassroomRepository;
@@ -67,6 +69,7 @@ public class ExamOperationsService {
 	private final ClassroomRepository classrooms;
 	private final StudentProfileRepository students;
 	private final ObjectMapper objectMapper;
+	private final EducationDataScopeService dataScopes;
 
 	/**
 	 * The session row lock serializes capacity checks; the database unique key
@@ -79,6 +82,9 @@ public class ExamOperationsService {
 		ExamSession session = sessions.findLockedById(command.sessionId())
 				.orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
 		ExamPlan plan = plan(session.getPlanId());
+		if (!dataScopes.resolve(actor).studentIds().contains(command.studentId())) {
+			throw new AccessDeniedException("只能为本人报名");
+		}
 		if ("CANCELLED".equals(session.getStatus()) || "CANCELLED".equals(plan.getStatus())) {
 			throw new IllegalStateException("考试场次已取消");
 		}
@@ -149,6 +155,7 @@ public class ExamOperationsService {
 			String actor) {
 		ExamAccommodation value = accommodations.findById(accommodationId)
 				.orElseThrow(() -> new IllegalArgumentException("特殊安排申请不存在"));
+		registration(value.getRegistrationId());
 		if (!"SUBMITTED".equals(value.getStatus())) {
 			throw new IllegalStateException("特殊安排申请已处理");
 		}
@@ -196,6 +203,11 @@ public class ExamOperationsService {
 
 	@Transactional(readOnly = true)
 	public List<ExamAdmissionTicket> tickets(String candidateId) {
+		var candidate = candidates.findById(candidateId)
+				.orElseThrow(() -> new IllegalArgumentException("考生不存在"));
+		var room = rooms.findById(candidate.getRoomId())
+				.orElseThrow(() -> new IllegalArgumentException("考场不存在"));
+		session(room.getSessionId());
 		return tickets.findByCandidateIdOrderByPublishedVersionDesc(candidateId);
 	}
 
@@ -261,8 +273,7 @@ public class ExamOperationsService {
 		if (command.quantity() == null || command.quantity() <= 0) {
 			throw new IllegalArgumentException("交接数量必须大于零");
 		}
-		ExamMaterialLedger ledger = ledgers.findById(command.ledgerId())
-				.orElseThrow(() -> new IllegalArgumentException("物资台账不存在"));
+		ExamMaterialLedger ledger = ledger(command.ledgerId());
 		if (!"OPEN".equals(ledger.getStatus())) {
 			throw new IllegalStateException("物资台账已完成或已登记差异");
 		}
@@ -304,9 +315,22 @@ public class ExamOperationsService {
 		if (!List.of("LOW", "MEDIUM", "HIGH", "CRITICAL").contains(command.severity())) {
 			throw new IllegalArgumentException("无效的异常严重程度");
 		}
+		String roomId = command.roomId();
+		if (command.candidateId() != null) {
+			var candidate = candidates.findById(command.candidateId())
+					.orElseThrow(() -> new IllegalArgumentException("考生不存在"));
+			if (roomId != null && !roomId.equals(candidate.getRoomId())) {
+				throw new IllegalArgumentException("考生不属于所选考场");
+			}
+			roomId = candidate.getRoomId();
+		}
+		if (roomId != null && rooms.findById(roomId)
+				.filter(room -> command.sessionId().equals(room.getSessionId())).isEmpty()) {
+			throw new IllegalArgumentException("考场不属于所选场次");
+		}
 		ExamIncident value = new ExamIncident();
 		value.setSessionId(command.sessionId());
-		value.setRoomId(command.roomId());
+		value.setRoomId(roomId);
 		value.setCandidateId(command.candidateId());
 		value.setIncidentType(command.incidentType());
 		value.setSeverity(command.severity());
@@ -443,26 +467,39 @@ public class ExamOperationsService {
 	}
 
 	private ExamPlan plan(String id) {
-		return plans.findById(id).orElseThrow(() -> new IllegalArgumentException("考试计划不存在"));
+		var value = plans.findById(id).orElseThrow(() -> new IllegalArgumentException("考试计划不存在"));
+		var actor = SecurityContextHolder.getContext().getAuthentication();
+		if (actor != null && actor.isAuthenticated()) {
+			dataScopes.assertCampusAccess(dataScopes.resolve(actor.getName()), value.getOrganizationId());
+		}
+		return value;
 	}
 
 	private ExamSession session(String id) {
-		return sessions.findById(id).orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
+		var value = sessions.findById(id).orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
+		plan(value.getPlanId());
+		return value;
 	}
 
 	private ExamRegistration registration(String id) {
-		return registrations.findById(id)
+		var value = registrations.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("考试报名不存在"));
+		session(value.getSessionId());
+		return value;
 	}
 
 	private ExamMaterialLedger ledger(String id) {
-		return ledgers.findById(id)
+		var value = ledgers.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("物资台账不存在"));
+		session(value.getSessionId());
+		return value;
 	}
 
 	private ExamIncident incident(String id) {
-		return incidents.findById(id)
+		var value = incidents.findById(id)
 				.orElseThrow(() -> new IllegalArgumentException("考试异常不存在"));
+		session(value.getSessionId());
+		return value;
 	}
 
 	private static void requireText(String value, String field) {

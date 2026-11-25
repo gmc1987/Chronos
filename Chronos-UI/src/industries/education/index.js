@@ -1,4 +1,5 @@
 // 行业页面也按路由拆包，未启用教育模板时不会进入核心首屏包。
+const AdminClassroomReservations = () => import('../../modules/education/pages/AdminClassroomReservations.vue')
 const AdminClassroomManagement = () => import('../../modules/education/pages/AdminClassroomManagement.vue')
 const AdminTeachingHours = () => import('../../modules/education/pages/AdminTeachingHours.vue')
 const AdminClassScheduling = () => import('../../modules/education/pages/AdminClassScheduling.vue')
@@ -48,6 +49,8 @@ export const educationIndustry = {
     { path: '/admin/education/courses', name: 'admin-education-courses', component: AdminCourses },
     { path: '/admin/education/majors', name: 'admin-education-majors', component: AdminMajors },
     { path: '/admin/education/classroom-management', name: 'admin-education-classroom-management', component: AdminClassroomManagement },
+    { path: '/admin/education/classroom-reservations', name: 'admin-education-classroom-reservations', component: AdminClassroomReservations,
+      meta: { requiredPermissions: ['education:resource:venue:view', 'education:resource:venue:manage'] } },
     { path: '/admin/education/classes', name: 'admin-education-classes', component: AdminAdministrativeClasses },
     { path: '/admin/education/teacher-personnel', name: 'admin-education-teacher-personnel', component: TeacherPersonnelWorkbench },
     { path: '/admin/education/teachers', name: 'admin-education-teachers', component: AdminTeachers },

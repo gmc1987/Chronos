@@ -8,6 +8,7 @@ import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import java.time.LocalDateTime;
 
 @Entity
 @Getter
@@ -37,7 +38,22 @@ public class InternshipPosition extends BaseEntity {
 	private String safetyRequirements;
 
 	@Column(nullable = false, length = 24)
-	private String status = "ACTIVE";
+	private String status = "DRAFT";
+
+	@Column(name = "submitted_by", length = 128)
+	private String submittedBy;
+
+	@Column(name = "submitted_at")
+	private LocalDateTime submittedAt;
+
+	@Column(name = "approved_by", length = 128)
+	private String approvedBy;
+
+	@Column(name = "approved_at")
+	private LocalDateTime approvedAt;
+
+	@Column(name = "decision_comment", length = 1000)
+	private String decisionComment;
 
 	@Version
 	@Column(name = "row_version", nullable = false)

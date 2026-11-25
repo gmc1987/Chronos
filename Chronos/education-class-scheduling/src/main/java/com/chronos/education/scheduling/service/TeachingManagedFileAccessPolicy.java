@@ -119,7 +119,7 @@ public class TeachingManagedFileAccessPolicy implements ManagedFileAccessPolicy 
 		}
 		EducationDataScope scope = scopes.resolve(username);
 		return offerings.findById(offeringId)
-				.map(offering -> scopes.canAccessOffering(scope, offering))
+				.map(offering -> scope.fullAccess() || scopes.canAccessOffering(scope, offering))
 				.orElse(false);
 	}
 

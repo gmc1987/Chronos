@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CollaborationFileShareRepository extends JpaRepository<CollaborationFileShare, String> {
 	List<CollaborationFileShare> findByStatusOrderByCreateTimeDesc(String status);
+	List<CollaborationFileShare> findByOwnerOrganizationIdAndStatusOrderByCreateTimeDesc(String organizationId, String status);
 }

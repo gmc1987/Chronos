@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getDeliveryContext } from '../../../store/auth'
 import { portalFamilyChildren, portalFamilyNotices, portalFamilyGrades, portalFamilyReceipt } from '../../../api/portal'
 
+const delivery = getDeliveryContext()
+const showGrades = delivery.mode !== 'customer' || (delivery.modules || []).includes('EDU_GRADES')
 const children = ref([])
 const notices = ref([])
 const grades = ref([])
@@ -20,13 +23,13 @@ async function load() {
   selectedChildId.value = null
   loadError.value = ''
   try {
-    const [childResponse, noticeResponse, gradeResponse] = await Promise.all([
-      portalFamilyChildren(), portalFamilyNotices(), portalFamilyGrades(),
+    const [childResponse, noticeResponse] = await Promise.all([
+      portalFamilyChildren(), portalFamilyNotices(),
     ])
     children.value = unwrap(childResponse)
     notices.value = unwrap(noticeResponse)
-    grades.value = unwrap(gradeResponse)
     selectedChildId.value = children.value[0]?.id || null
+    if (showGrades) grades.value = unwrap(await portalFamilyGrades())
   } catch (error) {
     loadError.value = error?.message || '家校数据加载失败'
   } finally { loading.value = false }
@@ -43,7 +46,7 @@ onMounted(load)
   <section class="page">
     <header><div><h1>家长门户</h1><p>仅展示当前账号绑定且仍具有效监护关系的学生。</p></div><el-button :loading="loading" @click="load">刷新</el-button></header>
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon class="load-error" />
-    <div class="family-links"><RouterLink to="/portal/education/family/feedback">家长反馈</RouterLink><RouterLink to="/portal/education/family/communications">家校沟通记录</RouterLink><RouterLink to="/portal/education/family/meetings">家长会邀请</RouterLink></div>
+    <div class="family-links"><RouterLink to="/portal/education/class-notices">班级通知</RouterLink><RouterLink to="/portal/education/family/feedback">家长反馈</RouterLink><RouterLink to="/portal/education/family/communications">家校沟通记录</RouterLink><RouterLink to="/portal/education/family/meetings">家长会邀请</RouterLink></div>
     <el-card class="children"><template #header>我的孩子</template><el-radio-group v-model="selectedChildId"><el-radio-button v-for="child in children" :key="child.id" :value="child.id">{{ child.studentName }}</el-radio-button></el-radio-group><el-empty v-if="!children.length" description="暂无有效监护关系" /></el-card>
     <el-empty v-if="!loading && !notices.length" description="暂无班级通知" />
     <el-card v-for="item in notices" :key="item.id" class="notice">
@@ -51,7 +54,7 @@ onMounted(load)
       <p class="content">{{ item.content }}</p><small>发布于 {{ item.publishAt }}</small>
       <div v-if="item.receiptRequired" class="receipt"><el-tag v-if="item.receiptStatus === 'RECEIVED'" type="success">已回执</el-tag><el-button v-else :disabled="item.expired" type="primary" size="small" @click="receipt(item)">确认已读并回执</el-button></div>
     </el-card>
-    <el-card class="grades"><template #header>已发布成绩</template>
+    <el-card v-if="showGrades" class="grades"><template #header>已发布成绩</template>
       <el-table v-if="grades.length" :data="grades" size="small">
         <el-table-column label="学生"><template #default="{ row }">{{ childNameById.get(row.studentId) || row.studentId }}</template></el-table-column>
         <el-table-column prop="totalScore" label="总评成绩" />

@@ -102,6 +102,12 @@ public class KnowledgeIndexCoordinator {
 				PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
 	}
 
+	@Transactional(readOnly = true)
+	public String knowledgeBaseIdForTask(String taskId) {
+		return tasks.findById(taskId).map(KnowledgeIndexTask::getKnowledgeBaseId)
+				.orElseThrow(() -> new IllegalArgumentException("索引任务不存在"));
+	}
+
 	@Transactional
 	public KnowledgeIndexTask retry(String id) {
 		KnowledgeIndexTask task = tasks.findLockedById(id)

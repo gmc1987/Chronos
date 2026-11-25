@@ -1,5 +1,9 @@
 package com.chronos.education.scheduling.controller;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +28,7 @@ import com.chronos.education.scheduling.model.dto.AdmissionDtos.RegistrationComm
 import com.chronos.education.scheduling.model.dto.AdmissionDtos.ReviewCommand;
 import com.chronos.education.scheduling.service.AdmissionService;
 import com.chronos.education.scheduling.service.AdmissionImportService;
+import com.chronos.education.scheduling.service.StudentAccountProvisioningService;
 import com.chronos.security.DirectoryDataScopeGuard;
 
 @RestController
@@ -32,8 +37,12 @@ public class AdmissionController {
 	private final AdmissionService service;
 	private final AdmissionImportService imports;
 	private final DirectoryDataScopeGuard dataScopes;
-	public AdmissionController(AdmissionService service, AdmissionImportService imports, DirectoryDataScopeGuard dataScopes) {
+	private final StudentAccountProvisioningService accounts;
+
+	public AdmissionController(AdmissionService service, AdmissionImportService imports, DirectoryDataScopeGuard dataScopes,
+			StudentAccountProvisioningService accounts) {
 		this.service = service; this.imports = imports; this.dataScopes = dataScopes;
+		this.accounts = accounts;
 	}
 
 	@GetMapping(value = "/import-template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -99,6 +108,21 @@ public class AdmissionController {
 		require(authentication, id);
 		return ok(service.enroll(id, command));
 	}
+
+	@PostMapping("/{id}/handover")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:admission:enroll','education:admission:manage')")
+	public ResultData<String> handover(@PathVariable String id, @RequestBody @Valid Handover command,
+			Authentication authentication) {
+		var candidate = require(authentication, id);
+		if (!"ENROLLED".equals(candidate.getAdmissionStatus()) || candidate.getStudentId() == null) {
+			throw new IllegalStateException("完成报到建档后才能交接学生账号");
+		}
+		return ok(accounts.handover(candidate.getStudentId(), candidate.getOrganizationId(), command.password(),
+				authentication.getName()));
+	}
+
+	public record Handover(@NotBlank @Size(min = 12, max = 64)
+			@Pattern(regexp = "(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9]).+") String password) {}
 
 	@PostMapping("/{id}/registration")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:admission:register','education:admission:manage')")

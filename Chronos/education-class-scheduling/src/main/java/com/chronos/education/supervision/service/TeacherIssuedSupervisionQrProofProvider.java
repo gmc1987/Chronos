@@ -52,9 +52,11 @@ public class TeacherIssuedSupervisionQrProofProvider implements SupervisionCheck
 		try {
 			String[] tokenParts = proof.signedProof().split("\\.", -1);
 			if (tokenParts.length != 2) return rejected(VerificationCode.INVALID_PROOF);
-			String payload = new String(Base64.getUrlDecoder().decode(tokenParts[0]), StandardCharsets.UTF_8);
+			byte[] payloadBytes = Base64.getUrlDecoder().decode(tokenParts[0]);
+			String payload = new String(payloadBytes, StandardCharsets.UTF_8);
 			byte[] suppliedSignature = Base64.getUrlDecoder().decode(tokenParts[1]);
-			if (!MessageDigest.isEqual(sign(payload), suppliedSignature)) {
+			if (!tokenParts[0].equals(encode(payloadBytes)) || !tokenParts[1].equals(encode(suppliedSignature))
+					|| !MessageDigest.isEqual(sign(payload), suppliedSignature)) {
 				return rejected(VerificationCode.INVALID_PROOF);
 			}
 			String[] fields = payload.split("\\|", -1);

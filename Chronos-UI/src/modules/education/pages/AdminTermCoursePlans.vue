@@ -4,10 +4,13 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import AcademicCatalogImport from '../components/AcademicCatalogImport.vue'
+import StudentLifecycleSetup from '../components/StudentLifecycleSetup.vue'
+import TeachingRunSetup from '../components/TeachingRunSetup.vue'
 import { http } from '../../../api/http'
 
 const base = '/admin/education/term-course-plans'
 const manage = ['education:term-course-plan:manage']
+const setup = ['education:term-course-plan:setup']
 const route = useRoute()
 const organizationId = ref(typeof route.query.organizationId === 'string' ? route.query.organizationId : '')
 const termCode = ref('')
@@ -22,6 +25,10 @@ const loading = ref(false)
 const saving = ref(false)
 const dialog = ref(false)
 const editing = ref(null)
+const teacherDialog = ref(false)
+const teacherPlan = ref(null)
+const teacherOptions = ref([])
+const teacherId = ref('')
 const generation = ref(null)
 const generationOpen = ref(false)
 const form = reactive({ classId: '', programId: '', courseId: '', weeklyLessons: 2 })
@@ -35,6 +42,7 @@ const programOptions = computed(() => [...new Map(options.value
 const courseOptions = computed(() => options.value.filter(row =>
   row.classId === form.classId && row.programId === form.programId))
 const selectedTermId = computed(() => terms.value.find(term => term.termCode === termCode.value)?.id)
+const isCurrentTerm = computed(() => terms.value.some(term => term.termCode === termCode.value && term.currentTerm))
 const candidates = computed(() => (generation.value?.rows || []).filter(row => row.status === '可生成'))
 
 let requestVersion = 0
@@ -63,7 +71,7 @@ const search = () => {
 }
 
 let termVersion = 0
-watch(organizationId, async id => {
+async function loadTerms(id, preferredTerm) {
   const version = ++termVersion
   terms.value = []
   termCode.value = ''
@@ -71,17 +79,62 @@ watch(organizationId, async id => {
   const { data } = await http.get(url('/terms', { organizationId: id }))
   if (version !== termVersion) return
   terms.value = data
-  termCode.value = (data.find(term => term.currentTerm) || data[0])?.termCode || ''
-}, { immediate: true })
+  termCode.value = (data.find(term => term.termCode === preferredTerm)
+    || data.find(term => term.currentTerm) || data[0])?.termCode || ''
+}
+watch(organizationId, id => loadTerms(id), { immediate: true })
+
+async function setCurrentTerm() {
+  const schoolId = organizationId.value
+  const selected = termCode.value
+  try {
+    await ElMessageBox.confirm('设置后，师生门户将查看该学期已发布的课表。', '设置当前教学学期', {
+      confirmButtonText: '设为当前学期', cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  if (schoolId !== organizationId.value || selected !== termCode.value) return
+  await http.post(base + '/setup/current-term?' + query({ schoolId, termCode: selected }))
+  if (schoolId === organizationId.value) await loadTerms(schoolId, selected)
+  ElMessage.success('已设置当前学期')
+}
 
 watch([organizationId, termCode], () => {
   dialog.value = false
+  teacherDialog.value = false
   generationOpen.value = false
   generation.value = null
   rows.value = []
   total.value = 0
   search()
 })
+
+async function openTeacher(row) {
+  const target = query()
+  teacherPlan.value = row
+  teacherId.value = ''
+  teacherOptions.value = []
+  teacherDialog.value = true
+  const { data } = await http.get(url('/setup/teachers', { schoolId: organizationId.value }))
+  if (query() === target && teacherPlan.value?.id === row.id) {
+    teacherOptions.value = data || []
+  }
+}
+
+async function saveTeacher() {
+  if (saving.value || !teacherId.value || !teacherPlan.value) return
+  saving.value = true
+  const target = query()
+  try {
+    await http.put(url('/' + teacherPlan.value.id + '/teacher'), { teacherId: teacherId.value })
+    if (query() !== target) return
+    teacherDialog.value = false
+    ElMessage.success('已保存任课教师')
+  } finally {
+    saving.value = false
+  }
+}
 
 const open = async row => {
   const target = query()
@@ -168,6 +221,15 @@ const generate = async dryRun => {
         查看排课教学任务
       </el-button>
     </div>
+    <div v-permission="setup" class="toolbar">
+      <StudentLifecycleSetup teaching section="registrations" :school-id="organizationId"
+        @saved="loadTerms(organizationId, termCode)" />
+      <el-button v-if="canMaintainTerm && !isCurrentTerm" @click="setCurrentTerm">设为当前教学学期</el-button>
+      <TeachingRunSetup :school-id="organizationId" @saved="search" />
+      <router-link v-if="termCode" :to="{ name: 'admin-education-teaching-assignments', query: { organizationId } }">
+        <el-button>维护教师任教关系</el-button>
+      </router-link>
+    </div>
     <el-table v-loading="loading" :data="rows" border>
       <el-table-column prop="className" label="行政班" min-width="150" />
       <el-table-column prop="programName" label="培养方案" min-width="170" />
@@ -178,10 +240,12 @@ const generate = async dryRun => {
       <el-table-column label="状态" width="130">
         <template #default="{ row }">{{ row.offeringId ? '已生成任务' : '待生成任务' }}</template>
       </el-table-column>
-      <AdaptiveActionColumn label="操作" width="130">
+      <AdaptiveActionColumn label="操作">
         <template #default="{ row }">
           <span v-permission="manage">
             <el-button link type="primary" :disabled="!canMaintainTerm || !!row.offeringId" @click="open(row)">编辑课时</el-button>
+            <el-button v-permission="setup" link type="primary" :disabled="!canMaintainTerm || !!row.offeringId || !row.ready"
+              @click="openTeacher(row)">指定任课教师</el-button>
             <el-button link type="danger" :disabled="!canMaintainTerm || !!row.offeringId" @click="remove(row)">删除</el-button>
           </span>
         </template>
@@ -189,6 +253,21 @@ const generate = async dryRun => {
     </el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="size" :page-sizes="[10, 20, 50]"
       layout="total, sizes, prev, pager, next" :total="total" @current-change="reload" @size-change="search" />
+
+    <el-dialog v-model="teacherDialog" title="指定任课教师" width="520px">
+      <el-form label-width="100px" @submit.prevent="saveTeacher">
+        <el-form-item label="教师">
+          <el-select v-model="teacherId" filterable>
+            <el-option v-for="item in teacherOptions" :key="item.id" :value="item.id"
+              :label="item.name + '（' + item.code + '）'" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="teacherDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!teacherId" :loading="saving" @click="saveTeacher">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="dialog" :title="editing ? '编辑开课计划' : '新增开课计划'" width="560px">
       <el-empty v-if="!editing && !classOptions.length" description="请先维护行政班并发布适用的培养方案，方案课程需关联学科。" />

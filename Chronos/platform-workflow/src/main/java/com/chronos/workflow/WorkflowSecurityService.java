@@ -37,6 +37,7 @@ public class WorkflowSecurityService {
 	private final IFormInstanceRepository formInstances;
 	private final FormService formService;
 	private final ObjectMapper json = new ObjectMapper();
+	private WorkflowProductAccess productAccess = code -> true;
 
 	public WorkflowSecurityService(IWorkflowDefinitionRepository definitions, IWorkflowDefinitionAclRepository acls,
 			IWorkflowInstanceRepository instances, IWorkflowInstanceParticipantRepository participants,
@@ -59,15 +60,38 @@ public class WorkflowSecurityService {
 		this.formService = formService;
 	}
 
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setProductAccess(WorkflowProductAccess productAccess) {
+		this.productAccess = productAccess;
+	}
+
+	public boolean productAllows(String definitionId) {
+		return definitionId != null && definitions.findById(definitionId)
+				.map(definition -> productAccess.allows(definition.getFlowCode())).orElse(false);
+	}
+
+	public boolean productAllowsTask(String flowCode, String initiator, String actor) {
+		return productAccess.allows(flowCode) && productAccess.canHandle(flowCode, initiator, actor);
+	}
+
+	public void requireDecisionAccess(WorkflowInstance instance, String actor) {
+		var definition = definitions.findById(instance.getDefinitionId()).orElse(null);
+		if (definition == null || !productAccess.canDecide(definition.getFlowCode(), instance.getInitiator(), actor)) {
+			throw new AccessDeniedException("当前账号不是该流程的有效审批员");
+		}
+	}
+
 	public boolean canDefinition(String actor, String definitionId, String action) {
 		if (actor == null || definitionId == null)
 			return false;
 		WorkflowDefinition d = definitions.findById(definitionId).orElse(null);
-		if (d == null)
+		if (d == null || !productAccess.allows(d.getFlowCode()))
 			return false;
 		if (isSuperAdmin(actor))
 			return true;
 		String op = normalize(action);
+		if (Set.of("VIEW", "DESIGN", "PUBLISH").contains(op)
+				&& productAccess.canConfigureTemplate(d.getFlowCode(), actor)) return true;
 		if (Set.of("VIEW", "DESIGN", "PUBLISH", "MANAGE", "DELETE").contains(op)
 				&& (actor.equals(d.getManagerUser()) || actor.equals(d.getCreateBy())))
 			return true;
@@ -81,7 +105,9 @@ public class WorkflowSecurityService {
 		if (actor == null)
 			return false;
 		WorkflowInstance i = instances.findById(instanceId).orElse(null);
-		if (i == null)
+		if (i == null || !definitions.findById(i.getDefinitionId())
+				.map(d -> productAccess.allows(d.getFlowCode())
+						&& productAccess.canViewInstance(d.getFlowCode(), i.getInitiator(), actor)).orElse(false))
 			return false;
 		if (isSuperAdmin(actor) || actor.equals(i.getInitiator())
 				|| participants.existsByInstanceIdAndUsernameAndActiveTrue(instanceId, actor))
@@ -93,11 +119,15 @@ public class WorkflowSecurityService {
 
 	public boolean canStart(String actor, String definitionId) {
 		WorkflowDefinition d = definitions.findById(definitionId).orElse(null);
-		if (d == null)
+		if (d == null || !productAccess.allows(d.getFlowCode()) || !productAccess.canStart(d.getFlowCode(), actor))
 			return false;
 		List<WorkflowDefinitionAcl> rules = acls.findByDefinitionIdAndActionAndEnabledTrue(definitionId, "START");
 		return rules.isEmpty() ? assigneeResolver.canStart(d, actor)
 				: rules.stream().anyMatch(r -> matches(actor, r.getSubjectType(), r.getSubjectId()));
+	}
+
+	public boolean startsThroughBusinessEntry(WorkflowDefinition definition) {
+		return !productAccess.startsInLauncher(definition.getFlowCode());
 	}
 
 	public boolean canRemind(String actor, String taskId) {
@@ -105,7 +135,8 @@ public class WorkflowSecurityService {
 		if (t == null)
 			return false;
 		WorkflowInstance i = instances.findById(t.getInstanceId()).orElse(null);
-		return i != null && (actor.equals(i.getInitiator()) || canDefinition(actor, i.getDefinitionId(), "MANAGE"));
+		return i != null && productAllows(i.getDefinitionId())
+				&& (actor.equals(i.getInitiator()) || canDefinition(actor, i.getDefinitionId(), "MANAGE"));
 	}
 
 	public boolean canManageInstance(String actor, String instanceId) {
@@ -119,6 +150,8 @@ public class WorkflowSecurityService {
 	}
 
 	public boolean canEditCurrentTask(String actor, String instanceId) {
+		WorkflowInstance instance = instances.findById(instanceId).orElse(null);
+		if (instance == null || !productAllows(instance.getDefinitionId())) return false;
 		return tasks.findByInstanceIdOrderByCreateTimeAsc(instanceId).stream()
 				.anyMatch(t -> "PENDING".equals(t.getStatus()) && actor.equals(t.getAssignee()));
 	}

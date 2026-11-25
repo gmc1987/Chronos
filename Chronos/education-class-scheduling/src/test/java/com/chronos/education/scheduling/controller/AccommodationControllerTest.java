@@ -29,7 +29,7 @@ class AccommodationControllerTest {
 		assignmentImports = mock(AccommodationAssignmentImportService.class);
 		scopes = mock(DirectoryDataScopeGuard.class);
 		controller = new AccommodationController(accommodations, mock(AccommodationImportService.class),
-				assignmentImports, scopes);
+				assignmentImports, scopes, mock(com.chronos.education.scheduling.service.SchoolRosterSetupService.class));
 		authentication = mock(Authentication.class);
 		when(authentication.getName()).thenReturn("operator");
 	}

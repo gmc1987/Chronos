@@ -1,4 +1,5 @@
 <script setup>
+import { examLookups, examStudentNames, examStudents, isExamCustomer } from '../api/examSetup'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { watch, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -22,6 +23,7 @@ import {
   removeExamCandidate,
 } from '../../../api/admin'
 
+const customer = isExamCustomer()
 const terms = ref([])
 const organizationId = ref('')
 const semesterCode = ref('')
@@ -106,7 +108,7 @@ async function selectRoom(room) {
   const ids = [...new Set(candidates.value.map((candidate) => candidate.studentId))]
   const batches = []
   for (let index = 0; index < ids.length; index += 100) batches.push(ids.slice(index, index + 100))
-  candidateStudents.value = (await Promise.all(batches.map((batch) => lookupEducationStudents(batch))))
+  candidateStudents.value = (await Promise.all(batches.map((batch) => (customer ? examStudentNames(organizationId.value, batch) : lookupEducationStudents(batch)))))
     .flatMap((result) => unwrap(result))
 }
 
@@ -151,7 +153,9 @@ async function loadStudents(keyword = studentKeyword.value, page = studentPage.v
   studentPage.value = page
   studentLoading.value = true
   try {
-    const result = (await listEducationStudents({ keyword, page, size: 10, organizationId: organizationId.value })).data
+    const result = (await (customer
+      ? examStudents(organizationId.value, keyword, page)
+      : listEducationStudents({ keyword, page, size: 10, organizationId: organizationId.value }))).data
     if (sequence !== studentRequestSequence) return
     students.value = result?.content || []
     studentTotal.value = result?.totalElements || 0
@@ -246,7 +250,12 @@ watch(organizationId, id => {
   selectPlan(null)
   if (!id) return
   return run(async () => {
-    const [termResult, classroomResult, subjectResult, classResult] = await Promise.all([
+    const [termResult, classroomResult, subjectResult, classResult] = customer
+      ? await examLookups(id).then(data => [
+        { data: data.terms }, { data: data.classrooms }, { data: data.subjects },
+        { data: data.classes.map(item => ({ id: item.id, className: item.name, classCode: item.code })) },
+      ])
+      : await Promise.all([
       listAcademicTerms({ organizationId: id }),
       listClassrooms({ organizationId: id }),
       listEducationSubjects(),
@@ -268,7 +277,7 @@ watch(organizationId, id => {
   <div class="exam-page">
     <header class="page-header">
       <div><h2>考场管理</h2><p>按考试计划和科目场次配置教室、考生与座位。</p></div>
-      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
+      <OrganizationSelect v-model="organizationId" :school-only="customer" school-or-campus-only style="width:240px" />
       <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="loadPlans">
         <el-option v-for="term in terms" :key="term.id" :label="term.termName" :value="term.termCode" />
       </el-select>
@@ -334,7 +343,7 @@ watch(organizationId, id => {
       <template #footer><el-button @click="roomDialog = false">取消</el-button><el-button type="primary" @click="saveRoom">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="seatDialog" title="座位候选比较" width="760px">
-      <p>依据场次关联课程的有效选课名单生成 {{ seatComparison?.studentCount || 0 }} 名考生的候选；确认前可比较同班相邻座位和考场人数差。</p>
+      <p>依据本场已录入考生或关联课程名单生成 {{ seatComparison?.studentCount || 0 }} 名考生的候选；确认前可比较同班相邻座位和考场人数差。</p>
       <el-table :data="seatComparison?.candidates || []" border highlight-current-row @current-change="(row) => { if (row) seatStrategy = row.strategy }">
         <el-table-column label="选择" width="60"><template #default="scope"><el-radio v-model="seatStrategy" :value="scope.row.strategy" /></template></el-table-column>
         <el-table-column label="方案" min-width="150"><template #default="scope">{{ scope.row.name }}<el-tag v-if="scope.row.strategy === recommendedStrategy" size="small" type="success">推荐</el-tag></template></el-table-column>

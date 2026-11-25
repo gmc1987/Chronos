@@ -1,16 +1,17 @@
 <template>
   <div class="classroom-reservations">
-    <el-page-header @back="$router.push('/portal/education/schedule')">
+    <el-page-header @back="$router.push(customer ? '/admin/delivery-access' : '/portal/education/schedule')">
       <template #content><strong>我的教室申请</strong></template>
     </el-page-header>
 
     <div class="toolbar">
       <el-alert
-        title="新申请从流程中心发起；审批完成后才会形成正式教室占用。"
+        :title="canApply ? '提交后由本校场地管理人员审核，审核通过后占用教室。' : '请在流程中心发起申请。'"
         type="info"
         :closable="false"
       />
-      <el-button type="primary" @click="$router.push('/portal/workflows')">发起教室申请</el-button>
+      <el-button v-if="canApply" type="primary" @click="open">发起教室申请</el-button>
+      <el-button v-else-if="!customer" type="primary" @click="$router.push('/portal/workflows')">发起教室申请</el-button>
     </div>
 
     <el-skeleton v-if="loading" :rows="6" animated />
@@ -33,7 +34,8 @@
           <el-tag :type="statusType(scope.row.status)">{{ statusName(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="failureMessage" label="回写说明" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="failureMessage" label="回写说明" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="reviewNote" label="审核意见" min-width="180" show-overflow-tooltip />
       <AdaptiveActionColumn label="操作" width="90">
         <template #default="scope">
           <el-button v-if="canCancel(scope.row)" link type="warning" @click="cancel(scope.row)">
@@ -42,11 +44,38 @@
         </template>
       </AdaptiveActionColumn>
     </el-table>
+    <el-dialog v-model="visible" title="教室预约申请" width="min(600px, 95vw)">
+      <el-form label-width="100px" @submit.prevent>
+        <el-form-item label="教室">
+          <el-select v-model="form.classroomId" filterable placeholder="选择教室" @change="loadTerms">
+            <el-option v-for="room in rooms" :key="room.value" :label="room.label" :value="room.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="学期">
+          <el-select v-model="form.semesterCode" placeholder="选择学期" :disabled="!form.classroomId" :loading="loadingTerms">
+            <el-option v-for="term in terms" :key="term.termCode" :label="term.termName" :value="term.termCode" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="使用日期">
+          <el-date-picker v-model="form.usageDate" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" />
+        </el-form-item>
+        <el-form-item label="开始节次"><el-input-number v-model="form.startPeriod" :min="1" :max="30" /></el-form-item>
+        <el-form-item label="持续节数"><el-input-number v-model="form.durationPeriods" :min="1" :max="30" /></el-form-item>
+        <el-form-item label="使用人数"><el-input-number v-model="form.attendeeCount" :min="1" /></el-form-item>
+        <el-form-item label="用途"><el-input v-model="form.purpose" type="textarea" maxlength="1000" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="!canCheck" :loading="busy === 'check'" @click="send('check')">检查时段</el-button>
+        <el-button type="primary" :disabled="!canCheck || !form.purpose?.trim()" :loading="busy === 'submit'" @click="send('submit')">提交申请</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { http } from '../../../api/http'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { todayLocalDate } from '../../../utils/localDate'
 import {
@@ -54,6 +83,16 @@ import {
   portalClassroomReservations,
 } from '../../../api/portal'
 
+const endpoint = '/portal/education/classroom-reservations'
+const customer = getDeliveryContext().mode === 'customer'
+const canApply = hasAdminPermission('education:venue-reservation:apply', 'education:resource:venue:manage')
+const rooms = ref([])
+const terms = ref([])
+const form = reactive({})
+const visible = ref(false)
+const loadingTerms = ref(false)
+const busy = ref('')
+const canCheck = computed(() => !busy.value && form.classroomId && form.semesterCode && form.usageDate)
 const rows = ref([])
 const loading = ref(true)
 
@@ -66,8 +105,10 @@ const load = async () => {
   }
 }
 
-const canCancel = (row) => row.status === 'ACTIVE' && row.usageDate > todayLocalDate()
+const canCancel = (row) => ['ACTIVE', 'PENDING'].includes(row.status) && row.usageDate > todayLocalDate()
 const statusName = (status) => ({
+  PENDING: '待审核',
+  REJECTED: '已驳回',
   ACTIVE: '已生效',
   CANCELLED: '已撤销',
   APPLY_FAILED: '回写失败',
@@ -77,7 +118,47 @@ const statusType = (status) => ({
   ACTIVE: 'success',
   CANCELLED: 'info',
   APPLY_FAILED: 'danger',
+  REJECTED: 'danger',
 }[status] || 'warning')
+
+async function open() {
+  rooms.value = (await http.get('/portal/education/classrooms/options')).data || []
+  terms.value = []
+  Object.assign(form, { classroomId: '', semesterCode: '', usageDate: '',
+    startPeriod: 1, durationPeriods: 1, attendeeCount: 1, purpose: '' })
+  visible.value = true
+}
+
+async function loadTerms(classroomId) {
+  terms.value = []
+  form.semesterCode = ''
+  loadingTerms.value = true
+  try {
+    const result = await http.get(endpoint + '/term-options?' + new URLSearchParams({ classroomId }))
+    if (form.classroomId !== classroomId) return
+    terms.value = result.data || []
+    if (terms.value.length === 1) form.semesterCode = terms.value[0].termCode
+    if (!terms.value.length) ElMessage.warning('该教室所属学校还没有启用学期，请联系场地管理人员')
+  } finally {
+    if (form.classroomId === classroomId) loadingTerms.value = false
+  }
+}
+
+async function send(mode) {
+  busy.value = mode
+  try {
+    await http.post(mode === 'check' ? endpoint + '/check' : endpoint, { ...form })
+    if (mode === 'check') {
+      ElMessage.success('该时段当前可用，审核通过后正式占用')
+    } else {
+      visible.value = false
+      ElMessage.success('申请已提交')
+      await load()
+    }
+  } finally {
+    busy.value = ''
+  }
+}
 
 const cancel = async (row) => {
   const { value } = await ElMessageBox.prompt('请输入撤销原因', '撤销教室申请', {

@@ -7,6 +7,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,6 +30,7 @@ import com.chronos.integration.model.SyncItemError;
 import com.chronos.integration.model.SyncJob;
 import com.chronos.integration.model.SyncReconciliation;
 import com.chronos.integration.model.SyncRun;
+import com.chronos.integration.service.IntegrationBatchStore;
 import com.chronos.integration.service.IntegrationExtensionService;
 import com.chronos.integration.service.IntegrationService;
 
@@ -44,11 +46,12 @@ public class IntegrationController {
 	private final SyncItemErrorRepository errors;
 	private final DeadLetterRepository deadLetters;
 	private final SyncCursorRepository cursors;
+	private final IntegrationBatchStore batchStore;
 
 	public IntegrationController(IntegrationService service, IntegrationExtensionService extension,
 			FieldMappingRepository mappings, ConnectorRepository connectors, SyncJobRepository jobs,
 			SyncRunRepository runs, SyncItemErrorRepository errors, DeadLetterRepository deadLetters,
-			SyncCursorRepository cursors) {
+			SyncCursorRepository cursors, IntegrationBatchStore batchStore) {
 		this.service = service;
 		this.extension = extension;
 		this.mappings = mappings;
@@ -58,6 +61,7 @@ public class IntegrationController {
 		this.errors = errors;
 		this.deadLetters = deadLetters;
 		this.cursors = cursors;
+		this.batchStore = batchStore;
 	}
 
 	@GetMapping("/connectors")
@@ -131,6 +135,13 @@ public class IntegrationController {
 				jobs.findById(run.getJobId()).map(SyncJob::getName).orElse(run.getJobId()))).toList());
 	}
 
+	@GetMapping("/runs/{id}/records")
+	@PreAuthorize("@iamAuthorization.has(authentication,'integration:run:view')")
+	public ResultData<List<IntegrationBatchStore.InboundRecord>> received(@PathVariable String id,
+			@RequestParam(defaultValue = "0") int page) {
+		return ok(batchStore.records(id, page));
+	}
+
 	@GetMapping("/runs/{id}/errors")
 	@PreAuthorize("@iamAuthorization.has(authentication,'integration:error:view')")
 	public ResultData<List<SyncItemError>> errors(@PathVariable String id) {
@@ -184,6 +195,17 @@ public class IntegrationController {
 						command.sourcePath(), command.targetField(), command.transformCode(),
 						command.required(), command.versionNo());
 		return ok(extension.saveMapping(null, request, actor(principal)));
+	}
+
+	@PutMapping("/connectors/{id}/mappings/{mappingId}")
+	@PreAuthorize("@iamAuthorization.has(authentication,'integration:mapping:manage')")
+	public ResultData<FieldMapping> updateMapping(@PathVariable String id, @PathVariable String mappingId,
+			@RequestBody MappingCommand command, Principal principal) {
+		mappings.findById(mappingId).filter(item -> id.equals(item.getConnectorId()))
+				.orElseThrow(() -> new IllegalArgumentException("该连接器下不存在此映射"));
+		var request = new IntegrationExtensionService.FieldMappingCommand(id, command.objectType(),
+				command.sourcePath(), command.targetField(), command.transformCode(), command.required(), command.versionNo());
+		return ok(extension.saveMapping(mappingId, request, actor(principal)));
 	}
 
 	private static String actor(Principal principal) {

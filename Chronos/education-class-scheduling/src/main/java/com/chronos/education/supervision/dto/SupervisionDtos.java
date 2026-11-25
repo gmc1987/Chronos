@@ -13,7 +13,8 @@ public final class SupervisionDtos {
 			@NotBlank @Size(max = 200) String name,
 			@NotNull LocalDate startDate,
 			@NotNull LocalDate endDate,
-			@Size(max = 64) String campusId) {}
+			@Size(max = 64) String campusId,
+			@Size(max = 64) String schoolId) {}
 
 	public record AssignmentCommand(
 			@NotBlank @Size(max = 64) String planId,
@@ -21,6 +22,15 @@ public final class SupervisionDtos {
 			@NotBlank @Size(max = 64) String teacherId,
 			@NotBlank @Size(max = 64) String scheduleEntryId,
 			@Size(max = 64) String campusId) {}
+
+	public record ObservationCommand(
+			@NotBlank @Size(max = 64) String planId,
+			@NotBlank @Size(max = 64) String supervisorId,
+			@NotBlank @Size(max = 64) String teacherId,
+			@NotBlank @Size(max = 150) String course,
+			@NotBlank @Size(max = 150) String location,
+			@NotNull LocalDateTime startsAt,
+			@NotNull LocalDateTime endsAt) {}
 
 	public record EvaluationCommand(
 			@NotBlank String formTemplateId) {}
@@ -43,9 +53,10 @@ public final class SupervisionDtos {
 
 	public record ReviewCommand(@NotNull Boolean approved, @Size(max = 2000) String comment) {}
 
-	public record PlanResponse(String id, String name, String status, LocalDate startDate, LocalDate endDate) {}
+	public record PlanResponse(String id, String name, String status, LocalDate startDate, LocalDate endDate, String schoolId) {}
 	public record AssignmentResponse(String id, String planId, String teacherId, String scheduleEntryId, String status,
-			LocalDateTime checkedInAt, LocalDateTime submittedAt) {}
+			LocalDateTime checkedInAt, LocalDateTime submittedAt, String observedCourse,
+			String observedLocation, LocalDateTime observedStartsAt, LocalDateTime observedEndsAt) {}
 	public record RecordResponse(String id, String assignmentId, String supervisorId, String teacherId,
 			String formTemplateId, String formSnapshotJson, String scheduleContextSnapshotJson, LocalDateTime submittedAt) {}
 	public record IssueResponse(String id, String recordId, String severity, String title, String status,

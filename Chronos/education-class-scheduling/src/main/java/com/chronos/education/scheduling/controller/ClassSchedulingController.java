@@ -116,7 +116,10 @@ public class ClassSchedulingController {
 		var majorIds = classes.stream().map(item -> item.getMajorId()).collect(java.util.stream.Collectors.toSet());
 		var majors = academicData.visibleMajors(organizationId == null ? null : java.util.Set.of(organizationId))
 				.stream().filter(item -> majorIds.contains(item.getId())).toList();
-		return ok(Map.of("fullAccess", scope.fullAccess(), "teachers", teachers, "teachingClasses", offerings,
+		boolean manageTerm = scope.fullAccess() || terms.findByTermCode(semesterCode)
+				.map(term -> canManageTerm(authentication, term.getOrganizationId())).orElse(false);
+		return ok(Map.of("fullAccess", scope.fullAccess(), "termManagement", manageTerm,
+				"teachers", teachers, "teachingClasses", offerings,
 				"administrativeClasses", classes, "classrooms", classrooms, "majors", majors));
 	}
 
@@ -143,7 +146,7 @@ public class ClassSchedulingController {
 	public ResultData<ScheduleGenerationJob> submitGenerationJob(
 			@RequestBody AutoScheduleCommand command,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, command == null ? null : command.semesterCode());
 		return ok(generationJobs.submit(command, authentication.getName()));
 	}
 
@@ -152,7 +155,7 @@ public class ClassSchedulingController {
 	public ResultData<List<ScheduleGenerationJob>> generationJobs(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, semesterCode);
 		return ok(generationJobs.list(semesterCode));
 	}
 
@@ -161,7 +164,7 @@ public class ClassSchedulingController {
 	public ResultData<ScheduleGenerationJob> cancelGenerationJob(
 			@PathVariable String id,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, generationJobs.require(id).getSemesterCode());
 		return ok(generationJobs.cancel(id, authentication.getName()));
 	}
 
@@ -170,7 +173,7 @@ public class ClassSchedulingController {
 	public ResultData<SchedulePolicy> schedulePolicy(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, semesterCode);
 		return ok(schedulePolicies.resolve(semesterCode));
 	}
 
@@ -179,7 +182,7 @@ public class ClassSchedulingController {
 	public ResultData<SchedulePolicy> saveSchedulePolicy(
 			@RequestBody SchedulePolicy policy,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, policy == null ? null : policy.getSemesterCode());
 		return ok(schedulePolicies.save(policy, authentication.getName()));
 	}
 
@@ -188,8 +191,8 @@ public class ClassSchedulingController {
 	public ResultData<Map<String, Object>> scheduleQuality(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
-		return ok(qualityAnalysis.analyze(semesterCode));
+		var campuses = requireCandidateTermAccess(authentication, semesterCode);
+		return ok(qualityAnalysis.analyze(semesterCode, campuses));
 	}
 
 	@GetMapping(
@@ -258,7 +261,7 @@ public class ClassSchedulingController {
 	public ResultData<List<SchedulePlanVersionView>> scheduleVersions(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, semesterCode);
 		return ok(planVersions.versions(semesterCode));
 	}
 
@@ -267,7 +270,7 @@ public class ClassSchedulingController {
 	public ResultData<SchedulePlanVersionView> publishSchedule(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, semesterCode);
 		return ok(SchedulePlanVersionView.from(
 				planVersions.publish(semesterCode, authentication.getName())));
 	}
@@ -277,7 +280,7 @@ public class ClassSchedulingController {
 	public ResultData<SchedulePlanVersionView> rollbackSchedule(
 			@PathVariable String id,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, planVersions.versionSemesterCode(id));
 		return ok(SchedulePlanVersionView.from(
 				planVersions.rollback(id, authentication.getName())));
 	}
@@ -287,10 +290,10 @@ public class ClassSchedulingController {
 	public ResultData<ScheduleDiffView> publicationPreview(
 			@RequestParam String semesterCode,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		var campuses = requireCandidateTermAccess(authentication, semesterCode);
 		return ok(autoScheduling.publicationPreview(
 				semesterCode,
-				planVersions.latestPublishedEntries(semesterCode)));
+				planVersions.latestPublishedEntries(semesterCode), campuses));
 	}
 
 	@PostMapping("/admin/education/schedule-candidates/generate")
@@ -298,7 +301,7 @@ public class ClassSchedulingController {
 	public ResultData<List<ScheduleCandidateView>> generateCandidates(
 			@RequestBody AutoScheduleCommand command,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateTermAccess(authentication, command == null ? null : command.semesterCode());
 		return ok(autoScheduling.generate(command, authentication.getName()));
 	}
 
@@ -338,7 +341,7 @@ public class ClassSchedulingController {
 			@PathVariable String id,
 			@RequestBody ScheduleCandidateGovernanceCommand command,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateAccess(authentication, id);
 		return ok(autoScheduling.updateGovernance(id, command, authentication.getName()));
 	}
 
@@ -347,7 +350,7 @@ public class ClassSchedulingController {
 	public ResultData<ScheduleCandidateView> submitCandidateReview(
 			@PathVariable String id,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateAccess(authentication, id);
 		return ok(autoScheduling.submitReview(id, authentication.getName()));
 	}
 
@@ -371,7 +374,7 @@ public class ClassSchedulingController {
 	public ResultData<ScheduleCandidateView> applyCandidate(
 			@PathVariable String id,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateAccess(authentication, id);
 		return ok(autoScheduling.apply(id, authentication.getName()));
 	}
 
@@ -380,7 +383,7 @@ public class ClassSchedulingController {
 	public ResultData<ScheduleCandidateView> discardCandidate(
 			@PathVariable String id,
 			Authentication authentication) {
-		requireFullDataAccess(authentication);
+		requireCandidateAccess(authentication, id);
 		return ok(autoScheduling.discard(id, authentication.getName()));
 	}
 
@@ -650,8 +653,20 @@ public class ClassSchedulingController {
 		return campuses;
 	}
 
+	private boolean canManageTerm(Authentication authentication, String organizationId) {
+		try {
+			dataScopes.scheduleReviewCampuses(authentication.getName(), organizationId);
+			return true;
+		} catch (org.springframework.security.access.AccessDeniedException ex) {
+			return false;
+		}
+	}
+
 	private Set<String> requireCandidateTermAccess(Authentication authentication, String semesterCode) {
-		var term = terms.findByTermCode(semesterCode)
+		if (semesterCode == null || semesterCode.isBlank()) {
+			throw new IllegalArgumentException("请选择排课学期");
+		}
+		var term = terms.findByTermCode(semesterCode.strip())
 				.orElseThrow(() -> new IllegalArgumentException("排课方案所属学期不存在"));
 		return dataScopes.scheduleReviewCampuses(authentication.getName(), term.getOrganizationId());
 	}

@@ -22,6 +22,9 @@ public class ParentProfile extends BaseEntity {
 	@Column(name = "parent_name", length = 128, nullable = false)
 	private String parentName;
 
+	@Column(name = "school_id", length = 64)
+	private String schoolId;
+
 	@Column(name = "gender", length = 16)
 	private String gender;
 

@@ -36,6 +36,20 @@ public class AiModelController {
 		return ok(service.list(modelName, provider, status, page, size).map(AiModelResponse::from));
 	}
 
+	@GetMapping("/ai-model/models/options")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:ai:knowledge:view','education:ai:knowledge:manage','ai:model:manage')")
+	public ResultData<?> modelOptions(@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "100") int size) {
+		return ok(service.list(null, null, 1, page, size)
+				.map(model -> new ModelOption(model.getId(), model.getModelName(), model.getModelType(),
+						Boolean.TRUE.equals(model.getIsDefault()), Boolean.TRUE.equals(model.getEmbeddingDefault()),
+						model.getApiKeyCiphertext() != null
+								&& !model.getApiKeyCiphertext().isBlank())));
+	}
+
+	public record ModelOption(String id, String modelName, String modelType, boolean isDefault,
+			boolean embeddingDefault, boolean hasApiKey) {}
+
 	@GetMapping("/ai-model/models/{id}")
 	@PreAuthorize("@iamAuthorization.any(authentication,'ai:model:view','ai:model:manage')")
 	public ResultData<AiModelResponse> detail(@PathVariable String id) {

@@ -105,9 +105,11 @@ class AcademicLifecycleServiceTest {
 		offering.setId("offering-1");
 		offering.setSemesterCode("2026-2027-1");
 		offering.setStatus("ACTIVE");
+		offering.setCampusId("school-1");
+		mockEnrollmentScope();
 		when(offerings.findById("offering-1")).thenReturn(Optional.of(offering));
-		when(registrations.existsByTermCodeAndStudentIdAndStatus(
-				"2026-2027-1", "student-1", "REGISTERED")).thenReturn(false);
+		when(registrations.findBySchoolIdAndTermCodeAndStudentId(
+				"school-1", "2026-2027-1", "student-1")).thenReturn(Optional.empty());
 
 		EnrollmentCommand command = new EnrollmentCommand(
 				"school-1", "2026-2027-1", "student-1", "offering-1", null, "MANUAL");
@@ -124,9 +126,14 @@ class AcademicLifecycleServiceTest {
 		offering.setId("offering-1");
 		offering.setSemesterCode("2026-2027-1");
 		offering.setStatus("ACTIVE");
+		offering.setCampusId("school-1");
+		mockEnrollmentScope();
 		when(offerings.findById("offering-1")).thenReturn(Optional.of(offering));
-		when(registrations.existsByTermCodeAndStudentIdAndStatus(
-				"2026-2027-1", "student-1", "REGISTERED")).thenReturn(true);
+		var registration = new TermRegistration();
+		registration.setStatus("REGISTERED");
+		registration.setProgramId("program-1");
+		when(registrations.findBySchoolIdAndTermCodeAndStudentId(
+				"school-1", "2026-2027-1", "student-1")).thenReturn(Optional.of(registration));
 		when(enrollments.findByTermCodeAndStudentIdAndOfferingId(
 				"2026-2027-1", "student-1", "offering-1")).thenReturn(Optional.empty());
 		when(members.findByOfferingIdAndStudentId("offering-1", "student-1"))
@@ -139,6 +146,17 @@ class AcademicLifecycleServiceTest {
 		verify(members).save(member.capture());
 		assertEquals("MANUAL", member.getValue().getEnrollmentSource());
 		assertEquals("ENROLLED", member.getValue().getEnrollmentStatus());
+	}
+
+	private void mockEnrollmentScope() {
+		var student = new StudentProfile();
+		student.setId("student-1");
+		var term = new com.chronos.education.scheduling.model.AcademicTerm();
+		term.setOrganizationId("school-1");
+		when(students.findById("student-1")).thenReturn(Optional.of(student));
+		when(terms.findByTermCode("2026-2027-1")).thenReturn(Optional.of(term));
+		when(dataScopes.scheduleOrganizationCampuses(any(), org.mockito.ArgumentMatchers.eq("school-1")))
+				.thenReturn(Set.of("school-1"));
 	}
 
 	private AcademicProgram program(String status) {

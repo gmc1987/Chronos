@@ -134,6 +134,8 @@ public class ScheduleCalendarController {
 				dataScopes.resolve(authentication.getName()),
 				command.getSourceEntryId());
 		assertAdjustmentTargets(command, authentication);
+		// The workflow listener owns the approval association for a schedule change.
+		command.setWorkflowInstanceId(null);
 		command.setMakeupRequired(false);
 		return ok(service.saveException(null, command));
 	}
@@ -150,6 +152,7 @@ public class ScheduleCalendarController {
 		ScheduleDateException existing = service.exception(id);
 		dataScopes.assertScheduleEntryAccess(dataScopes.resolve(authentication.getName()), existing.getSourceEntryId());
 		assertAdjustmentTargets(command, authentication);
+		command.setWorkflowInstanceId(existing.getWorkflowInstanceId());
 		command.setMakeupRequired(existing.isMakeupRequired());
 		return ok(service.saveException(id, command));
 	}

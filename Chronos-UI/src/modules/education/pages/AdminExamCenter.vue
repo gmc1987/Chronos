@@ -1,8 +1,12 @@
 <script setup>
+import ExamIncidentPanel from '../components/ExamIncidentPanel.vue'
+import ExamSetupDialog from '../components/ExamSetupDialog.vue'
+import { examHasTeaching, examLookups, isExamCustomer } from '../api/examSetup'
 import OrganizationSelect from '../../../components/OrganizationSelect.vue'
 import { computed, watch, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { hasAdminPermission } from '../../../store/auth'
 import {
   createExamPlan,
   createExamSession,
@@ -32,6 +36,9 @@ import {
   updateExamSessionOfferings,
 } from '../../../api/admin'
 
+const customer = isExamCustomer()
+const teaching = examHasTeaching()
+const canSeeIncidents = hasAdminPermission('education:exam:incident:view', 'education:exam:incident:manage')
 const route = useRoute()
 const organizationId = ref(typeof route.query.organizationId === 'string' ? route.query.organizationId : '')
 const semesterCode = ref('')
@@ -108,17 +115,26 @@ async function run(action, message) {
 }
 
 async function loadLookups(id) {
-  const [termResult, subjectResult, classroomResult, examTypeResult] = await Promise.all([
-    listAcademicTerms({ organizationId: id }),
-    listEducationSubjects(),
-    listClassrooms({ organizationId: organizationId }),
-    dictionaryOptions('EDU_EXAM_TYPE'),
-  ])
-  if (id !== organizationId.value) return
-  terms.value = unwrap(termResult)
-  subjects.value = unwrap(subjectResult)
-  classrooms.value = unwrap(classroomResult)
-  examTypes.value = unwrap(examTypeResult)
+  if (customer) {
+    const lookups = await examLookups(id)
+    if (id !== organizationId.value) return
+    terms.value = lookups.terms
+    subjects.value = lookups.subjects
+    classrooms.value = lookups.classrooms
+    examTypes.value = lookups.examTypes.map(item => ({ dictValue: item.code, dictName: item.name }))
+  } else {
+    const [termResult, subjectResult, classroomResult, examTypeResult] = await Promise.all([
+      listAcademicTerms({ organizationId: id }),
+      listEducationSubjects(),
+      listClassrooms({ organizationId: id }),
+      dictionaryOptions('EDU_EXAM_TYPE'),
+    ])
+    if (id !== organizationId.value) return
+    terms.value = unwrap(termResult)
+    subjects.value = unwrap(subjectResult)
+    classrooms.value = unwrap(classroomResult)
+    examTypes.value = unwrap(examTypeResult)
+  }
   const requestedTerm = route.query.semesterCode
   semesterCode.value ||= typeof requestedTerm === 'string'
     && terms.value.some((item) => item.termCode === requestedTerm)
@@ -126,8 +142,19 @@ async function loadLookups(id) {
     : terms.value.find((item) => item.currentTerm)?.termCode || terms.value[0]?.termCode || ''
 }
 
+async function refreshSetup(kind, resource) {
+  const id = organizationId.value
+  await run(async () => {
+    await loadLookups(id)
+    if (id === organizationId.value && kind === 'terms') {
+      semesterCode.value = resource.termCode
+    }
+    await loadPlans()
+  })
+}
+
 async function loadOfferingOptions() {
-  if (!semesterCode.value) return
+  if (!semesterCode.value || !teaching) return
   const [courseResult, offeringResult] = await Promise.all([
     listCourseCatalog({}), listCourseOfferings(semesterCode.value, { organizationId: organizationId.value }),
   ])
@@ -135,13 +162,13 @@ async function loadOfferingOptions() {
   offerings.value = unwrap(offeringResult)
 }
 
-async function loadPlans() {
+async function loadPlans(preferredId = selectedPlan.value?.id) {
   const term = semesterCode.value
   const rows = term ? unwrap(await listExamPlans(term)) : []
   if (term !== semesterCode.value) return
   plans.value = rows
   const requestedPlan = route.query.examPlanId
-  const current = plans.value.find((item) => item.id === selectedPlan.value?.id)
+  const current = plans.value.find((item) => item.id === preferredId)
     || (typeof requestedPlan === 'string'
       ? plans.value.find((item) => item.id === requestedPlan) : null)
   await selectPlan(current || null)
@@ -153,7 +180,7 @@ async function selectPlan(plan) {
   suspensionImpacts.value = []
   const [sessionRows, requestRows, changeRows] = plan ? await Promise.all([
     listExamSessions(plan.id).then(unwrap),
-    listExamSuspensionRequests(plan.id).then(unwrap),
+    teaching ? listExamSuspensionRequests(plan.id).then(unwrap) : [],
     listExamPublishedChanges(plan.id).then(unwrap),
   ]) : [[], [], []]
   if (selectedPlan.value !== plan) return
@@ -259,7 +286,7 @@ async function openSession(session) {
   })
   try {
     await loadOfferingOptions()
-    if (session?.id) sessionForm.offeringIds = unwrap(
+    if (teaching && session?.id) sessionForm.offeringIds = unwrap(
       await listExamSessionOfferings(selectedPlan.value.id, session.id))
   } catch (error) { return showError(error) }
   dialogs.session = true
@@ -381,8 +408,9 @@ async function publish() {
     return
   }
   await run(async () => {
-    await publishExamPlan(selectedPlan.value.id)
-    await loadPlans()
+    const id = selectedPlan.value.id
+    await publishExamPlan(id)
+    await loadPlans(id)
   }, '考试计划已发布')
 }
 
@@ -410,8 +438,8 @@ watch(organizationId, id => {
         <h2>考试计划管理</h2>
         <p>先确定场次与考生，再配置考场和监考；发布前检查与日期课表的冲突。</p>
       </div>
-      <OrganizationSelect v-model="organizationId" school-or-campus-only style="width:240px" />
-      <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="loadPlans">
+      <OrganizationSelect v-model="organizationId" :school-only="customer" school-or-campus-only style="width:240px" />
+      <el-select v-model="semesterCode" :disabled="!terms.length" placeholder="选择学期" @change="() => loadPlans()">
         <el-option
           v-for="term in terms"
           :key="term.id"
@@ -423,12 +451,17 @@ watch(organizationId, id => {
     <div>
         <div class="section-heading">
           <h3>学期考试计划</h3>
-          <el-button
+          <div class="actions">
+            <ExamSetupDialog v-if="customer" v-permission="['education:exam:plan:manage']"
+              :school-id="organizationId" @saved="refreshSetup" />
+            <el-button
             v-permission="['education:exam:plan:create', 'education:exam:plan:manage']"
             type="primary"
             :disabled="!semesterCode" @click="openPlan()">新增计划</el-button>
+          </div>
         </div>
-        <el-table :data="plans" border highlight-current-row @current-change="selectPlan">
+        <el-table :data="plans" row-key="id" :current-row-key="selectedPlan?.id"
+          border highlight-current-row @current-change="plan => { if (plan) selectPlan(plan) }">
           <el-table-column prop="planName" label="计划名称" min-width="180" />
           <el-table-column label="考试类型" width="120">
             <template #default="scope">{{ examTypeName(scope.row.examType) }}</template>
@@ -482,6 +515,7 @@ watch(organizationId, id => {
             :title="`发现 ${conflicts.length} 项冲突，请先处理`">
             <div v-for="conflict in conflicts" :key="conflict">{{ conflict }}</div>
           </el-alert>
+          <template v-if="teaching">
           <div class="section-heading">
             <h3>考试占课审批</h3>
             <div class="actions">
@@ -536,6 +570,7 @@ watch(organizationId, id => {
               </template>
             </el-table-column>
           </el-table>
+          </template>
           <el-table :data="sessions" border>
             <el-table-column label="科目" min-width="150">
               <template #default="scope">{{ subjectName(scope.row.subjectId) }}</template>
@@ -560,13 +595,16 @@ watch(organizationId, id => {
             <AdaptiveActionColumn v-else label="操作" width="110">
               <template #default="scope">
                 <el-button
-                  v-if="selectedPlan.status === 'PUBLISHED' && scope.row.scoreStatus === 'DRAFT'"
+                  v-if="teaching && selectedPlan.status === 'PUBLISHED' && scope.row.scoreStatus === 'DRAFT'"
                   v-permission="['education:exam:plan:manage']"
                   link
                   @click.stop="openOfferings(scope.row)">课程映射</el-button>
               </template>
             </AdaptiveActionColumn>
           </el-table>
+          <ExamIncidentPanel v-if="selectedPlan.status === 'PUBLISHED' && canSeeIncidents"
+            :key="selectedPlan.id" :sessions="sessions"
+            :session-name="item => subjectName(item.subjectId) + ' · ' + item.examDate" />
           <template v-if="selectedPlan.status !== 'DRAFT' || publishedChanges.length">
             <div class="section-heading"><h3>已发布考试变更记录</h3></div>
             <el-table :data="publishedChanges" border empty-text="暂无变更记录">
@@ -657,7 +695,7 @@ watch(organizationId, id => {
               :value="item.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联课程">
+        <el-form-item v-if="teaching" label="关联课程">
           <el-select v-model="sessionForm.offeringIds" multiple filterable collapse-tags
             placeholder="选择本学期本科目的课程开设" style="width: 100%">
             <el-option v-for="item in eligibleOfferings" :key="item.id"

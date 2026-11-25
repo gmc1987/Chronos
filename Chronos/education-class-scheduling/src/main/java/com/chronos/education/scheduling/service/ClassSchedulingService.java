@@ -84,6 +84,9 @@ public class ClassSchedulingService {
 		CourseOffering value = id == null
 				? new CourseOffering()
 				: offerings.findById(id).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+		if (!CourseOffering.isSchedulingOffering(value.getStatus()) || !CourseOffering.isSchedulingOffering(command.getStatus())) {
+			throw new IllegalArgumentException("专用教学班由所属业务模块维护");
+		}
 		if ("COMBINED".equals(value.getOfferingMode())
 				&& !value.getStudentCount().equals(command.getStudentCount())) {
 			throw new IllegalStateException("合班课人数由来源行政班同步，不能手工修改");
@@ -126,9 +129,11 @@ public class ClassSchedulingService {
 		if (entries.countByOfferingId(id) > 0) {
 			throw new IllegalStateException("教学任务已有课表安排，不能删除");
 		}
-		if ("COMBINED".equals(offerings.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"))
-				.getOfferingMode())) {
+		var offering = offerings.findById(id).orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+		if (!CourseOffering.isSchedulingOffering(offering.getStatus())) {
+			throw new IllegalArgumentException("专用教学班由所属业务模块维护");
+		}
+		if ("COMBINED".equals(offering.getOfferingMode())) {
 			throw new IllegalStateException("合班教学任务需先解除来源班级，不能直接删除");
 		}
 		offerings.deleteById(id);
@@ -245,6 +250,9 @@ public class ClassSchedulingService {
 		validateEntry(command);
 		CourseOffering offering = offerings.findById(command.offeringId())
 				.orElseThrow(() -> new IllegalArgumentException("教学任务不存在"));
+		if (!CourseOffering.isSchedulingOffering(offering.getStatus())) {
+			throw new IllegalArgumentException("此教学班未用于走班排课");
+		}
 		Classroom classroom = classrooms.findById(command.classroomId())
 				.orElseThrow(() -> new IllegalArgumentException("教室不存在"));
 		if (campusMismatch(offering, classroom)) {

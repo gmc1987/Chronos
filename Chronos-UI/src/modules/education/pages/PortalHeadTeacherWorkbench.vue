@@ -46,9 +46,9 @@
               <strong>班级学生</strong>
               <div>
                 <el-input v-model="keyword" clearable placeholder="搜索学号或姓名" />
-                <el-button @click="$router.push('/portal/education/schedule')">查看课表</el-button>
-                <el-button @click="$router.push('/portal/workflows')">发起流程</el-button>
-                <el-button @click="$router.push('/portal/publications')">通知公告</el-button>
+                <el-button v-if="canOpen('/portal/education/schedule')" @click="$router.push('/portal/education/schedule')">查看课表</el-button>
+                <el-button v-if="canOpen('/portal/workflows')" @click="$router.push('/portal/workflows')">发起流程</el-button>
+                <el-button v-if="canOpen('/portal/publications')" @click="$router.push('/portal/publications')">通知公告</el-button>
               </div>
             </div>
           </template>
@@ -145,6 +145,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { getDeliveryContext } from '../../../store/auth'
 import {
   createPortalClassNotice,
   portalClassNotices,
@@ -154,6 +155,8 @@ import {
 } from '../../../api/portal'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const delivery = getDeliveryContext()
+const canOpen = path => delivery.mode !== 'customer' || (delivery.routes || []).includes(path)
 const classes = ref([])
 const selectedClassId = ref('')
 const detail = ref({})

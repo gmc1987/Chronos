@@ -1,6 +1,6 @@
 <template>
   <section class="workbench">
-    <header class="head"><div><h1>集体备课</h1><p>围绕主题协作备课，沉淀讨论、资料、结论和教案关联</p></div><el-button type="primary" @click="openCreate">新建备课</el-button></header>
+    <header class="head"><div><h1>集体备课</h1><p>围绕主题协作备课，沉淀讨论、资料、结论和教案关联</p></div><el-button v-if="canManage" type="primary" @click="openCreate">新建备课</el-button></header>
     <section v-if="invitations.length" class="invitation-section">
       <h2>我的备课邀请</h2>
       <el-table :data="invitations" stripe border>
@@ -11,7 +11,7 @@
       </el-table>
     </section>
     <el-form inline @submit.prevent="load"><el-form-item label="教学班"><el-select v-model="filters.offeringId" clearable filterable style="width:280px"><el-option v-for="item in offerings" :key="item.id" :value="item.id" :label="offeringLabel(item)" /></el-select></el-form-item><el-button @click="load">查询</el-button></el-form>
-    <el-table v-loading="loading" :data="rows" stripe border><el-table-column prop="title" label="主题" min-width="220" /><el-table-column label="类型" width="110"><template #default="{ row }">{{ labelOf(types, row.preparationType) }}</template></el-table-column><el-table-column prop="scheduledAt" label="时间" width="180" /><el-table-column prop="location" label="地点" width="140" /><el-table-column prop="ownerTeacherName" label="主持人" width="130" /><el-table-column prop="conclusion" label="结论" min-width="220" show-overflow-tooltip /><AdaptiveActionColumn label="操作" width="330" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="edit(row)">编辑</el-button><el-button link type="success" @click="generateCourseware(row)">生成课件草稿</el-button><el-button link @click="openDiscussion(row)">讨论/资料</el-button><el-button link type="success" :disabled="row.status !== 'DRAFT'" @click="submit(row)">提交审核</el-button></template></AdaptiveActionColumn></el-table>
+    <el-table v-loading="loading" :data="rows" stripe border><el-table-column prop="title" label="主题" min-width="220" /><el-table-column label="类型" width="110"><template #default="{ row }">{{ labelOf(types, row.preparationType) }}</template></el-table-column><el-table-column prop="scheduledAt" label="时间" width="180" /><el-table-column prop="location" label="地点" width="140" /><el-table-column prop="ownerTeacherName" label="主持人" width="130" /><el-table-column prop="conclusion" label="结论" min-width="220" show-overflow-tooltip /><AdaptiveActionColumn label="操作" width="330" fixed="right"><template #default="{ row }"><el-button v-if="canManage" link type="primary" @click="edit(row)">编辑</el-button><el-button v-if="canManage" link type="success" @click="generateCourseware(row)">生成课件草稿</el-button><el-button v-if="canManage" link @click="openDiscussion(row)">讨论/资料</el-button><el-button v-if="canManage" link type="success" :disabled="!submittable(row.status)" @click="submit(row)">提交审核</el-button></template></AdaptiveActionColumn></el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" layout="total, prev, pager, next" @change="load" />
     <el-dialog v-model="dialog" :title="editing ? '编辑备课' : '新建备课'" width="760px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="105px">
@@ -46,11 +46,12 @@
   </section>
 </template>
 <script setup>
+import { teachingDictionaryOptions } from '../api/teachingCenter'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { dictionaryOptions } from '../../iam/api'
 import { useOrganizationEmployees } from '../../iam/useOrganizationEmployees'
-import { collaborationPreparationDetail, concludePreparation, createCoursewareFromPreparation, createPreparation, createPreparationChild, invitePreparationMember, myPreparationInvitations, offeringLessons, preparationMembers, preparationPage, publishedScheduleEntries, respondPreparationInvitation, revokePreparationMember, submitPreparation, teachingCenterOfferings, updatePreparation, uploadTeachingFile } from '../api/teachingCenter'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
+import { collaborationPreparationDetail, concludePreparation, createCoursewareFromPreparation, createPreparation, createPreparationChild, invitePreparationMember, myPreparationInvitations, offeringLessons, preparationMembers, preparationPage, preparationTeacherOptions, publishedScheduleEntries, respondPreparationInvitation, revokePreparationMember, submitPreparation, teachingCenterOfferings, updatePreparation, uploadTeachingFile } from '../api/teachingCenter'
 const offerings=ref([]), lessons=ref([]), schedules=ref([]), types=ref([]), rows=ref([]), total=ref(0), page=ref(1), size=ref(20), loading=ref(false), dialog=ref(false), editing=ref(''), formRef=ref()
 const invitations=ref([])
 const invitationDetailDialog=ref(false), invitationDetail=ref(null)
@@ -64,7 +65,26 @@ const respondInvitation=async(row,response)=>{try{await respondPreparationInvita
 const filters=reactive({offeringId:''}); const form=reactive({offeringId:'',title:'',preparationType:'',scheduledAt:'',ownerTeacherId:'',scheduleEntryId:'',location:'',agenda:'',outcomeLessonPlanId:'',memberIds:[],discussion:'',conclusion:''}); const discussionDialog=ref(false); const discussion=reactive({preparationId:'',content:'',fileName:''})
 const rules={offeringId:[{required:true,message:'请选择教学班'}],title:[{required:true,message:'请输入主题'}],preparationType:[{required:true,message:'请选择类型'}],scheduledAt:[{required:true,message:'请选择时间'}]}
 const isCollective=computed(()=>types.value.find(item=>item.value===form.preparationType)?.label?.includes('集体')); const unwrap=r=>r?.data?.content||r?.data||[]; const labelOf=(a,v)=>a.find(x=>x.value===v)?.label||v||'-'; const offeringLabel=i=>`${i.semesterCode||''} · ${i.courseName||''} · ${i.teachingClassName||''}`; const personLabel=i=>i.name||i.employeeName||i.realName||i.id; const scheduleLabel=i=>`${i.startTime||i.date||''} · ${i.courseName||i.location||''}`
-const selectedOffering=computed(()=>offerings.value.find(item=>item.id===form.offeringId)); const { employeeOptions: teachers } = useOrganizationEmployees(computed(() => selectedOffering.value?.campusId || ''))
+const customer = getDeliveryContext().mode === 'customer'
+const canManage = !customer || hasAdminPermission('education:teaching:manage', 'education:teaching:preparation:manage')
+const submittable = status => status === 'DRAFT' || (customer && ['CONCLUDED', 'REJECTED'].includes(status))
+const selectedOffering = computed(() => offerings.value.find(item => item.id === form.offeringId))
+const { employeeOptions } = useOrganizationEmployees(computed(() => customer ? '' : selectedOffering.value?.campusId || ''))
+const scopedTeachers = ref([])
+const teachers = computed(() => customer ? scopedTeachers.value : employeeOptions.value)
+watch(() => form.offeringId, async (id, previous, onCleanup) => {
+  scopedTeachers.value = []
+  schedules.value = []
+  if (!customer || !canManage || !id) return
+  let current = true
+  onCleanup(() => { current = false })
+  try {
+    const { data } = await preparationTeacherOptions(id)
+    if (current) scopedTeachers.value = (data || []).map(teacher => ({ id: teacher.value, name: teacher.label }))
+  } catch {
+    // The HTTP client displays permission and connectivity errors.
+  }
+})
 const ownerLabel=computed(()=>{const item=selectedOffering.value; return item?.teacherName||item?.teacherId||'由教学班任课教师主持'})
 const load=async()=>{loading.value=true;try{const r=await preparationPage({...filters,page:page.value-1,size:size.value});rows.value=unwrap(r);total.value=r?.data?.totalElements||rows.value.length}catch(e){ElMessage.error(e.message)}finally{loading.value=false}}
 const loadSchedule=async()=>{if(!form.offeringId||schedules.value.length)return;try{schedules.value=unwrap(await publishedScheduleEntries(form.offeringId, selectedOffering.value?.semesterCode))}catch(e){ElMessage.error(e.message)}}
@@ -78,6 +98,6 @@ const openDiscussion=row=>{Object.assign(discussion,{preparationId:row.id,conten
 const uploadMaterial=async file=>{try{const uploaded=await uploadTeachingFile(file);const fileId=uploaded?.data?.id||uploaded?.data?.fileId;if(!fileId)throw new Error('文件上传未返回 fileId');await createPreparationChild(discussion.preparationId,'materials',{title:file.name,fileId});discussion.fileName=file.name;ElMessage.success('资料已上传')}catch(e){ElMessage.error(e.message)}return false}
 const saveDiscussion=async()=>{try{await createPreparationChild(discussion.preparationId,'comments',{content:discussion.content});discussionDialog.value=false;ElMessage.success('已保存')}catch(e){ElMessage.error(e.message)}}
 watch(()=>form.offeringId,async id=>{form.memberIds=[];if(id)try{lessons.value=unwrap(await offeringLessons(id))}catch(e){ElMessage.error(e.message)}})
-onMounted(async()=>{loadInvitations();try{const[o,d]=await Promise.all([teachingCenterOfferings(),dictionaryOptions('EDU_PREPARATION_TYPE')]);offerings.value=unwrap(o);types.value=(d?.data||[]).map(i=>({value:i.dictValue,label:i.dictName}));if(!filters.offeringId&&offerings.value[0])filters.offeringId=offerings.value[0].id;await load()}catch(e){ElMessage.error(e.message)}})
+onMounted(async()=>{loadInvitations();try{const[o,d]=await Promise.all([teachingCenterOfferings(),teachingDictionaryOptions('EDU_PREPARATION_TYPE')]);offerings.value=unwrap(o);types.value=(d?.data||[]).map(i=>({value:i.dictValue,label:i.dictName}));if(!filters.offeringId&&offerings.value[0])filters.offeringId=offerings.value[0].id;await load()}catch(e){ElMessage.error(e.message)}})
 </script>
 <style scoped>.workbench{padding:24px}.head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.head h1{margin:0 0 6px}.head p{margin:0;color:#7b8794}.invitation-section{margin:0 0 22px}.invitation-section h2{font-size:18px;margin:0 0 10px}.el-pagination{margin-top:18px;justify-content:flex-end}.file-name{margin-left:12px;color:#667085}</style>

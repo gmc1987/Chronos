@@ -1,6 +1,7 @@
 package com.chronos.education.scheduling.controller;
 
 import java.io.IOException;
+import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -9,6 +10,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.chronos.Idao.IOrganizationRepository;
+import com.chronos.Idao.IDictRepository;
+import com.chronos.model.pojo.DictItem;
 import com.chronos.commons.model.ResultData;
 import com.chronos.education.scheduling.model.Classroom;
 import com.chronos.education.scheduling.service.ClassroomImportService;
@@ -27,6 +30,7 @@ public class ClassroomManagementController {
 	private final IOrganizationRepository organizations;
 	private final ClassroomManagementService management;
 	private final ClassroomImportService imports;
+	private final IDictRepository dictionaries;
 
 	@GetMapping
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:resource:venue:view','education:resource:venue:manage')")
@@ -102,6 +106,22 @@ public class ClassroomManagementController {
 	public ResultData<ClassroomImportService.Result> upload(@RequestParam String organizationId, @RequestParam MultipartFile file,
 			@RequestParam(defaultValue = "true") boolean dryRun, Authentication actor) throws IOException {
 		return ok(imports.run(campus(actor, organizationId), file, dryRun));
+	}
+
+	@GetMapping("/room-types")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:resource:venue:view','education:resource:venue:manage')")
+	public ResultData<List<DictItem>> roomTypes() {
+		return ok(dictionaries.findByDictCode("EDU_ROOM_TYPE").stream()
+				.filter(item -> Integer.valueOf(1).equals(item.getStatus()))
+				.toList());
+	}
+
+	@DeleteMapping("/rooms/{id}")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:resource:venue:delete','education:resource:venue:manage')")
+	public ResultData<Void> deleteRoom(@PathVariable String id, @RequestParam String organizationId,
+			Authentication actor) {
+		management.deleteRoom(campus(actor, organizationId), id);
+		return ok(null);
 	}
 
 	public record CreateFloors(String buildingId, Integer maxFloorNo) {}

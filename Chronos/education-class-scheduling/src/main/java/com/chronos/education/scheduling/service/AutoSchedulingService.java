@@ -341,8 +341,19 @@ public class AutoSchedulingService {
 	public ScheduleDiffView publicationPreview(
 			String semesterCode,
 			List<ScheduleEntry> published) {
+		return publicationPreview(semesterCode, published, null);
+	}
+
+	@Transactional(readOnly = true)
+	public ScheduleDiffView publicationPreview(
+			String semesterCode, List<ScheduleEntry> published, Set<String> campuses) {
 		String semester = required(semesterCode, "学期编码");
-		return diff(published, current(semester), semester);
+		var draft = current(semester);
+		if (campuses != null) {
+			published = versionService.entriesInCampuses(published, campuses);
+			draft = versionService.entriesInCampuses(draft, campuses);
+		}
+		return diff(published, draft, semester);
 	}
 
 	@Transactional

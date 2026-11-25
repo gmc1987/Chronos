@@ -8,6 +8,7 @@
     </header>
 
     <el-alert
+      v-if="!customer"
       type="info"
       :closable="false"
       show-icon
@@ -16,7 +17,7 @@
 
     <div class="module-grid">
       <el-card
-        v-for="module in modules"
+        v-for="module in visibleModules"
         :key="module.path"
         class="module-card"
         shadow="hover"
@@ -35,8 +36,11 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { getDeliveryContext } from '../../../store/auth'
 
 const router = useRouter()
+const { mode, routes = [] } = getDeliveryContext()
+const customer = mode === 'customer'
 
 // 门户只负责业务导航，不再暴露已经下线的通用 Map CRUD 写入口。
 const modules = [
@@ -51,6 +55,7 @@ const modules = [
   { icon: '错', title: '错题沉淀', description: '查看错题、掌握状态与任教范围聚合。', path: '/portal/education/teaching/mistakes' },
 ]
 
+const visibleModules = customer ? modules.filter(module => routes.includes(module.path)) : modules
 const open = path => router.push(path)
 </script>
 

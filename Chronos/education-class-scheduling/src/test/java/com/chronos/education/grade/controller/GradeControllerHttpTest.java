@@ -140,7 +140,7 @@ class GradeControllerHttpTest {
 					"book-1",
 					"offering-1",
 					"scheme-1",
-					"EDITING",
+					"EDITING", false, null,
 					1,
 					3L,
 					null,

@@ -3,6 +3,7 @@
     <header>
       <div><h2>新生入学</h2><p>承接正式录取数据，完成资格复查、报到建档和学籍电子注册结果回填</p></div>
       <div class="header-actions">
+        <admission-catalog-setup v-if="customer && canSetupCatalog" :school-id="organizationId" :majors="majors" @saved="loadOptions" />
         <el-button v-permission="['education:admission:import','education:admission:manage']" @click="openBatch('CLASS_ASSIGNMENT')">批量拟分班</el-button>
         <el-button v-permission="['education:admission:review','education:admission:manage']" @click="openBatch('REVIEW')">批量资格复查</el-button>
         <el-button v-permission="['education:admission:enroll','education:admission:manage']" @click="openBatch('ENROLL')">批量报到建档</el-button>
@@ -38,6 +39,9 @@
           v-permission="['education:term-registration:view']" link type="primary"
           @click="$router.push({ name: 'admin-education-term-registrations', query: { schoolId: s.row.organizationId, studentId: s.row.studentId, admissionYear: String(s.row.admissionYear) } })">发起首学期注册</el-button>
         <el-button v-if="s.row.admissionStatus==='VERIFIED'" v-permission="['education:admission:enroll','education:admission:manage']" link type="primary" @click="openEnroll(s.row)">报到建档</el-button>
+        <el-button v-if="s.row.admissionStatus === 'ENROLLED' && s.row.studentId"
+          v-permission="['education:admission:enroll','education:admission:manage']"
+          link type="primary" @click="handoverAccount(s.row)">交接学生账号</el-button>
         <el-button v-if="s.row.admissionStatus==='ENROLLED'" v-permission="['education:admission:register','education:admission:manage']" link type="primary" @click="openRegistration(s.row)">登记注册结果</el-button>
       </div></template></AdaptiveActionColumn>
     </el-table>
@@ -110,12 +114,19 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { orgOptions } from '../../../api/admin'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
+import AdmissionCatalogSetup from '../components/AdmissionCatalogSetup.vue'
+import { handoverAdmissionAccount } from '../../../api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchAssignAdmissionClasses, batchEnrollAdmissions, batchReviewAdmissions, createAdmissionCandidate, downloadAdmissionImportTemplate, enrollAdmissionCandidate, importAdmissionCandidates, listAdministrativeClasses, listAdmissionCandidates, listEducationMajors, orgList, reviewAdmissionCandidate, updateAdmissionCandidate, updateAdmissionRegistration } from '../../../api/admin'
 
 const rows=ref([]),page=ref(1),size=ref(10),total=ref(0),majors=ref([]),classes=ref([]),editDialog=ref(false),enrollDialog=ref(false),registrationDialog=ref(false),active=ref(null),enrollClassId=ref('')
 const batchDialog=ref(false),batchLoading=ref(false),batchType=ref(''),batchPreview=ref(null)
 const organizations=ref([]),organizationId=ref('')
+const customer = getDeliveryContext().mode === 'customer'
+const canSetupCatalog = hasAdminPermission('education:grade:create', 'education:class:create', 'education:course:create')
+const unwrap = response => response?.data?.content || response?.data || []
 const filters=reactive({status:'',keyword:''}),form=reactive({}),registration=reactive({status:'PENDING',nationalStudentNo:'',errorMessage:''})
 const batchForm=reactive({admissionYear:new Date().getFullYear(),batchLimit:100,targetClassSize:50})
 const educationLevels=[{label:'本科',value:'UNDERGRADUATE'},{label:'职业本科',value:'VOCATIONAL_UNDERGRADUATE'},{label:'高职/专科',value:'HIGHER_EDUCATION'}]
@@ -126,13 +137,49 @@ const enrollClasses=computed(()=>classes.value.filter(item=>item.campusId===acti
 const batchTitle=computed(()=>({CLASS_ASSIGNMENT:'批量拟分行政班',REVIEW:'批量资格复查',ENROLL:'批量报到建档并开通账号'}[batchType.value]||'批量处理'))
 const batchRows=computed(()=>batchPreview.value?.assignments||batchPreview.value?.candidates||[])
 const load=async()=>{const r=await listAdmissionCandidates({page:page.value-1,size:size.value,organizationId:organizationId.value||undefined,...filters});rows.value=r.data?.content||[];total.value=r.data?.totalElements||0}
-const changeOrganization=()=>{page.value=1;load()}
+const changeOrganization=async()=> {
+  page.value=1
+  if (customer) await loadOptions()
+  await load()
+}
+async function loadOptions() {
+  const selected = organizationId.value
+  if (!selected) {
+    majors.value = []
+    classes.value = []
+    return
+  }
+  const [majorResponse, classResponse] = await Promise.all([
+    listEducationMajors({ organizationId: selected, includeShared: true }),
+    listAdministrativeClasses({ campusId: selected }),
+  ])
+  if (organizationId.value !== selected) return
+  majors.value = unwrap(majorResponse)
+  classes.value = unwrap(classResponse)
+}
 const search=()=>{page.value=1;load()};const changeSize=()=>{page.value=1;load()}
 const openEdit=(row={})=>{Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{organizationId:organizationId.value||(organizations.value.length===1?organizations.value[0].id:''),sourceType:'PROVINCIAL_IMPORT',admissionYear:new Date().getFullYear(),educationLevel:'HIGHER_EDUCATION',...row});editDialog.value=true}
 const save=async()=>{if(!form.organizationId)return ElMessage.warning('请选择所属机构');if(!form.sourceBatchNo||!form.candidateNo||!form.studentName) return ElMessage.warning('请完整填写来源批次、考生号和姓名');await(form.id?updateAdmissionCandidate(form.id,form):createAdmissionCandidate(form));editDialog.value=false;ElMessage.success('录取数据已保存');await load()}
 const review=async(row,passed)=>{let remark='';if(!passed){const r=await ElMessageBox.prompt('请输入资格复查退回原因','复查退回',{inputType:'textarea',inputValidator:v=>!!v?.trim()||'退回原因不能为空'});remark=r.value}else{await ElMessageBox.confirm(`确认 ${row.studentName} 的录取资格复查通过？`,'资格复查',{type:'warning'})}await reviewAdmissionCandidate(row.id,{passed,remark});ElMessage.success(passed?'资格复查已通过':'录取记录已退回');await load()}
 const openEnroll=row=>{active.value=row;enrollClassId.value=row.plannedClassId||'';enrollDialog.value=true}
 const enroll=async()=>{if(!enrollClassId.value)return ElMessage.warning('请选择行政班');await enrollAdmissionCandidate(active.value.id,{administrativeClassId:enrollClassId.value});enrollDialog.value=false;ElMessage.success('报到建档完成，校内学号已生成');await load()}
+async function handoverAccount(row) {
+  let password
+  try {
+    const result = await ElMessageBox.prompt('请为该学生设置临时密码。学生首次登录后需立即修改。', '交接学生账号', {
+      inputType: 'password',
+      inputPattern: /^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9]).{12,64}$/,
+      inputErrorMessage: '请输入 12 至 64 位密码，至少包含大写字母、小写字母和数字',
+      confirmButtonText: '设置临时密码',
+      cancelButtonText: '取消',
+    })
+    password = result.value
+  } catch {
+    return
+  }
+  const result = await handoverAdmissionAccount(row.id, password)
+  await ElMessageBox.alert('登录账号 ' + result.data + '。请将账号和临时密码交给学生。', '账号交接成功')
+}
 const openRegistration=row=>{active.value=row;Object.assign(registration,{status:row.registrationStatus==='NOT_SUBMITTED'?'PENDING':row.registrationStatus,nationalStudentNo:row.nationalStudentNo||'',errorMessage:row.registrationError||''});registrationDialog.value=true}
 const submitRegistration=async()=>{await updateAdmissionRegistration(active.value.id,{...registration});registrationDialog.value=false;ElMessage.success('学籍电子注册结果已登记');await load()}
 const downloadTemplate=async()=>{const blob=await downloadAdmissionImportTemplate();const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Chronos-正式录取名册模板.xlsx';a.click();URL.revokeObjectURL(url)}
@@ -143,7 +190,22 @@ const previewBatch=async()=>{if(!organizationId.value)return ElMessage.warning('
 const executeBatch=async()=>{await ElMessageBox.confirm(`确认执行“${batchTitle.value}”，共处理 ${batchRows.value.length} 条候选数据？`,'批量执行确认',{type:'warning'});batchLoading.value=true;try{const r=await batchApi()({...batchForm,organizationId:organizationId.value,dryRun:false});const count=r.data?.assigned??r.data?.succeeded??0;ElMessage.success(`批量处理完成，共成功 ${count} 条`);batchPreview.value=null;batchDialog.value=false;await load()}finally{batchLoading.value=false}}
 const orgName=item=>item.organizationName||item.orgName||item.name||item.id;const organizationName=id=>orgName(organizations.value.find(x=>x.id===id)||{id})
 const majorName=id=>majors.value.find(x=>x.id===id)?.majorName||'-';const className=id=>classes.value.find(x=>x.id===id)?.className||'-';const levelName=v=>educationLevels.find(x=>x.value===v)?.label||v;const statusName=v=>admissionStatuses.find(x=>x.value===v)?.label||v;const registrationName=v=>registrationStatuses[v]||v;const statusType=v=>({ADMITTED:'warning',VERIFIED:'success',REJECTED:'danger',ENROLLED:'primary'}[v]||'info')
-onMounted(async()=>{const[m,c,o]=await Promise.all([listEducationMajors(),listAdministrativeClasses(),orgList({page:0,size:500})]);majors.value=m.data||[];classes.value=c.data||[];organizations.value=o.data?.content||o.data||[];if(organizations.value.length===1)organizationId.value=organizations.value[0].id;await load()})
+onMounted(async () => {
+  if (customer) {
+    organizations.value = unwrap(await orgOptions()).filter(item => item.organizationType === 'SCHOOL')
+    if (organizations.value.length === 1) organizationId.value = organizations.value[0].id
+    await loadOptions()
+  } else {
+    const [majorsResult, classesResult, organizationsResult] = await Promise.all([
+      listEducationMajors(), listAdministrativeClasses(), orgList({ page: 0, size: 500 }),
+    ])
+    majors.value = unwrap(majorsResult)
+    classes.value = unwrap(classesResult)
+    organizations.value = unwrap(organizationsResult)
+    if (organizations.value.length === 1) organizationId.value = organizations.value[0].id
+  }
+  await load()
+})
 </script>
 
 <style scoped>

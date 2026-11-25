@@ -115,6 +115,10 @@ public class AdmissionService {
 				.orElseThrow(() -> new IllegalArgumentException("报到行政班不存在"));
 		if (!value.getOrganizationId().equals(targetClass.getCampusId()))
 			throw new IllegalArgumentException("报到行政班不属于录取记录所在机构");
+		if (!"ACTIVE".equals(targetClass.getStatus()))
+			throw new IllegalArgumentException("报到行政班未启用");
+		if (targetClass.getGradeId() == null || targetClass.getGradeId().isBlank())
+			throw new IllegalStateException("行政班未关联有效年级");
 		EducationGrade grade = grades.findById(targetClass.getGradeId())
 				.orElseThrow(() -> new IllegalStateException("行政班未关联有效年级"));
 		if (!value.getAdmissionYear().equals(targetClass.getGradeYear())) throw new IllegalArgumentException("行政班入学年份与录取年份不一致");
@@ -153,20 +157,31 @@ public class AdmissionService {
 	}
 
 	private AdmissionCandidate require(String id) { return candidates.findById(id).orElseThrow(() -> new IllegalArgumentException("录取记录不存在")); }
-	private void validate(AdmissionCandidate value) {
+	void validate(AdmissionCandidate value) {
 		if (normalize(value.getOrganizationId()).isEmpty()) throw new IllegalArgumentException("所属机构不能为空");
 		if (normalize(value.getSourceBatchNo()).isEmpty()) throw new IllegalArgumentException("来源批次不能为空");
 		if (normalize(value.getCandidateNo()).isEmpty()) throw new IllegalArgumentException("考生号不能为空");
 		if (normalize(value.getStudentName()).isEmpty()) throw new IllegalArgumentException("学生姓名不能为空");
 		if (value.getAdmissionYear() == null) throw new IllegalArgumentException("入学年份不能为空");
 		if (normalize(value.getEducationLevel()).isEmpty()) throw new IllegalArgumentException("培养层次不能为空");
-		if (value.getAdmittedMajorId() != null && !value.getAdmittedMajorId().isBlank()) majors.findById(value.getAdmittedMajorId())
-				.orElseThrow(() -> new IllegalArgumentException("录取专业不存在"));
+		if (value.getAdmittedMajorId() != null && !value.getAdmittedMajorId().isBlank()) {
+			var major = majors.findById(value.getAdmittedMajorId())
+					.orElseThrow(() -> new IllegalArgumentException("录取专业不存在"));
+			if (major.getOrganizationId() != null && !value.getOrganizationId().equals(major.getOrganizationId()))
+				throw new IllegalArgumentException("录取专业不属于所选机构");
+		}
 		if (value.getPlannedClassId() != null && !value.getPlannedClassId().isBlank()) {
 			var targetClass = classes.findById(value.getPlannedClassId())
 					.orElseThrow(() -> new IllegalArgumentException("拟分行政班不存在"));
 			if (!value.getOrganizationId().equals(targetClass.getCampusId()))
 				throw new IllegalArgumentException("拟分行政班不属于录取记录所在机构");
+			if (!"ACTIVE".equals(targetClass.getStatus()))
+				throw new IllegalArgumentException("拟分行政班未启用");
+			if (!value.getAdmissionYear().equals(targetClass.getGradeYear()))
+				throw new IllegalArgumentException("行政班入学年份与录取年份不一致");
+			if (value.getAdmittedMajorId() != null && !value.getAdmittedMajorId().isBlank()
+					&& !value.getAdmittedMajorId().equals(targetClass.getMajorId()))
+				throw new IllegalArgumentException("行政班专业与录取专业不一致");
 		}
 	}
 	private String defaultText(String value, String fallback) { return normalize(value).isEmpty() ? fallback : value.trim(); }

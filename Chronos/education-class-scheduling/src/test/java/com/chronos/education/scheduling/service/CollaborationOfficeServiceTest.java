@@ -29,6 +29,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class CollaborationOfficeServiceTest {
+	@Test
+	void customerShareRequiresSameSchoolEvenForExplicitRecipients() {
+		var share = new CollaborationFileShare();
+		share.setOwnerUsername("owner");
+		share.setOwnerOrganizationId("school-1");
+		share.setAudienceType("USER");
+		share.setAudienceValue("reader");
+		assertThat(CollaborationShareAudience.canReadInCustomerDeployment(share, "reader", "school-1")).isTrue();
+		assertThat(CollaborationShareAudience.canReadInCustomerDeployment(share, "reader", "school-2")).isFalse();
+		assertThat(CollaborationShareAudience.canReadInCustomerDeployment(share, "owner", "school-2")).isFalse();
+		share.setAudienceType("ALL");
+		assertThat(CollaborationShareAudience.canReadInCustomerDeployment(share, "reader", "school-1")).isFalse();
+	}
+
 	private OfficeResourceRepository resources;
 	private OfficeApprovalRequestRepository requests;
 	private IAdminUserRepository accounts;
@@ -160,7 +174,7 @@ class CollaborationOfficeServiceTest {
 		assertThatThrownBy(() -> service.saveResource(
 				null,
 				new CollaborationOfficeService.ResourceCommand(
-						"VEHICLE", "CAR-01", "公务车", "京A00001", 0, null, true)))
+						"VEHICLE", "CAR-01", "公务车", "京A00001", 0, null, true), "admin"))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("车辆座位数必须大于零");
 	}

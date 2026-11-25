@@ -42,7 +42,9 @@ public class TeachingCenterController {
 	public ResultData<List<CourseOffering>> visibleOfferings(Authentication authentication) {
 		return ok(scopes.visibleOfferings(
 				scopes.resolve(authentication.getName()),
-				offerings.findAll()));
+				offerings.findAll()).stream()
+				.filter(item -> !CourseOffering.GRADE_ONLY.equals(item.getStatus())
+						&& !CourseOffering.HOMEWORK_ONLY.equals(item.getStatus())).toList());
 	}
 
 	@GetMapping("/resources")

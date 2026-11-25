@@ -18,7 +18,11 @@ public class SupervisionAssignment extends BaseEntity {
 	@Column(name = "campus_id", length = 64) private String campusId;
 	@Column(name = "supervisor_id", nullable = false, length = 64) private String supervisorId;
 	@Column(name = "teacher_id", nullable = false, length = 64) private String teacherId;
-	@Column(name = "schedule_entry_id", nullable = false, length = 64) private String scheduleEntryId;
+	@Column(name = "schedule_entry_id", length = 64) private String scheduleEntryId;
+	@Column(name = "observed_course", length = 150) private String observedCourse;
+	@Column(name = "observed_location", length = 150) private String observedLocation;
+	@Column(name = "observed_starts_at") private LocalDateTime observedStartsAt;
+	@Column(name = "observed_ends_at") private LocalDateTime observedEndsAt;
 	@Column(nullable = false, length = 24) private String status = "PENDING";
 	@Column(name = "accepted_at") private LocalDateTime acceptedAt;
 	@Column(name = "checked_in_at") private LocalDateTime checkedInAt;

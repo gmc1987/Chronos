@@ -5,7 +5,11 @@
         <h2>家长管理</h2>
         <p>维护家长档案、学生监护关系和门户账号绑定。</p>
       </div>
-      <el-button type="primary" @click="editParent()">新增家长</el-button>
+      <div>
+        <FamilyHeadTeacherSetup v-if="customer && canManage" />
+        <FamilyRosterImport v-if="customer" v-permission="'education:home-school:parent:manage'" @saved="load" />
+        <el-button v-if="canManage" type="primary" @click="editParent()">新增家长</el-button>
+      </div>
     </header>
 
     <el-table :data="parents" border>
@@ -18,9 +22,10 @@
       <el-table-column prop="employment" label="工作单位或职业" />
       <AdaptiveActionColumn label="操作" width="220">
         <template #default="scope">
-          <el-button link type="primary" @click="editParent(scope.row)">编辑</el-button>
+          <el-button v-if="canManage" link type="primary" @click="editParent(scope.row)">编辑</el-button>
           <el-button link @click="openRelations(scope.row)">关联学生</el-button>
-          <el-button link type="danger" @click="removeParent(scope.row)">删除</el-button>
+          <el-button v-if="customer && canManage" link @click="openBinding(scope.row)">绑定账号</el-button>
+          <el-button v-if="canManage" link type="danger" @click="removeParent(scope.row)">删除</el-button>
         </template>
       </AdaptiveActionColumn>
     </el-table>
@@ -35,14 +40,14 @@
     />
 
     <el-card class="binding-card">
-      <template #header><div class="binding-header"><strong>门户账号绑定</strong><el-button type="primary" @click="openBinding">新增绑定</el-button></div></template>
+      <template #header><div class="binding-header"><strong>门户账号绑定</strong><el-button type="primary" v-if="canManage" @click="openBinding()">新增绑定</el-button></div></template>
       <el-table :data="bindings" border>
         <el-table-column prop="parentName" label="家长" />
         <el-table-column prop="username" label="登录账号" />
         <el-table-column prop="status" label="状态" />
         <el-table-column label="账号可用性" width="120"><template #default="{ row }"><el-tag :type="row.accountAvailable ? 'success' : 'danger'">{{ row.accountAvailable ? '可邀请' : '不可用' }}</el-tag></template></el-table-column>
         <el-table-column label="核验时间"><template #default="{ row }">{{ formatDateTime(row.verifiedAt) }}</template></el-table-column>
-        <AdaptiveActionColumn label="操作" width="100"><template #default="{ row }"><el-button v-if="row.status === 'ACTIVE'" link type="danger" @click="invalidateBinding(row)">解绑</el-button></template></AdaptiveActionColumn>
+        <AdaptiveActionColumn label="操作" width="100"><template #default="{ row }"><el-button v-if="canManage && row.status === 'ACTIVE'" link type="danger" @click="invalidateBinding(row)">解绑</el-button></template></AdaptiveActionColumn>
       </el-table>
       <el-pagination v-model:current-page="bindingPage" v-model:page-size="bindingPageSize"
         :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next"
@@ -58,6 +63,9 @@
 
     <el-dialog v-model="parentDialog" :title="parentForm.id ? '编辑家长' : '新增家长'" width="600px">
       <el-form label-width="120px">
+        <el-form-item v-if="customer && !parentForm.id" label="所属学校">
+          <OrganizationSelect v-model="parentForm.schoolId" school-only />
+        </el-form-item>
         <el-form-item label="家长编号"><el-input v-model="parentForm.parentNo" /></el-form-item>
         <el-form-item label="姓名"><el-input v-model="parentForm.parentName" /></el-form-item>
         <el-form-item label="性别">
@@ -75,8 +83,8 @@
     </el-dialog>
 
     <el-dialog v-model="relationDialog" :title="`${activeParent.parentName || ''} · 学生关系`" width="760px">
-      <div class="relation-form">
-        <el-select-v2 v-model="relationForm.studentId" :options="studentOptions" filterable placeholder="选择学生" />
+      <div v-if="canManage" class="relation-form">
+        <el-select-v2 v-model="relationForm.studentId" :options="studentOptions" filterable placeholder="选择学生" :remote="customer" :remote-method="searchStudents" />
         <el-select v-model="relationForm.relationship" placeholder="关系">
           <el-option v-for="item in relationships" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
@@ -106,10 +114,10 @@
         <el-table-column prop="studentConsentStatus" label="学生授权" width="120" />
         <AdaptiveActionColumn label="操作" width="300">
           <template #default="scope">
-            <template v-if="scope.row.verificationStatus === 'PENDING'"><el-button link type="success" @click="verifyRelation(scope.row, true)">核验通过</el-button><el-button link type="danger" @click="verifyRelation(scope.row, false)">驳回</el-button></template>
-            <el-button link @click="configureRestriction(scope.row)">限制</el-button>
-            <el-button link @click="configureConsent(scope.row)">授权</el-button>
-            <el-button link type="danger" @click="removeRelation(scope.row)">移除</el-button>
+            <template v-if="canReview && scope.row.verificationStatus === 'PENDING'"><el-button link type="success" @click="verifyRelation(scope.row, true)">核验通过</el-button><el-button link type="danger" @click="verifyRelation(scope.row, false)">驳回</el-button></template>
+            <el-button v-if="canReview" link @click="configureRestriction(scope.row)">限制</el-button>
+            <el-button v-if="canReview" link @click="configureConsent(scope.row)">授权</el-button>
+            <el-button v-if="canManage" link type="danger" @click="removeRelation(scope.row)">移除</el-button>
           </template>
         </AdaptiveActionColumn>
       </el-table>
@@ -119,25 +127,17 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import FamilyHeadTeacherSetup from './FamilyHeadTeacherSetup.vue'
+import FamilyRosterImport from './FamilyRosterImport.vue'
+import OrganizationSelect from '../../../components/OrganizationSelect.vue'
+import { hasAdminPermission } from '../../../store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  createHomeSchoolBinding,
-  createEducationParent,
-  createStudentGuardian,
-  deleteEducationParent,
-  deleteStudentGuardian,
-  dictionaryOptions,
-  listEducationParents,
-  pageHomeSchoolBindings,
-  listEducationStudents,
-  listStudentGuardians,
-  updateEducationParent,
-  invalidateHomeSchoolBinding,
-  verifyStudentGuardian,
-  restrictStudentGuardian,
-  consentStudentGuardian,
-} from '../../../api/admin'
+import { createHomeSchoolBinding, pageHomeSchoolBindings, invalidateHomeSchoolBinding } from '../../../api/admin'
+import { usesFamilySetup, createEducationParent, createStudentGuardian, deleteEducationParent, deleteStudentGuardian, dictionaryOptions, listEducationParents, listEducationStudents, listStudentGuardians, updateEducationParent, verifyStudentGuardian, restrictStudentGuardian, consentStudentGuardian } from '../api/familySetup'
 
+const customer = usesFamilySetup()
+const canManage = !customer || hasAdminPermission('education:home-school:parent:manage')
+const canReview = !customer || hasAdminPermission('education:home-school:guardian:review')
 const parents = ref([])
 const students = ref([])
 const studentOptions = computed(() => students.value.map(student => ({
@@ -185,7 +185,7 @@ const load = async () => {
     dictionaryOptions('COMMON_GENDER'),
     dictionaryOptions('EDU_GUARDIAN_RELATIONSHIP'),
   ])
-  students.value = studentResponse?.data || []
+  students.value = studentResponse?.data?.content || studentResponse?.data || []
   genders.value = options(genderResponse)
   relationships.value = options(relationshipResponse)
   await Promise.all([loadParents(), loadBindings()])
@@ -196,10 +196,14 @@ const loadBindings = async () => {
   bindingTotal.value = response?.data?.totalElements ?? bindings.value.length
 }
 const changeBindingPageSize = () => { bindingPage.value = 1; loadBindings() }
-const openBinding = async () => {
-  const response = await listEducationParents()
-  allParents.value = response?.data?.content || response?.data || []
-  bindingForm.value = { parentId: '', username: '' }
+const openBinding = async parent => {
+  if (parent) {
+    allParents.value = [parent]
+  } else {
+    const response = await listEducationParents({ size: 200 })
+    allParents.value = response?.data?.content || response?.data || []
+  }
+  bindingForm.value = { parentId: parent?.id || '', username: '' }
   bindingDialog.value = true
 }
 const saveBinding = async () => {
@@ -220,6 +224,7 @@ const editParent = (row = {}) => {
   parentDialog.value = true
 }
 const saveParent = async () => {
+  if (customer && !parentForm.value.id && !parentForm.value.schoolId) return ElMessage.warning('请选择所属学校')
   if (parentForm.value.id) await updateEducationParent(parentForm.value.id, parentForm.value)
   else await createEducationParent(parentForm.value)
   parentDialog.value = false
@@ -232,8 +237,16 @@ const removeParent = async row => {
   if (!parents.value.length && page.value > 1) page.value -= 1
   await loadParents()
 }
+async function searchStudents(keyword) {
+  const response = await listEducationStudents({ schoolId: activeParent.value.schoolId, keyword })
+  const latest = response?.data?.content || []
+  const existing = new Map(students.value.map(student => [student.id, student]))
+  latest.forEach(student => existing.set(student.id, student))
+  students.value = [...existing.values()]
+}
 const openRelations = async parent => {
   activeParent.value = parent
+  if (customer) await searchStudents('')
   relationForm.value = {
     parentId: parent.id,
     relationship: relationships.value[0]?.value || '',

@@ -24,15 +24,17 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { teachingCenterOfferings, homeworkStatistics } from '../api/teachingCenter'
+import { teachingCenterOfferings, homeworkOfferingOptions, homeworkStatistics } from '../api/teachingCenter'
 
+import { getDeliveryContext } from '../../../store/auth'
+const offeringOptions = getDeliveryContext().mode === 'customer' ? homeworkOfferingOptions : teachingCenterOfferings
 const offerings=ref([]),offeringId=ref(''),rows=ref([]),loading=ref(false),loadError=ref(''),page=ref(1),size=ref(20),total=ref(0)
 const unwrap=response=>response?.data?.content||response?.data||[]
 const offeringLabel=item=>[item.semesterCode,item.courseName,item.teachingClassName].filter(Boolean).join(' · ')
 const statusLabel=value=>({DRAFT:'草稿',PUBLISHED:'已发布',CLOSED:'已关闭',ARCHIVED:'已归档'})[value]||value
 const load=async()=>{if(!offeringId.value){rows.value=[];total.value=0;return}loading.value=true;loadError.value='';try{const response=await homeworkStatistics({offeringId:offeringId.value,page:page.value-1,size:size.value});rows.value=unwrap(response);total.value=response?.data?.totalElements||0}catch(error){loadError.value=error.message||'统计加载失败'}finally{loading.value=false}}
 const resetAndLoad=()=>{page.value=1;load()}
-onMounted(async()=>{try{offerings.value=unwrap(await teachingCenterOfferings());offeringId.value=offerings.value[0]?.id||'';await load()}catch(error){loadError.value=error.message||'教学班加载失败'}})
+onMounted(async()=>{try{offerings.value=unwrap(await offeringOptions());offeringId.value=offerings.value[0]?.id||'';await load()}catch(error){loadError.value=error.message||'教学班加载失败'}})
 </script>
 
 <style scoped>

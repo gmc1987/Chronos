@@ -1,7 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createCommunicationRecord, exportCommunicationRecords, listAdministrativeClasses, listCommunicationRecords, listEducationStudents } from '../../../api/admin'
+import { createCommunicationRecord, exportCommunicationRecords, listCommunicationRecords } from '../../../api/admin'
+import { listAdministrativeClasses, listEducationStudents } from '../api/familySetup'
 
 const records = ref([])
 const loading = ref(false)

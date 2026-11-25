@@ -326,8 +326,17 @@
   flex-direction: column;
   gap: 10px;
 }
+.admin-nav > *,
+.admin-nav-children > * {
+  flex-shrink: 0;
+}
 .admin-nav-item {
   position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 38px;
+  line-height: 18px;
   padding: 10px 12px;
   border-radius: 10px;
   color: inherit;

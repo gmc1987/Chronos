@@ -98,7 +98,7 @@ public class SchedulePlanVersionService {
 		}
 		assertOrganizationEntries(current, campuses);
 		assertExamAvailability(current);
-		List<String> blockers = qualityAnalysis.publishBlockers(semester);
+		List<String> blockers = qualityAnalysis.publishBlockers(semester, campuses);
 		if (!blockers.isEmpty()) {
 			qualityNotifications.notifyBlocked(actor, semester, blockers);
 			throw new IllegalStateException(
@@ -116,8 +116,7 @@ public class SchedulePlanVersionService {
 
 	@Transactional
 	public SchedulePlanVersion rollback(String versionId, String actor) {
-		SchedulePlanVersion source = versions.findById(versionId)
-				.orElseThrow(() -> new IllegalArgumentException("课表版本不存在"));
+		SchedulePlanVersion source = requireVersion(versionId);
 		resourceLock.lockSemester(source.getSemesterCode());
 		Set<String> campuses = termCampuses(lockTerm(source.getSemesterCode()));
 		List<ScheduleEntry> snapshot = read(source.getSnapshotJson());
@@ -219,6 +218,15 @@ public class SchedulePlanVersionService {
 		return versions.findFirstBySemesterCodeOrderByVersionNoDesc(semesterCode)
 				.map(value -> read(value.getSnapshotJson()))
 				.orElseGet(List::of);
+	}
+
+	public String versionSemesterCode(String versionId) {
+		return requireVersion(versionId).getSemesterCode();
+	}
+
+	private SchedulePlanVersion requireVersion(String versionId) {
+		return versions.findById(versionId)
+				.orElseThrow(() -> new IllegalArgumentException("课表版本不存在"));
 	}
 
 	@Transactional(readOnly = true)

@@ -34,6 +34,13 @@ public class TeachingPlanLessonController {
 	public ResultData<?> offeringLessons(@PathVariable String offeringId, Authentication a) {
 		return ok(service.lessonsForOffering(offeringId, a));
 	}
+
+	@GetMapping("/offerings/{offeringId}/schedule-options")
+	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:lesson:view',"
+			+ "'education:teaching:preparation:view','education:teaching:manage')")
+	public ResultData<?> scheduleOptions(@PathVariable String offeringId, Authentication actor) {
+		return ok(service.publishedScheduleOptions(offeringId, actor));
+	}
 	@GetMapping("/offerings/{offeringId}/preparations")
 	@PreAuthorize("@iamAuthorization.any(authentication,'education:teaching:lesson:view','education:teaching:manage')")
 	public ResultData<?> offeringPreparations(@PathVariable String offeringId, Authentication a) {

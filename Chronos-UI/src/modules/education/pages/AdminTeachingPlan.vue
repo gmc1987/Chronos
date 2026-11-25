@@ -2,7 +2,10 @@
   <section class="plan-page">
     <header class="page-head">
       <div><h1>教学计划</h1><p>以教学班为边界编排章节、周次和课时，版本与审核由服务端管理。</p></div>
-      <el-button type="primary" @click="startCreate">新建教学计划</el-button>
+      <div>
+        <TeachingResourceSetupDialog v-if="hasAdminPermission('education:teaching:manage')" @saved="useSetupOffering" />
+        <el-button type="primary" @click="startCreate">新建教学计划</el-button>
+      </div>
     </header>
     <el-form inline @submit.prevent="load">
       <el-form-item label="教学班"><el-select v-model="filters.offeringId" clearable filterable style="width:320px" placeholder="选择教学班">
@@ -50,7 +53,7 @@
             <div class="chapter-footer">章节合计 <strong>{{ chapterHours }}</strong> 课时 <el-button type="primary" :disabled="selected.status !== 'DRAFT' || !!chapterError" @click="saveChapters">保存章节</el-button></div>
           </el-tab-pane>
           <el-tab-pane label="版本" name="versions"><el-table v-loading="versionsLoading" :data="versions" border><el-table-column prop="versionNo" label="版本" width="90" /><el-table-column prop="status" label="状态" width="120" /><el-table-column prop="createTime" label="生成时间" /><el-table-column prop="publishedAt" label="发布时间" /></el-table></el-tab-pane>
-          <el-tab-pane label="审核" name="review"><el-empty v-if="!reviewStatus" description="暂无审核记录" /><el-descriptions v-else border :column="2"><el-descriptions-item label="状态">{{ reviewStatus.status }}</el-descriptions-item><el-descriptions-item label="处理人">{{ reviewStatus.reviewerName || '—' }}</el-descriptions-item><el-descriptions-item label="意见" :span="2">{{ reviewStatus.comment || '—' }}</el-descriptions-item></el-descriptions></el-tab-pane>
+          <el-tab-pane label="审核" name="review"><el-empty v-if="!reviewStatus" description="暂无审核记录" /><el-descriptions v-else border :column="2"><el-descriptions-item label="状态">{{ reviewStatus.status }}</el-descriptions-item><el-descriptions-item label="处理人">{{ reviewStatus.reviewerName || reviewStatus.reviewerUsername || '—' }}</el-descriptions-item><el-descriptions-item label="意见" :span="2">{{ reviewStatus.comment || '—' }}</el-descriptions-item></el-descriptions></el-tab-pane>
         </el-tabs>
         <div class="drawer-actions"><el-button @click="workbench=false">关闭</el-button><el-button v-if="['PUBLISHED', 'REJECTED'].includes(selected.status)" type="warning" @click="revisePlan">修订新版本</el-button><el-button type="primary" :disabled="selected.status !== 'DRAFT'" @click="submitPlan">提交审核</el-button></div>
       </template>
@@ -67,9 +70,11 @@
 </template>
 
 <script setup>
+import TeachingResourceSetupDialog from '../components/TeachingResourceSetupDialog.vue'
+import { hasAdminPermission } from '../../../store/auth'
+import { teachingDictionaryOptions } from '../api/teachingCenter'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { dictionaryOptions } from '../../../api/admin'
 import { archiveTeachingDomainApi, createPlanItem, createTeachingPlan, teachingCenterOfferings, offeringPlans, teachingPlanDetail, teachingPlanVersions, teachingReviewStatus, reviseTeachingPlan, submitTeachingPlan, updatePlanItem, updateTeachingPlan } from '../api/teachingCenter'
 const offerings = ref([]); const rows = ref([]); const total = ref(0); const page = ref(1); const size = ref(20); const loading = ref(false)
 const filters = reactive({ offeringId: '' }); const planTypes = ref([])
@@ -79,6 +84,11 @@ const workbench = ref(false); const selected = ref(null); const activeTab = ref(
 const offeringLabel = (x) => x ? `${x.semesterCode || x.semesterName || '当前学期'} · ${x.courseName || x.courseId || ''} · ${x.teachingClassName || x.name || ''}` : '—'
 const findOffering = (id) => offerings.value.find(x => x.id === id)
 const load = async () => { loading.value = true; try { if (!filters.offeringId) { rows.value = []; total.value = 0; return } const r = await offeringPlans(filters.offeringId); rows.value = r.data || []; total.value = rows.value.length } catch (e) { ElMessage.error(e.message) } finally { loading.value = false } }
+async function useSetupOffering(offering) {
+  offerings.value = (await teachingCenterOfferings()).data || []
+  filters.offeringId = offering.id
+  await load()
+}
 const startCreate = () => { editing.value = ''; Object.assign(form, { offeringId: filters.offeringId, name: '', planType: planTypes.value[0]?.value || '', totalHours: 1, objective: '', assessmentMethod: '', remarks: '' }); wizardStep.value = 0; editor.value = true }
 const editPlan = (row) => { editing.value = row.id; Object.assign(form, { ...form, ...row, objective: row.objective || row.objectives || '' }); wizardStep.value = 1; editor.value = true }
 const nextStep = () => { if (wizardStep.value === 0 && !form.offeringId) return ElMessage.warning('请选择教学班'); if (wizardStep.value === 1 && (!form.name || !form.planType || !form.objective || !form.assessmentMethod)) return ElMessage.warning('请完成必填字段'); wizardStep.value++ }
@@ -118,7 +128,7 @@ const submitPlan = async () => { try { await submitTeachingPlan(selected.value.i
 const revisePlan = async () => { try { await ElMessageBox.confirm('将从已发布版本创建可编辑草稿，原发布版本保持不变。', '修订教学计划'); await reviseTeachingPlan(selected.value.id, selected.value.rowVersion); ElMessage.success('已创建修订草稿'); await load(); await openWorkbench(selected.value) } catch (e) { if (e !== 'cancel') ElMessage.error(e.message) } }
 const reviewText = computed(() => reviewStatus.value?.status || '待提交')
 const archive = async (row) => { await ElMessageBox.confirm('归档后将从默认列表隐藏，是否继续？', '确认'); try { await archiveTeachingDomainApi('plans', row.id); ElMessage.success('已归档'); await load() } catch (e) { ElMessage.error(e.message) } }
-onMounted(async () => { try { const [o, d] = await Promise.all([teachingCenterOfferings(), dictionaryOptions('EDU_TEACHING_PLAN_TYPE')]); offerings.value = o.data || []; planTypes.value = (d.data || []).map(x => ({ label: x.dictName || x.itemName || x.name || x.label, value: x.dictValue || x.itemValue || x.value || x.code })); if (!filters.offeringId && offerings.value[0]) filters.offeringId = offerings.value[0].id; await load() } catch (e) { ElMessage.error(e.message) } })
+onMounted(async () => { try { const [o, d] = await Promise.all([teachingCenterOfferings(), teachingDictionaryOptions('EDU_TEACHING_PLAN_TYPE')]); offerings.value = o.data || []; planTypes.value = (d.data || []).map(x => ({ label: x.dictName || x.itemName || x.name || x.label, value: x.dictValue || x.itemValue || x.value || x.code })); if (!filters.offeringId && offerings.value[0]) filters.offeringId = offerings.value[0].id; await load() } catch (e) { ElMessage.error(e.message) } })
 </script>
 
 <style scoped>

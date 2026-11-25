@@ -27,6 +27,7 @@ import com.chronos.education.scheduling.model.EducationDataScope;
 import com.chronos.education.scheduling.model.StudentProfile;
 import com.chronos.education.scheduling.service.EducationDataScopeService;
 import com.chronos.service.iService.IAuditLogService;
+import com.chronos.file.service.ManagedFileService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -50,12 +51,13 @@ class InternshipServiceTest {
 	@Mock AcademicTermRepository terms;
 	@Mock EducationDataScopeService dataScopes;
 	@Mock IAuditLogService audit;
+	@Mock ManagedFileService files;
 	InternshipService service;
 
 	@BeforeEach
 	void setUp() {
 		service = new InternshipService(companies, positions, placements, activities,
-				assessments, incidents, students, terms, dataScopes, audit, new ObjectMapper());
+				assessments, incidents, students, terms, dataScopes, audit, new ObjectMapper(), files);
 		when(dataScopes.resolve(anyString())).thenReturn(new EducationDataScope(
 				true, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of()));
 	}
@@ -77,6 +79,7 @@ class InternshipServiceTest {
 	@Test
 	void placementRequiresAgreementConsentAndInsurance() {
 		AcademicTerm term = new AcademicTerm();
+		term.setOrganizationId("school-1");
 		StudentProfile student = new StudentProfile();
 		student.setEnrollmentStatus("ACTIVE");
 		InternshipCompany company = new InternshipCompany();

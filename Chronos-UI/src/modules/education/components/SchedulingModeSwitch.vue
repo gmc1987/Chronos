@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { hasAdminPermission } from '../../../store/auth'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
 
 const props = defineProps({
   semesterCode: { type: String, default: '' },
@@ -13,11 +13,12 @@ const AI_PATH = `${SCHEDULING_PATH}/ai`
 const route = useRoute()
 const router = useRouter()
 const isAiMode = computed(() => route.path === AI_PATH)
-const canSwitch = computed(() => isAiMode.value || [
+const delivery = getDeliveryContext()
+const canSwitch = computed(() => (delivery.mode !== 'customer' || delivery.routes?.includes(AI_PATH)) && (isAiMode.value || [
   'education:ai:agent:use',
   'education:scheduling:manage',
   'education:scheduling:ai:use',
-].every(code => hasAdminPermission(code)))
+].every(code => hasAdminPermission(code))))
 
 const switchMode = (enabled) => {
   const semesterCode = props.semesterCode || route.query.semesterCode

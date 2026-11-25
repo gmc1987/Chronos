@@ -17,7 +17,6 @@ import com.chronos.Idao.IAdminUserRepository;
 import com.chronos.Idao.IEmployeeAssignmentRepository;
 import com.chronos.Idao.IEmployeeRepository;
 import com.chronos.Idao.IOrganizationRepository;
-import com.chronos.Idao.IRoleRepository;
 import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.TeacherAcademicProfileRepository;
 import com.chronos.education.scheduling.model.dto.TeacherEmploymentChangeCommand;
@@ -42,7 +41,6 @@ public class TeacherPersonnelWorkflowService {
 	private final IEmployeeAssignmentRepository assignments;
 	private final IOrganizationRepository organizations;
 	private final IAdminUserRepository users;
-	private final IRoleRepository roles;
 	private final IDataScopeService dataScopes;
 	private final TeacherAcademicProfileRepository teachers;
 	private final EducationUserBindingRepository bindings;
@@ -190,7 +188,15 @@ public class TeacherPersonnelWorkflowService {
 			if (!assigned || !"ACTIVE".equals(employee.getEmploymentStatus())) {
 				throw new IllegalStateException("请先确认教职工在岗且该学校任职已生效");
 			}
-			academic.createApprovedTeacher(item.employeeId(), item.organizationId());
+			var teacher = academic.createApprovedTeacher(item.employeeId(), item.organizationId());
+			// Standalone accounts may only have the platform base role. Permit their
+			// own resignation through the published teacher resignation definition.
+			jdbc.update("""
+					insert into wf_definition_acl(id,definition_id,subject_type,subject_id,action,enabled,create_by,create_time)
+					select md5(id || ':TEACHER_SELF:' || ?),id,'USER',?,'START',true,'TEACHER_PERSONNEL',now()
+					from wf_definition where flow_code='EDU_TEACHER_PERSONNEL_TERMINATE'
+					on conflict do nothing
+					""", teacher.getAccountUsername(), teacher.getAccountUsername());
 		} else {
 			var teacher = teachers.findByEmployeeId(item.employeeId()).orElseThrow();
 			if (Set.of("TRANSFER", "TERMINATE", "SUSPEND").contains(item.changeType())) {
@@ -275,6 +281,10 @@ public class TeacherPersonnelWorkflowService {
 		employees.save(employee);
 		users.findByEmployeeId(item.employeeId()).ifPresent(account -> {
 			roleAssignments.removeManualRoleSource(account, "TEACHER_PROVISIONING");
+			jdbc.update("""
+					delete from wf_definition_acl
+					where subject_type='USER' and subject_id=? and action='START' and create_by='TEACHER_PERSONNEL'
+					""", account.getUsername());
 			boolean otherIdentity = bindings.findByUsernameAndStatusOrderByProfileType(account.getUsername(), "ACTIVE")
 					.stream().anyMatch(binding -> !"TEACHER".equals(binding.getProfileType()));
 			if (!otherIdentity) {
@@ -290,8 +300,8 @@ public class TeacherPersonnelWorkflowService {
 	public List<String> due() {
 		return jdbc.queryForList("""
 				select instance_id from edu_teacher_personnel_case
-				where status='APPROVED' and effective_date<=current_date order by effective_date limit 100
-				""", String.class);
+				where status='APPROVED' and effective_date<=? order by effective_date limit 100
+				""", String.class, LocalDate.now());
 	}
 
 	public void failed(String id, String message) {
@@ -307,8 +317,12 @@ public class TeacherPersonnelWorkflowService {
 						select c.instance_id as "instanceId", c.employee_code as "employeeCode", c.employee_name as "employeeName",
 						       c.change_type as "changeType", to_char(c.effective_date, 'YYYY-MM-DD') as "effectiveDate", c.applicant, c.reviewer,
 						       c.reason, c.error_message as "errorMessage", c.applied_at as "appliedAt",
+						       t.employment_status as "teacherStatus", u.username as "accountUsername",
+						       u.status as "accountStatus", u.must_change_password as "mustChangePassword",
 						       case when c.status='REVIEWING' and w.status in ('CANCELLED','TERMINATED','WITHDRAWN') then 'CANCELLED' else c.status end as status
 						from edu_teacher_personnel_case c join wf_instance w on w.id=c.instance_id
+						left join edu_teacher_profile t on t.employee_id=c.employee_id and t.department_id=c.organization_id
+						left join t_admin_user u on u.employee_id=t.employee_id
 						where (? = '' or c.organization_id=?) and (? = '' or c.applicant=?)
 						  and (? = '' or (case when c.status='REVIEWING' and w.status in ('CANCELLED','TERMINATED','WITHDRAWN')
 						       then 'CANCELLED' else c.status end)=?)
@@ -341,19 +355,43 @@ public class TeacherPersonnelWorkflowService {
 		if (item.applicant().equals(username) || user == null || item.employeeId().equals(user.getEmployeeId())) {
 			throw new AccessDeniedException("人事申请须由独立人员审批");
 		}
+		if (!authorization.has(authentication(username), "education:teacher:business:review")) {
+			throw new AccessDeniedException("教师人事审核权限已失效");
+		}
+	}
+
+	public List<Map<String, Object>> pendingReviews(List<Map<String, Object>> tasks, Authentication actor) {
+		var user = users.findByUsername(actor.getName());
+		return tasks.stream()
+				.filter(task -> type((String) task.get("flowCode")) != null)
+				.flatMap(task -> {
+					var item = detail((String) task.get("instanceId"));
+					if (!"REVIEWING".equals(item.status()) || user == null || item.applicant().equals(actor.getName())
+							|| item.employeeId().equals(user.getEmployeeId())
+							|| !reviewerCanAccess(actor.getName(), user.getEmployeeId(), item.organizationId(), item.targetOrganizationId())) {
+						return java.util.stream.Stream.empty();
+					}
+					var result = new java.util.LinkedHashMap<>(task);
+					result.put("effectiveDate", item.effectiveDate().toString());
+					result.put("reason", item.reason());
+					result.put("employeeName", employees.findById(item.employeeId()).orElseThrow().getEmployeeName());
+					return java.util.stream.Stream.<Map<String, Object>>of(result);
+				}).toList();
 	}
 
 	private List<String> reviewers(String organization, String target, String applicant, String employeeId) {
-		var role = roles.findByRoleCode("EDU_TEACHER_PERSONNEL_REVIEWER");
-		var candidates = role == null || !Integer.valueOf(1).equals(role.getStatus()) ? List.<String>of()
-				: users.findByRoles_Id(role.getId()).stream()
-						.filter(user -> Integer.valueOf(1).equals(user.getStatus())
-								&& !Boolean.TRUE.equals(user.getAccountLocked()))
-						.filter(user -> !applicant.equals(user.getUsername())
-								&& !employeeId.equals(user.getEmployeeId()))
-						.filter(user -> reviewerCanAccess(user.getUsername(), user.getEmployeeId(), organization,
-								target))
-						.map(user -> user.getUsername()).sorted().toList();
+		var names = jdbc.queryForList("""
+				select distinct u.username from t_admin_user u
+				join t_user_role ur on ur.user_id=u.id join t_role r on ur.role_id=r.id
+				where u.status=1 and not coalesce(u.account_locked,false) and r.status=1
+				  and (r.role_code='EDU_TEACHER_PERSONNEL_REVIEWER' or exists (
+				      select 1 from t_role_permission rp join t_permission p on p.id=rp.permission_id
+				      where rp.role_id=r.id and p.permission_code='education:teacher:business:review' and p.status=1))
+				""", String.class);
+		var candidates = names.isEmpty() ? List.<String>of() : users.findByUsernameIn(names).stream()
+				.filter(user -> !applicant.equals(user.getUsername()) && !employeeId.equals(user.getEmployeeId()))
+				.filter(user -> reviewerCanAccess(user.getUsername(), user.getEmployeeId(), organization, target))
+				.map(user -> user.getUsername()).sorted().toList();
 		if (candidates.isEmpty())
 			throw new IllegalStateException("请先为学校配置一名有数据权限的独立教师人事审核员");
 		return candidates;

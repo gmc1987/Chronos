@@ -1,6 +1,8 @@
 package com.chronos.education.scheduling.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
@@ -51,10 +53,12 @@ class AdmissionImportServiceTest {
 
 		var file = new MockMultipartFile("file", "admissions.xlsx",
 				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", completed);
-//		var result = service.importFile(file, true);
-//
-//		assertThat(result.totalCount()).isEqualTo(1);
-//		assertThat(result.successCount()).isEqualTo(1);
-//		assertThat(result.errors()).isEmpty();
+		var result = service.importFile(file, true, "school-1");
+
+		assertThat(result.totalCount()).isEqualTo(1);
+		assertThat(result.successCount()).isEqualTo(1);
+		assertThat(result.errors()).isEmpty();
+		verify(admissions).validate(argThat(row -> "school-1".equals(row.getOrganizationId())
+				&& "major-1".equals(row.getAdmittedMajorId()) && "class-1".equals(row.getPlannedClassId())));
 	}
 }

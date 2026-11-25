@@ -70,12 +70,41 @@ public class TeachingCollaborationService {
    scopes.assertOfferingAccess(scope, preparation.getOfferingId());
    return preparation;
  }
- public Preparation submitPreparation(String id,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);if(!"DRAFT".equals(p.getStatus()))throw new IllegalStateException("只有草稿备课可以提交审核");if("COLLECTIVE".equals(p.getPreparationType())){var accepted=members.findByPreparationId(id).stream().filter(x->"ACCEPT".equals(x.getInvitationStatus())).count();if(accepted<2)throw new IllegalStateException("集体备课至少需要两名已接受成员");if(p.getScheduledAt()==null||p.getAgenda()==null||p.getAgenda().isBlank())throw new IllegalStateException("集体备课必须填写时间和议程");}var review=reviews.submit("PREPARATION",id,p.getOfferingId(),Map.of("preparationType",p.getPreparationType()),a);p.setStatus("SUBMITTED");return preparations.save(p);}
+ public Preparation submitPreparation(String id, Authentication actor) {
+   Preparation preparation = getPreparation(id, actor);
+   assertPreparationOwner(preparation, actor);
+   if (!"DRAFT".equals(preparation.getStatus())
+       && !(Set.of("CONCLUDED", "REJECTED").contains(preparation.getStatus()) && reviews.directReviewEnabled())) {
+     throw new IllegalStateException("当前备课状态不能提交审核");
+   }
+   if ("COLLECTIVE".equals(preparation.getPreparationType())) {
+     long accepted = members.findByPreparationId(id).stream()
+         .filter(member -> "ACCEPT".equals(member.getInvitationStatus())).count();
+     if (accepted < 2) {
+       throw new IllegalStateException("集体备课至少需要两名已接受成员");
+     }
+     if (preparation.getScheduledAt() == null || preparation.getAgenda() == null || preparation.getAgenda().isBlank()) {
+       throw new IllegalStateException("集体备课必须填写时间和议程");
+     }
+   }
+   reviews.submit("PREPARATION", id, preparation.getOfferingId(),
+       Map.of("preparationType", preparation.getPreparationType()), actor);
+   preparation.setStatus("SUBMITTED");
+   return preparations.save(preparation);
+ }
  public PreparationMember invite(String id, MemberInviteRequest request, Authentication actor) {
    Preparation preparation = getPreparation(id, actor);
    assertPreparationOwner(preparation, actor);
    TeacherAcademicProfile teacher = canonicalTeacher(request.teacherId());
-   scopes.assertTeacherAccess(scopes.resolve(actor.getName()), teacher.getId());
+   var scope = scopes.resolve(actor.getName());
+   if (reviews != null && reviews.directReviewEnabled()) {
+     String school = scopes.requireSchoolForCampus(scope, preparation.getCampusId());
+     if (!school.equals(teacher.getDepartmentId()) || !Boolean.TRUE.equals(teacher.getEnabled())) {
+       throw new org.springframework.security.access.AccessDeniedException("只能邀请本校已启用的教师");
+     }
+   } else {
+     scopes.assertTeacherAccess(scope, teacher.getId());
+   }
    var existing = members.findByPreparationId(id).stream()
        .filter(member -> teacher.getId().equals(member.getTeacherId()))
        .findFirst();
@@ -184,7 +213,33 @@ public class TeachingCollaborationService {
    LocalDateTime scheduledAt, String status, Instant invitedAt) {}
  public PreparationMaterial addMaterial(String id,MaterialRequest r,Authentication a){getPreparation(id,a);file(r.fileId(),a);var m=new PreparationMaterial();m.setId(UUID.randomUUID().toString());m.setPreparationId(id);m.setTitle(r.title());m.setFileId(r.fileId());m.setMetadataJson(r.metadataJson());m.setCreateBy(a.getName());m.setCreateTime(Instant.now());m.setBindState("PENDING_BIND");var saved=prepMaterials.save(m);managedFiles.bind(List.of(r.fileId()),"EDUCATION_TEACHING",saved.getId(),a.getName());saved.setBindState("BOUND");saved.setBoundAt(Instant.now());return prepMaterials.save(saved);}
  public PreparationComment comment(String id,CommentRequest r,Authentication a){getPreparation(id,a);var c=new PreparationComment();c.setId(UUID.randomUUID().toString());c.setPreparationId(id);c.setAuthorId(a.getName());c.setContent(r.content());c.setCreateTime(Instant.now());c.setAuditAction("CREATE");return comments.save(c);}
- public Preparation conclude(String id,ConclusionRequest r,Authentication a){var p=getPreparation(id,a);assertPreparationOwner(p,a);if(!"COLLECTIVE".equals(p.getPreparationType())) throw new IllegalArgumentException("只有集体备课可以形成结论");if(members.findByPreparationId(id).stream().filter(x->"ACCEPT".equals(x.getInvitationStatus())).count()<2) throw new IllegalStateException("集体备课至少需要两名已接受成员");if(r.lessonPlanId()!=null){var lesson=em.find(LessonPlan.class,r.lessonPlanId());if(lesson==null||!p.getOfferingId().equals(lesson.getOfferingId())) throw new IllegalArgumentException("结论只能关联同一教学班教案");}p.setConclusion(r.conclusion());p.setConclusionLessonPlanId(r.lessonPlanId());p.setStatus("CONCLUDED");return preparations.save(p);}
+ public Preparation conclude(String id, ConclusionRequest request, Authentication actor) {
+   Preparation preparation = getPreparation(id, actor);
+   assertPreparationOwner(preparation, actor);
+   if (!"COLLECTIVE".equals(preparation.getPreparationType())) {
+     throw new IllegalArgumentException("只有集体备课可以形成结论");
+   }
+   if (reviews != null && reviews.directReviewEnabled()
+       && !Set.of("DRAFT", "CONCLUDED", "REJECTED").contains(preparation.getStatus())) {
+     throw new IllegalStateException("已提交或发布的备课不能修改结论");
+   }
+   long accepted = members.findByPreparationId(id).stream()
+       .filter(member -> "ACCEPT".equals(member.getInvitationStatus())).count();
+   if (accepted < 2) {
+     throw new IllegalStateException("集体备课至少需要两名已接受成员");
+   }
+   String lessonId = blank(request.lessonPlanId());
+   if (lessonId != null) {
+     var lesson = em.find(LessonPlan.class, lessonId);
+     if (lesson == null || !preparation.getOfferingId().equals(lesson.getOfferingId())) {
+       throw new IllegalArgumentException("结论只能关联同一教学班教案");
+     }
+   }
+   preparation.setConclusion(request.conclusion());
+   preparation.setConclusionLessonPlanId(lessonId);
+   preparation.setStatus("CONCLUDED");
+   return preparations.save(preparation);
+ }
 
  private Set<String> currentTeacherIds(Authentication a){return identities==null?Set.of(a.getName()):identities.teacherIds(a.getName());}
  private void assertPreparationOwner(Preparation p,Authentication a){if(!a.getName().equals(p.getCreateBy())&&!scopes.resolve(a.getName()).fullAccess())throw new org.springframework.security.access.AccessDeniedException("只有备课主持人可以执行该操作");}

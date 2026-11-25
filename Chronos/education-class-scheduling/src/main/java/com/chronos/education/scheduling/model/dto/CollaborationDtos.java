@@ -7,7 +7,7 @@ public final class CollaborationDtos {
  public record MemberResponseRequest(@NotBlank String response,String comment){}
  public record MaterialRequest(@NotBlank String title,@NotBlank String fileId,String metadataJson){}
  public record CommentRequest(@NotBlank String content){}
- public record ConclusionRequest(@NotBlank String conclusion,@NotBlank String lessonPlanId){}
+ public record ConclusionRequest(@NotBlank String conclusion,@Size(max=64) String lessonPlanId){}
  public record ResourceCreateRequest(@NotBlank String offeringId,@NotBlank String title,String shareScope,String materialType,
    String preparationId,String lessonPlanId,String planItemId,String sourceType,String description,
    String resourceCategory,String licenseCode){}

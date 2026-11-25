@@ -79,20 +79,29 @@ public class ScheduleQualityAnalysisService {
 
 	@Transactional(readOnly = true)
 	public Map<String, Object> analyze(String semesterCode) {
+		return analyze(semesterCode, null);
+	}
+
+	@Transactional(readOnly = true)
+	public Map<String, Object> analyze(String semesterCode, Set<String> campuses) {
 		SchedulePolicy policy = policies.resolve(semesterCode);
-		List<ScheduleEntry> schedule = entries
-				.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(semesterCode)
-				.stream()
-				.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
-				.toList();
 		Map<String, CourseOffering> offeringById = offerings
 				.findBySemesterCodeOrderByOfferingCode(semesterCode)
 				.stream()
+				.filter(item -> campuses == null || campuses.contains(item.getCampusId()))
 				.collect(Collectors.toMap(CourseOffering::getId, item -> item));
 		Map<String, TeacherAcademicProfile> teacherById = teachers.findAll().stream()
 				.collect(Collectors.toMap(TeacherAcademicProfile::getId, item -> item));
 		Map<String, Classroom> classroomById = classrooms.findAll().stream()
+				.filter(item -> campuses == null || campuses.contains(item.getCampusId()))
 				.collect(Collectors.toMap(Classroom::getId, item -> item));
+		List<ScheduleEntry> schedule = entries
+				.findBySemesterCodeOrderByDayOfWeekAscPeriodNoAsc(semesterCode)
+				.stream()
+				.filter(entry -> !"CANCELLED".equals(entry.getStatus()))
+				.filter(entry -> campuses == null || (offeringById.containsKey(entry.getOfferingId())
+						&& classroomById.containsKey(entry.getClassroomId())))
+				.toList();
 
 		List<Map<String, Object>> teacherLoads = teacherLoads(
 				schedule,
@@ -139,8 +148,13 @@ public class ScheduleQualityAnalysisService {
 
 	@Transactional(readOnly = true)
 	public List<String> publishBlockers(String semesterCode) {
+		return publishBlockers(semesterCode, null);
+	}
+
+	@Transactional(readOnly = true)
+	public List<String> publishBlockers(String semesterCode, Set<String> campuses) {
 		SchedulePolicy policy = policies.resolve(semesterCode);
-		Map<String, Object> report = analyze(semesterCode);
+		Map<String, Object> report = analyze(semesterCode, campuses);
 		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> risks = (List<Map<String, Object>>) report.get("risks");
 		return risks.stream()

@@ -415,7 +415,7 @@ public class FlowableRuntimeCoordinator {
 				throw new IllegalArgumentException("节点未解析到有效处理人：" + node.getNodeName());
 			}
 			assignees = assignees.stream()
-					.map(user -> effectiveAssignee(user, definition.getId()))
+					.map(user -> scopedAssignee(node, instance, user))
 					.distinct()
 					.toList();
 			String suffix = safe(node.getNodeKey());
@@ -500,9 +500,14 @@ public class FlowableRuntimeCoordinator {
 				continue;
 			}
 			for (String user : assigneeResolver.resolve(node, instance, actor)) {
-				taskService.addCandidateUser(engineTask.getId(), effectiveAssignee(user, definition.getId()));
+				taskService.addCandidateUser(engineTask.getId(), scopedAssignee(node, instance, user));
 			}
 		}
+	}
+
+	private String scopedAssignee(WorkflowNode node, WorkflowInstance instance, String user) {
+		String effective = effectiveAssignee(user, instance.getDefinitionId());
+		return assigneeResolver.eligibleReviewer(node, instance, effective) ? effective : user;
 	}
 
 	private boolean requiresCandidateClaim(WorkflowNode node) {

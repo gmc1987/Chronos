@@ -5,11 +5,12 @@
         <h1>教学中心</h1>
         <p>按业务领域进入独立工作台，编辑、审核和版本操作由对应服务处理。</p>
       </div>
+      <TeachingProductReviewDialog v-if="customer && hasAdminPermission('education:teaching:review')" />
     </header>
 
     <div class="module-grid">
       <el-card
-        v-for="module in modules"
+        v-for="module in visibleModules"
         :key="module.path"
         class="module-card"
         shadow="hover"
@@ -28,8 +29,12 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { getDeliveryContext, hasAdminPermission } from '../../../store/auth'
+import TeachingProductReviewDialog from '../components/TeachingProductReviewDialog.vue'
 
 const router = useRouter()
+const { mode, routes = [] } = getDeliveryContext()
+const customer = mode === 'customer'
 const modules = [
   { icon: '计', title: '教学计划', description: '维护章节、周次和审核版本。', path: '/admin/education/teaching-center/plan' },
   { icon: '案', title: '教案', description: '编写课次教案并提交审核。', path: '/admin/education/teaching-center/lesson-plan' },
@@ -43,12 +48,13 @@ const modules = [
   { icon: '错', title: '错题', description: '查看错题、掌握状态和聚合数据。', path: '/admin/education/teaching-center/error-book' },
 ]
 
+const visibleModules = customer ? modules.filter(module => routes.includes(module.path)) : modules
 const open = path => router.push(path)
 </script>
 
 <style scoped>
 .admin-teaching-page { padding: 24px; }
-.admin-teaching-header { margin-bottom: 20px; }
+.admin-teaching-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .admin-teaching-header h1 { margin: 0 0 6px; font-size: 22px; }
 .admin-teaching-header p, .module-card p { margin: 0; color: #7b8794; }
 .module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }

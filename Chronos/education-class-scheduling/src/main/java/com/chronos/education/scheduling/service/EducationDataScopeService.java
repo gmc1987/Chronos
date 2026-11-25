@@ -268,8 +268,8 @@ public class EducationDataScopeService {
 				.orElseThrow(() -> new IllegalArgumentException("行政班不存在"));
 		if (scope.fullAccess()
 				|| scope.administrativeClassIds().contains(classId)
-				|| scope.gradeIds().contains(administrativeClass.getGradeId())
-				|| scope.campusIds().contains(administrativeClass.getCampusId())) {
+				|| (administrativeClass.getGradeId() != null && scope.gradeIds().contains(administrativeClass.getGradeId()))
+				|| (administrativeClass.getCampusId() != null && scope.campusIds().contains(administrativeClass.getCampusId()))) {
 			return;
 		}
 		throw new AccessDeniedException("无权访问该班级数据");
@@ -297,7 +297,7 @@ public class EducationDataScopeService {
 		assertClassAccess(scope, classId);
 		if (!scope.fullAccess()
 				&& !Objects.equals(current.getGradeId(), targetGradeId)
-				&& !scope.gradeIds().contains(targetGradeId)) {
+				&& (targetGradeId == null || !scope.gradeIds().contains(targetGradeId))) {
 			throw new AccessDeniedException("无权将班级移动到该年级");
 		}
 	}
@@ -323,8 +323,8 @@ public class EducationDataScopeService {
 	public boolean canAccessStudent(EducationDataScope scope, StudentProfile student) {
 		return scope.fullAccess()
 				|| scope.studentIds().contains(student.getId())
-				|| scope.administrativeClassIds().contains(student.getAdministrativeClassId())
-				|| scope.gradeIds().contains(student.getGradeId());
+				|| (student.getAdministrativeClassId() != null && scope.administrativeClassIds().contains(student.getAdministrativeClassId()))
+				|| (student.getGradeId() != null && scope.gradeIds().contains(student.getGradeId()));
 	}
 
 	public boolean canAccessStudent(EducationDataScope scope, String studentId) {
@@ -421,7 +421,7 @@ public class EducationDataScopeService {
 			return null;
 		}
 		// 候选方案覆盖整个学期所属机构，不能用校区权限推导全校审核权限。
-		if (!scope.organizationIds().contains(organizationId)) {
+		if (organizationId == null || !scope.organizationIds().contains(organizationId)) {
 			throw new AccessDeniedException("无权访问该机构的排课候选方案");
 		}
 		Set<String> campuses = new HashSet<>();

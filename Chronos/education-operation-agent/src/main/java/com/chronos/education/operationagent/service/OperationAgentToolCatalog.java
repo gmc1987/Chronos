@@ -15,6 +15,12 @@ public class OperationAgentToolCatalog {
 	static final String TEACHER_PLAN_UPGRADE_MESSAGE =
 			"此计划使用旧版教师直接建档步骤，请重新与智能体发起任务并确认新的教师入职申请";
 	private static final Map<String, ToolDefinition> TOOLS = tools();
+	private OperationAgentToolLicense licenses = code -> true;
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setToolLicense(OperationAgentToolLicense licenses) {
+		this.licenses = licenses;
+	}
 
 	private static Map<String, ToolDefinition> tools() {
 		Map<String, ToolDefinition> values = new LinkedHashMap<>();
@@ -253,7 +259,8 @@ public class OperationAgentToolCatalog {
 	}
 
 	public List<ToolDefinition> all() {
-		return TOOLS.values().stream().sorted(Comparator.comparingInt(ToolDefinition::executionOrder)).toList();
+		return TOOLS.values().stream().filter(tool -> licenses.allows(tool.code()))
+				.sorted(Comparator.comparingInt(ToolDefinition::executionOrder)).toList();
 	}
 
 	/**
@@ -270,6 +277,7 @@ public class OperationAgentToolCatalog {
 		}
 		ToolDefinition value = TOOLS.get(code);
 		if (value == null) throw new IllegalArgumentException("未授权或未注册的业务工具：" + code);
+		licenses.require(code);
 		return value;
 	}
 

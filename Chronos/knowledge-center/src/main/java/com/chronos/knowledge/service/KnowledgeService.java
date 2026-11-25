@@ -378,7 +378,11 @@ public class KnowledgeService {
 		if (!ids.isEmpty()) {
 			Map<String, KnowledgeChunk> byId = new HashMap<>();
 			chunks.findAllById(ids).forEach(chunk -> byId.put(chunk.getId(), chunk));
-			return ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+			var documentIds = documents.findByKnowledgeBaseIdOrderByCreateTimeDesc(base.getId()).stream()
+					.map(KnowledgeDocument::getId).collect(java.util.stream.Collectors.toSet());
+			var scoped = ids.stream().map(byId::get).filter(java.util.Objects::nonNull)
+					.filter(chunk -> documentIds.contains(chunk.getDocumentId())).toList();
+			if (!scoped.isEmpty()) return scoped;
 		}
 		throw new IllegalStateException("向量检索未命中结果");
 		} catch (RuntimeException ex) {

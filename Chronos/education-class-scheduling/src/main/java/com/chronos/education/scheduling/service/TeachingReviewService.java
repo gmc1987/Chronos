@@ -9,6 +9,10 @@ import com.chronos.workflow.event.WorkflowRejectedEvent;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.util.Map;
+import java.util.List;
+import java.util.Set;
+import java.util.Objects;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.security.core.Authentication;
@@ -19,20 +23,33 @@ import org.springframework.transaction.annotation.Transactional;
 @Service @Transactional
 public class TeachingReviewService {
 	private static final String FLOW = "EDU_TEACHING_CONTENT_REVIEW";
+	private static final Set<String> PRODUCT_TYPES = Set.of(
+			"PLAN", "LESSON_PLAN", "PREPARATION", "COURSEWARE", "MATERIAL", "QUESTION", "RESEARCH_RESULT");
+	private static final String PENDING = "SUBMITTED";
 	private final TeachingReviewRecordRepository records;
 	private final WorkflowService workflows;
 	private final EducationDataScopeService scopes;
 	private final TeachingCollaborationNotificationService collaborationNotifications;
+	private final DirectReviewPolicy directReview;
+	private final com.chronos.service.iService.IAuditLogService audit;
+	public interface DirectReviewPolicy {
+		boolean enabled();
+	}
+
 	@PersistenceContext private EntityManager em;
 	public TeachingReviewService(
 			TeachingReviewRecordRepository records,
 			WorkflowService workflows,
 			EducationDataScopeService scopes,
-			TeachingCollaborationNotificationService collaborationNotifications) {
+			TeachingCollaborationNotificationService collaborationNotifications,
+			org.springframework.beans.factory.ObjectProvider<DirectReviewPolicy> directReview,
+			com.chronos.service.iService.IAuditLogService audit) {
 		this.records = records;
 		this.workflows = workflows;
 		this.scopes = scopes;
 		this.collaborationNotifications = collaborationNotifications;
+		this.directReview = directReview.getIfAvailable(() -> () -> false);
+		this.audit = audit;
 	}
 
 	public TeachingReviewRecord submit(String type, String id, String offeringId, Map<String,Object> form,
@@ -54,7 +71,7 @@ public class TeachingReviewService {
 		int submissionNo = records.findByResourceTypeAndResourceIdOrderBySubmissionNoDesc(type, id)
 				.stream().findFirst().map(r -> r.getSubmissionNo() + 1).orElse(1);
 		String key = "EDU_TEACHING:" + type + ":" + id + ":" + submissionNo;
-		Map<String,Object> data = form == null ? Map.of() : new java.util.HashMap<>(form);
+		Map<String,Object> data = form == null ? new java.util.HashMap<>() : new java.util.HashMap<>(form);
 		data.put("resourceType", type); data.put("resourceId", id); data.put("offeringId", offeringId == null ? "" : offeringId);
 		// version/snapshot metadata belongs to the education review record, not
 		// the workflow's user form. Passing those internal keys as form fields
@@ -64,10 +81,11 @@ public class TeachingReviewService {
 		workflowForm.put("resourceType", type);
 		workflowForm.put("resourceId", id);
 		workflowForm.put("offeringId", offeringId == null ? "" : offeringId);
-		var instance = workflows.startByCode(FLOW, key, workflowForm, auth.getName());
+		String workflowId = directReview.enabled() && PRODUCT_TYPES.contains(type)
+				? null : workflows.startByCode(FLOW, key, workflowForm, auth.getName()).getId();
 		TeachingReviewRecord record = new TeachingReviewRecord();
 		record.setResourceType(type); record.setResourceId(id); record.setOfferingId(offeringId);
-		record.setBusinessKey(key); record.setWorkflowInstanceId(instance.getId()); record.setStatus("SUBMITTED");
+		record.setBusinessKey(key); record.setWorkflowInstanceId(workflowId); record.setStatus(PENDING);
 		record.setIdempotencyKey(idempotencyKey == null || idempotencyKey.isBlank() ? null : idempotencyKey);
 		record.setSubmissionNo(submissionNo); record.setSubmitterId(auth.getName());
 		record.setSubmittedAt(java.time.Instant.now());
@@ -94,6 +112,138 @@ public class TeachingReviewService {
 			}
 		}
 		return saved;
+	}
+
+	public boolean directReviewEnabled() {
+		return directReview.enabled();
+	}
+
+	@Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
+	public List<ReviewItem> productPending(Authentication actor) {
+		requireDirectReview();
+		var result = new java.util.ArrayList<ReviewItem>();
+		for (var record : records.findByWorkflowInstanceIdIsNullAndStatusOrderBySubmittedAtAscIdAsc(PENDING)) {
+			if (!PRODUCT_TYPES.contains(record.getResourceType()) || actor.getName().equals(record.getSubmitterId())) {
+				continue;
+			}
+			try {
+				checkReviewScope(record, actor);
+				result.add(reviewItem(record));
+			} catch (AccessDeniedException | IllegalArgumentException ignored) {
+				// The review queue contains only items the current reviewer may see.
+			}
+		}
+		return result;
+	}
+
+	public TeachingReviewRecord decideProductReview(String id, Boolean approved, String comment, Authentication actor) {
+		requireDirectReview();
+		if (approved == null) {
+			throw new IllegalArgumentException("请选择审核结果");
+		}
+		String note = Objects.toString(comment, "").strip();
+		if (note.length() > 2000 || (!approved && note.isBlank())) {
+			throw new IllegalArgumentException("驳回须填写意见，意见最多 2000 字");
+		}
+		var record = records.findForDecision(id)
+				.filter(item -> item.getWorkflowInstanceId() == null && PRODUCT_TYPES.contains(item.getResourceType()))
+				.orElseThrow(() -> new IllegalArgumentException("教学审核记录不存在"));
+		checkReviewScope(record, actor);
+		if (actor.getName().equals(record.getSubmitterId())) {
+			throw new AccessDeniedException("提交人不能审核自己的教学资源");
+		}
+		if (!PENDING.equals(record.getStatus())) {
+			throw new IllegalStateException("该审核已处理，请刷新列表");
+		}
+		// Lock the pending record until the decision and published version have both committed.
+		record.setReviewerUsername(actor.getName());
+		writeBack(record.getBusinessKey(), approved ? "PUBLISHED" : "REJECTED",
+				approved ? "APPROVED" : "REJECTED", note);
+		audit.log(actor.getName(), approved ? "EDU_TEACHING_CONTENT_APPROVE" : "EDU_TEACHING_CONTENT_REJECT",
+				"reviewId=" + record.getId() + ",resourceType=" + record.getResourceType()
+						+ ",resourceId=" + record.getResourceId());
+		return record;
+	}
+
+	@Transactional(readOnly = true)
+	public TeachingReviewRecord productStatus(String type, String id, Authentication actor) {
+		requireDirectReview();
+		if (!PRODUCT_TYPES.contains(type)) {
+			throw new AccessDeniedException("该内容类型未开通教学审核");
+		}
+		return records.findByResourceTypeAndResourceId(type, id)
+				.map(record -> {
+					checkReviewScope(record, actor);
+					return record;
+				}).orElse(null);
+	}
+
+	private void requireDirectReview() {
+		if (!directReview.enabled()) {
+			throw new AccessDeniedException("当前部署未启用教学内容单独审核");
+		}
+	}
+
+	private void checkReviewScope(TeachingReviewRecord record, Authentication actor) {
+		authorizeResource(record.getResourceType(), record.getResourceId(), record.getOfferingId(), actor);
+	}
+
+	public record ReviewItem(String id, String type, String title, String content, String fileId,
+			String submitter, java.time.Instant submittedAt) {}
+
+	private ReviewItem reviewItem(TeachingReviewRecord record) {
+		String version = record.getVersionId();
+		String title = record.getResourceType();
+		String content = null;
+		String fileId = null;
+		switch (entity(record.getResourceType(), record.getResourceId())) {
+			case com.chronos.education.scheduling.model.TeachingPlan plan -> {
+				title = plan.getName();
+				if (version != null) {
+					content = em.find(com.chronos.education.scheduling.model.TeachingPlanVersion.class, version).getSnapshotJson();
+				}
+			}
+			case com.chronos.education.scheduling.model.LessonPlan lesson -> {
+				title = lesson.getTitle();
+				if (version != null) {
+					var snapshot = em.find(com.chronos.education.scheduling.model.LessonPlanVersion.class, version);
+					content = snapshot.getSnapshotJson();
+					fileId = snapshot.getFileId();
+				}
+			}
+			case com.chronos.education.scheduling.model.Preparation prep -> {
+				title = prep.getTitle();
+				content = prep.getConclusion() == null ? prep.getObjective() : prep.getConclusion();
+			}
+			case com.chronos.education.scheduling.model.Courseware resource -> {
+				title = resource.getTitle();
+				content = resource.getDescription();
+				if (version != null) {
+					fileId = em.find(com.chronos.education.scheduling.model.CoursewareVersion.class, version).getFileId();
+				}
+			}
+			case com.chronos.education.scheduling.model.TeachingMaterial resource -> {
+				title = resource.getTitle();
+				content = resource.getDescription();
+				if (version != null) {
+					fileId = em.find(com.chronos.education.scheduling.model.TeachingMaterialVersion.class, version).getFileId();
+				}
+			}
+			case com.chronos.education.scheduling.model.Question question -> {
+				title = "题目";
+				if (version != null) {
+					content = em.find(com.chronos.education.scheduling.model.QuestionVersion.class, version).getSnapshotJson();
+				}
+			}
+			case com.chronos.education.scheduling.model.ResearchResult research -> {
+				title = research.getTitle();
+				content = research.getContent();
+				fileId = research.getFileId();
+			}
+			case null, default -> throw new IllegalArgumentException("待审核教学资源不存在");
+		}
+		return new ReviewItem(record.getId(), record.getResourceType(), title, content, fileId,
+				record.getSubmitterId(), record.getSubmittedAt());
 	}
 
 	@Transactional(readOnly = true)

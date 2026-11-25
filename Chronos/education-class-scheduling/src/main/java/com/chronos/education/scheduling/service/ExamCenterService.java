@@ -40,6 +40,7 @@ import com.chronos.education.scheduling.dao.ExamCourseSuspensionRequestRepositor
 import com.chronos.education.scheduling.dao.ExamInvigilationChangeRepository;
 import com.chronos.education.scheduling.dao.ExamInvigilationRepository;
 import com.chronos.education.scheduling.dao.ExamPlanRepository;
+import com.chronos.education.scheduling.dao.EducationUserBindingRepository;
 import com.chronos.education.scheduling.dao.ExamPublishedChangeRepository;
 import com.chronos.education.scheduling.dao.ExamRoomRepository;
 import com.chronos.education.scheduling.dao.ExamSessionRepository;
@@ -119,6 +120,8 @@ public class ExamCenterService {
 	private final EducationResourceTransactionLock resourceLock;
 	private final IAuditLogService audit;
 	private final ExamOperationsService examOperations;
+	private final EducationUserBindingRepository bindings;
+	private final org.springframework.beans.factory.ObjectProvider<ExamCourseIntegrationPolicy> courseIntegration;
 
 	@Transactional(readOnly = true)
 	public List<ExamPlan> plans(String semesterCode) {
@@ -173,20 +176,22 @@ public class ExamCenterService {
 		}
 		List<String> offeringIds = sessionOfferings.findBySessionId(sessionId).stream()
 				.map(ExamSessionOffering::getOfferingId).distinct().sorted().toList();
-		if (offeringIds.isEmpty()) {
-			throw new IllegalStateException("请先关联本场考试的课程");
+		List<ExamCandidate> current = examRooms.stream()
+				.flatMap(examRoom -> candidates.findByRoomIdOrderBySeatNoAsc(examRoom.getId()).stream())
+				.sorted(Comparator.comparing(ExamCandidate::getId)).toList();
+		Set<String> studentIds = current.stream().map(ExamCandidate::getStudentId).collect(Collectors.toSet());
+		if (!offeringIds.isEmpty()) {
+			studentIds = teachingClassMembers.findByOfferingIdInAndEnrollmentStatus(offeringIds, "ENROLLED")
+					.stream().map(member -> member.getStudentId()).collect(Collectors.toSet());
+			studentIds.addAll(teachingClassMembers.findByOfferingIdInAndEnrollmentStatus(offeringIds, "ACTIVE")
+					.stream().map(member -> member.getStudentId()).toList());
 		}
-		Set<String> studentIds = teachingClassMembers
-				.findByOfferingIdInAndEnrollmentStatus(offeringIds, "ENROLLED").stream()
-				.map(member -> member.getStudentId()).collect(Collectors.toSet());
-		studentIds.addAll(teachingClassMembers
-				.findByOfferingIdInAndEnrollmentStatus(offeringIds, "ACTIVE").stream()
-				.map(member -> member.getStudentId()).toList());
 		List<StudentProfile> pool = students.findAllById(studentIds).stream()
 				.filter(student -> "ACTIVE".equals(student.getEnrollmentStatus()))
 				.sorted(Comparator.comparing(StudentProfile::getStudentNo)).toList();
 		if (pool.isEmpty()) {
-			throw new IllegalStateException("关联课程没有在读且已选课的考生");
+			throw new IllegalStateException(offeringIds.isEmpty()
+					? "请先录入考场考生或关联课程" : "关联课程没有在读且已选课的考生");
 		}
 		if (pool.size() > capacities.values().stream().mapToInt(Integer::intValue).sum()) {
 			throw new IllegalStateException("考场总容量不足，请先增加考场");
@@ -205,9 +210,6 @@ public class ExamCenterService {
 				}
 			}
 		}
-		List<ExamCandidate> current = examRooms.stream()
-				.flatMap(examRoom -> candidates.findByRoomIdOrderBySeatNoAsc(examRoom.getId()).stream())
-				.sorted(Comparator.comparing(ExamCandidate::getId)).toList();
 		Set<String> eligibleIds = pool.stream().map(StudentProfile::getId).collect(Collectors.toSet());
 		if (current.stream().anyMatch(candidate -> !eligibleIds.contains(candidate.getStudentId()))) {
 			throw new IllegalStateException("现有座位含未选修本场课程的考生，请先核对并移除");
@@ -425,15 +427,15 @@ public class ExamCenterService {
 
 	@Transactional(readOnly = true)
 	public List<ExamDutyView> myDuties(String username) {
-		return dataScopes.resolve(username).teacherIds().stream()
+		return personalProfile(username, "TEACHER").stream()
 				.flatMap(teacherId -> assignments
 						.findByTeacherIdAndStatusIn(
 								teacherId, List.of("ASSIGNED", "STANDBY"))
 						.stream())
 				.map(assignment -> {
-					ExamRoom room = room(assignment.getRoomId());
-					ExamSession session = session(room.getSessionId());
-					ExamPlan plan = plan(session.getPlanId());
+					ExamRoom room = readRoom(assignment.getRoomId());
+					ExamSession session = readSession(room.getSessionId());
+					ExamPlan plan = readPlan(session.getPlanId());
 					Classroom classroom = classrooms.findById(room.getClassroomId())
 							.orElseThrow();
 					return new ExamDutyView(
@@ -455,15 +457,15 @@ public class ExamCenterService {
 
 	@Transactional(readOnly = true)
 	public List<ExamStudentView> myExams(String username) {
-		return dataScopes.resolve(username).studentIds().stream()
+		return personalProfile(username, "STUDENT").stream()
 				.flatMap(studentId -> candidates.findByStudentId(studentId).stream())
 				.map(candidate -> {
-					ExamRoom room = room(candidate.getRoomId());
-					ExamSession session = session(room.getSessionId());
+					ExamRoom room = readRoom(candidate.getRoomId());
+					ExamSession session = readSession(room.getSessionId());
 					if (!"PUBLISHED".equals(session.getStatus())) {
 						return null;
 					}
-					ExamPlan plan = plan(session.getPlanId());
+					ExamPlan plan = readPlan(session.getPlanId());
 					Classroom classroom = classrooms.findById(room.getClassroomId())
 							.orElseThrow();
 					return new ExamStudentView(
@@ -488,12 +490,8 @@ public class ExamCenterService {
 
 	@Transactional
 	public ExamInvigilation acknowledgeDuty(String assignmentId, String username) {
-		ExamInvigilation assignment = assignment(assignmentId);
-		if (!dataScopes.resolve(username).teacherIds()
-				.contains(assignment.getTeacherId())) {
-			throw new AccessDeniedException("只能确认本人监考任务");
-		}
-		ExamSession session = session(room(assignment.getRoomId()).getSessionId());
+		ExamInvigilation assignment = personalAssignment(assignmentId, username);
+		ExamSession session = readSession(readRoom(assignment.getRoomId()).getSessionId());
 		if (!"PUBLISHED".equals(session.getStatus())) {
 			throw new IllegalStateException("考试尚未发布");
 		}
@@ -505,15 +503,11 @@ public class ExamCenterService {
 
 	@Transactional
 	public ExamInvigilation checkInDuty(String assignmentId, String username) {
-		ExamInvigilation assignment = assignment(assignmentId);
-		if (!dataScopes.resolve(username).teacherIds()
-				.contains(assignment.getTeacherId())) {
-			throw new AccessDeniedException("只能为本人监考任务报到");
-		}
+		ExamInvigilation assignment = personalAssignment(assignmentId, username);
 		if (!Set.of("ASSIGNED", "STANDBY").contains(assignment.getStatus())) {
 			throw new IllegalStateException("该监考任务已失效");
 		}
-		ExamSession session = session(room(assignment.getRoomId()).getSessionId());
+		ExamSession session = readSession(readRoom(assignment.getRoomId()).getSessionId());
 		if (!"PUBLISHED".equals(session.getStatus())) {
 			throw new IllegalStateException("考试尚未发布");
 		}
@@ -614,6 +608,7 @@ public class ExamCenterService {
 				|| command.endDate().isAfter(term.getEndDate())) {
 			throw new IllegalArgumentException("考试日期必须位于学期内且起止有效");
 		}
+		assertExamOrganization(term.getOrganizationId());
 		ExamPlan value = id == null ? new ExamPlan() : plan(id);
 		if (id == null) value.setOrganizationId(term.getOrganizationId());
 		else if (!value.getOrganizationId().equals(term.getOrganizationId()))
@@ -672,8 +667,11 @@ public class ExamCenterService {
 			ExamCommands.Session command) {
 		ExamPlan plan = draft(planId);
 		resourceLock.lockSemester(plan.getSemesterCode());
-		if (!subjects.existsById(command.subjectId())) {
-			throw new IllegalArgumentException("考试科目不存在");
+		var subject = subjects.findById(command.subjectId())
+				.orElseThrow(() -> new IllegalArgumentException("考试科目不存在"));
+		if (!Boolean.TRUE.equals(subject.getEnabled()) || subject.getOrganizationId() != null
+				&& !belongsToExamSchool(plan.getOrganizationId(), subject.getOrganizationId())) {
+			throw new IllegalArgumentException("请选择本校启用的考试科目");
 		}
 		if (command.examDate() == null || command.startTime() == null
 				|| command.endTime() == null || !command.endTime().isAfter(command.startTime())
@@ -727,6 +725,9 @@ public class ExamCenterService {
 		List<String> offeringIds = requestedIds == null ? List.of()
 				: requestedIds.stream().filter(Objects::nonNull).map(String::trim)
 						.filter(id -> !id.isEmpty()).distinct().toList();
+		if (!offeringIds.isEmpty() && !courseIntegration.getIfAvailable(() -> () -> true).enabled()) {
+			throw new AccessDeniedException("当前部署未开通课程开设联动");
+		}
 		for (String offeringId : offeringIds) {
 			CourseOffering offering = offerings.findById(offeringId)
 					.orElseThrow(() -> new IllegalArgumentException("课程开设不存在"));
@@ -797,9 +798,13 @@ public class ExamCenterService {
 	@Transactional
 	public ExamRoom addRoom(String sessionId, ExamCommands.Room command) {
 		ExamSession session = session(sessionId);
-		resourceLock.lockSemester(draft(session.getPlanId()).getSemesterCode());
+		ExamPlan plan = draft(session.getPlanId());
+		resourceLock.lockSemester(plan.getSemesterCode());
 		Classroom classroom = classrooms.findById(command.classroomId())
 				.orElseThrow(() -> new IllegalArgumentException("教室不存在"));
+		if (!belongsToExamSchool(plan.getOrganizationId(), classroom.getCampusId())) {
+			throw new org.springframework.security.access.AccessDeniedException("考场不属于考试计划所在学校");
+		}
 		if (!Boolean.TRUE.equals(classroom.getEnabled())) {
 			throw new IllegalStateException("教室已停用");
 		}
@@ -822,7 +827,8 @@ public class ExamCenterService {
 	public List<ExamCandidate> addCandidates(String roomId, ExamCommands.Candidates command) {
 		ExamRoom room = room(roomId);
 		ExamSession session = session(room.getSessionId());
-		resourceLock.lockSemester(draft(session.getPlanId()).getSemesterCode());
+		var plan = draft(session.getPlanId());
+		resourceLock.lockSemester(plan.getSemesterCode());
 		Classroom classroom = classrooms.findById(room.getClassroomId()).orElseThrow();
 		List<ExamCandidate> result = new ArrayList<>();
 		int seatNo = candidates.findByRoomIdOrderBySeatNoAsc(roomId).stream()
@@ -834,8 +840,15 @@ public class ExamCenterService {
 			throw new IllegalArgumentException("请选择考生");
 		}
 		for (String studentId : new LinkedHashSet<>(command.studentIds())) {
-			if (!students.existsById(studentId)) {
-				throw new IllegalArgumentException("学生不存在：" + studentId);
+			var student = students.findById(studentId)
+					.orElseThrow(() -> new IllegalArgumentException("学生不存在"));
+			if (!"ACTIVE".equals(student.getEnrollmentStatus())) {
+				throw new IllegalArgumentException("仅在籍学生可安排考试");
+			}
+			var studentClass = administrativeClasses.findById(student.getAdministrativeClassId())
+					.orElseThrow(() -> new IllegalArgumentException("学生未绑定行政班"));
+			if (!belongsToExamSchool(plan.getOrganizationId(), studentClass.getCampusId())) {
+				throw new org.springframework.security.access.AccessDeniedException("考生不属于考试计划所在学校");
 			}
 			if (candidates.existsByRoomIdAndStudentId(roomId, studentId)) {
 				continue;
@@ -864,7 +877,6 @@ public class ExamCenterService {
 		if (seatNo > classroom.getCapacity()) {
 			throw new IllegalStateException("考场人数超过教室容量");
 		}
-		ExamPlan plan = plan(session.getPlanId());
 		int required = plan.getBaseInvigilators()
 				+ Math.max(0, (seatNo - 1) / plan.getExtraStaffThreshold());
 		room.setRequiredInvigilators(Math.max(room.getRequiredInvigilators(), required));
@@ -1147,9 +1159,11 @@ public class ExamCenterService {
 	public List<ExamTeacherSuggestion> availableTeachers(String roomId) {
 		ExamRoom room = room(roomId);
 		ExamSession session = session(room.getSessionId());
-		String semesterCode = plan(session.getPlanId()).getSemesterCode();
+		var exam = plan(session.getPlanId());
+		String semesterCode = exam.getSemesterCode();
 		return teachers.findAllByOrderByTeacherNo().stream()
 				.filter(item -> Boolean.TRUE.equals(item.getEnabled()))
+				.filter(item -> belongsToExamSchool(exam.getOrganizationId(), item.getDepartmentId()))
 				.filter(item -> teacherConflicts(
 						item.getId(), session, null, roomId).isEmpty())
 				.map(item -> new ExamTeacherSuggestion(
@@ -1446,6 +1460,7 @@ public class ExamCenterService {
 			Classroom replacement = classrooms.findById(change.getNewClassroomId())
 					.orElseThrow(() -> new IllegalArgumentException("新教室不存在"));
 			if (!Boolean.TRUE.equals(replacement.getEnabled())
+					|| !belongsToExamSchool(plan.getOrganizationId(), replacement.getCampusId())
 					|| replacement.getCapacity() < candidates
 							.findByRoomIdOrderBySeatNoAsc(targetRoom.getId()).size()
 					|| rooms.findBySessionId(target.getId()).stream()
@@ -1555,15 +1570,11 @@ public class ExamCenterService {
 			ExamCommands.Change command,
 			String username,
 			boolean emergency) {
-		ExamInvigilation assignment = assignment(assignmentId);
-		if (!"PUBLISHED".equals(session(room(assignment.getRoomId())
-				.getSessionId()).getStatus())) {
-			throw new IllegalStateException("仅已发布的监考任务允许申请调换");
-		}
 		var scope = dataScopes.resolve(username);
-		if (!scope.fullAccess()
-				&& !scope.teacherIds().contains(assignment.getTeacherId())) {
-			throw new AccessDeniedException("只能申请调换本人监考任务");
+		ExamInvigilation assignment = scope.fullAccess() || emergency
+				? assignment(assignmentId) : personalAssignment(assignmentId, username);
+		if (!"PUBLISHED".equals(readSession(readRoom(assignment.getRoomId()).getSessionId()).getStatus())) {
+			throw new IllegalStateException("仅已发布的监考任务允许申请调换");
 		}
 		if (changes.existsByAssignmentIdAndStatus(assignmentId, "PENDING")) {
 			throw new IllegalStateException("已有待审核的监考调换申请");
@@ -1669,9 +1680,13 @@ public class ExamCenterService {
 			ExamSession session,
 			String excludeAssignmentId,
 			String roomId) {
-		if (teacherId == null || teachers.findById(teacherId)
-				.filter(item -> Boolean.TRUE.equals(item.getEnabled())).isEmpty()) {
+		var teacher = teacherId == null ? null : teachers.findById(teacherId)
+				.filter(item -> Boolean.TRUE.equals(item.getEnabled())).orElse(null);
+		if (teacher == null) {
 			throw new IllegalArgumentException("监考教师不存在或已停用");
+		}
+		if (!belongsToExamSchool(plan(session.getPlanId()).getOrganizationId(), teacher.getDepartmentId())) {
+			throw new org.springframework.security.access.AccessDeniedException("监考教师不属于考试计划所在学校");
 		}
 		List<String> conflicts = teacherConflicts(
 				teacherId, session, excludeAssignmentId, roomId);
@@ -1790,9 +1805,8 @@ public class ExamCenterService {
 
 	@Transactional(readOnly = true)
 	public List<ExamTeacherQualification> teacherQualifications(String teacherId) {
-		if (!teachers.existsById(teacherId)) {
-			throw new IllegalArgumentException("教师不存在");
-		}
+		var teacher = teachers.findById(teacherId).orElseThrow(() -> new IllegalArgumentException("教师不存在"));
+		assertExamOrganization(teacher.getDepartmentId());
 		return qualifications.findByTeacherId(teacherId);
 	}
 
@@ -1800,8 +1814,11 @@ public class ExamCenterService {
 	public ExamTeacherQualification addTeacherQualification(
 			String teacherId,
 			String subjectId) {
-		if (!teachers.existsById(teacherId) || !subjects.existsById(subjectId)) {
-			throw new IllegalArgumentException("教师或科目不存在");
+		var teacher = teachers.findById(teacherId).orElseThrow(() -> new IllegalArgumentException("教师不存在"));
+		var subject = subjects.findById(subjectId).orElseThrow(() -> new IllegalArgumentException("科目不存在"));
+		assertExamOrganization(teacher.getDepartmentId());
+		if (subject.getOrganizationId() != null) {
+			assertExamOrganization(subject.getOrganizationId());
 		}
 		return qualifications.findByTeacherIdAndSubjectId(teacherId, subjectId)
 				.orElseGet(() -> {
@@ -1814,6 +1831,8 @@ public class ExamCenterService {
 
 	@Transactional
 	public void removeTeacherQualification(String teacherId, String subjectId) {
+		var teacher = teachers.findById(teacherId).orElseThrow(() -> new IllegalArgumentException("教师不存在"));
+		assertExamOrganization(teacher.getDepartmentId());
 		qualifications.findByTeacherIdAndSubjectId(teacherId, subjectId)
 				.ifPresent(qualifications::delete);
 	}
@@ -1903,13 +1922,56 @@ public class ExamCenterService {
 		return false;
 	}
 
-	private ExamPlan plan(String id) {
-		ExamPlan value = plans.findById(id).orElseThrow(() -> new IllegalArgumentException("考试计划不存在"));
+	private boolean belongsToExamSchool(String schoolId, String campusId) {
+		if (schoolId == null || Objects.equals(schoolId, campusId)) {
+			return true;
+		}
+		return campusId != null && examSchoolId(schoolId).equals(examSchoolId(campusId));
+	}
+
+	private String examSchoolId(String organizationId) {
+		return organizations.findById(organizationId)
+				.filter(item -> "CAMPUS".equals(item.getOrganizationType()))
+				.map(item -> item.getParentOrgId())
+				.map(item -> item.getId())
+				.orElse(organizationId);
+	}
+
+	private void assertExamOrganization(String organizationId) {
 		var authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.isAuthenticated()
 				&& !"anonymousUser".equals(authentication.getName())) {
-			dataScopes.assertCampusAccess(dataScopes.resolve(authentication.getName()), value.getOrganizationId());
+			dataScopes.assertCampusAccess(dataScopes.resolve(authentication.getName()), organizationId);
 		}
+	}
+
+	private java.util.Optional<String> personalProfile(String username, String type) {
+		return bindings.findByUsernameAndProfileTypeAndStatus(username, type, "ACTIVE")
+				.map(item -> item.getProfileId());
+	}
+
+	private ExamInvigilation personalAssignment(String id, String username) {
+		return assignments.findById(id)
+				.filter(item -> Set.of("ASSIGNED", "STANDBY").contains(item.getStatus()))
+				.filter(item -> personalProfile(username, "TEACHER").filter(item.getTeacherId()::equals).isPresent())
+				.orElseThrow(() -> new AccessDeniedException("只能办理本人有效的监考任务"));
+	}
+
+	private ExamPlan readPlan(String id) {
+		return plans.findById(id).orElseThrow(() -> new IllegalArgumentException("考试计划不存在"));
+	}
+
+	private ExamSession readSession(String id) {
+		return sessions.findById(id).orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
+	}
+
+	private ExamRoom readRoom(String id) {
+		return rooms.findById(id).orElseThrow(() -> new IllegalArgumentException("考场不存在"));
+	}
+
+	private ExamPlan plan(String id) {
+		var value = readPlan(id);
+		assertExamOrganization(value.getOrganizationId());
 		return value;
 	}
 
@@ -1922,13 +1984,13 @@ public class ExamCenterService {
 	}
 
 	private ExamSession session(String id) {
-		ExamSession value = sessions.findById(id).orElseThrow(() -> new IllegalArgumentException("考试场次不存在"));
+		ExamSession value = readSession(id);
 		plan(value.getPlanId());
 		return value;
 	}
 
 	private ExamRoom room(String id) {
-		ExamRoom value = rooms.findById(id).orElseThrow(() -> new IllegalArgumentException("考场不存在"));
+		ExamRoom value = readRoom(id);
 		session(value.getSessionId());
 		return value;
 	}
